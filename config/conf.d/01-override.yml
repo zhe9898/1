@@ -1,0 +1,3 @@
+# 覆盖示例：可覆盖 network.domain 等
+network:
+  domain: home.zen70.local

@@ -1,0 +1,169 @@
+name: ZEN70 CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  BACKEND_MIN_COVERAGE: "60"
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements-ci.lock
+
+      - name: Lint - black
+        run: black --check --diff --line-length=160 .
+
+      - name: Lint - isort
+        run: isort --check-only --diff --profile=black --line-length=160 .
+
+      - name: Lint - flake8
+        run: flake8 --max-complexity=15 --max-line-length=160 .
+
+      - name: Mypy (strict, typed defs only)
+        working-directory: ${{ github.workspace }}
+        run: mypy --config-file backend/mypy.ini backend/api backend/core backend/models backend/workers backend/capabilities.py backend/background_tasks.py
+
+      - name: IaC single source of truth (deterministic compile)
+        working-directory: ${{ github.workspace }}
+        run: |
+          python scripts/compiler.py system.yaml -o .
+          git diff --exit-code -- docker-compose.yml .env config/Caddyfile
+
+      - name: Security - pip-audit
+        run: pip-audit -r requirements-core.txt --strict --desc on
+
+      - name: Security - bandit
+        run: bandit -r . -x ./tests -f json -o bandit-report.json || true
+
+      - name: Unit tests and coverage gate
+        working-directory: ${{ github.workspace }}
+        env:
+          JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
+          JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
+          POSTGRES_DSN: "postgresql://zen70:zen70@localhost:5432/zen70"
+          ZEN70_ENV: ""
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest backend/tests/ \
+            -v --tb=short --strict-markers \
+            --cov=backend \
+            --cov-report=term-missing \
+            --cov-report=xml:backend/coverage-backend.xml \
+            --cov-fail-under=${{ env.BACKEND_MIN_COVERAGE }}
+
+      - name: SRE compliance (I/O timeout, no shell=True)
+        working-directory: ${{ github.workspace }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest tests/test_compliance_sre.py tests/test_repo_hardening.py -v --tb=short -q
+
+      - name: Contract test (capabilities schema)
+        working-directory: ${{ github.workspace }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest backend/tests/unit/test_contract_capabilities.py -v --tb=short -q
+
+      - name: Export OpenAPI contracts (must be in sync)
+        working-directory: ${{ github.workspace }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/generate_contracts.py
+          git diff --exit-code -- contracts/metadata.json contracts/openapi docs/openapi-kernel.json docs/openapi-iot.json docs/openapi-ops.json docs/openapi-full.json docs/openapi.json
+
+      - name: Upload bandit report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bandit-report
+          path: backend/bandit-report.json
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-coverage
+          path: backend/coverage-backend.xml
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security - npm audit
+        run: npm audit --audit-level=high
+
+      - name: Lint - ESLint
+        run: npx eslint src/ --ext .ts,.vue --max-warnings 0
+
+      - name: TypeScript type check
+        run: npx vue-tsc --noEmit
+
+      - name: Unit tests and coverage gate
+        run: npm run test:coverage
+
+      - name: Build artifact validation
+        run: npm run build
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: frontend-coverage
+          path: |
+            frontend/coverage/lcov.info
+            frontend/coverage/cobertura-coverage.xml
+
+  trivy:
+    runs-on: ubuntu-24.04
+    needs: [backend]
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514
+
+      - name: Build gateway image
+        run: docker build -t zen70-gateway:ci -f backend/Dockerfile .
+
+      - name: Scan gateway image
+        run: |
+          trivy image \
+            --format table \
+            --exit-code 1 \
+            --severity CRITICAL,HIGH \
+            --ignore-unfixed \
+            zen70-gateway:ci

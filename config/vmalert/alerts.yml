@@ -1,0 +1,40 @@
+groups:
+- name: ZEN70_Hardware_Node
+  rules:
+  - alert: NodeOffline
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Edge Node Offline: {{ $labels.instance }}"
+      description: "Node has been unreachable for more than 1 minute."
+
+  - alert: CPUHighTemperature
+    expr: system_temp_celsius > 85
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High CPU Temperature on {{ $labels.instance }}"
+      description: "CPU temperature exceeded 85°C for 3 minutes."
+
+- name: ZEN70_Container_Status
+  rules:
+  - alert: ContainerPaused
+    expr: engine_daemon_container_states_paused > 0
+    for: 10s
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container Paused"
+      description: "One or more containers are in paused state (Hardware missing trigger)"
+
+  - alert: ContainerExited
+    expr: engine_daemon_container_states_stopped > 0
+    for: 10s
+    labels:
+      severity: warning
+    annotations:
+      summary: "Container Exited"
+      description: "A container has stopped running."

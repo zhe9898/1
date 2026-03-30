@@ -1,0 +1,299 @@
+name: Build V2.9.1 Offline Bundle
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "runner-agent/**"
+      - "scripts/**"
+      - "deploy/**"
+      - "iac/**"
+      - "config/**"
+      - "installer/**"
+      - "contracts/**"
+      - "system.yaml"
+      - "package.json"
+      - "pyproject.toml"
+      - "requirements-infra.txt"
+      - ".github/workflows/build_offline_v2_9.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_SERIES: v2.9.1
+  RELEASE_NOTES: Automated immutable offline bundle release
+
+jobs:
+  build_offline:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/share/dotnet || true
+          docker system prune -af || true
+
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+
+      - name: Prepare bundle metadata
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          release_series_no_v="${RELEASE_SERIES#v}"
+          release_tag="${RELEASE_SERIES}-offline-${short_sha}"
+          release_title="ZEN70 ${RELEASE_SERIES} Offline Bundle (${short_sha})"
+          echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "RELEASE_TITLE=$release_title" >> "$GITHUB_ENV"
+          echo "BUNDLE_ROOT=offline_bundle/ZEN70_${release_series_no_v}_${short_sha}" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=zen70_${release_series_no_v}_offline_bundle_${short_sha}.zip" >> "$GITHUB_ENV"
+          echo "IMAGE_LOCK_FILE=offline_bundle/image-lock-${short_sha}.txt" >> "$GITHUB_ENV"
+          echo "ZEN70_GATEWAY_IMAGE_REF=zen70-gateway:${release_tag}" >> "$GITHUB_ENV"
+          echo "ZEN70_RUNNER_AGENT_IMAGE_REF=zen70-runner-agent:${release_tag}" >> "$GITHUB_ENV"
+
+      - name: Compile deterministic IaC runtime inputs
+        env:
+          ZEN70_SECRET_STATE_DIR: ${{ runner.temp }}/zen70-secrets
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-infra.txt
+          python scripts/compiler.py system.yaml -o .
+
+      - name: Verify pinned build inputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import re
+          import yaml
+
+          system_yaml = Path("system.yaml").read_text(encoding="utf-8")
+          floating_suffix = ":lat" "est"
+          if floating_suffix in system_yaml:
+              raise SystemExit("FATAL: floating image refs are not allowed in offline release inputs")
+
+          image_pattern = re.compile(r"^\s*image:\s*(?P<ref>\S+)\s*$", re.MULTILINE)
+          allowed_local = ("zen70-gateway", "zen70-runner-agent")
+          for match in image_pattern.finditer(system_yaml):
+              image_ref = match.group("ref")
+              if any(local in image_ref for local in allowed_local):
+                  continue
+              if "@sha256:" not in image_ref:
+                  raise SystemExit(f"FATAL: external image refs must be digest pinned ({image_ref})")
+
+          test_compose = Path("tests/docker-compose.yml").read_text(encoding="utf-8")
+          for match in image_pattern.finditer(test_compose):
+              image_ref = match.group("ref")
+              if "@sha256:" not in image_ref:
+                  raise SystemExit(f"FATAL: test compose image refs must be digest pinned ({image_ref})")
+
+          images_list = Path("deploy/images.list").read_text(encoding="utf-8").splitlines()
+          for line_number, raw_line in enumerate(images_list, 1):
+              line = raw_line.strip()
+              if not line or line.startswith("#"):
+                  continue
+              if "@sha256:" not in line:
+                  raise SystemExit(f"FATAL: deploy/images.list must be digest pinned ({line_number}: {line})")
+
+          system_config = yaml.safe_load(system_yaml)
+          deployment = system_config.get("deployment") or {}
+          if deployment.get("profile") != "gateway-kernel":
+              raise SystemExit(f"FATAL: deployment.profile must be gateway-kernel ({deployment.get('profile')})")
+          if deployment.get("available_profiles") != ["gateway-kernel"]:
+              raise SystemExit(f"FATAL: available_profiles must only expose gateway-kernel ({deployment.get('available_profiles')})")
+
+          manifest = json.loads(Path("render-manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("product") != deployment.get("product"):
+              raise SystemExit("FATAL: render-manifest product drifted from system.yaml deployment.product")
+          if manifest.get("profile") != deployment.get("profile"):
+              raise SystemExit("FATAL: render-manifest profile drifted from system.yaml deployment.profile")
+          if manifest.get("requested_packs") != deployment.get("packs", []):
+              raise SystemExit("FATAL: render-manifest requested_packs drifted from system.yaml deployment.packs")
+
+          compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
+          compose_services = sorted((compose.get("services") or {}).keys())
+          manifest_services = sorted(manifest.get("services_rendered") or [])
+          if compose_services != manifest_services:
+              raise SystemExit(
+                  f"FATAL: docker-compose services drifted from render-manifest ({compose_services} != {manifest_services})"
+              )
+
+          docs_openapi = json.loads(Path("docs/openapi-kernel.json").read_text(encoding="utf-8"))
+          contract_openapi = json.loads(Path("contracts/openapi/zen70-gateway-kernel.openapi.json").read_text(encoding="utf-8"))
+          if docs_openapi != contract_openapi:
+              raise SystemExit("FATAL: docs/openapi-kernel.json must match contracts/openapi/zen70-gateway-kernel.openapi.json")
+
+          required_paths = {
+              "/api/v1/profile",
+              "/api/v1/console/overview",
+              "/api/v1/nodes",
+              "/api/v1/jobs",
+              "/api/v1/connectors",
+              "/api/v1/settings/schema",
+          }
+          missing_paths = sorted(required_paths.difference((docs_openapi.get("paths") or {}).keys()))
+          if missing_paths:
+              raise SystemExit(f"FATAL: kernel OpenAPI missing required control-plane paths ({missing_paths})")
+
+          workflow_dir = Path(".github/workflows")
+          floating_ref = re.compile(r"^\s*(?:-\s+)?uses:\s+\S+@(?:master|main|[Vv]?\d+(?:\.\d+)*)\s*$", re.MULTILINE)
+          for workflow_path in workflow_dir.glob("*.yml"):
+              workflow = workflow_path.read_text(encoding="utf-8")
+              if floating_suffix in workflow:
+                  raise SystemExit(f"FATAL: floating image refs are not allowed in workflows ({workflow_path})")
+              if floating_ref.search(workflow):
+                  raise SystemExit(f"FATAL: GitHub Actions must be pinned to immutable commit SHAs ({workflow_path})")
+              if "runs-on: ubuntu-" + "latest" in workflow:
+                  raise SystemExit(f"FATAL: GitHub-hosted runners must be pinned to a concrete image ({workflow_path})")
+          PY
+
+      - name: Build local images
+        run: |
+          docker build -f backend/Dockerfile -t "zen70-gateway:${SHORT_SHA}" -t "${ZEN70_GATEWAY_IMAGE_REF}" .
+          docker build -f runner-agent/Dockerfile -t "zen70-runner-agent:${SHORT_SHA}" -t "${ZEN70_RUNNER_AGENT_IMAGE_REF}" .
+
+      - name: Resolve compose images and lock digests
+        run: |
+          mkdir -p offline_bundle
+          : > "$IMAGE_LOCK_FILE"
+          docker compose --env-file .env config --images | sort -u > offline_bundle/compose-images.txt
+          if [ ! -s offline_bundle/compose-images.txt ]; then
+            echo "FATAL: compose image resolution returned no images"
+            exit 1
+          fi
+
+          while IFS= read -r image; do
+            [ -n "$image" ] || continue
+            case "$image" in
+              "${ZEN70_GATEWAY_IMAGE_REF}")
+                printf "%s=%s\n" "$image" "local-build:${SHORT_SHA}" >> "$IMAGE_LOCK_FILE"
+                ;;
+              "${ZEN70_RUNNER_AGENT_IMAGE_REF}")
+                printf "%s=%s\n" "$image" "local-build:${SHORT_SHA}" >> "$IMAGE_LOCK_FILE"
+                ;;
+              *)
+                for i in 1 2 3 4 5; do
+                  if docker pull "$image"; then
+                    break
+                  fi
+                  if [ "$i" -eq 5 ]; then
+                    echo "FATAL: could not pull $image"
+                    exit 1
+                  fi
+                  sleep 20
+                done
+                resolved="$(docker image inspect --format='{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{index .RepoTags 0}}{{end}}' "$image")"
+                printf "%s=%s\n" "$image" "$resolved" >> "$IMAGE_LOCK_FILE"
+                ;;
+            esac
+          done < offline_bundle/compose-images.txt
+
+      - name: Save images to tar archive
+        run: |
+          mkdir -p "$BUNDLE_ROOT"
+          mapfile -t images < offline_bundle/compose-images.txt
+          docker save -o "$BUNDLE_ROOT/zen70_offline_images_v2.9.1.tar" "${images[@]}"
+          cp "$IMAGE_LOCK_FILE" "$BUNDLE_ROOT/image-lock.txt"
+          cp offline_bundle/compose-images.txt "$BUNDLE_ROOT/compose-images.txt"
+          printf "git_commit=%s\nbuilt_at=%s\n" "$GITHUB_SHA" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$BUNDLE_ROOT/build-metadata.txt"
+          sha256sum "$BUNDLE_ROOT/zen70_offline_images_v2.9.1.tar" > "$BUNDLE_ROOT/image-tar.sha256"
+
+      - name: Package repository
+        run: |
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='offline_bundle/' \
+            --exclude='.env' \
+            --exclude='config/system.yaml' \
+            --exclude='config/users.acl' \
+            --exclude='runtime/secrets/' \
+            --exclude='runtime/tmp-compile/' \
+            --exclude='frontend/build_*.txt' \
+            --exclude='frontend/eslint_*.txt' \
+            --exclude='frontend/vuetsc_*.txt' \
+            --exclude='frontend/full_build_*.txt' \
+            --exclude='frontend/test_output.txt' \
+            --exclude='frontend/test_result*.json' \
+            ./ "$BUNDLE_ROOT/"
+          python scripts/validate_offline_bundle.py "$BUNDLE_ROOT"
+          (
+            cd offline_bundle
+            zip -r "$ASSET_NAME" "$(basename "$BUNDLE_ROOT")"
+            sha256sum "$ASSET_NAME" > "${ASSET_NAME}.sha256"
+          )
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES"
+
+      - name: Upload immutable asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          asset_zip="offline_bundle/$ASSET_NAME"
+          asset_checksum="offline_bundle/${ASSET_NAME}.sha256"
+
+          has_asset() {
+            local target="$1"
+            local existing_assets="${2:-}"
+            printf '%s\n' "$existing_assets" | grep -Fx "$target" >/dev/null
+          }
+
+          for attempt in 1 2 3 4 5; do
+            existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+            has_zip=0
+            has_checksum=0
+
+            if has_asset "$ASSET_NAME" "$existing_assets"; then
+              has_zip=1
+            fi
+            if has_asset "${ASSET_NAME}.sha256" "$existing_assets"; then
+              has_checksum=1
+            fi
+
+            if [ "$has_zip" -eq 1 ] && [ "$has_checksum" -eq 1 ]; then
+              echo "Assets $ASSET_NAME and ${ASSET_NAME}.sha256 already exist on $RELEASE_TAG, skipping upload."
+              exit 0
+            fi
+
+            upload_args=()
+            if [ "$has_zip" -eq 0 ]; then
+              upload_args+=("$asset_zip")
+            fi
+            if [ "$has_checksum" -eq 0 ]; then
+              upload_args+=("$asset_checksum")
+            fi
+
+            if gh release upload "$RELEASE_TAG" "${upload_args[@]}"; then
+              echo "Release asset upload completed on attempt $attempt."
+              exit 0
+            fi
+
+            existing_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+            if has_asset "$ASSET_NAME" "$existing_assets" && has_asset "${ASSET_NAME}.sha256" "$existing_assets"; then
+              echo "Assets appeared during concurrent upload on attempt $attempt, treating as success."
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 5 ]; then
+              echo "FATAL: release asset upload failed after $attempt attempts."
+              exit 1
+            fi
+
+            echo "Release upload attempt $attempt failed; rechecking after backoff."
+            sleep 10
+          done

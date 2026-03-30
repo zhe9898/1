@@ -1,0 +1,113 @@
+{
+  "_comment": "ZEN70 Domain Registry — machine-readable source of truth. DOMAIN_REGISTRY.md is auto-generated from this file.",
+  "_schema_version": "1.1",
+  "_adr": "ADR-0047",
+  "_generated_by": "ZEN70-AI-Agent",
+  "domains": {
+    "control-plane": {
+      "description": "Core scheduling, node management, job lifecycle — always shipped",
+      "activation": "always"
+    },
+    "business-layer": {
+      "description": "Application-level product objects — require explicit activation steps",
+      "activation": "explicit",
+      "default_activation_requirements": [
+        "api-route",
+        "migration",
+        "changelog"
+      ]
+    }
+  },
+  "models": [
+    {
+      "file": "user.py",
+      "path": "backend/models/user.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "session.py",
+      "path": "backend/models/session.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "permission.py",
+      "path": "backend/models/permission.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "audit_log.py",
+      "path": "backend/models/audit_log.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "feature_flag.py",
+      "path": "backend/models/feature_flag.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "quota.py",
+      "path": "backend/models/quota.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "system.py",
+      "path": "backend/models/system.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "node.py",
+      "path": "backend/models/node.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "job.py",
+      "path": "backend/models/job.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "job_attempt.py",
+      "path": "backend/models/job_attempt.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "job_log.py",
+      "path": "backend/models/job_log.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "connector.py",
+      "path": "backend/models/connector.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "alert.py",
+      "path": "backend/models/alert.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "workflow.py",
+      "path": "backend/models/workflow.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
+      "file": "tenant.py",
+      "path": "backend/models/tenant.py",
+      "domain": "control-plane",
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+client_id: health-ios
+platform: ios
+runtime: native
+delivery_stage: mvp-skeleton
+pack_key: health-pack
+auth_provider: gateway-identity
+bootstrap_receipts: backend-owned
+tenant_context: required
+node_contract:
+  required_env:
+    - RUNNER_TENANT_ID
+    - RUNNER_NODE_ID
+    - NODE_TOKEN
+    - GATEWAY_BASE_URL
+    - GATEWAY_CA_FILE
+capabilities:
+  - health.ingest
+selector_hints:
+  - required_capabilities=health.ingest
+  - target_zone=mobile
+  - target_executor=swift-native
+connectors:
+  - health.ios
+notes:
+  - Read Apple HealthKit locally and upload through Gateway-controlled connectors and jobs.
+  - Do not embed HealthKit libraries into the Python gateway default runtime.

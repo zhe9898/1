@@ -1,0 +1,4 @@
+pgvector>=0.2.5
+sentence-transformers>=2.3.0
+torch>=2.0.0
+torchvision>=0.15.0

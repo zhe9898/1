@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/components/VoiceButton.vue",
+    "src/views/AgentConsole.vue",
+    "src/views/EmotionAlbum.vue",
+    "src/views/FamilyBoard.vue",
+    "src/views/MemoryCenter.vue",
+    "src/views/Observability.vue"
+  ]
+}

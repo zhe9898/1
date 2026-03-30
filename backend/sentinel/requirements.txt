@@ -1,0 +1,2 @@
+# topology_sentinel.py 依赖 (Python 3.11+)
+redis>=4.5

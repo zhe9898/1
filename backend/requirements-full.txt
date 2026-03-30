@@ -1,0 +1,4 @@
+-r requirements-core.txt
+-r requirements-iot.txt
+-r requirements-ai.txt
+-r requirements-media.txt

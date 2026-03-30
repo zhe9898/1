@@ -1,0 +1,6 @@
+# 碎片化配置示例 - 与 system.yaml 合并，按文件名排序（后覆盖前）
+# 可与单体 system.yaml 二选一，或同时使用：先加载 system.yaml，再合并本目录
+
+# 可在此补充或覆盖顶层键
+# project:
+#   name: zen70-home
