@@ -11,7 +11,10 @@ docker compose -p zen70 up -d --remove-orphans
 echo.
 echo [2/4] 环境预检与探测...
 set PYTHONPATH=.
-set REDIS_HOST=127.0.0.1
+REM 法典 §1.2: REDIS_HOST 由 IaC 编译器写入 .env，禁止硬编码
+REM 运行时从 .env 读取（docker compose 自动加载；此处仅为裸跑兜底）
+for /f "tokens=1,* delims==" %%a in ('findstr /B "REDIS_HOST=" .env 2^>nul') do set REDIS_HOST=%%b
+if not defined REDIS_HOST set REDIS_HOST=redis
 
 echo.
 echo [3/4] 安全探针与守望者监控网略已由容器集群接管运行...

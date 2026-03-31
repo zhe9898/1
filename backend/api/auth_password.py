@@ -11,7 +11,7 @@ from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.auth_shared import assert_user_active, build_token_response_model, request_tenant_id
+from backend.api.auth_shared import assert_user_active, build_token_response_model, register_login_session, request_tenant_id
 from backend.api.deps import get_db, get_redis
 from backend.api.models.auth import TokenResponse, PasswordLoginRequest
 from backend.core.auth_helpers import (
@@ -82,8 +82,19 @@ async def password_login(
     await redis.delete(lock_key)
 
     log_auth("password_login", True, rid, username=username, client_ip_str=cip)
-    return build_token_response_model(
+    resp = build_token_response_model(
         str(user.id), user.username, user.role,
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference,
     )
+    await register_login_session(
+        db,  # type: ignore[arg-type]
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        username=user.username,
+        access_token=resp.access_token,
+        ip_address=cip,
+        user_agent=request.headers.get("user-agent"),
+        auth_method="password",
+    )
+    return resp

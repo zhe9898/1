@@ -30,7 +30,7 @@ func New(cfg config.Config) *Service {
 		executor: runnerexec.New(runnerexec.Config{
 			DefaultTimeoutSeconds: cfg.LeaseSeconds,
 			MaxOutputBytes:        1 << 20,
-		}),
+		}, client.HTTPClient()),
 		collector: telemetry.NewCollector(
 			cfg.GatewayBaseURL,
 			client.HTTPClient(),

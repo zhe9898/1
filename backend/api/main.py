@@ -44,6 +44,7 @@ from backend.api import sessions as sessions_router
 from backend.api import settings as settings_router
 from backend.api import user_management as user_management_router
 from backend.api import workflows as workflows_router
+from backend.api import scheduling_governance as scheduling_governance_router
 from backend.api.deps import get_settings
 from backend.api.models import ErrorResponse, HealthResponse
 from backend.core.gateway_profile import get_enabled_router_names as resolve_enabled_router_names
@@ -65,6 +66,8 @@ KERNEL_ALLOWED_OPTIONAL_ROUTERS = {"cluster"}
 
 OPTIONAL_ROUTER_MODULES = {
     "cluster": "backend.api.cluster",
+    "health": "backend.api.health",
+    "search": "backend.api.search",
 }
 
 
@@ -188,12 +191,38 @@ async def lifespan(app: FastAPI) -> object:
 # -------------------- App --------------------
 _is_production = os.getenv("ZEN70_ENV", "development").lower() == "production"
 
+# ── API stability contract tags ──────────────────────────────────────
+# stability tiers: stable (GA, semver-protected), beta (may change in minor),
+# experimental (may change or disappear at any time), deprecated (removal planned).
+_API_STABILITY_TAGS: list[dict[str, object]] = [
+    {"name": "auth", "description": "Authentication & token management", "x-stability": "stable"},
+    {"name": "health", "description": "Health checks", "x-stability": "stable"},
+    {"name": "jobs", "description": "Job lifecycle & dispatch", "x-stability": "stable"},
+    {"name": "nodes", "description": "Node registration & status", "x-stability": "stable"},
+    {"name": "connectors", "description": "Connector management", "x-stability": "stable"},
+    {"name": "settings", "description": "System settings", "x-stability": "stable"},
+    {"name": "console", "description": "Dashboard & operational views", "x-stability": "stable"},
+    {"name": "workflows", "description": "Workflow orchestration", "x-stability": "beta"},
+    {"name": "scheduling-governance", "description": "Scheduling policies, feature flags, decision audit", "x-stability": "beta"},
+    {"name": "quotas", "description": "Tenant resource quotas", "x-stability": "beta"},
+    {"name": "alerts", "description": "Alert rules & notifications", "x-stability": "beta"},
+    {"name": "kernel", "description": "Kernel introspection & capabilities", "x-stability": "beta"},
+    {"name": "node-approval", "description": "Node enrollment approval flow", "x-stability": "stable"},
+    {"name": "audit-logs", "description": "Audit trail query", "x-stability": "stable"},
+    {"name": "permissions", "description": "RBAC permission management", "x-stability": "stable"},
+    {"name": "sessions", "description": "Session management", "x-stability": "stable"},
+    {"name": "user-management", "description": "User admin", "x-stability": "stable"},
+    {"name": "profile", "description": "User profile", "x-stability": "stable"},
+    {"name": "cluster", "description": "Multi-node cluster (optional)", "x-stability": "experimental"},
+]
+
 app = FastAPI(
     title="ZEN70 API",
     version=get_runtime_version(),
     lifespan=lifespan,
     docs_url=None if _is_production else "/api/docs",
     redoc_url=None if _is_production else "/api/redoc",
+    openapi_tags=_API_STABILITY_TAGS,
 )
 
 settings = get_settings()
@@ -359,6 +388,7 @@ _ALL_ROUTERS = {
     "alerts": alerts_router.router,
     "kernel": kernel_router.router,
     "workflows": workflows_router.router,
+    "scheduling_governance": scheduling_governance_router.router,
 }
 
 _gateway_profile = get_gateway_profile()
@@ -370,13 +400,28 @@ for router_name, router_obj in _ALL_ROUTERS.items():
     logger.info("Loaded core router: %s", router_name)
 
 # Load optional routers (explicit admission control)
+# Load optional routers (explicit admission control)
+# Pack-declared routers are admitted when the pack IS selected via GATEWAY_PACKS.
+_pack_declared_routers: set[str] = set()
+for pk in _gateway_packs:
+    from backend.core.pack_registry import PACK_DEFINITIONS
+    _pdef = PACK_DEFINITIONS.get(pk)
+    if _pdef:
+        _pack_declared_routers.update(_pdef.routers)
+
 for router_name in get_enabled_router_names(_gateway_profile):
     if router_name in _ALL_ROUTERS:
         # Already loaded as core router
         continue
-    if router_name in KERNEL_ALLOWED_OPTIONAL_ROUTERS:
-        app.include_router(_load_optional_router(router_name))
-        logger.info("Loaded optional router: %s", router_name)
+    if router_name in KERNEL_ALLOWED_OPTIONAL_ROUTERS or router_name in _pack_declared_routers:
+        if router_name in OPTIONAL_ROUTER_MODULES:
+            app.include_router(_load_optional_router(router_name))
+            logger.info("Loaded optional router: %s", router_name)
+        else:
+            logger.info(
+                "Router '%s' declared by pack but no module registered in OPTIONAL_ROUTER_MODULES",
+                router_name,
+            )
     else:
         # Pack declares this router, but it's not admitted to default kernel runtime
         logger.info(

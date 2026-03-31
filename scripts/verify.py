@@ -33,13 +33,39 @@ FATAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CORE_CONTAINERS = {
-    "zen70-gateway",
-    "zen70-runner-agent",
-    "zen70-sentinel",
-    "zen70-redis",
-    "zen70-postgres",
-}
+
+
+def _load_core_containers() -> set[str]:
+    """从 render-manifest.json 读取 services_rendered，映射为容器名。
+
+    IaC 唯一事实来源：禁止硬编码容器列表（法典 §1.2）。
+    兜底：manifest 缺失时使用 system.yaml 中 enabled=true 的服务。
+    """
+    manifest_path = PROJECT_ROOT / "render-manifest.json"
+    try:
+        import json as _json
+        manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+        services = manifest.get("services_rendered", [])
+        if services:
+            return {f"zen70-{svc}" for svc in services}
+    except (OSError, ValueError, KeyError):
+        pass
+    # 二级兜底：从 system.yaml 读取 enabled 服务
+    try:
+        import yaml as _yaml
+        sys_cfg = _yaml.safe_load((PROJECT_ROOT / "system.yaml").read_text(encoding="utf-8"))
+        return {
+            svc.get("container_name", f"zen70-{name}")
+            for name, svc in (sys_cfg.get("services") or {}).items()
+            if isinstance(svc, dict) and svc.get("enabled") is not False
+        }
+    except (OSError, ValueError):
+        pass
+    # 三级兜底（不可达状态下的安全降级）
+    return {"zen70-gateway", "zen70-redis", "zen70-postgres"}
+
+
+DEFAULT_CORE_CONTAINERS = _load_core_containers()
 
 
 def _run_ci_step(command: list[str], step_name: str) -> bool:

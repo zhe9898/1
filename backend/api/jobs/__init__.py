@@ -13,26 +13,32 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import dlq, queue_stats, routes
+from . import dispatch, dlq, lifecycle, queue_stats, routes
 
 # ── Aggregated router (used by main.py) ─────────────────────────────────────
 router = APIRouter()
 router.include_router(routes.router, tags=["jobs"])
+router.include_router(dispatch.router, tags=["jobs"])
+router.include_router(lifecycle.router, tags=["jobs"])
 router.include_router(dlq.router, prefix="/api/v1/jobs", tags=["jobs", "dead-letter-queue"])
 router.include_router(queue_stats.router, prefix="/api/v1/jobs", tags=["jobs", "queue-stats"])
 
 # ── Route handlers re-exported for tests ─────────────────────────────────────
 from .routes import (  # noqa: E402
-    cancel_job,
-    complete_job,
     create_job,
-    explain_job,
-    fail_job,
     get_job,
     get_job_schema,
     list_job_attempts,
     list_jobs,
+)
+from .dispatch import (  # noqa: E402
+    explain_job,
     pull_jobs,
+)
+from .lifecycle import (  # noqa: E402
+    cancel_job,
+    complete_job,
+    fail_job,
     renew_job_lease,
     report_job_progress,
     retry_job_now,

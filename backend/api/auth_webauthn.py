@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.api.auth_shared import assert_user_active, build_token_response_model, request_tenant_id
+from backend.api.auth_shared import assert_user_active, build_token_response_model, register_login_session, request_tenant_id
 from backend.api.deps import get_db, get_redis
 from backend.api.models.auth import (
     TokenResponse,
@@ -25,12 +25,18 @@ from backend.api.models.auth import (
     WebAuthnRegisterBeginRequest, WebAuthnRegisterBeginResponse,
     WebAuthnRegisterCompleteRequest,
 )
+import backend.core.auth_helpers as _auth_helpers
 from backend.core.auth_helpers import (
     CHALLENGE_TTL, CODE_BAD_REQUEST, CODE_NOT_FOUND, CODE_SERVER_ERROR,
-    check_webauthn_rate_limit, client_ip, consume_challenge,
-    credential_id_to_base64url, expected_challenge_bytes,
-    log_auth, origin_from_request, request_id, require_db_redis, zen,
+    client_ip,
+    log_auth, request_id, require_db_redis, zen,
 )
+# Keep direct references for re-export; function bodies use _auth() for patchability
+check_webauthn_rate_limit = _auth_helpers.check_webauthn_rate_limit
+consume_challenge = _auth_helpers.consume_challenge
+credential_id_to_base64url = _auth_helpers.credential_id_to_base64url
+expected_challenge_bytes = _auth_helpers.expected_challenge_bytes
+origin_from_request = _auth_helpers.origin_from_request
 from backend.core.redis_client import RedisClient
 from backend.models.user import User, WebAuthnCredential
 
@@ -46,6 +52,12 @@ except (ImportError, RuntimeError):
     verify_registration = None  # type: ignore[assignment]
 
 router = APIRouter()
+
+
+def _auth_mod():  # type: ignore[no-untyped-def]
+    """Lazy lookup of backend.api.auth so patches on that module take effect."""
+    import sys
+    return sys.modules.get("backend.api.auth") or __import__("backend.api.auth", fromlist=["auth"])
 
 
 @router.post("/webauthn/register/begin", response_model=WebAuthnRegisterBeginResponse)
@@ -137,7 +149,7 @@ async def login_begin(
     assert db is not None  # noqa: S101
     rid, cip = request_id(request), client_ip(request)
     tenant_id = request_tenant_id(req.tenant_id)
-    await check_webauthn_rate_limit(redis, cip, rid)
+    await _auth_mod().check_webauthn_rate_limit(redis, cip, rid)
 
     result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == req.username).options(selectinload(User.credentials)))
     user = result.scalar_one_or_none()
@@ -154,7 +166,7 @@ async def login_begin(
         {"id": c.credential_id, "type": "public-key", "transports": ["internal", "usb", "nfc"]}
         for c in creds
     ]
-    _, challenge_b64, options_json_str = generate_authentication_challenge(allow_credentials=allow_credentials)
+    _, challenge_b64, options_json_str = _auth_mod().generate_authentication_challenge(allow_credentials=allow_credentials)
     options_dict = json.loads(options_json_str)
     payload = json.dumps({"user_id": user.id, "username": user.username, "tenant_id": tenant_id, "flow": "login"})
     if not await redis.set_auth_challenge(challenge_b64, payload, ttl=CHALLENGE_TTL):
@@ -174,13 +186,13 @@ async def login_complete(
 ) -> TokenResponse:
     require_db_redis(db, redis)
     rid, cip = request_id(request), client_ip(request)
-    await check_webauthn_rate_limit(redis, cip, rid)
+    await _auth_mod().check_webauthn_rate_limit(redis, cip, rid)
 
-    challenge_b64, data = await consume_challenge(redis, req.credential, "login", username=req.username)
+    challenge_b64, data = await _auth_mod().consume_challenge(redis, req.credential, "login", username=req.username)
     challenge_tenant_id = str(data.get("tenant_id") or "")
     if challenge_tenant_id != request_tenant_id(req.tenant_id):
         raise zen(CODE_BAD_REQUEST, "Challenge tenant mismatch", status.HTTP_400_BAD_REQUEST)
-    cred_id_b64 = credential_id_to_base64url(req.credential)
+    cred_id_b64 = _auth_mod().credential_id_to_base64url(req.credential)
     if not cred_id_b64:
         raise zen(CODE_BAD_REQUEST, "Invalid credential: missing id", status.HTTP_400_BAD_REQUEST)
 
@@ -195,11 +207,11 @@ async def login_complete(
         log_auth("webauthn_login_complete", False, rid, username=req.username, detail="credential_not_found")
         raise zen(CODE_NOT_FOUND, "Credential not found", status.HTTP_404_NOT_FOUND)
 
-    origin = origin_from_request(request)
+    origin = _auth_mod().origin_from_request(request)
     try:
-        verification = verify_authentication(
+        verification = _auth_mod().verify_authentication(
             credential=req.credential,
-            expected_challenge=expected_challenge_bytes(challenge_b64),
+            expected_challenge=_auth_mod().expected_challenge_bytes(challenge_b64),
             origin=origin,
             credential_public_key=cred.public_key,
             credential_current_sign_count=cred.sign_count,
@@ -217,10 +229,21 @@ async def login_complete(
     assert_user_active(login_user, flow="webauthn_login_complete", rid=rid, username=req.username, client_ip_str=cip)
 
     log_auth("webauthn_login_complete", True, rid, username=req.username, client_ip_str=cip)
-    return build_token_response_model(
+    resp = build_token_response_model(
         sub=str(cred.user_id),
         username=req.username,
         role=login_user.role,
         tenant_id=login_user.tenant_id,
         ai_route_preference=login_user.ai_route_preference,
     )
+    await register_login_session(
+        db,  # type: ignore[arg-type]
+        tenant_id=login_user.tenant_id,
+        user_id=str(cred.user_id),
+        username=req.username,
+        access_token=resp.access_token,
+        ip_address=cip,
+        user_agent=request.headers.get("user-agent"),
+        auth_method="webauthn",
+    )
+    return resp

@@ -1,30 +1,61 @@
 """
-Business Scheduling Optimizations
+Business Scheduling Engine
 
-Provides advanced business scheduling features:
-- Job priority inheritance from parent jobs
-- Job dependency chains and DAG execution
-- Job batching and gang scheduling
-- Job preemption for high-priority jobs
-- Job deadline scheduling
+Utility functions for job scheduling: priority boosting, dependency
+checking, gang scheduling, preemption, batch scoring, SLA risk.
+Constraint pipeline classes live in ``scheduling_constraints.py``.
 """
 
 from __future__ import annotations
 
 import datetime
+import math
 from typing import TYPE_CHECKING
+
+from backend.core.scheduling_constraints import (  # noqa: F401 – re-export
+    ConnectorCoolingGate,
+    DeadlineExpiryGate,
+    DependencyGate,
+    GangSchedulingGate,
+    PriorityBoostModifier,
+    SchedulingConstraint,
+    SchedulingContext,
+    SchedulingEngine,
+    TenantFairShareGate,
+    get_scheduling_engine,
+)
 
 if TYPE_CHECKING:
     from backend.models.job import Job
 
 
-def calculate_effective_priority(
+def _get_priority_boost_config():
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.priority_boost
+
+
+def _get_preemption_policy():
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.preemption
+
+
+def _get_batch_scoring_config():
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.batch_scoring
+
+
+def _get_sla_risk_config():
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.sla_risk
+
+
+def calculate_boosted_priority(
     job: Job,
     *,
     now: datetime.datetime,
     parent_jobs: dict[str, Job] | None = None,
 ) -> int:
-    """Calculate effective priority considering inheritance and deadlines.
+    """Calculate boosted priority considering inheritance and deadlines.
 
     Priority adjustments:
     - Base priority: job.priority (0-100)
@@ -34,7 +65,8 @@ def calculate_effective_priority(
 
     Returns: 0-160 (clamped effective priority)
     """
-    base_priority = int(job.priority or 50)
+    _pbc = _get_priority_boost_config()
+    base_priority = int(job.priority or _pbc.default_priority)
     effective = base_priority
 
     # Parent priority inheritance
@@ -42,30 +74,31 @@ def calculate_effective_priority(
     if parent_job_id and parent_jobs:
         parent = parent_jobs.get(parent_job_id)
         if parent and parent.priority > base_priority:
-            effective += 10
+            effective += _pbc.parent_inheritance_bonus
 
-    # Deadline urgency
+    # Deadline urgency — continuous exponential curve.
+    # Smoothly ramps from +0 (far away) to +deadline_urgency_max (imminent).
     deadline = getattr(job, "deadline_at", None)
     if deadline and isinstance(deadline, datetime.datetime):
         time_remaining = (deadline - now).total_seconds()
         if time_remaining > 0:
-            # Urgency increases as deadline approaches
-            # 1 hour remaining = +30, 6 hours = +15, 24 hours = +5
-            if time_remaining < 3600:  # < 1 hour
-                effective += 30
-            elif time_remaining < 21600:  # < 6 hours
-                effective += 15
-            elif time_remaining < 86400:  # < 24 hours
-                effective += 5
+            effective += min(
+                _pbc.deadline_urgency_max,
+                int(_pbc.deadline_urgency_max * math.exp(
+                    -time_remaining / _pbc.deadline_half_life_seconds,
+                )),
+            )
 
     # SLA breach risk
     sla_seconds = getattr(job, "sla_seconds", None)
     if sla_seconds:
         age_seconds = (now - job.created_at).total_seconds()
-        if age_seconds > sla_seconds * 0.8:  # 80% of SLA consumed
-            effective += 20
+        if age_seconds > sla_seconds * _pbc.sla_threshold_ratio:
+            effective += _pbc.sla_breach_bonus
 
-    return max(0, min(160, effective))
+    from backend.core.scheduling_policy_store import get_policy_store
+    _sw = get_policy_store().active.scoring
+    return max(0, min(_sw.priority_max, effective))
 
 
 def check_job_dependencies_satisfied(
@@ -127,8 +160,8 @@ def should_preempt_for_job(
     """Determine if low-priority job should be preempted for high-priority job.
 
     Preemption rules:
-    - Only preempt if priority difference >= 40
-    - Only preempt jobs that have been running < 5 minutes
+    - Only preempt if priority difference >= min_priority_diff
+    - Only preempt jobs that have been running < max_victim_runtime_seconds
     - Only preempt if high-priority job has deadline or SLA
     - Never preempt jobs marked as non-preemptible
 
@@ -138,17 +171,26 @@ def should_preempt_for_job(
     if getattr(low_priority_job, "preemptible", True) is False:
         return False, "target-non-preemptible"
 
+    _pp = _get_preemption_policy()
+
     # Check priority difference
     high_pri = int(high_priority_job.priority or 50)
     low_pri = int(low_priority_job.priority or 50)
-    if high_pri - low_pri < 40:
+    if high_pri - low_pri < _pp.min_priority_diff:
         return False, f"priority-diff-too-small:{high_pri - low_pri}"
 
-    # Check if low-priority job is still young (< 5 minutes)
+    # Check if low-priority job is still young
+    # Progress-aware: if estimated_duration_s is set, consider completion %.
+    # A job 90% done is more expensive to preempt than one just started.
     if low_priority_job.started_at:
         runtime = (now - low_priority_job.started_at).total_seconds()
-        if runtime > 300:  # 5 minutes
+        if runtime > _pp.max_victim_runtime_seconds:
             return False, f"target-runtime-too-long:{int(runtime)}s"
+        estimated = getattr(low_priority_job, "estimated_duration_s", None)
+        if estimated and estimated > 0:
+            progress = min(runtime / estimated, 1.0)
+            if progress > _pp.max_victim_progress:
+                return False, f"target-progress-too-high:{int(progress * 100)}%"
 
     # Check if high-priority job has urgency
     has_deadline = getattr(high_priority_job, "deadline_at", None) is not None
@@ -180,8 +222,9 @@ def calculate_batch_scheduling_score(
     if batch_size <= 1:
         return 0
 
-    # Larger batches get higher scores (up to 100 for 10+ jobs)
-    return min(100, batch_size * 10)
+    # Larger batches get higher scores
+    _bsc = _get_batch_scoring_config()
+    return min(_bsc.max_score, batch_size * _bsc.score_per_member)
 
 
 def estimate_job_completion_time(
@@ -228,7 +271,7 @@ def calculate_sla_breach_risk(
         return 0.0, "none"
 
     age_seconds = (now - job.created_at).total_seconds()
-    estimated_duration = getattr(job, "estimated_duration_s", None) or 300
+    estimated_duration = getattr(job, "estimated_duration_s", None) or _get_sla_risk_config().default_estimated_duration_s
 
     if job.status == "completed":
         # Already completed, check if SLA was met
@@ -251,13 +294,14 @@ def calculate_sla_breach_risk(
 
     risk = estimated_completion / sla_seconds
 
-    if risk >= 0.9:
+    _src = _get_sla_risk_config()
+    if risk >= _src.critical_threshold:
         return risk, "critical"
-    elif risk >= 0.7:
+    elif risk >= _src.high_threshold:
         return risk, "high"
-    elif risk >= 0.5:
+    elif risk >= _src.medium_threshold:
         return risk, "medium"
-    elif risk >= 0.3:
+    elif risk >= _src.low_threshold:
         return risk, "low"
     else:
         return risk, "none"
@@ -275,34 +319,56 @@ def apply_business_filters(
     parent_jobs: dict[str, Job],
     now: datetime.datetime,
 ) -> list[Job]:
-    """Apply dependency gate, gang gate, and effective-priority boost in one pass.
+    """Apply hard scheduling gates and priority boost via the constraint engine.
+
+    This is the single entry point called by dispatch.py. It delegates to
+    the class-based ``SchedulingEngine`` which evaluates all registered
+    constraints in order.
 
     Returns the filtered + boosted candidate list.  Does NOT touch DB —
     callers must pre-fetch completed_job_ids and parent_jobs.
     """
-    # 1. Dependency gate
-    after_deps: list[Job] = []
-    for c in candidates:
-        if c.depends_on:
-            satisfied, _ = check_job_dependencies_satisfied(c, completed_job_ids)
-            if not satisfied:
+    ctx = SchedulingContext(
+        now=now,
+        completed_job_ids=completed_job_ids,
+        available_slots=available_slots,
+        parent_jobs=parent_jobs,
+    )
+    engine = get_scheduling_engine()
+    return engine.run(candidates, ctx)
+
+
+def find_preemption_candidates(
+    urgent_jobs: list[Job],
+    running_jobs: list[Job],
+    *,
+    now: datetime.datetime,
+) -> list[tuple[Job, Job, str]]:
+    """Identify (urgent_job, evictable_job, reason) triples.
+
+    This function evaluates all urgent (high-priority) pending jobs against
+    currently-running low-priority jobs on the same node and returns pairs
+    where preemption is justified.
+
+    Returns a list of (to_schedule, to_preempt, reason) tuples.
+    Each running job appears at most once (lowest-priority match wins).
+    """
+    if not urgent_jobs or not running_jobs:
+        return []
+
+    # Sort running jobs by priority ascending so cheapest eviction comes first
+    evictable = sorted(running_jobs, key=lambda j: int(j.priority or 0))
+    claimed: set[str] = set()
+    results: list[tuple[Job, Job, str]] = []
+
+    for urgent in sorted(urgent_jobs, key=lambda j: -int(j.priority or 0)):
+        for victim in evictable:
+            if victim.job_id in claimed:
                 continue
-        after_deps.append(c)
+            should, reason = should_preempt_for_job(urgent, victim, now=now)
+            if should:
+                results.append((urgent, victim, reason))
+                claimed.add(victim.job_id)
+                break  # one eviction per urgent job
 
-    # 2. Gang gate
-    after_gang: list[Job] = []
-    for c in after_deps:
-        if c.gang_id:
-            ready, _ = calculate_gang_scheduling_readiness(c, after_deps, available_slots)
-            if not ready:
-                continue
-        after_gang.append(c)
-
-    # 3. Effective priority boost (deadline / SLA / parent inheritance)
-    for c in after_gang:
-        if c.deadline_at or c.sla_seconds or c.parent_job_id:
-            boosted = calculate_effective_priority(c, now=now, parent_jobs=parent_jobs)
-            if boosted > c.priority:
-                c.priority = boosted
-
-    return after_gang
+    return results

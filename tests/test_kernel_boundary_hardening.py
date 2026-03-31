@@ -36,7 +36,7 @@ def test_control_plane_surfaces_defined_in_backend():
     )
 
     # Should have all 5 kernel surfaces
-    assert "gateway.dashboard" in control_plane
+    assert "gateway.capabilities" in control_plane
     assert "gateway.nodes" in control_plane
     assert "gateway.jobs" in control_plane
     assert "gateway.connectors" in control_plane
@@ -262,7 +262,7 @@ def test_node_blockers_checks_edge_constraints():
 
 def test_score_job_includes_edge_factors():
     """score_job_for_node should include edge computing scoring factors."""
-    scheduler = (REPO_ROOT / "backend" / "core" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "core" / "job_scoring.py").read_text(encoding="utf-8")
 
     # Find score_job_for_node function
     func_start = scheduler.find("def score_job_for_node(")

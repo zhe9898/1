@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -103,7 +103,9 @@ async def test_get_node_schema_returns_backend_driven_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_upsert_connector_returns_backend_actions() -> None:
+@patch("backend.api.connectors.validate_connector_config", return_value={"headers": {"x-api-key": "masked"}})
+@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
+async def test_upsert_connector_returns_backend_actions(_mock_quota: AsyncMock, _mock_validate: MagicMock) -> None:
     db = AsyncMock()
     db.add = MagicMock()
     db.execute.return_value = _result_first(None)

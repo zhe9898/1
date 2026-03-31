@@ -1,70 +1,32 @@
-# ZEN70 容器编排 - 由 config-compiler 生成
-# 生成时间: {{ now() }}
-# 版本: docker-compose v3.8+
-# 容器安全基线：非 root、只读根、cap_drop、资源限制、healthcheck（见 .cursorrules 3.3）
-
-version: '3.8'
-
-networks:
-  zen70_net:
-    driver: bridge
+# ZEN70 容器编排 - 由 scripts/compiler.py 生成
+# 法典 1.2：网络平面隔离 frontend_net / backend_net
+# ⚠️ 本文件由 release.sh 从 scripts/templates/ 同步而来，禁止独立编辑（ADR 0011）
 
 services:
-{% for name, svc in (services | default({})).items() %}
-{% if svc.enabled is defined and svc.enabled %}
-  {{ name }}:
-    image: {{ svc.image }}
-    container_name: zen70-{{ name }}
-    restart: unless-stopped
-{# 安全基线：仅在 svc.security.apply_baseline=true 时启用，避免破坏 postgres/redis 等需特权的服务 #}
-{% if (svc.security or {}).apply_baseline | default(false) %}
-    user: {{ (svc.security or {}).user | default("1000:1000") }}
-    read_only: true
-    cap_drop:
-      - ALL
-{% endif %}
-{% if svc.volumes is defined and svc.volumes %}
-    volumes:
-{% for vol in svc.volumes %}
-      - {{ vol }}
+{% for svc in services_list %}
+  {{ svc.name }}:
+{{ svc.build_block }}    image: {{ svc.image }}
+    container_name: {{ svc.container_name }}
+    restart: {{ svc.restart }}
+{{ svc.stop_grace_period_block }}{{ svc.security_block }}{{ svc.ulimits_block }}{{ svc.oom_score_adj_block }}{{ svc.healthcheck_block }}{{ svc.volumes_block }}{{ svc.environment_block }}{{ svc.command_block }}{{ svc.ports_block }}{{ svc.depends_on_block }}{{ svc.networks_block }}{{ svc.logging_block }}{% if svc.name == 'gateway' or svc.name == 'frontend' %}
+    deploy:
+      update_config:
+        order: start-first
+{% endif %}{{ svc.deploy_block }}
 {% endfor %}
-{% endif %}
-{% if svc.environment is defined and svc.environment %}
-    environment:
-{% for key, value in svc.environment.items() %}
-      - {{ key }}={{ value }}
-{% endfor %}
-{% endif %}
-{% if svc.ports is defined and svc.ports %}
-    ports:
-{% for port in svc.ports %}
-      - {{ port }}
-{% endfor %}
-{% endif %}
-{% if svc.depends_on is defined and svc.depends_on %}
-    depends_on:
-{% for dep in svc.depends_on %}
-      - {{ dep }}
-{% endfor %}
-{% endif %}
-{% if (svc.security or {}).mem_limit is defined %}
-    mem_limit: {{ svc.security.mem_limit }}
-{% elif security_defaults is defined and security_defaults.mem_limit is defined %}
-    mem_limit: {{ security_defaults.mem_limit }}
-{% endif %}
-{% if (svc.security or {}).cpus is defined %}
-    cpus: {{ svc.security.cpus }}
-{% elif security_defaults is defined and security_defaults.cpus is defined %}
-    cpus: {{ security_defaults.cpus }}
-{% endif %}
-{% if (svc.healthcheck or {}).test is defined %}
-    healthcheck:
-      test: {{ svc.healthcheck.test | tojson }}
-      interval: {{ svc.healthcheck.interval | default("30s") }}
-      timeout: {{ svc.healthcheck.timeout | default("10s") }}
-      retries: {{ svc.healthcheck.retries | default(3) }}
-{% endif %}
-    networks:
-      - zen70_net
+
+{# 模板底部：动态解析 system.yaml 的 networks 块，internal: true 正确渲染 #}
+networks:
+{% for net in networks_list %}
+  {{ net.name }}:
+    driver: {{ net.driver }}
+{% if net.internal %}    internal: true
 {% endif %}
 {% endfor %}
+
+{% if volumes_list %}
+volumes:
+{% for vol in volumes_list %}
+  {{ vol }}: {}
+{% endfor %}
+{% endif %}

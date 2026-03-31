@@ -33,3 +33,38 @@ router.include_router(auth_webauthn.router)
 router.include_router(auth_pin.router)
 router.include_router(auth_user.router)
 router.include_router(auth_invite.router)
+
+# Re-export endpoint functions for tests that import from backend.api.auth directly
+password_login = auth_password.password_login
+login_begin = auth_webauthn.login_begin
+login_complete = auth_webauthn.login_complete
+pin_login = auth_pin.pin_login
+list_users = auth_user.list_users
+create_user = auth_user.create_user
+revoke_credential = auth_user.revoke_credential
+create_invite = auth_invite.create_invite
+invite_fallback_login = auth_invite.invite_fallback_login
+
+# Re-export constants for test assertions
+PIN_RATE_LIMIT_WINDOW = auth_pin.PIN_RATE_LIMIT_WINDOW
+PIN_RATE_LIMIT_MAX = auth_pin.PIN_RATE_LIMIT_MAX
+
+# Re-export helpers so tests can patch on backend.api.auth namespace
+from backend.core.auth_helpers import (  # noqa: E402
+    check_webauthn_rate_limit,
+    consume_challenge,
+    credential_id_to_base64url,
+    expected_challenge_bytes,
+    origin_from_request,
+    token_response,
+)
+from backend.core.rls import set_tenant_context  # noqa: E402
+
+try:
+    from backend.core.webauthn import (  # noqa: E402
+        generate_authentication_challenge,
+        verify_authentication,
+    )
+except ImportError:
+    generate_authentication_challenge = None  # type: ignore[assignment]
+    verify_authentication = None  # type: ignore[assignment]

@@ -27,7 +27,7 @@ def test_profile_endpoint_reports_public_profile(monkeypatch) -> None:
         assert "jobs" in data["router_names"]
         assert data["console_route_names"] == ["dashboard", "nodes", "jobs", "connectors"]
         assert data["capability_keys"] == [
-            "gateway.dashboard",
+            "gateway.capabilities",
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
@@ -41,8 +41,8 @@ def test_profile_endpoint_reports_public_profile(monkeypatch) -> None:
             "vector-pack",
         }
         pack_map = {item["pack_key"]: item for item in data["packs"]}
-        assert pack_map["health-pack"]["delivery_stage"] == "mvp-skeleton"
-        assert pack_map["vector-pack"]["delivery_stage"] == "contract-only"
+        assert pack_map["health-pack"]["delivery_stage"] == "runtime-present"
+        assert pack_map["vector-pack"]["delivery_stage"] == "runtime-present"
         assert data["cluster_enabled"] is False
     finally:
         app.dependency_overrides = previous_overrides
@@ -67,7 +67,7 @@ def test_profile_endpoint_reports_selected_pack_contracts(monkeypatch) -> None:
         pack_map = {item["pack_key"]: item for item in data["packs"]}
         assert pack_map["iot-pack"]["selected"] is True
         assert pack_map["health-pack"]["selected"] is True
-        assert pack_map["health-pack"]["delivery_stage"] == "mvp-skeleton"
+        assert pack_map["health-pack"]["delivery_stage"] == "runtime-present"
         assert pack_map["iot-pack"]["router_names"] == ["iot", "scenes", "scheduler"]
         assert pack_map["iot-pack"]["services"] == ["mosquitto"]
         assert pack_map["health-pack"]["services"] == []
@@ -101,7 +101,7 @@ def test_console_menu_hides_admin_entries_without_token() -> None:
         assert cap_response.status_code == 200, cap_response.text
         capability_keys = set(cap_response.json()["data"].keys())
         assert capability_keys == {
-            "gateway.dashboard",
+            "gateway.capabilities",
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
@@ -137,7 +137,7 @@ def test_console_menu_shows_settings_for_admin_override() -> None:
             "settings",
         ]
         assert profile_data["capability_keys"] == [
-            "gateway.dashboard",
+            "gateway.capabilities",
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
@@ -146,7 +146,7 @@ def test_console_menu_shows_settings_for_admin_override() -> None:
 
         capability_keys = set(client.get("/api/v1/capabilities").json()["data"].keys())
         assert capability_keys == {
-            "gateway.dashboard",
+            "gateway.capabilities",
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",

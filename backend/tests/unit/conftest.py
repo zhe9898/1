@@ -9,6 +9,13 @@ Unit test 公共 fixtures。
 
 from __future__ import annotations
 
+import os
+
+# ---------------------------------------------------------------------------
+# 模块级环境变量：在测试收集阶段设置，保证 WebAuthn 等模块可正常导入
+# ---------------------------------------------------------------------------
+os.environ.setdefault("DOMAIN", "localhost")
+
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 

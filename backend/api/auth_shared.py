@@ -3,6 +3,10 @@ ZEN70 Auth Shared - 共享辅助函数（所有 auth 子模块使用）
 """
 from __future__ import annotations
 
+import base64
+import json
+import logging
+import sys
 import bcrypt
 
 from fastapi import status
@@ -15,12 +19,30 @@ from backend.core.auth_helpers import (
     CODE_DB_UNAVAILABLE,
     CODE_FORBIDDEN,
     log_auth,
-    token_response,
+    token_response as _token_response_impl,
     zen,
 )
-from backend.core.rls import set_tenant_context
+from backend.core.rls import set_tenant_context as _set_tenant_context_impl
 from backend.api.deps import is_superadmin_role
+from backend.core.jwt import get_access_token_expire_seconds
 from backend.models.user import User
+
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 可测试间接层：测试通过 patch backend.api.auth.token_response / set_tenant_context
+# 以下函数透过 sys.modules 查找 backend.api.auth 命名空间，保证 mock 生效
+# ---------------------------------------------------------------------------
+
+def _auth_mod():  # noqa: ANN202
+    mod = sys.modules.get("backend.api.auth")
+    if mod is not None:
+        return mod
+    # 模块尚未加载时回退到实现
+    class _Fallback:
+        token_response = staticmethod(_token_response_impl)
+        set_tenant_context = staticmethod(_set_tenant_context_impl)
+    return _Fallback()
 
 BCRYPT_ROUNDS = 12
 
@@ -34,7 +56,7 @@ def build_token_response_model(
     ai_route_preference: str = "auto",
 ) -> TokenResponse:
     """统一构造 TokenResponse 模型。"""
-    body = token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference)
+    body = _auth_mod().token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference)
     return TokenResponse(
         access_token=str(body["access_token"]),
         token_type=str(body["token_type"]),
@@ -84,7 +106,7 @@ async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> s
     if is_superadmin_role(current_admin):
         return None
     tenant_id = str(current_admin.get("tenant_id") or "default")
-    await set_tenant_context(db, tenant_id)
+    await _auth_mod().set_tenant_context(db, tenant_id)
     return tenant_id
 
 
@@ -98,3 +120,58 @@ def enforce_admin_scope(current_admin: dict[str, str], tenant_id: str, *, action
             recovery_hint="Use a superadmin token for global administration or switch to the matching tenant",
             details={"tenant_id": tenant_id, "admin_tenant_id": scoped_tenant, "action": action},
         )
+
+
+# ── Session/Token Lifecycle Helpers ──────────────────────────────────
+
+def extract_jti_from_token(access_token: str) -> str | None:
+    """Extract jti claim from a JWT without verification (payload is base64)."""
+    try:
+        parts = access_token.split(".")
+        if len(parts) != 3:
+            return None
+        payload_b64 = parts[1]
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return payload.get("jti")
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, KeyError, TypeError):
+        return None
+
+
+async def register_login_session(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    user_id: str,
+    username: str,
+    access_token: str,
+    ip_address: str | None,
+    user_agent: str | None,
+    auth_method: str,
+) -> None:
+    """Create a session record after successful login (best-effort).
+
+    Connects the JWT jti to a trackable session so that session
+    revocation can also blacklist the corresponding token.
+    """
+    jti = extract_jti_from_token(access_token)
+    if not jti:
+        return
+    try:
+        from backend.core.sessions import create_session
+
+        await create_session(
+            db,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            username=username,
+            jti=jti,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            auth_method=auth_method,
+            expires_in_seconds=get_access_token_expire_seconds(),
+        )
+    except Exception:
+        _logger.warning("Session creation failed (best-effort); login proceeds without session tracking", exc_info=True)

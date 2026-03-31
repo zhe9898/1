@@ -1,0 +1,760 @@
+"""Tests for scheduler self-learning auto-tune engine.
+
+Covers:
+- AdaptiveWeightStore (EMA multiplier learning, cold-start, clamping, decay)
+- NodePerformanceTracker (per-node success/latency EMA, bias)
+- KindPerformanceTracker (per-kind success EMA, risk)
+- StrategyEffectivenessTracker (per-strategy EMA, recommend)
+- SchedulerTuner (orchestrator: record, adjust, snapshot, reset, enable/disable)
+- GovernanceFacade tuner proxy delegation
+- lifecycle _record_tuner_outcome helper
+"""
+from __future__ import annotations
+
+import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from backend.core.scheduler_auto_tune import (
+    DEFAULT_DECAY_RATE,
+    DEFAULT_LEARNING_RATE,
+    MAX_MULTIPLIER,
+    MIN_MULTIPLIER,
+    MIN_SAMPLES_BEFORE_ADJUST,
+    AdaptiveWeightStore,
+    KindPerformanceTracker,
+    NodePerformanceTracker,
+    OutcomeSignal,
+    SchedulerTuner,
+    StrategyEffectivenessTracker,
+    TuningDimension,
+)
+
+
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime(2025, 7, 1, 12, 0, 0)
+
+
+def _make_signal(**overrides) -> OutcomeSignal:
+    defaults = dict(
+        job_id="job-1",
+        node_id="node-1",
+        kind="shell.exec",
+        strategy="spread",
+        tenant_id="default",
+        score_breakdown={"priority": 80, "age": 20, "scarcity": 0},
+        success=True,
+        latency_ms=500.0,
+        retry_count=0,
+        node_utilisation=0.5,
+        timestamp=_utcnow(),
+    )
+    defaults.update(overrides)
+    return OutcomeSignal(**defaults)
+
+
+# =====================================================================
+# TuningDimension
+# =====================================================================
+
+
+class TestTuningDimension:
+    def test_all_dimensions_are_strings(self) -> None:
+        for dim in TuningDimension:
+            assert isinstance(dim.value, str)
+
+    def test_expected_dimensions_exist(self) -> None:
+        names = {d.value for d in TuningDimension}
+        for expected in (
+            "priority", "age", "scarcity", "reliability", "strategy",
+            "zone", "resource_fit", "data_locality", "latency",
+            "power", "thermal", "affinity", "sla_urgency", "batch",
+            "load_penalty", "freshness_penalty", "failure_penalty",
+        ):
+            assert expected in names, f"missing dimension: {expected}"
+
+
+# =====================================================================
+# OutcomeSignal
+# =====================================================================
+
+
+class TestOutcomeSignal:
+    def test_frozen(self) -> None:
+        sig = _make_signal()
+        with pytest.raises(AttributeError):
+            sig.success = False  # type: ignore[misc]
+
+    def test_default_timestamp(self) -> None:
+        sig = OutcomeSignal(
+            job_id="j", node_id="n", kind="k", strategy="s",
+            tenant_id="t", score_breakdown={}, success=True,
+            latency_ms=0, retry_count=0, node_utilisation=0,
+        )
+        assert isinstance(sig.timestamp, datetime.datetime)
+
+
+# =====================================================================
+# AdaptiveWeightStore
+# =====================================================================
+
+
+class TestAdaptiveWeightStore:
+    def test_initial_multipliers_are_one(self) -> None:
+        store = AdaptiveWeightStore()
+        for dim in TuningDimension:
+            assert store.get(dim.value) == 1.0
+
+    def test_cold_start_returns_one(self) -> None:
+        store = AdaptiveWeightStore()
+        breakdown = {"priority": 100}
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST - 1):
+            store.update(breakdown, success=True)
+        assert store.get("priority") == 1.0
+
+    def test_after_threshold_adjusts(self) -> None:
+        store = AdaptiveWeightStore()
+        breakdown = {"priority": 100}
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 10):
+            store.update(breakdown, success=True)
+        mult = store.get("priority")
+        assert mult > 1.0, f"expected > 1.0 after success, got {mult}"
+
+    def test_failures_reduce_multiplier(self) -> None:
+        store = AdaptiveWeightStore()
+        breakdown = {"priority": 100}
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 20):
+            store.update(breakdown, success=False)
+        mult = store.get("priority")
+        assert mult < 1.0, f"expected < 1.0 after failure, got {mult}"
+
+    def test_clamping_upper(self) -> None:
+        store = AdaptiveWeightStore(learning_rate=0.5)
+        breakdown = {"priority": 100}
+        for _ in range(200):
+            store.update(breakdown, success=True)
+        assert store.get("priority") <= MAX_MULTIPLIER
+
+    def test_clamping_lower(self) -> None:
+        store = AdaptiveWeightStore(learning_rate=0.5)
+        breakdown = {"priority": 100}
+        for _ in range(200):
+            store.update(breakdown, success=False)
+        assert store.get("priority") >= MIN_MULTIPLIER
+
+    def test_unknown_dimension_returns_one(self) -> None:
+        store = AdaptiveWeightStore()
+        assert store.get("nonexistent_dimension_xyz") == 1.0
+
+    def test_decay_toward_baseline(self) -> None:
+        store = AdaptiveWeightStore()
+        breakdown = {"priority": 100}
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 30):
+            store.update(breakdown, success=True)
+        before = store.get("priority")
+        assert before > 1.0
+        for _ in range(100):
+            store.decay_toward_baseline(rate=0.01)
+        after = store.get("priority")
+        assert after < before, "decay should move toward 1.0"
+
+    def test_snapshot_structure(self) -> None:
+        store = AdaptiveWeightStore()
+        snap = store.snapshot()
+        assert "priority" in snap
+        assert "multiplier" in snap["priority"]
+        assert "sample_count" in snap["priority"]
+        assert "active" in snap["priority"]
+
+    def test_reset_clears_state(self) -> None:
+        store = AdaptiveWeightStore()
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 10):
+            store.update({"priority": 100}, success=True)
+        assert store.get("priority") > 1.0
+        store.reset()
+        assert store.get("priority") == 1.0
+
+
+# =====================================================================
+# NodePerformanceTracker
+# =====================================================================
+
+
+class TestNodePerformanceTracker:
+    def test_unknown_node_bias_zero(self) -> None:
+        tracker = NodePerformanceTracker()
+        assert tracker.get_bias("unknown-node") == 0.0
+
+    def test_few_samples_bias_zero(self) -> None:
+        tracker = NodePerformanceTracker()
+        for _ in range(4):
+            tracker.record("node-1", success=True, latency_ms=100)
+        assert tracker.get_bias("node-1") == 0.0
+
+    def test_success_positive_bias(self) -> None:
+        tracker = NodePerformanceTracker()
+        for _ in range(20):
+            tracker.record("node-1", success=True, latency_ms=100)
+        bias = tracker.get_bias("node-1")
+        assert bias > 0, f"expected positive bias, got {bias}"
+
+    def test_failure_negative_bias(self) -> None:
+        tracker = NodePerformanceTracker()
+        for _ in range(20):
+            tracker.record("node-fail", success=False, latency_ms=5000)
+        bias = tracker.get_bias("node-fail")
+        assert bias < 0, f"expected negative bias, got {bias}"
+
+    def test_bias_bounded(self) -> None:
+        tracker = NodePerformanceTracker()
+        for _ in range(100):
+            tracker.record("node-1", success=True, latency_ms=50)
+        assert -20 <= tracker.get_bias("node-1") <= 20
+
+    def test_snapshot(self) -> None:
+        tracker = NodePerformanceTracker()
+        tracker.record("node-1", success=True, latency_ms=100)
+        snap = tracker.snapshot()
+        assert "node-1" in snap
+        assert "success_rate" in snap["node-1"]
+        assert "bias" in snap["node-1"]
+
+    def test_reset(self) -> None:
+        tracker = NodePerformanceTracker()
+        for _ in range(10):
+            tracker.record("node-1", success=True, latency_ms=100)
+        tracker.reset()
+        assert tracker.get_bias("node-1") == 0.0
+
+
+# =====================================================================
+# KindPerformanceTracker
+# =====================================================================
+
+
+class TestKindPerformanceTracker:
+    def test_unknown_kind_zero_risk(self) -> None:
+        tracker = KindPerformanceTracker()
+        assert tracker.get_risk("unknown_kind") == 0.0
+
+    def test_few_samples_zero_risk(self) -> None:
+        tracker = KindPerformanceTracker()
+        for _ in range(9):
+            tracker.record("shell.exec", success=False, latency_ms=100)
+        assert tracker.get_risk("shell.exec") == 0.0
+
+    def test_all_failures_high_risk(self) -> None:
+        tracker = KindPerformanceTracker()
+        for _ in range(30):
+            tracker.record("bad_kind", success=False, latency_ms=100)
+        risk = tracker.get_risk("bad_kind")
+        assert risk > 0.8, f"expected high risk, got {risk}"
+
+    def test_all_successes_low_risk(self) -> None:
+        tracker = KindPerformanceTracker()
+        for _ in range(30):
+            tracker.record("good_kind", success=True, latency_ms=100)
+        risk = tracker.get_risk("good_kind")
+        assert risk < 0.2, f"expected low risk, got {risk}"
+
+    def test_snapshot(self) -> None:
+        tracker = KindPerformanceTracker()
+        tracker.record("shell.exec", success=True, latency_ms=100)
+        snap = tracker.snapshot()
+        assert "shell.exec" in snap
+        assert "risk" in snap["shell.exec"]
+
+    def test_reset(self) -> None:
+        tracker = KindPerformanceTracker()
+        for _ in range(20):
+            tracker.record("kind-a", success=False, latency_ms=100)
+        tracker.reset()
+        assert tracker.get_risk("kind-a") == 0.0
+
+
+# =====================================================================
+# StrategyEffectivenessTracker
+# =====================================================================
+
+
+class TestStrategyEffectivenessTracker:
+    def test_no_data_recommend_none(self) -> None:
+        tracker = StrategyEffectivenessTracker()
+        assert tracker.recommend() is None
+
+    def test_insufficient_samples_recommend_none(self) -> None:
+        tracker = StrategyEffectivenessTracker()
+        for _ in range(29):
+            tracker.record("spread", success=True, latency_ms=100)
+        assert tracker.recommend() is None
+
+    def test_recommend_best(self) -> None:
+        tracker = StrategyEffectivenessTracker()
+        for _ in range(50):
+            tracker.record("spread", success=True, latency_ms=100)
+            tracker.record("binpack", success=False, latency_ms=5000)
+        rec = tracker.recommend()
+        assert rec == "spread"
+
+    def test_snapshot(self) -> None:
+        tracker = StrategyEffectivenessTracker()
+        tracker.record("spread", success=True, latency_ms=100)
+        snap = tracker.snapshot()
+        assert "spread" in snap
+        assert "success_rate" in snap["spread"]
+
+    def test_reset(self) -> None:
+        tracker = StrategyEffectivenessTracker()
+        for _ in range(50):
+            tracker.record("spread", success=True, latency_ms=100)
+        tracker.reset()
+        assert tracker.recommend() is None
+
+
+# =====================================================================
+# SchedulerTuner — orchestrator
+# =====================================================================
+
+
+class TestSchedulerTuner:
+    def test_default_enabled(self) -> None:
+        tuner = SchedulerTuner()
+        assert tuner.enabled is True
+
+    def test_disabled_returns_neutral(self) -> None:
+        tuner = SchedulerTuner(enabled=False)
+        tuner.record_outcome(_make_signal())
+        assert tuner.get_adjustment("priority") == 1.0
+        assert tuner.get_node_bias("node-1") == 0.0
+        assert tuner.get_kind_risk("shell.exec") == 0.0
+
+    def test_set_enabled_toggle(self) -> None:
+        tuner = SchedulerTuner()
+        tuner.set_enabled(False)
+        assert tuner.enabled is False
+        tuner.set_enabled(True)
+        assert tuner.enabled is True
+
+    def test_record_outcome_increments_signals(self) -> None:
+        tuner = SchedulerTuner()
+        assert tuner._total_signals == 0
+        tuner.record_outcome(_make_signal())
+        assert tuner._total_signals == 1
+
+    def test_record_outcome_updates_node_tracker(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(10):
+            tuner.record_outcome(_make_signal(node_id="n1", success=True))
+        snap = tuner.node_tracker.snapshot()
+        assert "n1" in snap
+
+    def test_record_outcome_updates_kind_tracker(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(15):
+            tuner.record_outcome(_make_signal(kind="scan", success=True))
+        snap = tuner.kind_tracker.snapshot()
+        assert "scan" in snap
+
+    def test_record_outcome_updates_strategy_tracker(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(10):
+            tuner.record_outcome(_make_signal(strategy="binpack"))
+        snap = tuner.strategy_tracker.snapshot()
+        assert "binpack" in snap
+
+    def test_get_adjustment_cold_start(self) -> None:
+        tuner = SchedulerTuner()
+        assert tuner.get_adjustment("priority") == 1.0
+
+    def test_get_adjustment_after_learning(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 20):
+            tuner.record_outcome(_make_signal(
+                score_breakdown={"priority": 100},
+                success=True,
+            ))
+        adj = tuner.get_adjustment("priority")
+        assert adj >= 1.0
+
+    def test_decay_moves_toward_baseline(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 30):
+            tuner.record_outcome(_make_signal(
+                score_breakdown={"priority": 100},
+                success=True,
+            ))
+        before = tuner.get_adjustment("priority")
+        for _ in range(50):
+            tuner.decay()
+        after = tuner.get_adjustment("priority")
+        assert after <= before
+
+    def test_snapshot_structure(self) -> None:
+        tuner = SchedulerTuner()
+        tuner.record_outcome(_make_signal())
+        snap = tuner.snapshot()
+        assert "enabled" in snap
+        assert "total_signals" in snap
+        assert "dimension_weights" in snap
+        assert "node_performance" in snap
+        assert "kind_performance" in snap
+        assert "strategy_effectiveness" in snap
+        assert "recommended_strategy" in snap
+        assert snap["total_signals"] == 1
+
+    def test_reset_clears_all(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(30):
+            tuner.record_outcome(_make_signal())
+        tuner.reset()
+        assert tuner._total_signals == 0
+        assert tuner.get_adjustment("priority") == 1.0
+        snap = tuner.snapshot()
+        assert snap["total_signals"] == 0
+
+    def test_disabled_record_is_noop(self) -> None:
+        tuner = SchedulerTuner(enabled=False)
+        for _ in range(50):
+            tuner.record_outcome(_make_signal())
+        assert tuner._total_signals == 0
+
+    def test_recommend_strategy_delegates(self) -> None:
+        tuner = SchedulerTuner()
+        for _ in range(50):
+            tuner.record_outcome(_make_signal(strategy="balanced", success=True))
+            tuner.record_outcome(_make_signal(strategy="spread", success=False))
+        rec = tuner.recommend_strategy()
+        assert rec == "balanced"
+
+
+# =====================================================================
+# GovernanceFacade tuner proxies
+# =====================================================================
+
+
+class TestGovernanceFacadeTunerProxies:
+    def test_tuner_snapshot_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.snapshot.return_value = {"enabled": True}
+            mock_get.return_value = mock_tuner
+            result = facade.tuner_snapshot()
+        assert result == {"enabled": True}
+        mock_tuner.snapshot.assert_called_once()
+
+    def test_tuner_enabled_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.enabled = True
+            mock_get.return_value = mock_tuner
+            assert facade.tuner_enabled() is True
+
+    def test_set_tuner_enabled_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_get.return_value = mock_tuner
+            facade.set_tuner_enabled(False)
+        mock_tuner.set_enabled.assert_called_once_with(False)
+
+    def test_reset_tuner_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_get.return_value = mock_tuner
+            facade.reset_tuner()
+        mock_tuner.reset.assert_called_once()
+
+    def test_get_tuner_adjustment_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.get_adjustment.return_value = 1.2
+            mock_get.return_value = mock_tuner
+            result = facade.get_tuner_adjustment("priority")
+        assert result == 1.2
+        mock_tuner.get_adjustment.assert_called_once_with("priority")
+
+    def test_get_tuner_node_bias_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.get_node_bias.return_value = 12.5
+            mock_get.return_value = mock_tuner
+            result = facade.get_tuner_node_bias("n1")
+        assert result == 12.5
+
+    def test_get_tuner_kind_risk_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.get_kind_risk.return_value = 0.75
+            mock_get.return_value = mock_tuner
+            result = facade.get_tuner_kind_risk("bad_kind")
+        assert result == 0.75
+
+    def test_tuner_recommend_strategy_delegates(self) -> None:
+        from backend.core.governance_facade import GovernanceFacade
+
+        facade = GovernanceFacade()
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.recommend_strategy.return_value = "binpack"
+            mock_get.return_value = mock_tuner
+            result = facade.tuner_recommend_strategy()
+        assert result == "binpack"
+
+
+# =====================================================================
+# lifecycle _record_tuner_outcome helper
+# =====================================================================
+
+
+class TestRecordTunerOutcome:
+    def test_records_success_outcome(self) -> None:
+        from backend.api.jobs.lifecycle import _record_tuner_outcome
+
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_get.return_value = mock_tuner
+
+            job = MagicMock()
+            job.job_id = "job-42"
+            job.kind = "shell.exec"
+            job.scheduling_strategy = "spread"
+            job.tenant_id = "tenant-1"
+            job.retry_count = 0
+            job.started_at = _utcnow() - datetime.timedelta(seconds=5)
+
+            _record_tuner_outcome(job, node_id="node-1", success=True, now=_utcnow())
+
+        mock_tuner.record_outcome.assert_called_once()
+        signal = mock_tuner.record_outcome.call_args[0][0]
+        assert signal.job_id == "job-42"
+        assert signal.node_id == "node-1"
+        assert signal.success is True
+        assert signal.latency_ms == pytest.approx(5000.0, rel=0.01)
+
+    def test_records_failure_outcome(self) -> None:
+        from backend.api.jobs.lifecycle import _record_tuner_outcome
+
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_get.return_value = mock_tuner
+
+            job = MagicMock()
+            job.job_id = "job-99"
+            job.kind = "connector.invoke"
+            job.scheduling_strategy = None
+            job.tenant_id = "default"
+            job.retry_count = 3
+            job.started_at = None
+
+            _record_tuner_outcome(job, node_id="n2", success=False, now=_utcnow())
+
+        signal = mock_tuner.record_outcome.call_args[0][0]
+        assert signal.success is False
+        assert signal.strategy == "spread"  # default fallback
+        assert signal.latency_ms == 0.0  # no started_at
+
+    def test_never_raises(self) -> None:
+        from backend.api.jobs.lifecycle import _record_tuner_outcome
+
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+            side_effect=RuntimeError("boom"),
+        ):
+            # Must not raise
+            _record_tuner_outcome(
+                MagicMock(), node_id="n1", success=True, now=_utcnow(),
+            )
+
+
+# =====================================================================
+# Integration: score_job_for_node applies tuner adjustments
+# =====================================================================
+
+
+class TestScoringIntegration:
+    def test_tuner_multiplier_applied_to_scoring(self) -> None:
+        """Verify that score_job_for_node uses tuner adjustments."""
+        from backend.core.job_scoring import score_job_for_node
+
+        job = MagicMock()
+        job.priority = 100
+        job.created_at = _utcnow() - datetime.timedelta(minutes=10)
+        job.target_zone = None
+        job.job_id = "j1"
+        job.scheduling_strategy = "spread"
+        job.data_locality_key = None
+        job.power_budget_watts = None
+        job.thermal_sensitivity = None
+        job.affinity_labels = {}
+        job.batch_key = None
+        job.target_executor = None
+        job.required_cpu_cores = 0
+        job.required_memory_mb = 0
+        job.required_gpu_vram_mb = 0
+        job.required_storage_mb = 0
+        job.deadline_at = None
+        job.sla_seconds = None
+
+        from backend.core.job_scheduler import SchedulerNodeSnapshot
+
+        node = SchedulerNodeSnapshot(
+            node_id="n1", os="linux", arch="amd64", executor="docker",
+            zone="zone-a", capabilities=frozenset(),
+            accepted_kinds=frozenset({"shell.exec"}),
+            max_concurrency=4, active_lease_count=0,
+            cpu_cores=8, memory_mb=16384, gpu_vram_mb=0,
+            storage_mb=100000, reliability_score=0.95,
+            last_seen_at=_utcnow(),
+            enrollment_status="active", status="online",
+            drain_status="active", network_latency_ms=5,
+            bandwidth_mbps=1000, cached_data_keys=frozenset(),
+            power_capacity_watts=500, current_power_watts=200,
+            thermal_state="normal", cloud_connectivity="online",
+            metadata_json={},
+        )
+
+        # Baseline (tuner returns 1.0 for all)
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.get_adjustment.return_value = 1.0
+            mock_tuner.get_node_bias.return_value = 0.0
+            mock_get.return_value = mock_tuner
+
+            score_base, bd_base = score_job_for_node(
+                job, node, now=_utcnow(), total_active_nodes=5,
+                eligible_nodes_count=3, recent_failed_job_ids=set(),
+            )
+
+        # Double priority multiplier
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+
+            def _adj(dim: str) -> float:
+                return 2.0 if dim == "priority" else 1.0
+
+            mock_tuner.get_adjustment.side_effect = _adj
+            mock_tuner.get_node_bias.return_value = 0.0
+            mock_get.return_value = mock_tuner
+
+            score_boosted, bd_boosted = score_job_for_node(
+                job, node, now=_utcnow(), total_active_nodes=5,
+                eligible_nodes_count=3, recent_failed_job_ids=set(),
+            )
+
+        assert bd_boosted["priority"] == bd_base["priority"] * 2
+        assert score_boosted > score_base
+
+    def test_learned_node_bias_in_breakdown(self) -> None:
+        from backend.core.job_scoring import score_job_for_node
+
+        job = MagicMock()
+        job.priority = 50
+        job.created_at = _utcnow()
+        job.target_zone = None
+        job.job_id = "j2"
+        job.scheduling_strategy = "spread"
+        job.data_locality_key = None
+        job.power_budget_watts = None
+        job.thermal_sensitivity = None
+        job.affinity_labels = {}
+        job.batch_key = None
+        job.target_executor = None
+        job.required_cpu_cores = 0
+        job.required_memory_mb = 0
+        job.required_gpu_vram_mb = 0
+        job.required_storage_mb = 0
+        job.deadline_at = None
+        job.sla_seconds = None
+
+        from backend.core.job_scheduler import SchedulerNodeSnapshot
+
+        node = SchedulerNodeSnapshot(
+            node_id="n1", os="linux", arch="amd64", executor="docker",
+            zone="zone-a", capabilities=frozenset(),
+            accepted_kinds=frozenset({"shell.exec"}),
+            max_concurrency=4, active_lease_count=0,
+            cpu_cores=8, memory_mb=16384, gpu_vram_mb=0,
+            storage_mb=100000, reliability_score=0.90,
+            last_seen_at=_utcnow(),
+            enrollment_status="active", status="online",
+            drain_status="active", network_latency_ms=5,
+            bandwidth_mbps=1000, cached_data_keys=frozenset(),
+            power_capacity_watts=500, current_power_watts=200,
+            thermal_state="normal", cloud_connectivity="online",
+            metadata_json={},
+        )
+
+        with patch(
+            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
+        ) as mock_get:
+            mock_tuner = MagicMock()
+            mock_tuner.get_adjustment.return_value = 1.0
+            mock_tuner.get_node_bias.return_value = 15.0
+            mock_get.return_value = mock_tuner
+
+            _, breakdown = score_job_for_node(
+                job, node, now=_utcnow(), total_active_nodes=5,
+                eligible_nodes_count=3, recent_failed_job_ids=set(),
+            )
+
+        assert "learned_node_bias" in breakdown
+        assert breakdown["learned_node_bias"] == 15
+
+
+# =====================================================================
+# Module singleton
+# =====================================================================
+
+
+class TestSingleton:
+    def test_get_scheduler_tuner_returns_same_instance(self) -> None:
+        from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+        t1 = get_scheduler_tuner()
+        t2 = get_scheduler_tuner()
+        assert t1 is t2

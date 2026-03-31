@@ -213,12 +213,29 @@ class JobExplainDecisionResponse(BaseModel):
     last_seen_at: datetime.datetime
 
 
+class JobExplainGovernanceContext(BaseModel):
+    """Governance state snapshot embedded in explain trace."""
+
+    feature_flags: dict[str, bool] = Field(default_factory=dict)
+    kind_circuit_state: str | None = None
+    node_quarantine_count: int = 0
+    connector_cooling_count: int = 0
+    burst_active: bool = False
+    tenant_service_class: str = "standard"
+    tenant_max_jobs_per_round: int = 0
+    tenant_fair_share_weight: float = 1.0
+    placement_policy: str = "default"
+    starvation_threshold_seconds: int = 3600
+    aging_config: dict[str, object] = Field(default_factory=dict)
+
+
 class JobExplainResponse(BaseModel):
     job: JobResponse
     total_nodes: int
     eligible_nodes: int
     selected_node_id: str | None
     decisions: list[JobExplainDecisionResponse] = Field(default_factory=list)
+    governance: JobExplainGovernanceContext | None = None
 
 
 class QueueLayerStats(BaseModel):

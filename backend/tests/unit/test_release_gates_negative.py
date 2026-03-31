@@ -55,6 +55,7 @@ def test_lockfile_gate_fails_when_backend_lock_missing(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         cwd=str(tmp_path),
+        timeout=30,
     )
     # Gate 3 must reject: missing backend/requirements-ci.lock
     assert result.returncode != 0, (
@@ -83,6 +84,7 @@ def test_lockfile_gate_fails_when_frontend_lock_missing(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         cwd=str(tmp_path),
+        timeout=30,
     )
     assert result.returncode != 0, (
         "NEGATIVE TEST FAILED: packaging succeeded despite missing frontend lockfile.\n"
@@ -158,6 +160,7 @@ def test_frozen_openapi_path_drift_detected(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         cwd=str(tmp_path),
+        timeout=30,
     )
     # Either: snapshot not found (exit 1) or surface drift (exit 1)
     # Both are correct — the gate must be non-zero

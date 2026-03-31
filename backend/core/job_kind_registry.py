@@ -198,6 +198,232 @@ register_job_kind(
 
 
 # ============================================================================
+# Extended built-in job kinds for edge-computing platform
+# ============================================================================
+
+class ContainerRunPayload(BaseModel):
+    """Payload schema for container.run job kind."""
+    image: str
+    command: list[str] = []
+    env: dict[str, str] = {}
+    working_dir: str | None = None
+    timeout: int = 600
+    pull_policy: str = "IfNotPresent"  # Always | IfNotPresent | Never
+    memory_limit_mb: int | None = None
+    cpu_limit_millicores: int | None = None
+
+
+class ContainerRunResult(BaseModel):
+    """Result schema for container.run job kind."""
+    exit_code: int
+    stdout: str = ""
+    stderr: str = ""
+    container_id: str = ""
+    duration_seconds: float = 0.0
+
+
+class HealthcheckPayload(BaseModel):
+    """Payload schema for healthcheck job kind."""
+    target: str  # URL, host:port, or service name
+    check_type: str = "http"  # http | tcp | dns | exec
+    timeout: int = 10
+    expected_status: int = 200
+    interval_seconds: int = 0  # 0 = one-shot
+
+
+class HealthcheckResult(BaseModel):
+    """Result schema for healthcheck job kind."""
+    healthy: bool
+    latency_ms: float = 0.0
+    status_code: int | None = None
+    message: str = ""
+
+
+class MLInferencePayload(BaseModel):
+    """Payload schema for ml.inference job kind."""
+    model_id: str
+    input_data: dict[str, Any] = {}
+    input_uri: str | None = None
+    runtime: str = "onnx"  # onnx | tensorrt | openvino | pytorch
+    batch_size: int = 1
+    timeout: int = 120
+    precision: str = "fp32"  # fp32 | fp16 | int8
+
+
+class MLInferenceResult(BaseModel):
+    """Result schema for ml.inference job kind."""
+    predictions: list[Any] = []
+    output_uri: str | None = None
+    inference_time_ms: float = 0.0
+    model_version: str = ""
+
+
+class MediaTranscodePayload(BaseModel):
+    """Payload schema for media.transcode job kind."""
+    input_uri: str
+    output_uri: str
+    codec: str = "h264"  # h264 | h265 | vp9 | av1
+    resolution: str | None = None  # e.g. "1920x1080"
+    bitrate_kbps: int | None = None
+    timeout: int = 1800
+    hardware_accel: bool = False
+
+
+class MediaTranscodeResult(BaseModel):
+    """Result schema for media.transcode job kind."""
+    output_uri: str = ""
+    duration_seconds: float = 0.0
+    output_size_bytes: int = 0
+    codec_used: str = ""
+
+
+class ScriptRunPayload(BaseModel):
+    """Payload schema for script.run job kind."""
+    interpreter: str = "bash"  # bash | python | node | powershell
+    script: str  # inline script content
+    args: list[str] = []
+    env: dict[str, str] = {}
+    timeout: int = 300
+
+
+class ScriptRunResult(BaseModel):
+    """Result schema for script.run job kind."""
+    exit_code: int
+    stdout: str = ""
+    stderr: str = ""
+    duration_seconds: float = 0.0
+
+
+class WasmRunPayload(BaseModel):
+    """Payload schema for wasm.run job kind."""
+    module_uri: str  # URL or local path to .wasm file
+    function: str = "_start"
+    args: list[str] = []
+    env: dict[str, str] = {}
+    timeout: int = 60
+    memory_pages: int = 256  # WASM linear memory pages (64KB each)
+
+
+class WasmRunResult(BaseModel):
+    """Result schema for wasm.run job kind."""
+    exit_code: int = 0
+    stdout: str = ""
+    stderr: str = ""
+    duration_seconds: float = 0.0
+
+
+class CronTickPayload(BaseModel):
+    """Payload schema for cron.tick job kind — scheduled trigger execution."""
+    schedule_id: str
+    cron_expression: str  # e.g. "*/5 * * * *"
+    action: str  # logical action name to invoke
+    action_payload: dict[str, Any] = {}
+    timeout: int = 120
+
+
+class CronTickResult(BaseModel):
+    """Result schema for cron.tick job kind."""
+    triggered: bool = True
+    action_result: dict[str, Any] = {}
+    next_fire_at: str | None = None  # ISO8601
+
+
+class DataSyncPayload(BaseModel):
+    """Payload schema for data.sync job kind — edge↔cloud data synchronisation."""
+    source_uri: str
+    dest_uri: str
+    direction: str = "push"  # push | pull | bidirectional
+    filters: list[str] = []  # glob patterns for selective sync
+    conflict_resolution: str = "latest-wins"  # latest-wins | source-wins | manual
+    timeout: int = 600
+    bandwidth_limit_kbps: int | None = None
+
+
+class DataSyncResult(BaseModel):
+    """Result schema for data.sync job kind."""
+    files_transferred: int = 0
+    bytes_transferred: int = 0
+    conflicts: int = 0
+    duration_seconds: float = 0.0
+    errors: list[str] = []
+
+
+register_job_kind(
+    "container.run",
+    payload_schema=ContainerRunPayload,
+    result_schema=ContainerRunResult,
+)
+
+register_job_kind(
+    "healthcheck",
+    payload_schema=HealthcheckPayload,
+    result_schema=HealthcheckResult,
+)
+
+register_job_kind(
+    "ml.inference",
+    payload_schema=MLInferencePayload,
+    result_schema=MLInferenceResult,
+)
+
+register_job_kind(
+    "media.transcode",
+    payload_schema=MediaTranscodePayload,
+    result_schema=MediaTranscodeResult,
+)
+
+register_job_kind(
+    "script.run",
+    payload_schema=ScriptRunPayload,
+    result_schema=ScriptRunResult,
+)
+
+register_job_kind(
+    "wasm.run",
+    payload_schema=WasmRunPayload,
+    result_schema=WasmRunResult,
+)
+
+register_job_kind(
+    "cron.tick",
+    payload_schema=CronTickPayload,
+    result_schema=CronTickResult,
+)
+
+register_job_kind(
+    "data.sync",
+           payload_schema=DataSyncPayload,
+    result_schema=DataSyncResult,
+)
+
+
+class FileTransferPayload(BaseModel):
+    """Payload schema for file.transfer job kind — local file copy with integrity."""
+    src: str
+    dst: str
+    overwrite: bool = False
+    verify_sha256: str | None = None
+    mkdir: bool = True
+
+
+class FileTransferResult(BaseModel):
+    """Result schema for file.transfer job kind."""
+    src: str = ""
+    dst: str = ""
+    bytes: int = 0
+    sha256: str = ""
+    duration_ms: float = 0.0
+    throughput_mbs: float = 0.0
+
+
+register_job_kind(
+    "file.transfer",
+    payload_schema=FileTransferPayload,
+    result_schema=FileTransferResult,
+)
+
+
+# ============================================================================
 # Job Kind Discovery
 # ============================================================================
 

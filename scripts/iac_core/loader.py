@@ -163,8 +163,11 @@ def _iter_active_services(config: dict[str, Any]) -> list[tuple[str, dict[str, A
     for name, svc in services_raw.items():
         if not isinstance(svc, dict):
             continue
+        # Pack-resolved services: if a service is in the allowed list, it overrides enabled=false.
+        # This lets ops-pack services be disabled by default but activated when the pack is selected.
         if svc.get("enabled") is False:
-            continue
+            if allowed is None or name not in allowed:
+                continue
         if allowed is not None and name not in allowed:
             continue
         if name == "cloudflared" and not tunnel_enabled:

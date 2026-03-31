@@ -7,14 +7,14 @@
 
 ## 目标
 
-实现 IaC 唯一事实来源的配置编译流水线：从 `config/system.yaml` 或 `config/conf.d/*.yml` 读取并合并配置树，经版本迁移后，用 Jinja2 渲染 `deploy/templates/` 下的模板，输出 `.env` 和 `docker-compose.yml`，并内置版本迁移脚本（检测 system.yaml 的 config_version 并自动升级）。
+实现 IaC 唯一事实来源的配置编译流水线：从 `system.yaml` 或 `config/conf.d/*.yml` 读取并合并配置树，经版本迁移后，用 Jinja2 渲染 `scripts/templates/` 下的模板（唯一事实来源，ADR 0011），输出 `.env` 和 `docker-compose.yml`，并内置版本迁移脚本（检测 system.yaml 的 config_version 并自动升级）。
 
 ## 技术要点
 
 - **配置加载**：优先读取 `config/system.yaml`；若存在 `config/conf.d/`，则按文件名排序加载所有 `*.yml` / `*.yaml`（排除 `*.local.yml`），通过递归 `deep_merge` 合并为单一配置树。
 - **路径规范**：全程使用 `pathlib.Path`，禁止 `os.path`。
 - **类型与规范**：Python 3.11+，全函数 Type Hints；错误码统一为 `ZEN-COMPILE-xxx`。
-- **Jinja2 渲染**：模板目录 `deploy/templates/`，上下文传入合并后的 `config`；默认输出 `.env`、`docker-compose.yml` 到项目根目录。
+- **Jinja2 渲染**：模板目录 `scripts/templates/`（唯一事实来源），上下文传入预处理后的 `services_list`、`volumes_list`、`networks_list`；默认输出 `.env`、`docker-compose.yml` 到项目根目录。`deploy/templates/` 由 `release.sh` 打包时从 `scripts/templates/` 同步生成（ADR 0011 §3）。
 - **版本迁移**：配置项 `config_version`（整数）；若缺失或小于当前支持版本，依次执行 0→1 等迁移（补全 project/network/database/redis/storage/services/observability 默认结构），并输出变更说明；迁移不修改入参（深拷贝后处理）。
 - **敏感信息**：不在配置中写明文密码，模板中使用 `${POSTGRES_PASSWORD}` 等占位，由点火脚本注入 .env。
 
@@ -24,7 +24,8 @@
 - **配置文件**（二选一或同时使用）：
   - `config/system.yaml`：主配置；
   - `config/conf.d/*.yml`：碎片化配置，按文件名排序合并。
-- **模板**：`deploy/templates/.env.j2`、`deploy/templates/docker-compose.yml.j2`。
+- **模板**：`scripts/templates/.env.j2`、`scripts/templates/docker-compose.yml.j2`（唯一事实来源）。
+  > `deploy/templates/` 为打包产物，由 `release.sh` 同步生成，禁止独立编辑。
 
 ## 输出
 
@@ -52,13 +53,13 @@
 - **依赖**：`deploy/requirements.txt`（PyYAML、Jinja2）。
 - **默认主配置**：`config/system.yaml`（含 `config_version: 1` 及 project/network/database/redis/storage/services/observability）。
 - **碎片示例**：`config/conf.d/00-base.yml`。
-- **模板**：`deploy/templates/.env.j2`、`deploy/templates/docker-compose.yml.j2`。
+- **模板**：`scripts/templates/.env.j2`、`scripts/templates/docker-compose.yml.j2`（唯一事实来源）。
 
 运行命令示例：
 
 ```bash
-# 默认：使用 config/、deploy/templates/，输出到项目根
-python deploy/config-compiler.py
+# 默认：使用 system.yaml + scripts/templates/，输出到项目根
+python scripts/compiler.py
 
 # 指定目录与干跑
 python deploy/config-compiler.py --config-dir ./config --output-dir ./out --dry-run

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import uuid
 
 from sqlalchemy import and_, select
@@ -10,6 +11,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.errors import zen
 from backend.models.session import Session
+
+_logger = logging.getLogger(__name__)
+
+
+async def _blacklist_session_jti(
+    redis: object | None,
+    jti: str,
+    expires_at: datetime.datetime,
+) -> None:
+    """Blacklist the JWT jti associated with a revoked session.
+
+    This closes the loop: revoking a sessions also invalidates the JWT
+    immediately, instead of waiting for the token's natural expiry.
+    """
+    if redis is None or not jti:
+        return
+    try:
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        remaining_seconds = max(int((expires_at - now).total_seconds()), 1)
+        redis_conn = getattr(redis, "redis", None)
+        if redis_conn is None:
+            return
+        await redis_conn.set(f"jwt:blacklist:{jti}", "1", ex=remaining_seconds)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        _logger.warning("Failed to blacklist jti=%s: %s", jti, exc)
 
 
 def _derive_device_name(user_agent: str | None) -> str | None:
@@ -127,6 +153,7 @@ async def revoke_session(
     *,
     tenant_id: str,
     revoked_by: str,
+    redis: object | None = None,
 ) -> Session:
     """Revoke a specific session.
 
@@ -135,6 +162,7 @@ async def revoke_session(
         session_id: Session ID to revoke
         tenant_id: Tenant ID (for scoping)
         revoked_by: Username of who revoked this session
+        redis: Optional Redis client for JWT blacklisting
 
     Returns:
         Revoked Session
@@ -161,6 +189,10 @@ async def revoke_session(
     session.revoked_at = now
     session.revoked_by = revoked_by
     await db.flush()
+
+    # Close the loop: blacklist the JWT so it's rejected immediately
+    await _blacklist_session_jti(redis, session.jti, session.expires_at)
+
     return session
 
 
@@ -171,6 +203,7 @@ async def revoke_all_user_sessions(
     user_id: str,
     revoked_by: str,
     except_session_id: str | None = None,
+    redis: object | None = None,
 ) -> int:
     """Revoke all active sessions for a user.
 
@@ -180,6 +213,7 @@ async def revoke_all_user_sessions(
         user_id: User ID
         revoked_by: Username of who revoked
         except_session_id: Keep this session active (current session)
+        redis: Optional Redis client for JWT blacklisting
 
     Returns:
         Number of sessions revoked
@@ -200,6 +234,8 @@ async def revoke_all_user_sessions(
         session.is_active = False
         session.revoked_at = now
         session.revoked_by = revoked_by
+        # Close the loop: blacklist JWT immediately
+        await _blacklist_session_jti(redis, session.jti, session.expires_at)
         count += 1
     await db.flush()
     return count

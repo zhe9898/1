@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_admin, get_current_user, get_tenant_db
+from backend.api.deps import get_current_admin, get_current_user, get_redis, get_tenant_db
+from backend.core.redis_client import RedisClient
 from backend.core.sessions import list_user_sessions, revoke_all_user_sessions, revoke_session
 from backend.models.session import Session
 
@@ -64,6 +65,7 @@ async def revoke_my_session(
     session_id: str,
     current_user: dict[str, str] = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
 ) -> dict[str, str]:
     """Revoke one of the current user's sessions."""
     await revoke_session(
@@ -71,6 +73,7 @@ async def revoke_my_session(
         session_id,
         tenant_id=current_user["tenant_id"],
         revoked_by=current_user["username"],
+        redis=redis,
     )
     return {"status": "ok", "message": "Session revoked"}
 
@@ -79,6 +82,7 @@ async def revoke_my_session(
 async def revoke_all_my_sessions(
     current_user: dict[str, str] = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
 ) -> dict[str, object]:
     """Revoke all sessions for the current user (logout everywhere)."""
     count = await revoke_all_user_sessions(
@@ -86,6 +90,7 @@ async def revoke_all_my_sessions(
         tenant_id=current_user["tenant_id"],
         user_id=current_user["sub"],
         revoked_by=current_user["username"],
+        redis=redis,
     )
     return {"status": "ok", "revoked": count}
 
@@ -111,6 +116,7 @@ async def revoke_all_user_sessions_admin(
     user_id: str,
     current_user: dict[str, str] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
 ) -> dict[str, object]:
     """Revoke all sessions for a user (admin only)."""
     count = await revoke_all_user_sessions(
@@ -118,5 +124,6 @@ async def revoke_all_user_sessions_admin(
         tenant_id=current_user["tenant_id"],
         user_id=user_id,
         revoked_by=current_user["username"],
+        redis=redis,
     )
     return {"status": "ok", "revoked": count}

@@ -19,11 +19,11 @@ REQUIRED_KERNEL_PATHS = (
 
 
 def _write_minimal_bundle(root: Path) -> None:
-    (root / "backend").mkdir(parents=True)
+    (root / "backend" / "models").mkdir(parents=True, exist_ok=True)
     (root / "frontend").mkdir(parents=True)
     (root / "config").mkdir(parents=True)
     (root / "deploy").mkdir(parents=True)
-    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "api").mkdir(parents=True)
     (root / "contracts" / "openapi").mkdir(parents=True)
 
     system_config = {
@@ -54,6 +54,7 @@ def _write_minimal_bundle(root: Path) -> None:
 
     (root / "system.yaml").write_text(yaml.safe_dump(system_config, sort_keys=False, allow_unicode=True), encoding="utf-8")
     (root / "backend" / "requirements-ci.lock").write_text("--hash=sha256:deadbeef\n", encoding="utf-8")
+    (root / "backend" / "models" / "domain_registry.json").write_text(json.dumps({"domains": []}, ensure_ascii=False, indent=2), encoding="utf-8")
     (root / "frontend" / "package-lock.json").write_text("{\"lockfileVersion\": 3}\n", encoding="utf-8")
     (root / "render-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     (root / "docker-compose.yml").write_text(yaml.safe_dump(compose, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -66,6 +67,7 @@ def _write_minimal_bundle(root: Path) -> None:
         encoding="utf-8",
     )
     (root / "docs" / "openapi-kernel.json").write_text(json.dumps(openapi, ensure_ascii=False, indent=2), encoding="utf-8")
+    (root / "docs" / "api" / "openapi_locked.json").write_text(json.dumps(openapi, ensure_ascii=False, indent=2), encoding="utf-8")
     (root / "contracts" / "openapi" / "zen70-gateway-kernel.openapi.json").write_text(
         json.dumps(openapi, ensure_ascii=False, indent=2),
         encoding="utf-8",

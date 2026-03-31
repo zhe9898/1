@@ -208,3 +208,77 @@ def test_health_pack_no_longer_uses_placeholder_artifacts() -> None:
         if (REPO_ROOT / relative).exists():
             violations.append(relative)
     assert not violations, f"Health Pack 已进入最小交付阶段，不得回流 placeholder 产物: {violations}"
+
+
+# ---------------------------------------------------------------------------
+# 代码体积门禁（防石山）
+# ---------------------------------------------------------------------------
+
+_BACKEND_SOURCE_MAX_LINES = 600
+_BACKEND_TEST_MAX_LINES = 800
+
+# 白名单：每条必须注明理由，审查时视为技术债
+_BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
+    "sentinel/topology_sentinel.py": "拓扑探针主循环，拆分后仍需保留完整状态机",
+    "core/redis_client.py": "TypedDict 仅内部使用，拆分收益低",
+    "api/jobs/dispatch.py": "调度主流程含抢占/回退/拓扑扩展，不可分割",
+}
+_BACKEND_TEST_ALLOWLIST: dict[str, str] = {
+    "tests/unit/test_scheduling_governance.py": "调度治理场景覆盖面广，拆分会破坏测试上下文连贯性",
+}
+
+
+def _count_lines(path: Path) -> int:
+    return len(path.read_text(encoding="utf-8").splitlines())
+
+
+def test_backend_source_files_do_not_exceed_line_limit() -> None:
+    """后端源码单文件不得超过阈值，防止石山代码。"""
+    backend = REPO_ROOT / "backend"
+    violations: list[str] = []
+    for py in sorted(backend.rglob("*.py")):
+        rel = py.relative_to(backend).as_posix()
+        # 跳过测试、缓存、迁移
+        if any(part in rel for part in ("__pycache__", "alembic/", "tests/")):
+            continue
+        lines = _count_lines(py)
+        if lines > _BACKEND_SOURCE_MAX_LINES and rel not in _BACKEND_SOURCE_ALLOWLIST:
+            violations.append(f"{rel} ({lines} 行，上限 {_BACKEND_SOURCE_MAX_LINES})")
+    assert not violations, (
+        f"后端源码文件超过 {_BACKEND_SOURCE_MAX_LINES} 行上限，"
+        f"必须拆分或加入白名单并注明理由:\n" + "\n".join(violations)
+    )
+
+
+def test_backend_test_files_do_not_exceed_line_limit() -> None:
+    """后端测试单文件不得超过阈值。"""
+    backend = REPO_ROOT / "backend"
+    violations: list[str] = []
+    for py in sorted(backend.rglob("*.py")):
+        rel = py.relative_to(backend).as_posix()
+        if "tests/" not in rel:
+            continue
+        if "__pycache__" in rel:
+            continue
+        lines = _count_lines(py)
+        if lines > _BACKEND_TEST_MAX_LINES and rel not in _BACKEND_TEST_ALLOWLIST:
+            violations.append(f"{rel} ({lines} 行，上限 {_BACKEND_TEST_MAX_LINES})")
+    assert not violations, (
+        f"后端测试文件超过 {_BACKEND_TEST_MAX_LINES} 行上限，"
+        f"必须拆分或加入白名单并注明理由:\n" + "\n".join(violations)
+    )
+
+
+def test_backend_source_allowlist_entries_are_still_needed() -> None:
+    """白名单条目若已降到阈值以下，必须清除——不得养僵尸白名单。"""
+    backend = REPO_ROOT / "backend"
+    stale: list[str] = []
+    for rel, reason in _BACKEND_SOURCE_ALLOWLIST.items():
+        path = backend / rel
+        if not path.exists():
+            stale.append(f"{rel} (文件已不存在)")
+            continue
+        lines = _count_lines(path)
+        if lines <= _BACKEND_SOURCE_MAX_LINES:
+            stale.append(f"{rel} ({lines} 行，已低于 {_BACKEND_SOURCE_MAX_LINES}，可移除白名单)")
+    assert not stale, f"白名单中存在过期条目，请清理:\n" + "\n".join(stale)

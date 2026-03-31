@@ -37,8 +37,8 @@ def test_available_pack_registry_contains_phase4_contracts() -> None:
 
     assert set(definitions) == {"iot-pack", "ops-pack", "health-pack", "vector-pack"}
     assert definitions["health-pack"].runtime_owner == "native-client"
-    assert definitions["health-pack"].delivery_stage == "mvp-skeleton"
+    assert definitions["health-pack"].delivery_stage == "runtime-present"
     assert "HealthKit" in definitions["health-pack"].description
     assert definitions["iot-pack"].delivery_stage == "runtime-present"
-    assert definitions["vector-pack"].delivery_stage == "contract-only"
+    assert definitions["vector-pack"].delivery_stage == "runtime-present"
     assert "vector.search" in definitions["vector-pack"].capability_keys

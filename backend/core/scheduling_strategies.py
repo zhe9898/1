@@ -11,6 +11,7 @@ Provides multiple scheduling strategies optimized for different workload pattern
 
 from __future__ import annotations
 
+import math
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,11 @@ class NodeAffinityRule(str, Enum):
     PREFERRED = "preferred"  # Job SHOULD run on nodes matching affinity (soft constraint)
 
 
+def _get_strategy_config():
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.strategy
+
+
 def calculate_spread_score(node: SchedulerNodeSnapshot) -> int:
     """Calculate spread score (prefer nodes with lower load).
 
@@ -52,88 +58,97 @@ def calculate_spread_score(node: SchedulerNodeSnapshot) -> int:
 def calculate_binpack_score(node: SchedulerNodeSnapshot) -> int:
     """Calculate binpack score (prefer nodes with higher load).
 
+    Uses a Gaussian curve peaking at 75% utilization for smooth scoring.
+    Avoids the step-function discontinuity of plateau+cliff approaches.
+
     Returns: 0-100 (higher = better for binpack)
     """
     if node.max_concurrency <= 0:
         return 0
 
-    # Prefer nodes with higher utilization (but not full)
     utilization = node.active_lease_count / node.max_concurrency
     if utilization >= 1.0:
         return 0  # Full nodes get 0 score
 
-    # Favor nodes that are already warm (50-90% utilized)
-    if 0.5 <= utilization <= 0.9:
-        return 100
-    elif utilization < 0.5:
-        return int(100 * utilization * 2)  # 0-50% util -> 0-100 score
-    else:
-        return int(100 * (1.0 - (utilization - 0.9) * 10))  # 90-100% util -> 100-0 score
+    bp = _get_strategy_config().binpack
+    score = math.exp(-((utilization - bp.peak_utilization) ** 2) / (2 * bp.sigma * bp.sigma)) * 100
+    return int(max(0, min(100, score)))
 
 
 def calculate_locality_score(job: Job, node: SchedulerNodeSnapshot) -> int:
-    """Calculate locality score (data + network proximity).
+    """Calculate locality score (data + network proximity + throughput).
 
     Returns: 0-100 (higher = better locality)
     """
+    lc = _get_strategy_config().locality
     score = 0
 
-    # Data locality (50 points max)
     data_locality_key = getattr(job, "data_locality_key", None)
     if data_locality_key:
         if data_locality_key in node.cached_data_keys:
-            score += 50
+            score += lc.data_locality_points
         elif len(node.cached_data_keys) > 0:
-            # Partial credit if node has other cached data (might have related data)
-            score += 10
+            score += lc.partial_cache_points
 
-    # Network proximity (50 points max)
     max_latency = getattr(job, "max_network_latency_ms", None)
     if max_latency and node.network_latency_ms > 0:
         latency_ratio = 1.0 - min(node.network_latency_ms / max_latency, 1.0)
-        score += int(50 * latency_ratio)
+        score += int(lc.network_proximity_points * latency_ratio)
     elif node.network_latency_ms == 0:
-        # Local node (no network latency)
-        score += 50
+        score += lc.network_proximity_points
+
+    bw_sat = max(lc.bandwidth_saturation_mbps, 1.0)
+    if data_locality_key and node.bandwidth_mbps > 0:
+        bw_ratio = min(node.bandwidth_mbps / bw_sat, 1.0)
+        score += int(lc.bandwidth_points * bw_ratio)
+    elif node.bandwidth_mbps > 0:
+        score += int(lc.non_local_bandwidth_points * min(node.bandwidth_mbps / bw_sat, 1.0))
 
     return min(score, 100)
 
 
-def calculate_performance_score(node: SchedulerNodeSnapshot) -> int:
+def calculate_performance_score(
+    node: SchedulerNodeSnapshot,
+) -> int:
     """Calculate performance score (prefer faster/more capable nodes).
 
     Returns: 0-100 (higher = better performance)
     """
-    score = 0
+    pc = _get_strategy_config().performance
+    score = 0.0
 
-    # Reliability (40 points max)
-    score += int(40 * node.reliability_score)
+    score += pc.reliability_weight * node.reliability_score
 
-    # Resource capacity (30 points max)
-    # Normalize by typical values: 8 cores, 16GB RAM, 8GB VRAM
-    cpu_score = min(node.cpu_cores / 8.0, 1.0) * 10
-    memory_score = min(node.memory_mb / 16384.0, 1.0) * 10
-    gpu_score = min(node.gpu_vram_mb / 8192.0, 1.0) * 10
-    score += int(cpu_score + memory_score + gpu_score)
+    cpu_score = min(node.cpu_cores / max(pc.ref_cpu, 1), 1.0) * pc.cpu_weight
+    memory_score = min(node.memory_mb / max(pc.ref_memory_mb, 1), 1.0) * pc.memory_weight
+    gpu_score = min(node.gpu_vram_mb / max(pc.ref_gpu_vram_mb, 1), 1.0) * pc.gpu_weight
+    storage_score = min(node.storage_mb / max(pc.ref_memory_mb, 1), 1.0) * pc.storage_weight
+    score += cpu_score + memory_score + gpu_score + storage_score
 
-    # Thermal state (15 points max)
     if node.thermal_state == "cool":
-        score += 15
+        score += pc.thermal_cool
     elif node.thermal_state == "normal":
-        score += 10
+        score += pc.thermal_normal
     elif node.thermal_state == "warm":
-        score += 5
+        score += pc.thermal_warm
 
-    # Bandwidth (15 points max)
     if node.bandwidth_mbps > 0:
-        # Normalize by 1Gbps = 1000 Mbps
-        score += int(15 * min(node.bandwidth_mbps / 1000.0, 1.0))
+        score += pc.bandwidth_weight * min(node.bandwidth_mbps / max(pc.ref_bandwidth_mbps, 1), 1.0)
 
-    return min(score, 100)
+    if node.power_capacity_watts > 0:
+        headroom = (node.power_capacity_watts - node.current_power_watts) / node.power_capacity_watts
+        score += pc.power_headroom_weight * max(0.0, headroom)
+
+    return min(int(score), 100)
 
 
 def calculate_balanced_score(job: Job, node: SchedulerNodeSnapshot) -> int:
-    """Calculate balanced score (mix of spread, locality, and performance).
+    """Calculate balanced score with adaptive weights.
+
+    Weights adapt to job characteristics:
+    - Jobs with data_locality_key: heavier locality weight
+    - Jobs with required_gpu_vram_mb: heavier performance weight
+    - Default: spread-oriented for even distribution
 
     Returns: 0-100 (higher = better balance)
     """
@@ -141,8 +156,20 @@ def calculate_balanced_score(job: Job, node: SchedulerNodeSnapshot) -> int:
     locality = calculate_locality_score(job, node)
     performance = calculate_performance_score(node)
 
-    # Weighted average: 40% spread, 30% locality, 30% performance
-    return int(0.4 * spread + 0.3 * locality + 0.3 * performance)
+    bw = _get_strategy_config().balanced
+    has_locality_need = bool(getattr(job, "data_locality_key", None))
+    has_heavy_compute = bool(getattr(job, "required_gpu_vram_mb", 0))
+
+    if has_locality_need and has_heavy_compute:
+        w = bw.locality_gpu
+    elif has_locality_need:
+        w = bw.locality_only
+    elif has_heavy_compute:
+        w = bw.compute_heavy
+    else:
+        w = bw.default
+
+    return int(w[0] * spread + w[1] * locality + w[2] * performance)
 
 
 def calculate_strategy_score(
@@ -223,6 +250,6 @@ def calculate_anti_affinity_penalty(
     for active_job in active_jobs_on_node:
         active_key = getattr(active_job, "anti_affinity_key", None)
         if active_key == anti_affinity_key:
-            return 50  # Heavy penalty for anti-affinity violation
+            return _get_strategy_config().anti_affinity_penalty
 
     return 0

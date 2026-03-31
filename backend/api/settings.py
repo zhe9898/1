@@ -413,3 +413,30 @@ async def get_settings_schema(
         runtime_profile=runtime_profile,
         sections=sections,
     )
+
+
+def get_runtime_version() -> str:
+    """Read VERSION from pyproject.toml or fallback."""
+    try:
+        import tomllib
+        with open("pyproject.toml", "rb") as f:
+            data = tomllib.load(f)
+        return data.get("project", {}).get("version", "unknown")
+    except Exception:
+        return "unknown"
+
+
+def get_model_registry():
+    """Lazy import to avoid circular dependency."""
+    from backend.ai_router import model_registry  # type: ignore[import-untyped]
+    return model_registry
+
+
+@router.get("/system-info")
+async def system_info(
+    db: AsyncSession | None = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, object]:
+    require_superadmin_role(current_user)
+    version = get_runtime_version()
+    return {"status": "ok", "version": version}

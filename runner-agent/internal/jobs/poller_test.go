@@ -113,7 +113,7 @@ func TestLoopReportsProgressAndResult(t *testing.T) {
 		PullInterval: time.Hour,
 	}
 
-	err := Loop(ctx, cfg, client, runnerexec.New(runnerexec.Config{DefaultTimeoutSeconds: 300, MaxOutputBytes: 1 << 20}))
+	err := Loop(ctx, cfg, client, runnerexec.New(runnerexec.Config{DefaultTimeoutSeconds: 300, MaxOutputBytes: 1 << 20}, nil))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)
 	}
@@ -213,7 +213,7 @@ func TestLoopReportsFailureForUnsupportedJobs(t *testing.T) {
 		PullInterval: time.Hour,
 	}
 
-	err := Loop(ctx, cfg, client, runnerexec.New(runnerexec.Config{DefaultTimeoutSeconds: 300, MaxOutputBytes: 1 << 20}))
+	err := Loop(ctx, cfg, client, runnerexec.New(runnerexec.Config{DefaultTimeoutSeconds: 300, MaxOutputBytes: 1 << 20}, nil))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)
 	}

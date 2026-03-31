@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import get_current_user, get_db, get_tenant_db
 from backend.api.main import app
 
 
@@ -36,8 +36,29 @@ async def override_get_db() -> AsyncGenerator[AsyncMock, None]:
     yield mock_session
 
 
+async def override_get_tenant_db(
+    current_user: dict[str, str] | None = None,
+) -> AsyncGenerator[AsyncMock, None]:
+    """Bypass RLS assert_rls_ready by providing a mock session directly."""
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+
+    mock_scalar_result = MagicMock()
+    mock_scalar_result.all.return_value = []
+    mock_scalar_result.first.return_value = None
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_result.all.return_value = []
+    mock_result.scalars.return_value = mock_scalar_result
+
+    mock_session.execute.return_value = mock_result
+    yield mock_session
+
+
 app.dependency_overrides[get_current_user] = override_get_current_user
 app.dependency_overrides[get_db] = override_get_db
+app.dependency_overrides[get_tenant_db] = override_get_tenant_db
 client = TestClient(app)
 
 
@@ -85,7 +106,7 @@ def test_capabilities_has_envelope() -> None:
 def test_settings_system_has_envelope() -> None:
     app.dependency_overrides[get_current_user] = override_get_superadmin_user
     try:
-        response = client.get("/api/v1/settings/system")
+        response = client.get("/api/v1/settings/system-info")
         _assert_success_envelope(response)
     finally:
         app.dependency_overrides[get_current_user] = override_get_current_user

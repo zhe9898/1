@@ -58,10 +58,10 @@ def test_create_job_enforces_concurrent_limits() -> None:
 @pytest.mark.xfail(reason="P1.1: Concurrent limits are defined but not enforced in pull_jobs()")
 def test_pull_jobs_respects_concurrent_limits() -> None:
     """EXPECTED TO FAIL: pull_jobs() should respect concurrent limits but doesn't."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
     # pull_jobs() should filter candidates by concurrent limits
-    pull_jobs_func = routes[routes.find("async def pull_jobs(") : routes.find("async def complete_job(")]
+    pull_jobs_func = dispatch[dispatch.find("async def pull_jobs("):]
     assert "max_concurrent" in pull_jobs_func, "pull_jobs() should check concurrent limits"
 
 
@@ -87,10 +87,10 @@ def test_job_type_separation_defines_retry_delays() -> None:
 @pytest.mark.xfail(reason="P1.2: Retry delays are defined but not implemented in fail_job()")
 def test_fail_job_implements_retry_delay() -> None:
     """EXPECTED TO FAIL: fail_job() should implement retry delay but doesn't."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    lifecycle = (REPO_ROOT / "backend" / "api" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
 
     # Should have retry_at field or similar delay mechanism
-    fail_job_func = routes[routes.find("async def fail_job(") : routes.find("async def report_job_progress(")]
+    fail_job_func = lifecycle[lifecycle.find("async def fail_job(") : lifecycle.find("async def report_job_progress(")]
     assert "retry_delay_seconds" in fail_job_func, "fail_job() should use retry_delay_seconds"
     assert "retry_at" in fail_job_func or "delayed_until" in fail_job_func, "fail_job() should set retry delay timestamp"
 
@@ -106,9 +106,9 @@ def test_job_model_has_retry_at_field() -> None:
 @pytest.mark.xfail(reason="P1.2: pull_jobs() should filter out delayed retries but doesn't")
 def test_pull_jobs_filters_delayed_retries() -> None:
     """EXPECTED TO FAIL: pull_jobs() should filter out jobs with retry_at > now."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
-    pull_jobs_func = routes[routes.find("async def pull_jobs(") : routes.find("async def complete_job(")]
+    pull_jobs_func = dispatch[dispatch.find("async def pull_jobs("):]
     assert "retry_at" in pull_jobs_func or "delayed_until" in pull_jobs_func, "pull_jobs() should filter delayed retries"
 
 
@@ -166,12 +166,14 @@ def test_select_jobs_for_node_passes_accepted_kinds_to_count() -> None:
 
 def test_retry_job_now_resets_retry_count() -> None:
     """CURRENT BEHAVIOR: retry_job_now() resets retry_count."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    lifecycle = (REPO_ROOT / "backend" / "api" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
 
     # Find retry_job_now function
-    func_start = routes.find("async def retry_job_now(")
-    func_end = routes.find("\n\n@router.", func_start + 1)
-    func_body = routes[func_start:func_end]
+    func_start = lifecycle.find("async def retry_job_now(")
+    func_end = lifecycle.find("\n\n@router.", func_start + 1)
+    if func_end == -1:
+        func_end = len(lifecycle)
+    func_body = lifecycle[func_start:func_end]
 
     assert "retry_count = 0" in func_body, "retry_job_now() should reset retry_count"
 
@@ -179,12 +181,14 @@ def test_retry_job_now_resets_retry_count() -> None:
 @pytest.mark.xfail(reason="P1.5: retry_job_now() should reset attempt_count but doesn't")
 def test_retry_job_now_should_reset_attempt_count() -> None:
     """EXPECTED TO FAIL: retry_job_now() should reset attempt_count for manual retry."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    lifecycle = (REPO_ROOT / "backend" / "api" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
 
     # Find retry_job_now function
-    func_start = routes.find("async def retry_job_now(")
-    func_end = routes.find("\n\n@router.", func_start + 1)
-    func_body = routes[func_start:func_end]
+    func_start = lifecycle.find("async def retry_job_now(")
+    func_end = lifecycle.find("\n\n@router.", func_start + 1)
+    if func_end == -1:
+        func_end = len(lifecycle)
+    func_body = lifecycle[func_start:func_end]
 
     assert "attempt_count = 0" in func_body, "retry_job_now() should reset attempt_count for manual retry"
 
@@ -196,15 +200,14 @@ def test_retry_job_now_should_reset_attempt_count() -> None:
 
 def test_pull_jobs_uses_candidate_window_before_aging() -> None:
     """CURRENT BEHAVIOR: pull_jobs() fetches candidate window before applying aging."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
     # Find pull_jobs function
-    func_start = routes.find("async def pull_jobs(")
-    func_end = routes.find("async def complete_job(", func_start)
-    func_body = routes[func_start:func_end]
+    func_start = dispatch.find("async def pull_jobs(")
+    func_body = dispatch[func_start:]
 
-    # Verify candidate window logic
-    assert "candidate_limit = min(max(payload.limit * 40, 40), 200)" in func_body
+    # Verify candidate window logic (now reads limits from policy store)
+    assert "_dc.candidate_multiplier" in func_body or "_dc.candidate_min" in func_body
     assert ".limit(candidate_limit)" in func_body
     assert "sort_jobs_by_stratified_priority" in func_body
 
@@ -217,7 +220,7 @@ def test_pull_jobs_uses_candidate_window_before_aging() -> None:
 @pytest.mark.xfail(reason="P2.1: Aging should be applied in DB query, not after candidate window")
 def test_pull_jobs_should_apply_aging_in_db_query() -> None:
     """EXPECTED TO FAIL: Ideal solution would apply aging in DB query, not after fetching."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")  # noqa: F841
 
     # This is a design limitation - aging is applied after fetching candidate window
     # Ideal solution would use DB-level effective priority calculation
@@ -232,12 +235,11 @@ def test_pull_jobs_should_apply_aging_in_db_query() -> None:
 
 def test_expire_previous_attempt_is_passive() -> None:
     """CURRENT BEHAVIOR: _expire_previous_attempt_if_needed() is called only when job is leased again."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
     # Find pull_jobs function
-    func_start = routes.find("async def pull_jobs(")
-    func_end = routes.find("async def complete_job(", func_start)
-    func_body = routes[func_start:func_end]
+    func_start = dispatch.find("async def pull_jobs(")
+    func_body = dispatch[func_start:]
 
     # Verify passive cleanup
     assert "_expire_previous_attempt_if_needed" in func_body, "Expired attempts are cleaned up passively during next lease"
@@ -264,22 +266,20 @@ def test_should_have_active_attempt_expiration_worker() -> None:
 
 def test_attempt_incremented_on_lease() -> None:
     """CURRENT BEHAVIOR: job.attempt is incremented on each lease."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
-    func_start = routes.find("async def pull_jobs(")
-    func_end = routes.find("async def complete_job(", func_start)
-    func_body = routes[func_start:func_end]
+    func_start = dispatch.find("async def pull_jobs(")
+    func_body = dispatch[func_start:]
 
     assert "job.attempt = int(job.attempt or 0) + 1" in func_body
 
 
 def test_attempt_count_incremented_on_retry() -> None:
     """FIXED: job.attempt_count is now incremented on every lease in pull_jobs(), not just retry in fail_job."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
-    func_start = routes.find("async def pull_jobs(")
-    func_end = routes.find("async def complete_job(", func_start)
-    func_body = routes[func_start:func_end]
+    func_start = dispatch.find("async def pull_jobs(")
+    func_body = dispatch[func_start:]
 
     assert "attempt_count" in func_body, "attempt_count should be incremented in pull_jobs (on every lease)"
 
@@ -287,11 +287,10 @@ def test_attempt_count_incremented_on_retry() -> None:
 @pytest.mark.xfail(reason="P2.4: attempt_count should track total attempts, not just retries")
 def test_attempt_count_should_be_incremented_on_every_lease() -> None:
     """EXPECTED TO FAIL: attempt_count should be incremented on every lease, not just retries."""
-    routes = (REPO_ROOT / "backend" / "api" / "jobs" / "routes.py").read_text(encoding="utf-8")
+    dispatch = (REPO_ROOT / "backend" / "api" / "jobs" / "dispatch.py").read_text(encoding="utf-8")
 
-    func_start = routes.find("async def pull_jobs(")
-    func_end = routes.find("async def complete_job(", func_start)
-    func_body = routes[func_start:func_end]
+    func_start = dispatch.find("async def pull_jobs(")
+    func_body = dispatch[func_start:]
 
     # Should increment attempt_count in pull_jobs, not just in fail_job
     assert "job.attempt_count" in func_body, "attempt_count should be incremented in pull_jobs()"

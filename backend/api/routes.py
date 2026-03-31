@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.api.deps import get_current_user_optional, get_redis
+from backend.api.deps import get_current_user, get_current_user_optional, get_redis
 from backend.api.models import CapabilityResponse
 from backend.capabilities import build_public_capability_matrix
 from backend.core.errors import zen

@@ -71,3 +71,11 @@
 - 仓库正式 surface 不得再包含 `config/system.yaml`；根 `system.yaml` 是唯一正式配置入口。
 - `deploy/config-compiler.py` 必须保持为对 `scripts/compiler.py` 的兼容 wrapper，不得再次嵌入第二套编译器逻辑。
 - bundle 校验必须同时检查 `system.yaml / render-manifest.json / docker-compose.yml / config/Caddyfile / docs/openapi-kernel.json / contracts/openapi/zen70-gateway-kernel.openapi.json` 的一致性，而不是只检查文件存在。
+
+## 2026-03-31 增补
+
+## 代码体积门禁（防石山）
+- `backend/` 源码文件（不含测试、`__pycache__`、`alembic`）单文件不得超过 **600 行**；超限文件必须拆分或在白名单中注明原因。
+- `backend/` 测试文件单文件不得超过 **800 行**；超限文件必须在白名单中注明原因。
+- 白名单维护在 `tests/test_repo_hardening.py` 的 `_BACKEND_SOURCE_ALLOWLIST` / `_BACKEND_TEST_ALLOWLIST` 中；每条必须附注理由，审查时视为技术债。
+- 新增 `backend/` 文件时若无法控制在阈值内，须先在 PR 中说明拆分阻碍。

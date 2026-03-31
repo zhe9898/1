@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -53,7 +53,9 @@ def _connector(**overrides: object) -> Connector:
 
 
 @pytest.mark.asyncio
-async def test_upsert_connector_scopes_lookup_to_current_tenant() -> None:
+@patch("backend.api.connectors.validate_connector_config", return_value={})
+@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
+async def test_upsert_connector_scopes_lookup_to_current_tenant(_mock_quota: AsyncMock, _mock_validate: MagicMock) -> None:
     db = AsyncMock()
     db.execute.return_value = _scalar_result(None)
     db.flush = AsyncMock()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -14,6 +14,7 @@ def _scalar_result(value: object | None) -> MagicMock:
     scalars = MagicMock()
     scalars.first.return_value = value
     result.scalars.return_value = scalars
+    result.scalar.return_value = value
     return result
 
 
@@ -56,6 +57,10 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
     existing_other_tenant.tenant_id = "tenant-beta"
 
     def execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
+        rendered = str(statement)
+        # count() queries for concurrent limits → return 0
+        if "count(*)" in rendered.lower():
+            return _scalar_result(0)
         compiled = statement.compile()
         params = compiled.params
         if params.get("tenant_id_1") == "tenant-alpha" and params.get("idempotency_key_1") == "invoke-1":
@@ -96,17 +101,22 @@ def test_control_plane_schema_migration_uses_tenant_scoped_uniqueness() -> None:
 
 
 def test_machine_endpoints_use_machine_tenant_db_dependency() -> None:
-    # Route handlers now live in the modular jobs/ package, not the old monolithic jobs.py
-    jobs_routes_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "routes.py"
+    # Route handlers now live in the modular jobs/ package split across routes/dispatch/lifecycle
+    jobs_dispatch_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "dispatch.py"
+    jobs_lifecycle_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "lifecycle.py"
     jobs_db_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "database.py"
     nodes_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "nodes.py"
+    nodes_helpers_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "nodes_helpers.py"
 
-    jobs_routes_text = jobs_routes_source.read_text(encoding="utf-8")
+    jobs_dispatch_text = jobs_dispatch_source.read_text(encoding="utf-8")
+    jobs_lifecycle_text = jobs_lifecycle_source.read_text(encoding="utf-8")
     jobs_db_text = jobs_db_source.read_text(encoding="utf-8")
     nodes_text = nodes_source.read_text(encoding="utf-8")
+    nodes_helpers_text = nodes_helpers_source.read_text(encoding="utf-8")
 
-    assert "db: AsyncSession = Depends(get_machine_tenant_db)" in jobs_routes_text
+    assert "db: AsyncSession = Depends(get_machine_tenant_db)" in jobs_dispatch_text
+    assert "db: AsyncSession = Depends(get_machine_tenant_db)" in jobs_lifecycle_text
     assert "db: AsyncSession = Depends(get_machine_tenant_db)" in nodes_text
-    # DB query pattern lives in the database helper module, not the routes layer
+    # DB query pattern lives in the database/helper modules, not the routes layer
     assert "select(Job).where(Job.tenant_id == tenant_id, Job.job_id == job_id)" in jobs_db_text
-    assert "select(Node).where(Node.tenant_id == tenant_id, Node.node_id == node_id)" in nodes_text
+    assert "select(Node).where(Node.tenant_id == tenant_id, Node.node_id == node_id)" in nodes_helpers_text

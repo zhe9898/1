@@ -356,17 +356,30 @@ def main() -> None:
     include_frontend_dist = os.environ.get("ZEN70_INSTALL_INCLUDE_FRONTEND_DIST", "").strip() == "1"
     skip_gate = os.environ.get("ZEN70_SKIP_RELEASE_GATE", "").strip() == "1"
 
+    # ── CI 环境硬拦截：即使设了 SKIP 也不允许在 CI 里绕过 ─────────────────────
+    _in_ci = any(
+        os.environ.get(v)
+        for v in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "TF_BUILD", "BUILDKITE")
+    )
+    if skip_gate and _in_ci:
+        logger.error(
+            "🚫 FATAL: ZEN70_SKIP_RELEASE_GATE=1 is forbidden in CI environments. "
+            "Release gates cannot be bypassed in automated pipelines. "
+            "Remove the environment variable and fix the failing gates."
+        )
+        raise SystemExit(1)
+
     # ── 打包前门禁 ─────────────────────────────────────────────────────────────
     if skip_gate:
         # !! STRICTLY LOCAL DEBUGGING ONLY !!
         # ZEN70_SKIP_RELEASE_GATE=1 MUST NOT be set in:
-#   - Any CI/CD pipeline (GitHub Actions, GitLab CI, Jenkins, etc.)
-#   - Any production or staging packaging workflow
-#   - Any Makefile / release.sh used for official releases
+        #   - Any CI/CD pipeline (GitHub Actions, GitLab CI, Jenkins, etc.)
+        #   - Any production or staging packaging workflow
+        #   - Any Makefile / release.sh used for official releases
         # The only legitimate use: local offline debugging when deps are unavailable.
         # Formal escape path is documented in ADR-0047. Misuse voids the release gate contract.
         logger.warning(
-            "⚠  RELEASE GATES SKIPPED — ZEN70_SKIP_RELEASE_GATE=1 is set. "
+            "⚠  RELEASE GATES SKIPPED — ZEN70_SKIP_RELEASE_GATE=1 is set (local debug only). "
             "THIS MUST NOT BE USED IN CI OR OFFICIAL RELEASE WORKFLOWS."
         )
     else:

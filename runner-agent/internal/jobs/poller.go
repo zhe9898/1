@@ -52,7 +52,7 @@ func executeAndReport(
 
 	reportProgress(jobCtx, cfg, client, job, 5, "runner accepted lease", "runner execution started")
 
-	result, execErr := executor.Run(jobCtx, job.Kind, job.Payload, job.LeaseSeconds)
+	result, execErr := executor.RunJob(jobCtx, job.JobID, job.Kind, job.Payload, job.LeaseSeconds)
 	cancel()
 	<-renewDone
 

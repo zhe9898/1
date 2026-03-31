@@ -45,4 +45,5 @@ DEFAULT_QUOTAS: dict[str, int] = {
     "connectors": 100,
     "jobs_concurrent": 200,
     "jobs_per_hour": 10_000,
+    "jobs_per_kind": 100,  # per-kind concurrent jobs (key pattern: jobs_per_kind:<kind>)
 }

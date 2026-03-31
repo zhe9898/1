@@ -1,8 +1,17 @@
 """Failure Control Plane — node quarantine, burst detection, connector cooling, kind circuit breaking.
 
-In-memory singleton tracker. All state is process-local and resets on restart,
-which is acceptable for an MVP: the control plane is a *fast-react* layer,
-not persistent policy. Persistent bans belong in the database.
+In-memory singleton tracker with governance audit trail. All control state
+is process-local and resets on restart, which is acceptable for an MVP:
+the control plane is a *fast-react* layer, not persistent policy.
+Persistent bans belong in the database.
+
+Governance additions (v2):
+- Every state transition (quarantine, cooling, circuit, burst) is recorded
+  in an in-memory timeline deque with structured metadata.
+- ``governance_timeline()`` returns the full or filtered event history.
+- ``governance_stats()`` returns aggregate governance KPIs.
+- Callers (dispatch/lifecycle) can emit to the DB AuditLog table via the
+  ``pending_audit_events`` property — flushed by the API layer after commit.
 
 Thread-safety: all mutations go through ``asyncio.Lock`` so the FastAPI
 event-loop can safely read/write concurrently.
@@ -34,6 +43,9 @@ KIND_CIRCUIT_OPEN_DURATION_S = 60  # 1 min open state before half-open
 BURST_WINDOW_S = 300  # global burst detection window
 BURST_THRESHOLD = 20  # failures in window to trigger burst alert
 
+# Governance timeline capacity
+_GOVERNANCE_TIMELINE_MAX = 2000
+
 
 class FailureEvent(NamedTuple):
     ts: datetime.datetime
@@ -41,8 +53,22 @@ class FailureEvent(NamedTuple):
     job_id: str
 
 
+class GovernanceEvent(NamedTuple):
+    """Structured audit record for topology governance."""
+
+    ts: datetime.datetime
+    event_type: str  # quarantine, release, cooling, circuit_open, circuit_reset, burst
+    resource_type: str  # node, connector, kind, global
+    resource_id: str
+    details: dict[str, object]
+
+
 class FailureControlPlane:
-    """In-memory failure tracking for nodes, connectors, and job kinds."""
+    """In-memory failure tracking for nodes, connectors, and job kinds.
+
+    v2: includes a governance timeline for audit/compliance and a
+    ``pending_audit_events`` buffer for DB-level audit log emission.
+    """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -66,6 +92,52 @@ class FailureControlPlane:
 
         # ── Global burst detection ───────────────────────────────────
         self._global_events: deque[FailureEvent] = deque(maxlen=500)
+
+        # ── Governance timeline ──────────────────────────────────────
+        self._governance_timeline: deque[GovernanceEvent] = deque(
+            maxlen=_GOVERNANCE_TIMELINE_MAX
+        )
+        # Buffer for DB-level audit entries. Callers drain after commit.
+        self._pending_audit_events: list[dict[str, object]] = []
+
+    def _record_governance(
+        self,
+        event_type: str,
+        resource_type: str,
+        resource_id: str,
+        now: datetime.datetime,
+        details: dict[str, object] | None = None,
+        *,
+        actor: str = "system",
+    ) -> None:
+        """Append a governance event to the in-memory timeline and pending buffer."""
+        merged_details = {**(details or {}), "actor": actor}
+        evt = GovernanceEvent(
+            ts=now,
+            event_type=event_type,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            details=merged_details,
+        )
+        self._governance_timeline.append(evt)
+        self._pending_audit_events.append({
+            "action": f"fcp.{event_type}",
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "actor": actor,
+            "details": {
+                "event_type": event_type,
+                "resource_id": resource_id,
+                **merged_details,
+            },
+        })
+
+    @property
+    def pending_audit_events(self) -> list[dict[str, object]]:
+        """Drain and return buffered audit entries for DB commit."""
+        events = list(self._pending_audit_events)
+        self._pending_audit_events.clear()
+        return events
 
     # ── Record a failure ─────────────────────────────────────────────
 
@@ -119,6 +191,17 @@ class FailureControlPlane:
                 until.isoformat(),
                 count,
             )
+            self._record_governance(
+                "quarantine",
+                "node",
+                node_id,
+                now,
+                {
+                    "until": until.isoformat(),
+                    "consecutive_failures": count,
+                    "duration_s": NODE_QUARANTINE_DURATION_S,
+                },
+            )
             return {"node_quarantined": until.isoformat()}
         return {}
 
@@ -156,6 +239,17 @@ class FailureControlPlane:
                 until.isoformat(),
                 len(recent),
             )
+            self._record_governance(
+                "cooling",
+                "connector",
+                connector_id,
+                now,
+                {
+                    "until": until.isoformat(),
+                    "failures_in_window": len(recent),
+                    "duration_s": CONNECTOR_COOLING_DURATION_S,
+                },
+            )
             return {"connector_cooled": until.isoformat()}
         return {}
 
@@ -191,6 +285,13 @@ class FailureControlPlane:
             logger.warning(
                 "kind '%s' circuit OPEN (%d failures in window)", kind, len(recent)
             )
+            self._record_governance(
+                "circuit_open",
+                "kind",
+                kind,
+                now,
+                {"failures_in_window": len(recent), "open_duration_s": KIND_CIRCUIT_OPEN_DURATION_S},
+            )
             return {"kind_circuit_opened": kind}
 
         if state == "open":
@@ -215,10 +316,20 @@ class FailureControlPlane:
                 pass
             return state
 
-    async def reset_kind_circuit(self, kind: str) -> None:
+    async def reset_kind_circuit(self, kind: str, *, actor: str = "system") -> None:
         """Reset circuit to closed (called after a successful execution in half-open)."""
         async with self._lock:
-            self._kind_circuit.pop(kind, None)
+            prev = self._kind_circuit.pop(kind, None)
+            if prev:
+                now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                self._record_governance(
+                    "circuit_reset",
+                    "kind",
+                    kind,
+                    now,
+                    {"previous_state": prev[0]},
+                    actor=actor,
+                )
 
     # ── Global burst detection ───────────────────────────────────────
 
@@ -234,8 +345,44 @@ class FailureControlPlane:
                 len(recent),
                 BURST_WINDOW_S,
             )
+            self._record_governance(
+                "burst",
+                "global",
+                "system",
+                now,
+                {"failures_in_window": len(recent), "window_s": BURST_WINDOW_S},
+            )
             return {"burst_detected": len(recent)}
         return {}
+
+    # ── Burst query (synchronous, lock-free for hot path) ────────────
+
+    def is_in_burst(self, *, now: datetime.datetime) -> bool:
+        """Quick check if we're in a failure burst. Lock-free read for dispatch hot path."""
+        cutoff = now - datetime.timedelta(seconds=BURST_WINDOW_S)
+        recent = sum(1 for e in self._global_events if e.ts >= cutoff)
+        return recent >= BURST_THRESHOLD
+
+    # ── Admin: manual quarantine release ─────────────────────────────
+
+    async def release_quarantine(self, node_id: str, *, actor: str = "admin") -> bool:
+        """Manually release a node from quarantine. Returns True if node was quarantined."""
+        async with self._lock:
+            if node_id in self._quarantine_until:
+                del self._quarantine_until[node_id]
+                self._node_consecutive[node_id] = 0
+                logger.info("node %s manually released from quarantine by %s", node_id, actor)
+                now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                self._record_governance(
+                    "release",
+                    "node",
+                    node_id,
+                    now,
+                    {"trigger": "manual_admin"},
+                    actor=actor,
+                )
+                return True
+            return False
 
     # ── Diagnostics ──────────────────────────────────────────────────
 
@@ -260,7 +407,75 @@ class FailureControlPlane:
                 "cooled_connectors": cooled,
                 "kind_circuits": circuits,
                 "global_recent_failures": len(self._global_events),
+                "governance_event_count": len(self._governance_timeline),
             }
+
+    async def governance_timeline(
+        self,
+        *,
+        event_type: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        since: datetime.datetime | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        """Query the governance event timeline with optional filters.
+
+        Returns events in reverse chronological order (newest first).
+        """
+        async with self._lock:
+            events = list(self._governance_timeline)
+
+        # Apply filters
+        if since is not None:
+            events = [e for e in events if e.ts >= since]
+        if event_type is not None:
+            events = [e for e in events if e.event_type == event_type]
+        if resource_type is not None:
+            events = [e for e in events if e.resource_type == resource_type]
+        if resource_id is not None:
+            events = [e for e in events if e.resource_id == resource_id]
+
+        # Reverse chronological, limited
+        events.reverse()
+        events = events[:limit]
+
+        return [
+            {
+                "ts": e.ts.isoformat(),
+                "event_type": e.event_type,
+                "resource_type": e.resource_type,
+                "resource_id": e.resource_id,
+                "details": e.details,
+            }
+            for e in events
+        ]
+
+    async def governance_stats(self, *, now: datetime.datetime) -> dict[str, object]:
+        """Return aggregate governance KPIs for observability dashboards."""
+        async with self._lock:
+            events = list(self._governance_timeline)
+
+        # Count event types
+        type_counts: dict[str, int] = defaultdict(int)
+        for e in events:
+            type_counts[e.event_type] += 1
+
+        # Recent window (last hour)
+        hour_ago = now - datetime.timedelta(hours=1)
+        recent = [e for e in events if e.ts >= hour_ago]
+        recent_type_counts: dict[str, int] = defaultdict(int)
+        for e in recent:
+            recent_type_counts[e.event_type] += 1
+
+        return {
+            "total_events": len(events),
+            "event_type_counts": dict(type_counts),
+            "last_hour": {
+                "total": len(recent),
+                "by_type": dict(recent_type_counts),
+            },
+        }
 
 
 # ── Module-level singleton ───────────────────────────────────────────

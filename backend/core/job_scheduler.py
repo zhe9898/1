@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import datetime
-import hashlib
-from dataclasses import dataclass
-
+import heapq
+import logging
+from dataclasses import dataclass, field
+from backend.core.job_scoring import (  # noqa: F401 – re-export
+    _stable_tiebreak,
+    score_job_for_node,
+)
+from backend.core.scheduling_strategies import check_node_affinity
 from backend.models.job import Job
 from backend.models.node import Node
 
-_NODE_STALE_AFTER_SECONDS = 45
+logger = logging.getLogger(__name__)
+
+
+def _node_stale_seconds() -> int:
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.freshness.stale_after_seconds
 
 
 @dataclass(slots=True)
@@ -90,8 +100,7 @@ def is_node_eligible(node: SchedulerNodeSnapshot, now: datetime.datetime) -> boo
         return False
     if node.active_lease_count >= max(node.max_concurrency, 1):
         return False
-    return (now - node.last_seen_at).total_seconds() <= _NODE_STALE_AFTER_SECONDS
-
+    return (now - node.last_seen_at).total_seconds() <= _node_stale_seconds()
 
 def _resource_blockers(job: Job, node: SchedulerNodeSnapshot) -> list[str]:
     blockers: list[str] = []
@@ -113,23 +122,6 @@ def _resource_blockers(job: Job, node: SchedulerNodeSnapshot) -> list[str]:
     return blockers
 
 
-def _resource_fit_bonus(job: Job, node: SchedulerNodeSnapshot) -> int:
-    bonus = 0
-    if (getattr(job, "target_executor", None) or "").strip() == node.executor:
-        bonus += 12
-    for required, available in (
-        (max(int(getattr(job, "required_cpu_cores", 0) or 0), 0), node.cpu_cores),
-        (max(int(getattr(job, "required_memory_mb", 0) or 0), 0), node.memory_mb),
-        (max(int(getattr(job, "required_gpu_vram_mb", 0) or 0), 0), node.gpu_vram_mb),
-        (max(int(getattr(job, "required_storage_mb", 0) or 0), 0), node.storage_mb),
-    ):
-        if required <= 0 or available <= 0:
-            continue
-        closeness = min(required / max(available, 1), 1.0)
-        bonus += int(6 * closeness)
-    return bonus
-
-
 def node_blockers_for_job(
     job: Job,
     node: SchedulerNodeSnapshot,
@@ -144,7 +136,7 @@ def node_blockers_for_job(
         blockers.append(f"status={node.status}")
     if node.drain_status != "active":
         blockers.append(f"drain={node.drain_status}")
-    if (now - node.last_seen_at).total_seconds() > _NODE_STALE_AFTER_SECONDS:
+    if (now - node.last_seen_at).total_seconds() > _node_stale_seconds():
         blockers.append("heartbeat=stale")
     if node.active_lease_count >= max(node.max_concurrency, 1):
         blockers.append("capacity=full")
@@ -239,162 +231,39 @@ def count_eligible_nodes_for_job(
     return count
 
 
-def _stable_tiebreak(job_id: str, node_id: str) -> int:
-    digest = hashlib.sha1(f"{job_id}:{node_id}".encode("utf-8")).hexdigest()
-    return int(digest[:8], 16)
-
-
-def _power_efficiency_bonus(job: Job, node: SchedulerNodeSnapshot) -> int:
-    """Power headroom bonus (0-15): prefer nodes with more available power."""
-    power_budget = getattr(job, "power_budget_watts", None)
-    if not power_budget or node.power_capacity_watts <= 0:
-        return 0
-    available_power = node.power_capacity_watts - node.current_power_watts
-    if available_power < power_budget:
-        return 0
-    headroom_ratio = min((available_power - power_budget) / power_budget, 1.0)
-    return int(15 * headroom_ratio)
-
-
-def _thermal_bonus(job: Job, node: SchedulerNodeSnapshot) -> int:
-    """Thermal state bonus (0-10): prefer cooler nodes for thermal-sensitive jobs."""
-    thermal_sensitivity = getattr(job, "thermal_sensitiv ity", None)
-    if thermal_sensitivity != "high":
-        return 0
-    if node.thermal_state == "cool":
-        return 10
-    if node.thermal_state == "normal":
-        return 5
-    return 0
-
-
-def _affinity_bonus(job: Job, node: SchedulerNodeSnapshot) -> int:
-    """Affinity match bonus (0-20)."""
-    from backend.core.scheduling_strategies import check_node_affinity
-
-    affinity_matches, _ = check_node_affinity(job, node)
-    if not affinity_matches:
-        return 0
-    affinity_labels = getattr(job, "affinity_labels", None) or {}
-    return 20 if affinity_labels else 0
-
-
-def _sla_risk_to_score(risk: float, level: str) -> int:
-    """Convert SLA breach risk into a scoring bonus (0-30).
-
-    Higher risk → higher urgency → higher score to prioritize the job.
-    """
-    if level in ("critical", "breached"):
-        return 30
-    if level == "high":
-        return 20
-    if level == "medium":
-        return 10
-    return 0
-
-
-def _batch_co_location_bonus(job: Job, active_jobs_on_node: list[Job]) -> int:
-    """Bonus for scheduling a job on a node already running same-batch jobs (0-15)."""
-    batch_key = getattr(job, "batch_key", None)
-    if not batch_key:
-        return 0
-    co_located = sum(1 for j in active_jobs_on_node if getattr(j, "batch_key", None) == batch_key)
-    return min(co_located * 5, 15)
-
-
-def score_job_for_node(
-    job: Job,
-    node: SchedulerNodeSnapshot,
+def batch_eligible_counts(
+    jobs: list[Job],
+    active_nodes: list[SchedulerNodeSnapshot],
     *,
     now: datetime.datetime,
-    total_active_nodes: int,
-    eligible_nodes_count: int,
-    recent_failed_job_ids: set[str],
-    active_jobs_on_node: list[Job] | None = None,
-) -> int:
-    """Score job-node match with edge computing factors and scheduling strategies.
+    accepted_kinds: set[str] | None = None,
+) -> dict[str, int]:
+    """Pre-compute eligible node counts for a batch of jobs.
 
-    Returns (total_score, breakdown_dict) for explain-trace debugging.
-
-    Scoring components:
-    - Priority: 0-100 (base job priority)
-    - Age: 0-60 (minutes waiting, capped at 1 hour)
-    - Scarcity: 0-100 (fewer eligible nodes = higher score)
-    - Reliability: 0-20 (node success rate)
-    - Strategy: 0-100 (scheduling strategy bonus, includes locality/spread/etc.)
-    - Zone: 0-10 (zone match — data/latency locality is in strategy layer)
-    - Resource fit: 0-24 (executor match + resource closeness)
-    - Power efficiency: 0-15 (available power headroom)
-    - Thermal: 0-10 (thermal state bonus)
-    - Affinity: 0-20 (affinity match bonus)
-    - SLA urgency: 0-30 (approaching SLA breach)
-    - Batch bonus: 0-15 (batch scheduling co-location)
-    - Load penalty: 0-40 (current node load)
-    - Recent failure penalty: 0-40 (job failed on this node recently)
-    - Anti-affinity penalty: 0-50 (anti-affinity violation)
-
-    Total range: -130 to 504
+    Shares a single live-node filter across all jobs so that
+    enrollment / status / drain / heartbeat checks happen once,
+    not once per (job × node) pair.
     """
-    from backend.core.scheduling_strategies import (
-        SchedulingStrategy,
-        calculate_anti_affinity_penalty,
-        calculate_strategy_score,
-    )
-    from backend.core.business_scheduling import calculate_sla_breach_risk
+    # Phase 1: filter live nodes once
+    live_nodes = [n for n in active_nodes if is_node_eligible(n, now)]
 
-    # ── Positive dimensions ──────────────────────────────────────────
-    priority_score = max(0, min(int(job.priority or 0), 100))
-
-    age_minutes = max(int((now - job.created_at).total_seconds() // 60), 0)
-    age_score = min(age_minutes, 60)
-
-    scarcity_score = (
-        int(100 * max(total_active_nodes - eligible_nodes_count, 0) / total_active_nodes)
-        if total_active_nodes > 0
-        else 0
-    )
-
-    reliability_score = int(max(0.0, min(node.reliability_score, 1.0)) * 20)
-
-    strategy = getattr(job, "scheduling_strategy", None) or SchedulingStrategy.SPREAD
-    try:
-        strategy_enum = SchedulingStrategy(strategy)
-    except ValueError:
-        strategy_enum = SchedulingStrategy.SPREAD
-    strategy_score = calculate_strategy_score(strategy_enum, job, node)
-
-    zone_bonus = 10 if (job.target_zone and job.target_zone == node.zone) else 0
-
-    sla_risk, sla_level = calculate_sla_breach_risk(job, now=now)
-
-    _active_jobs = active_jobs_on_node or []
-    breakdown = {
-        "priority": priority_score,
-        "age": age_score,
-        "scarcity": scarcity_score,
-        "reliability": reliability_score,
-        "strategy": strategy_score,
-        "zone": zone_bonus,
-        "resource_fit": _resource_fit_bonus(job, node),
-        "power": _power_efficiency_bonus(job, node),
-        "thermal": _thermal_bonus(job, node),
-        "affinity": _affinity_bonus(job, node),
-        "sla_urgency": _sla_risk_to_score(sla_risk, sla_level),
-        "batch": _batch_co_location_bonus(job, _active_jobs),
-    }
-
-    # ── Negative dimensions (penalties) ──────────────────────────────
-    load_penalty = int(40 * (node.active_lease_count / max(node.max_concurrency, 1)))
-    recent_failure_penalty = 40 if job.job_id in recent_failed_job_ids else 0
-    anti_affinity_penalty = calculate_anti_affinity_penalty(
-        job, node, active_jobs_on_node=_active_jobs,
-    )
-    breakdown["load_penalty"] = -load_penalty
-    breakdown["failure_penalty"] = -recent_failure_penalty
-    breakdown["anti_affinity_penalty"] = -anti_affinity_penalty
-
-    total = sum(breakdown.values())
-    return total, breakdown
+    counts: dict[str, int] = {}
+    for job in jobs:
+        count = 0
+        for node in live_nodes:
+            # Cheap attribute gate before expensive blocker check
+            if node.accepted_kinds and job.kind not in node.accepted_kinds:
+                continue
+            if accepted_kinds and job.kind not in accepted_kinds:
+                continue
+            if job.target_os and job.target_os != node.os:
+                continue
+            if job.target_arch and job.target_arch != node.arch:
+                continue
+            if not node_blockers_for_job(job, node, now=now, accepted_kinds=accepted_kinds):
+                count += 1
+        counts[job.job_id] = count
+    return counts
 
 
 def select_jobs_for_node(
@@ -413,13 +282,67 @@ def select_jobs_for_node(
         return []
     total_active_nodes = len(active_nodes)
     _active_jobs = active_jobs_on_node or []
-    scored: list[ScoredJob] = []
+
+    # ── Phase A: Cheap pre-filter → compatible candidates ─────────────
+    compatible: list[Job] = []
     for job in jobs:
+        if node.accepted_kinds and job.kind not in node.accepted_kinds:
+            continue
+        if accepted_kinds and job.kind not in accepted_kinds:
+            continue
+        if job.target_os and job.target_os != node.os:
+            continue
+        if job.target_arch and job.target_arch != node.arch:
+            continue
+        # Executor contract kind-compatibility check
+        from backend.core.executor_registry import get_executor_registry
+        compat, _compat_reason = get_executor_registry().kind_compatible(node.executor, job.kind)
+        if not compat:
+            continue
         if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
             continue
-        eligible_nodes_count = count_eligible_nodes_for_job(job, active_nodes, now=now, accepted_kinds=accepted_kinds)
+        compatible.append(job)
+
+    if not compatible:
+        return []
+
+    # ── Phase B: Batch eligible counts for pre-filtered jobs only ─────
+    # Deferred to after pre-filter so we don't compute counts for
+    # jobs that can never match this node.
+    eligible_cache = batch_eligible_counts(
+        compatible, active_nodes, now=now, accepted_kinds=accepted_kinds,
+    )
+
+    # ── Phase C: Score + top-K pruning ────────────────────────────────
+    target_k = min(limit, available_slots)
+    # Maintain a running floor: once we have K scores, any job whose
+    # theoretical maximum (priority=160 + all bonuses) can't beat the
+    # current K-th score is skipped.
+    scored: list[ScoredJob] = []
+    score_floor = -10_000  # updated once we have target_k items
+    # Compute theoretical max score dynamically from active scoring weights
+    from backend.core.scheduling_policy_store import get_policy_store
+    _sw = get_policy_store().active.scoring
+    _THEORETICAL_MAX = (
+        _sw.priority_max + _sw.age_max + _sw.scarcity_max
+        + _sw.reliability_max + _sw.strategy_max + _sw.zone_match_bonus
+        + _sw.resource_fit_max + _sw.executor_match_bonus
+        + _sw.data_locality_bonus + _sw.latency_max + _sw.power_max
+        + _sw.thermal_max + _sw.affinity_max + _sw.sla_urgency_max
+        + _sw.batch_co_location_max
+    )
+
+    for job in compatible:
+        eligible_nodes_count = eligible_cache.get(job.job_id, 0)
         if eligible_nodes_count <= 0:
             continue
+
+        # Top-K pruning: if job's theoretical best can't beat floor, skip
+        if len(scored) >= target_k:
+            job_priority = int(job.priority or 0)
+            if job_priority + (_THEORETICAL_MAX - 160) < score_floor:
+                continue
+
         total, breakdown = score_job_for_node(
             job,
             node,
@@ -429,6 +352,15 @@ def select_jobs_for_node(
             recent_failed_job_ids=recent_failed_job_ids,
             active_jobs_on_node=_active_jobs,
         )
+
+        # ── Placement policy accept gate ─────────────────────────────
+        from backend.core.placement_policy import get_placement_policy
+
+        _pp = get_placement_policy()
+        accepted, _reject_reason = _pp.accept(job, node, total)
+        if not accepted:
+            continue
+
         scored.append(
             ScoredJob(
                 job=job,
@@ -437,6 +369,10 @@ def select_jobs_for_node(
                 score_breakdown=breakdown,
             )
         )
+        # Update floor after we have enough candidates
+        if len(scored) >= target_k:
+            scored.sort(key=lambda s: -s.score)
+            score_floor = scored[target_k - 1].score
 
     scored.sort(
         key=lambda item: (
@@ -446,4 +382,194 @@ def select_jobs_for_node(
             -_stable_tiebreak(item.job.job_id, node.node_id),
         )
     )
+
+    # ── Placement policy rerank pass ─────────────────────────────────
+    from backend.core.placement_policy import get_placement_policy as _get_pp
+
+    scored = _get_pp().rerank(scored, node)
+
     return scored[: min(limit, available_slots)]
+
+
+# ============================================================================
+# Global Placement Solver — cross-node constraint-satisfaction optimisation
+# ============================================================================
+
+# Scoring dimensions used by the solver for multi-node ranking.
+
+
+def _get_solver_config():
+    from backend.core.scheduling_policy_store import get_policy_store
+    return get_policy_store().active.solver
+
+
+@dataclass(slots=True)
+class PlacementCandidate:
+    """A (job, node) pair evaluated by the solver."""
+    job: Job
+    node: SchedulerNodeSnapshot
+    score: int = 0
+    breakdown: dict[str, int] = field(default_factory=dict)
+
+
+class PlacementSolver:
+    """Global placement optimiser that considers all (job × node) pairs.
+
+    Unlike per-node ``select_jobs_for_node`` which scores independently,
+    this solver builds a constraint matrix and applies a greedy weighted
+    bipartite matching with resource accounting:
+
+    1. **Feasibility filter** — eliminate infeasible (job, node) pairs.
+    2. **Scoring** — per-pair score using the existing ``score_job_for_node``.
+    3. **Global adjustments** — spread, bin-pack, affinity, and locality
+       bonuses that account for cross-node state.
+    4. **Greedy matching** — iterate by descending score, assign each job
+       to its best node while deducting capacity.
+
+    The solver produces a placement plan:
+    ``dict[str, str]`` mapping ``job_id → node_id``.
+
+    Callers (dispatch cycle) can use the plan as placement hints that
+    strongly bias per-node selection without breaking the pull model.
+    """
+
+    def solve(
+        self,
+        jobs: list[Job],
+        nodes: list[SchedulerNodeSnapshot],
+        *,
+        now: datetime.datetime,
+        accepted_kinds: set[str],
+        recent_failed_job_ids: set[str] | None = None,
+    ) -> dict[str, str]:
+        """Run the global placement solver.
+
+        Returns mapping {job_id: preferred_node_id}.
+        """
+        if not jobs or not nodes:
+            return {}
+
+        live_nodes = [n for n in nodes if is_node_eligible(n, now)]
+        if not live_nodes:
+            return {}
+
+        failed_ids = recent_failed_job_ids or set()
+        total_active = len(live_nodes)
+
+        # ── Phase 1: Build feasible candidates ───────────────────────
+        candidates: list[PlacementCandidate] = []
+        for job in jobs:
+            for node in live_nodes:
+                if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
+                    continue
+                candidates.append(PlacementCandidate(job=job, node=node))
+
+        if not candidates:
+            return {}
+
+        # ── Phase 2: Score each candidate ────────────────────────────
+        eligible_cache = batch_eligible_counts(
+            jobs, live_nodes, now=now, accepted_kinds=accepted_kinds,
+        )
+        for c in candidates:
+            ec = eligible_cache.get(c.job.job_id, 1)
+            total, breakdown = score_job_for_node(
+                c.job, c.node, now=now,
+                total_active_nodes=total_active,
+                eligible_nodes_count=max(ec, 1),
+                recent_failed_job_ids=failed_ids,
+                active_jobs_on_node=[],
+            )
+            c.score = total
+            c.breakdown = dict(breakdown)
+
+        # ── Phase 3: Global adjustments ──────────────────────────────
+        self._apply_global_adjustments(candidates, live_nodes)
+
+        # ── Phase 4: Greedy weighted matching ────────────────────────
+        return self._greedy_match(candidates, live_nodes)
+
+    def _apply_global_adjustments(
+        self,
+        candidates: list[PlacementCandidate],
+        live_nodes: list[SchedulerNodeSnapshot],
+    ) -> None:
+        """Apply cross-node scoring adjustments."""
+        # Pre-compute per-node load ratio
+        node_load: dict[str, float] = {}
+        for n in live_nodes:
+            cap = max(n.max_concurrency, 1)
+            node_load[n.node_id] = n.active_lease_count / cap
+
+        # Collect per-job candidate counts for spread bonus
+        job_node_count: dict[str, int] = {}
+        for c in candidates:
+            job_node_count[c.job.job_id] = job_node_count.get(c.job.job_id, 0) + 1
+
+        avg_load = sum(node_load.values()) / max(len(node_load), 1)
+
+        _sol = _get_solver_config()
+        for c in candidates:
+            load = node_load.get(c.node.node_id, 0.0)
+
+            # Spread bonus: prefer under-loaded nodes
+            if load < avg_load:
+                bonus = int(_sol.spread_bonus * (1 - load))
+                c.score += bonus
+                c.breakdown["solver_spread"] = bonus
+
+            # Binpack bonus: if job requests many resources, prefer nodes
+            # that already have some load (consolidation).
+            req_cpu = max(int(getattr(c.job, "required_cpu_cores", 0) or 0), 0)
+            if req_cpu == 0 and load > 0.3:
+                bonus = int(_sol.binpack_bonus * load)
+                c.score += bonus
+                c.breakdown["solver_binpack"] = bonus
+
+            # Locality bonus: data-local nodes
+            dk = getattr(c.job, "data_locality_key", None)
+            if dk and dk in c.node.cached_data_keys:
+                c.score += _sol.locality_bonus
+                c.breakdown["solver_locality"] = _sol.locality_bonus
+
+    def _greedy_match(
+        self,
+        candidates: list[PlacementCandidate],
+        live_nodes: list[SchedulerNodeSnapshot],
+    ) -> dict[str, str]:
+        """Greedy descending-score assignment with capacity deduction."""
+        remaining_cap: dict[str, int] = {
+            n.node_id: max(n.max_concurrency - n.active_lease_count, 0)
+            for n in live_nodes
+        }
+
+        # Use a max-heap (negate scores for Python's min-heap)
+        heap = [(-c.score, c.job.job_id, c.node.node_id) for c in candidates]
+        heapq.heapify(heap)
+
+        plan: dict[str, str] = {}
+        assigned_jobs: set[str] = set()
+
+        while heap:
+            neg_score, job_id, node_id = heapq.heappop(heap)
+            if job_id in assigned_jobs:
+                continue
+            if remaining_cap.get(node_id, 0) <= 0:
+                continue
+            plan[job_id] = node_id
+            assigned_jobs.add(job_id)
+            remaining_cap[node_id] -= 1
+
+        return plan
+
+
+# Module-level solver singleton
+_solver: PlacementSolver | None = None
+
+
+def get_placement_solver() -> PlacementSolver:
+    """Return the process-wide PlacementSolver singleton."""
+    global _solver
+    if _solver is None:
+        _solver = PlacementSolver()
+    return _solver

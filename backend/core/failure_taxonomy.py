@@ -207,21 +207,33 @@ def calculate_retry_delay_seconds(
     failure_category: FailureCategory,
     retry_count: int,
     *,
-    base_delay: int = 10,
-    max_delay: int = 600,
+    base_delay: int | None = None,
+    max_delay: int | None = None,
 ) -> int:
     """Calculate retry delay with exponential backoff and category-aware scaling.
 
-    Transient / timeout → gentle backoff (base * 2^n, cap 600s)
-    Resource / node_unhealthy → heavier backoff (base*3 * 2^n, cap 600s)
+    Transient / timeout → gentle backoff (base * 2^n, cap max)
+    Resource / node_unhealthy → heavier backoff (base*multiplier * 2^n, cap max)
     Lease_expired / node_drained → short fixed delays
     """
+    if base_delay is None or max_delay is None:
+        from backend.core.scheduling_policy_store import get_policy_store
+        rp = get_policy_store().active.retry
+        if base_delay is None:
+            base_delay = rp.base_delay_seconds
+        if max_delay is None:
+            max_delay = rp.max_delay_seconds
+
     if failure_category in (FailureCategory.LEASE_EXPIRED, FailureCategory.NODE_DRAINED):
         return min(base_delay, max_delay)
 
     if failure_category in (FailureCategory.RESOURCE_EXHAUSTED, FailureCategory.NODE_UNHEALTHY):
-        delay = base_delay * 3 * (2 ** min(retry_count, 6))
+        from backend.core.scheduling_policy_store import get_policy_store
+        _rp = get_policy_store().active.retry
+        multiplier = _rp.resource_exhausted_multiplier
+        delay = base_delay * multiplier * (2 ** min(retry_count, _rp.max_exponent))
     else:
-        delay = base_delay * (2 ** min(retry_count, 6))
+        from backend.core.scheduling_policy_store import get_policy_store as _gps
+        delay = base_delay * (2 ** min(retry_count, _gps().active.retry.max_exponent))
 
     return min(delay, max_delay)

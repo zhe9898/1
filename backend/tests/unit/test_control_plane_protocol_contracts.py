@@ -60,6 +60,7 @@ def _all_result(values: list[object]) -> MagicMock:
 def _count_result(value: int) -> MagicMock:
     result = MagicMock()
     result.scalar_one.return_value = value
+    result.scalar.return_value = value
     return result
 
 
@@ -179,7 +180,9 @@ async def test_create_job_reuses_existing_idempotency_key() -> None:
     existing = _job(job_id="job-existing", idempotency_key="invoke-1")
     db = AsyncMock()
     db.add = MagicMock()
-    db.execute.return_value = _scalar_result(existing)
+    admission_result = MagicMock()
+    admission_result.scalar.return_value = 0
+    db.execute.side_effect = [admission_result, _scalar_result(existing)]
 
     response = await create_job(
         JobCreateRequest(
@@ -207,7 +210,9 @@ async def test_create_job_rejects_conflicting_idempotency_key() -> None:
     existing = _job(job_id="job-existing", idempotency_key="invoke-1", payload={"hello": "other"})
     db = AsyncMock()
     db.add = MagicMock()
-    db.execute.return_value = _scalar_result(existing)
+    admission_result = MagicMock()
+    admission_result.scalar.return_value = 0
+    db.execute.side_effect = [admission_result, _scalar_result(existing)]
 
     with pytest.raises(HTTPException) as exc:
         await create_job(
@@ -234,11 +239,18 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
     db.add = MagicMock()
     db.execute.side_effect = [
         _scalar_result(node),
+        _count_result(0),     # admission control: pending+leased count=0
+        _scalar_result(None),  # feature flag: sched_decision_audit
+        _scalar_result(None),  # feature flag: sched_placement_policies
+        _scalar_result(None),  # feature flag: sched_preemption
+        _scalar_result(None),  # feature flag: sched_executor_validation
         _all_result([node]),
         _rows_result([]),
         _rows_result([]),
         _all_result([pending]),
         _all_result([]),
+        _all_result([]),  # active_jobs_on_node for anti-affinity
+        _all_result([]),  # DLQ expired-deadline scan
     ]
     db.flush = AsyncMock()
 

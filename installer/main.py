@@ -1062,6 +1062,13 @@ async def _deploy_pipeline():
     yield "data: [PHASE:2] 🏥 服务健康检查\n\n"
 
     # P1.3: 改用 docker inspect 获取容器健康状态，绕开 Windows NAT/WSL 网络玄学
+    # 法典 §1.2: 容器名从 system.yaml IaC 事实来源读取
+    gateway_container = "zen70-gateway"  # 兜底默认
+    try:
+        sys_cfg = _load_system_yaml()
+        gateway_container = (sys_cfg.get("services") or {}).get("gateway", {}).get("container_name", "zen70-gateway")
+    except Exception:
+        pass
     health_ok = False
     max_health = 15
     for i in range(1, max_health + 1):
@@ -1070,7 +1077,7 @@ async def _deploy_pipeline():
             probe = await asyncio.create_subprocess_exec(
                 "docker", "inspect",
                 "--format", "{{.State.Health.Status}}",
-                "zen70-gateway",
+                gateway_container,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

@@ -230,13 +230,48 @@ main() {
   # Phase 4: 构建 + 签名
   build_and_sign "$TAG"
 
-  # Phase 5: 部署后验证 (可选 — 仅本地/Staging 环境)
+  # Phase 5: 部署后验证 — 强制门禁 (法典 §5.2-gate-hard)
+  # 如服务可达，则必须通过全部检查；服务不可达时使用 release_smoke_gate.py 分层判定。
   echo ""
-  echo "[Phase 5] Post-Deploy 验证（如服务已启动）..."
+  echo "[Phase 5] Post-Deploy 门禁验证（硬阻断）..."
+
+  local _postdeploy_rc=0
+
+  # Step 5a: release_smoke_gate.py — 分层退出码 (exit 0=pass, 1=critical-fail, 2=non-critical)
+  if python3 scripts/release_smoke_gate.py 2>/dev/null; then
+    echo "  ✓ Release Smoke Gate 通过"
+  else
+    _postdeploy_rc=$?
+    if [[ $_postdeploy_rc -eq 1 ]]; then
+      echo "[FATAL] Release Smoke Gate 关键检查未通过 (exit 1)，中止发布流程。"
+      # Rollback: remove the un-pushed tag
+      git tag -d "$TAG" 2>/dev/null || true
+      exit 1
+    elif [[ $_postdeploy_rc -eq 2 ]]; then
+      echo "  ⚠ Release Smoke Gate 非关键检查未通过 (exit 2)。"
+      echo "  如确需带伤发布，运行: POSTDEPLOY_FORCE=1 ./scripts/release.sh $TAG"
+      if [[ "${POSTDEPLOY_FORCE:-}" != "1" ]]; then
+        git tag -d "$TAG" 2>/dev/null || true
+        exit 1
+      fi
+      echo "  ⚠ POSTDEPLOY_FORCE=1 — 继续发布（已记录风险）"
+    fi
+  fi
+
+  # Step 5b: postdeploy_verify.py — 端点健康验证
   if python3 scripts/postdeploy_verify.py 2>/dev/null; then
     echo "  ✓ Post-Deploy 验证通过"
   else
-    echo "  ⚠ Post-Deploy 验证未通过或服务未启动（不阻断发布，需人工确认）"
+    _postdeploy_rc=$?
+    if [[ $_postdeploy_rc -ne 0 ]]; then
+      echo "[FATAL] Post-Deploy 验证未通过 (exit $_postdeploy_rc)，中止发布流程。"
+      echo "  如服务未部署（纯镜像构建），运行: POSTDEPLOY_FORCE=1 ./scripts/release.sh $TAG"
+      if [[ "${POSTDEPLOY_FORCE:-}" != "1" ]]; then
+        git tag -d "$TAG" 2>/dev/null || true
+        exit 1
+      fi
+      echo "  ⚠ POSTDEPLOY_FORCE=1 — 跳过部署后验证（已记录风险）"
+    fi
   fi
 
   echo ""

@@ -31,6 +31,42 @@ from backend.shared_state import service_liveness_fails, service_readiness
 
 logger = logging.getLogger(__name__)
 
+# -------------------- Data Retention 数据保留清理 --------------------
+RETENTION_CYCLE_SECONDS = int(os.getenv("RETENTION_CYCLE_SECONDS", "86400"))  # 默认 24h
+
+
+async def data_retention_worker() -> None:
+    """法典 3.x: 定期清理过期数据（jobs/scheduling_decisions/audit_logs）。
+
+    B24: Phoenix Loop 不死鸟循环 — 崩溃后 5s 自动重启。
+    """
+    await asyncio.sleep(120)  # 启动延迟 — 等待 DB 稳定
+    while True:  # B24: Phoenix Loop
+        try:
+            from backend.core.data_retention import run_retention_cycle
+            from backend.db import _async_session_factory
+
+            if _async_session_factory is None:
+                logger.warning("data_retention_worker: DB not configured, sleeping")
+                await asyncio.sleep(RETENTION_CYCLE_SECONDS)
+                continue
+
+            async with _async_session_factory() as session:
+                result = await run_retention_cycle(session)
+                total = sum(result.values())
+                if total:
+                    logger.info("data_retention_worker: cycle complete — %s", result)
+                else:
+                    logger.debug("data_retention_worker: no records to purge")
+
+            await asyncio.sleep(RETENTION_CYCLE_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("data_retention_worker: received CancelledError, exiting")
+            return  # 优雅退出
+        except Exception:  # noqa: BLE001 — Phoenix Loop
+            logger.exception("data_retention_worker: unexpected crash, restarting in 5s")
+            await asyncio.sleep(5)
+
 # -------------------- Bit-Rot 巡检（法典 3.2.3）--------------------
 BITROT_DB_PATH = Path("/app/data/bitrot.db") if Path("/app").exists() else Path("bitrot.db")
 _bitrot_dirs_raw = os.getenv("BITROT_SCAN_DIRS", "")

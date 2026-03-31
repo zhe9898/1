@@ -7,7 +7,7 @@ import signal
 from collections.abc import Callable, Coroutine
 
 from backend.api.deps import get_settings
-from backend.background_tasks import bitrot_worker, health_probe_worker
+from backend.background_tasks import bitrot_worker, data_retention_worker, health_probe_worker
 from backend.core.runtime_support import connect_redis_with_retry
 
 logger = logging.getLogger("zen70.control-worker")
@@ -20,6 +20,7 @@ def _worker_factories(worker: str) -> dict[str, WorkerFactory]:
     factories: dict[str, WorkerFactory] = {
         "bitrot": lambda _redis: bitrot_worker(),
         "health-probe": lambda redis_client: health_probe_worker(app_redis=redis_client),
+        "data-retention": lambda _redis: data_retention_worker(),
     }
     if selected == "all":
         return factories
@@ -86,7 +87,7 @@ def main() -> None:
     parser.add_argument(
         "--worker",
         default="all",
-        choices=("all", "bitrot", "health-probe"),
+        choices=("all", "bitrot", "health-probe", "data-retention"),
         help="Which control-plane worker set to run.",
     )
     args = parser.parse_args()

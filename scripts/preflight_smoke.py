@@ -144,6 +144,38 @@ def gate_frontend_build() -> tuple[bool, list[str]]:
     return False, [line for line in lines if "error TS" in line][:10]
 
 
+def gate_governance_consolidation() -> tuple[bool, list[str]]:
+    """G7: 验证 dispatch.py 不直接导入 scheduling_resilience / scheduling_governance 的类。
+
+    GovernanceFacade 是派发链唯一治理入口；直接使用底层模块会绕过治理合约。
+    允许导入的仅为声明性常量 (SCHED_FLAG_*)。
+    """
+    dispatch_path = ROOT / "backend" / "api" / "jobs" / "dispatch.py"
+    if not dispatch_path.exists():
+        return False, ["dispatch.py 不存在"]
+
+    violations: list[str] = []
+    banned_symbols = (
+        "SchedulingBackoff",
+        "SchedulingMetrics",
+        "TopologySpreadPolicy",
+        "AdmissionController",
+        "PreemptionBudgetPolicy",
+        "SchedulingDecisionLogger",
+    )
+
+    text = dispatch_path.read_text(encoding="utf-8")
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        for sym in banned_symbols:
+            if sym in stripped:
+                violations.append(f"dispatch.py:L{lineno}: 直接引用 {sym} — 请通过 GovernanceFacade")
+
+    return len(violations) == 0, violations
+
+
 GATES: list[tuple[str, object]] = [
     ("G1: 核心模块语法检查", gate_syntax),
     ("G2: pytest 全量单测", gate_pytest),
@@ -151,6 +183,7 @@ GATES: list[tuple[str, object]] = [
     ("G4: 运行态密钥治理", gate_secret_hygiene),
     ("G5: 外部镜像 digest pin", gate_digest_pinning),
     ("G6: 前端类型检查", gate_frontend_build),
+    ("G7: 治理层合规 (GovernanceFacade)", gate_governance_consolidation),
 ]
 
 

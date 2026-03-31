@@ -1,5 +1,5 @@
-# ZEN70 瀹瑰櫒缂栨帓 - 鐢?scripts/compiler.py 鐢熸垚
-# 娉曞吀 1.2锛氱綉缁滃钩闈㈤殧绂?frontend_net / backend_net
+# ZEN70 容器编排 - 由 scripts/compiler.py 生成
+# 法典 1.2：网络平面隔离 frontend_net / backend_net
 
 services:
   caddy:
@@ -165,6 +165,11 @@ services:
     deploy:
       update_config:
         order: start-first
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
 
   runner-agent:
     build:
@@ -270,6 +275,11 @@ services:
       options:
         max-size: 10m
         max-file: '3'
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   docker-proxy:
     image: ${DOCKER_SOCKET_PROXY_IMAGE_REF:-tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476}

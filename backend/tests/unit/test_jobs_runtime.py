@@ -355,6 +355,8 @@ async def test_explain_job_reports_node_blockers() -> None:
         _rows_result([("node-a", 0)]),
         _rows_result([("node-a", "completed"), ("node-b", "failed")]),
         _result_all(["node-b"]),
+        _result_all([]),  # leased_rows for anti-affinity
+        _result_all([]),  # get_all_scheduling_flags (governance context)
     ]
 
     response = await explain_job("job-a", current_user={"sub": "admin"}, db=db)
