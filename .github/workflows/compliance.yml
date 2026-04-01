@@ -25,6 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install pip==26.0.1
           python -m pip install --require-hashes -r backend/requirements-ci.lock
 
       - name: IaC single source of truth (deterministic compile)
