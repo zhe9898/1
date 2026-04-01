@@ -222,6 +222,8 @@ _BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
     "sentinel/topology_sentinel.py": "拓扑探针主循环，拆分后仍需保留完整状态机",
     "core/redis_client.py": "TypedDict 仅内部使用，拆分收益低",
     "api/jobs/dispatch.py": "调度主流程含抢占/回退/拓扑扩展，不可分割",
+    "core/job_scheduler.py": "PlacementSolver + select_jobs_for_node 全局放置求解不可分割",
+    "core/backfill_scheduling.py": "ReservationManager + BackfillGate 时间规划引擎状态机不可分割",
 }
 _BACKEND_TEST_ALLOWLIST: dict[str, str] = {
     "tests/unit/test_scheduling_governance.py": "调度治理场景覆盖面广，拆分会破坏测试上下文连贯性",
