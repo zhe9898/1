@@ -20,11 +20,13 @@ from backend.core.scheduling_policy_types import (  # noqa: F401
     AdmissionPolicy,
     AgingConfig,
     AutoTuneConfig,
+    BackfillPolicyConfig,
     BackoffPolicy,
     BalancedWeights,
     BatchScoringConfig,
     BinpackConfig,
     DispatchConfig,
+    FairShareConfig,
     KindDefault,
     LocalityConfig,
     NodeFreshnessPolicy,
@@ -412,6 +414,8 @@ class PolicyStore:
         auto_tune = _parse_simple(AutoTuneConfig, "auto_tune")
         dispatch = _parse_simple(DispatchConfig, "dispatch")
         topology_spread = _parse_simple(TopologySpreadConfig, "topology_spread")
+        fair_share = _parse_simple(FairShareConfig, "fair_share")
+        backfill = _parse_simple(BackfillPolicyConfig, "backfill")
 
         return SchedulingPolicy(
             scoring=scoring,
@@ -433,6 +437,8 @@ class PolicyStore:
             auto_tune=auto_tune,
             dispatch=dispatch,
             topology_spread=topology_spread,
+            fair_share=fair_share,
+            backfill=backfill,
         )
 
     # ── Diagnostics ──────────────────────────────────────────────────

@@ -140,6 +140,28 @@ def validate_policy(policy: SchedulingPolicy) -> list[str]:  # noqa: C901
     if ts.penalty_per_skew < 0:
         errors.append(f"topology_spread.penalty_per_skew < 0: {ts.penalty_per_skew}")
 
+    fs = policy.fair_share
+    if fs.max_score_adjustment < 0 or fs.max_score_adjustment > 200:
+        errors.append(f"fair_share.max_score_adjustment out of [0,200]: {fs.max_score_adjustment}")
+    if not 0.0 <= fs.deadband <= 1.0:
+        errors.append(f"fair_share.deadband out of [0,1]: {fs.deadband}")
+    if fs.priority_cap < 1:
+        errors.append(f"fair_share.priority_cap < 1: {fs.priority_cap}")
+
+    bf = policy.backfill
+    if bf.max_reservations < 0:
+        errors.append(f"backfill.max_reservations < 0: {bf.max_reservations}")
+    if bf.default_estimated_duration_s < 1:
+        errors.append(f"backfill.default_estimated_duration_s < 1: {bf.default_estimated_duration_s}")
+    if bf.max_backfill_duration_s < 0:
+        errors.append(f"backfill.max_backfill_duration_s < 0: {bf.max_backfill_duration_s}")
+    if bf.planning_horizon_s < 1:
+        errors.append(f"backfill.planning_horizon_s < 1: {bf.planning_horizon_s}")
+    if bf.min_gap_s < 0:
+        errors.append(f"backfill.min_gap_s < 0: {bf.min_gap_s}")
+    if bf.reservation_min_priority < 0 or bf.reservation_min_priority > 100:
+        errors.append(f"backfill.reservation_min_priority out of [0,100]: {bf.reservation_min_priority}")
+
     return errors
 
 

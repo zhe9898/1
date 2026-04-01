@@ -248,6 +248,7 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
         _rows_result([]),
         _rows_result([]),
         _all_result([pending]),
+        _all_result([]),  # leased jobs for quota-aware fair-share
         _all_result([]),
         _all_result([]),  # active_jobs_on_node for anti-affinity
         _all_result([]),  # DLQ expired-deadline scan

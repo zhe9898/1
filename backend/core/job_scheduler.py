@@ -564,8 +564,22 @@ class PlacementSolver:
         candidates: list[PlacementCandidate],
         live_nodes: list[SchedulerNodeSnapshot],
     ) -> dict[str, str]:
-        """Greedy descending-score assignment with capacity deduction."""
+        """Greedy descending-score assignment with capacity deduction.
+
+        Gang-aware: jobs sharing a ``gang_id`` are placed atomically —
+        either every member gets assigned or the entire gang is skipped.
+        Uses tentative assignment with rollback to guarantee all-or-nothing.
+        """
         remaining_cap: dict[str, int] = {n.node_id: max(n.max_concurrency - n.active_lease_count, 0) for n in live_nodes}
+
+        # ── Pre-group gang jobs ──────────────────────────────────────
+        gang_members: dict[str, set[str]] = {}  # gang_id → {job_ids}
+        job_gang: dict[str, str] = {}  # job_id → gang_id
+        for c in candidates:
+            gid = getattr(c.job, "gang_id", None)
+            if gid:
+                gang_members.setdefault(gid, set()).add(c.job.job_id)
+                job_gang[c.job.job_id] = gid
 
         # Use a max-heap (negate scores for Python's min-heap)
         heap = [(-c.score, c.job.job_id, c.node.node_id) for c in candidates]
@@ -573,18 +587,76 @@ class PlacementSolver:
 
         plan: dict[str, str] = {}
         assigned_jobs: set[str] = set()
+        failed_gangs: set[str] = set()
+
+        # Tentative gang placements: gang_id → {job_id: node_id}
+        gang_tentative: dict[str, dict[str, str]] = {}
+        gang_cap_deltas: dict[str, dict[str, int]] = {}  # gang_id → {node_id: slots_used}
 
         while heap:
             neg_score, job_id, node_id = heapq.heappop(heap)
             if job_id in assigned_jobs:
                 continue
-            if remaining_cap.get(node_id, 0) <= 0:
+
+            gid = job_gang.get(job_id)
+
+            # Skip jobs whose gang already failed placement
+            if gid and gid in failed_gangs:
                 continue
-            plan[job_id] = node_id
-            assigned_jobs.add(job_id)
-            remaining_cap[node_id] -= 1
+
+            if remaining_cap.get(node_id, 0) <= 0:
+                # No capacity on this specific node.  For gang members the
+                # heap may still contain candidates for the same job on a
+                # different node, so just skip this candidate.  The
+                # end-of-heap cleanup will catch gangs that truly cannot
+                # be placed anywhere.
+                continue
+
+            if gid:
+                # ── Gang member: tentative assignment ────────────
+                tent = gang_tentative.setdefault(gid, {})
+                deltas = gang_cap_deltas.setdefault(gid, {})
+
+                if job_id not in tent:
+                    tent[job_id] = node_id
+                    remaining_cap[node_id] -= 1
+                    deltas[node_id] = deltas.get(node_id, 0) + 1
+
+                # Check if entire gang is now tentatively placed
+                if tent.keys() == gang_members[gid]:
+                    # Commit: move all tentative → final plan
+                    for gjid, gnid in tent.items():
+                        plan[gjid] = gnid
+                        assigned_jobs.add(gjid)
+                    del gang_tentative[gid]
+                    del gang_cap_deltas[gid]
+                    logger.debug("gang_placement_committed: gang=%s members=%d", gid, len(tent))
+            else:
+                # ── Non-gang job: assign immediately ─────────────
+                plan[job_id] = node_id
+                assigned_jobs.add(job_id)
+                remaining_cap[node_id] -= 1
+
+        # Rollback any incomplete gangs (heap exhausted before all members placed)
+        for gid in list(gang_tentative):
+            self._rollback_gang(gid, gang_tentative, gang_cap_deltas, remaining_cap)
+            failed_gangs.add(gid)
+            logger.debug("gang_placement_incomplete: gang=%s placed=%d/%d", gid, len(gang_tentative.get(gid, {})), len(gang_members.get(gid, set())))
 
         return plan
+
+    @staticmethod
+    def _rollback_gang(
+        gang_id: str,
+        gang_tentative: dict[str, dict[str, str]],
+        gang_cap_deltas: dict[str, dict[str, int]],
+        remaining_cap: dict[str, int],
+    ) -> None:
+        """Rollback tentative gang assignments, restoring node capacity."""
+        deltas = gang_cap_deltas.pop(gang_id, {})
+        for nid, count in deltas.items():
+            remaining_cap[nid] = remaining_cap.get(nid, 0) + count
+        gang_tentative.pop(gang_id, None)
 
 
 # Module-level solver singleton

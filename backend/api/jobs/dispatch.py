@@ -287,12 +287,49 @@ async def pull_jobs(  # noqa: C901
         parent_jobs = {}
 
     available_slots = max(node_snapshot.max_concurrency - node_snapshot.active_lease_count, 0)
+
+    # ── Quota-aware fair-share data (injected into constraint context) ─
+    _extra_ctx: dict[str, object] = {}
+    try:
+        from backend.core.quota_aware_scheduling import (
+            FairShareCalculator,
+            ResourceUsage,
+            build_quota_accounts,
+        )
+
+        # Build per-tenant resource usage from all leased jobs in this tenant
+        _leased_result = await db.execute(
+            select(Job).where(
+                Job.tenant_id == payload.tenant_id,
+                Job.status == "leased",
+            )
+        )
+        _leased_jobs = list(_leased_result.scalars().all())
+        _quota_accounts = build_quota_accounts(_leased_jobs)
+        _extra_ctx["_quota_accounts"] = _quota_accounts
+
+        # Compute cluster totals for fair-share ratios
+        _cluster_totals = ResourceUsage()
+        for acct in _quota_accounts.values():
+            _cluster_totals.cpu_cores += acct.usage.cpu_cores
+            _cluster_totals.memory_mb += acct.usage.memory_mb
+            _cluster_totals.gpu_vram_mb += acct.usage.gpu_vram_mb
+            _cluster_totals.concurrent_jobs += acct.usage.concurrent_jobs
+        _fair_ratios = FairShareCalculator.compute_fair_shares(
+            _quota_accounts,
+            _cluster_totals,
+        )
+        _extra_ctx["_fair_share_ratios"] = _fair_ratios
+    except Exception:
+        pass  # quota_aware_scheduling not available — skip gracefully
+
     candidates = apply_business_filters(
         candidates,
         completed_job_ids=completed_dep_ids,
         available_slots=available_slots,
         parent_jobs=parent_jobs,
         now=now,
+        extra_context=_extra_ctx,
     )
     # ── End Phase 2 ──────────────────────────────────────────────────
 
