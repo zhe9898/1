@@ -28,7 +28,10 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -ex
+          python -m pip --version
           python -m pip install pip==26.0.1
+          python -m pip --version
           python -m pip install --require-hashes -r requirements-ci.lock
 
       - name: Lint - black
