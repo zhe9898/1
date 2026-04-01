@@ -73,6 +73,10 @@ class TopologySentinel:
         self.redis_timeout_count = 0
         self.max_redis_timeouts = max(2, int(os.getenv("MAX_REDIS_TIMEOUTS", "6")))  # 默认 6 * 5s = 30s 熔断
 
+        # 边缘离线自治：Redis 断联时保留最后已知的期望状态用于本地闭环调谐
+        self._cached_desired: set[str] = set()
+        self._cached_managed: set[str] = set()
+
         # 磁盘污点机制：代替命令式 stop，由 _reconcile_loop 统一裁决
         self.has_disk_taint = False
 
@@ -168,8 +172,6 @@ class TopologySentinel:
         会被调谐器误判为健康运行，导致永远无法自愈恢复。
         使用 ?filters={"status":["running"]} 参数让 Docker Engine 端精确过滤。
         """
-        if self.is_zombie:
-            return set()
         # 法典修复：使用 Docker API filter 只返回真正 running 的容器
         import urllib.parse
 
@@ -212,10 +214,9 @@ class TopologySentinel:
         - 纯 I/O 容器：docker pause
         - 有状态容器：docker stop -t 10
         - action: 'stop' | 'start'
-        """
-        if self.is_zombie:
-            return
 
+        离线自治：zombie mode 下仍然允许操作（Docker API 是本地 socket，不依赖 Redis）。
+        """
         import urllib.parse
 
         encoded_name = urllib.parse.quote(container_name, safe="")
@@ -389,6 +390,9 @@ class TopologySentinel:
 
             if expected_state == "ON":
                 desired.add(container_name)
+        # 边缘离线自治：缓存最后已知的期望状态
+        self._cached_desired = set(desired)
+        self._cached_managed = set(managed)
         return desired, managed
 
     def _reconcile_loop(self) -> None:
@@ -396,8 +400,15 @@ class TopologySentinel:
         K3s-Inspired Reconciliation Loop (声明式控制循环): Observe -> Diff -> Act
         核心思想: 抛弃事件触发器, 改为保证系统实际状态向预期状态收敛.
         预期状态 (Desired state): yaml 中的 SWITCH_CONTAINER_MAP 配合用户手动设置 (存 Redis switch_expected:) + 污点 (Taints) 妥协.
+
+        边缘离线自治 (Offline Autonomy):
+        zombie mode 下使用最后已知的缓存期望状态继续本地调谐，
+        保持容器拓扑闭环控制，直到 Redis 恢复。
         """
-        if not self._redis_ok() or not self._redis or self.is_zombie:
+        if self.is_zombie:
+            self._reconcile_loop_offline()
+            return
+        if not self._redis_ok() or not self._redis:
             return
 
         r = self._redis
@@ -439,6 +450,53 @@ class TopologySentinel:
                     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as pub_err:
                         if logger:
                             logger.debug("Meltdown route event publish failed: %s", pub_err)
+
+    def _reconcile_loop_offline(self) -> None:
+        """
+        边缘离线自治：zombie mode 下基于缓存期望状态的本地闭环调谐。
+
+        策略：
+        - 使用 _cached_desired / _cached_managed（最后一次 Redis 在线时的快照）
+        - 本地磁盘污点仍然生效（保护物理磁盘安全）
+        - 只做 start/stop，不尝试 Redis 发布（无法联通）
+        - 容器观察通过 Docker API（纯本地 socket，不依赖 Redis）
+        """
+        if not self._cached_managed:
+            return
+
+        desired = set(self._cached_desired)
+
+        # 磁盘满污点在离线时仍然降级高频 I/O 组件
+        if self.has_disk_taint:
+            for container_name in list(desired):
+                if container_name in self.DISK_TAINT_AFFECTED:
+                    if logger:
+                        logger.warning(
+                            "[Offline Reconcile] Taint Active (disk_critical). Forcing '%s' OFF.",
+                            container_name,
+                        )
+                    desired.discard(container_name)
+
+        actual_running = self._get_actual_running_containers()
+
+        for container in self._cached_managed:
+            should_run = container in desired
+            is_running = container in actual_running
+
+            if should_run and not is_running:
+                if logger:
+                    logger.info(
+                        "[Offline Reconcile] %s is OFF but cached-desired ON. Act: start",
+                        container,
+                    )
+                self._safe_container_action(str(container), "start")
+            elif not should_run and is_running:
+                if logger:
+                    logger.info(
+                        "[Offline Reconcile] %s is ON but cached-desired OFF. Act: stop",
+                        container,
+                    )
+                self._safe_container_action(str(container), "stop")
 
     def _update_state(
         self,
@@ -568,8 +626,11 @@ class TopologySentinel:
             self._process_mount_online(mount, cur_state)
 
     def _handle_mount(self, mount: MountPoint) -> None:
-        """对单个挂载点执行检测防抖与状态更新；不再在此直接执行降级（交由 Reconcile）"""
-        if not self._redis_ok():
+        """对单个挂载点执行检测防抖与状态更新；不再在此直接执行降级（交由 Reconcile）
+
+        离线自治：zombie mode 下仍检测挂载点（纯本地 I/O），但跳过 Redis 状态读取。
+        """
+        if not self.is_zombie and not self._redis_ok():
             return
         exists: bool
         exists = (time.time() % 10) > 3 if self.mock else mount.check_exists()
@@ -623,6 +684,12 @@ class TopologySentinel:
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
                 if logger:
                     logger.warning("GPU state write failed: %s", e)
+        elif self.is_zombie:
+            # 离线自治：仍然执行 GPU 检测（本地 nvidia-smi），不写 Redis
+            try:
+                self._check_gpu()
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError):
+                pass
 
         # Step 3: K3s 调谐循环 (Reconcile loop)
         try:

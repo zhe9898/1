@@ -434,8 +434,16 @@ async def pull_jobs(  # noqa: C901
     # ── End Phase 5 ──────────────────────────────────────────────────
 
     leased_jobs: list[Job] = []
+    _acquired_locks: list[str] = []
     for scored in selected:
         job = scored.job
+        # ── Redis distributed lock prevents duplicate leases in multi-gateway ──
+        _lock_name = f"job_dispatch:{payload.tenant_id}:{job.job_id}"
+        if redis is not None:
+            _lock_ok = await redis.acquire_lock(_lock_name, ttl=10)
+            if not _lock_ok:
+                continue  # Another gateway instance is leasing this job
+            _acquired_locks.append(_lock_name)
         await _expire_previous_attempt_if_needed(db, job, now=now)
         job.status = "leased"
         job.node_id = payload.node_id
@@ -488,6 +496,10 @@ async def pull_jobs(  # noqa: C901
                 "jobs": [_to_response(job, now=now).model_dump(mode="json") for job in leased_jobs],
             },
         )
+    # ── Release dispatch locks (lease committed, safe to unlock) ─────
+    if redis is not None:
+        for _lk in _acquired_locks:
+            await redis.release_lock(_lk)
     return responses
 
 

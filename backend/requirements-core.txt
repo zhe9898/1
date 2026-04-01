@@ -19,3 +19,7 @@ python-multipart==0.0.22
 webauthn==2.7.1
 Pillow==12.1.1
 aiomqtt==2.5.1
+opentelemetry-api==1.33.0
+opentelemetry-sdk==1.33.0
+opentelemetry-instrumentation-fastapi==0.54b0
+opentelemetry-exporter-otlp-proto-http==1.33.0

@@ -58,10 +58,27 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request_id = (request.headers.get("X-Request-ID") or request.headers.get("X-Trace-Id") or uuid.uuid4().hex).strip()
         request.state.request_id = request_id
 
+        # 桥接 OTEL：将 trace_id 注入响应头，与 X-Request-ID 共存
+        trace_id_hex = ""
+        try:
+            from backend.core.telemetry import is_otel_enabled
+
+            if is_otel_enabled():
+                from opentelemetry import trace
+
+                span = trace.get_current_span()
+                ctx = span.get_span_context()
+                if ctx and ctx.trace_id:
+                    trace_id_hex = format(ctx.trace_id, "032x")
+        except Exception:  # noqa: BLE001
+            pass
+
         token = _request_id_ctx.set(request_id)
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
+            if trace_id_hex:
+                response.headers["X-Trace-Id"] = trace_id_hex
             return response
         finally:
             _request_id_ctx.reset(token)

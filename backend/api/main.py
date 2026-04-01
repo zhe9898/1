@@ -169,6 +169,10 @@ async def lifespan(app: FastAPI) -> object:
     signal.signal(signal.SIGTERM, _sigterm_handler)
 
     from backend.capabilities import clear_lru_cache
+    from backend.core.telemetry import init_telemetry, shutdown_telemetry
+
+    # Kernel observability: conditional OTEL tracing (requires OTEL_EXPORTER_OTLP_ENDPOINT)
+    init_telemetry(app)
 
     logger.info("API process is ingress-only; control-plane workers must run out of process")
 
@@ -177,6 +181,7 @@ async def lifespan(app: FastAPI) -> object:
     finally:
         logger.info("Shutting down API server and draining connections")
         signal.signal(signal.SIGTERM, original_handler)
+        shutdown_telemetry()
         clear_lru_cache()
 
         if getattr(app.state, "redis", None) is not None:
