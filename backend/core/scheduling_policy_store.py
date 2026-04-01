@@ -20,11 +20,13 @@ from backend.core.scheduling_policy_types import (  # noqa: F401
     AdmissionPolicy,
     AgingConfig,
     AutoTuneConfig,
+    BackfillPolicyConfig,
     BackoffPolicy,
     BalancedWeights,
     BatchScoringConfig,
     BinpackConfig,
     DispatchConfig,
+    FairShareConfig,
     KindDefault,
     LocalityConfig,
     NodeFreshnessPolicy,
@@ -282,7 +284,11 @@ class PolicyStore:
         kind_raw = raw.get("kind_defaults", {}) or {}
 
         # Build sub-configs with safe defaults
-        scoring = ScoringWeights(**{k: int(v) for k, v in scoring_raw.items() if k in ScoringWeights.__dataclass_fields__}) if scoring_raw else ScoringWeights()
+        scoring = (
+            ScoringWeights(**{k: int(v) for k, v in scoring_raw.items() if k in ScoringWeights.__dataclass_fields__})
+            if scoring_raw
+            else ScoringWeights()
+        )
 
         retry = RetryPolicy(**{k: v for k, v in retry_raw.items() if k in RetryPolicy.__dataclass_fields__}) if retry_raw else RetryPolicy()
 
@@ -304,7 +310,11 @@ class PolicyStore:
             else PreemptionPolicy()
         )
 
-        backoff = BackoffPolicy(**{k: v for k, v in backoff_raw.items() if k in BackoffPolicy.__dataclass_fields__}) if backoff_raw else BackoffPolicy()
+        backoff = (
+            BackoffPolicy(**{k: v for k, v in backoff_raw.items() if k in BackoffPolicy.__dataclass_fields__})
+            if backoff_raw
+            else BackoffPolicy()
+        )
 
         reservation = (
             ResourceReservationConfig(**{k: v for k, v in reservation_raw.items() if k in ResourceReservationConfig.__dataclass_fields__})
@@ -326,7 +336,9 @@ class PolicyStore:
         )
         perf_raw = strat_raw.get("performance", {}) or {}
         performance = (
-            PerformanceConfig(**{k: v for k, v in perf_raw.items() if k in PerformanceConfig.__dataclass_fields__}) if perf_raw else PerformanceConfig()
+            PerformanceConfig(**{k: v for k, v in perf_raw.items() if k in PerformanceConfig.__dataclass_fields__})
+            if perf_raw
+            else PerformanceConfig()
         )
         bal_raw = strat_raw.get("balanced", {}) or {}
         balanced = (
@@ -412,6 +424,8 @@ class PolicyStore:
         auto_tune = _parse_simple(AutoTuneConfig, "auto_tune")
         dispatch = _parse_simple(DispatchConfig, "dispatch")
         topology_spread = _parse_simple(TopologySpreadConfig, "topology_spread")
+        fair_share = _parse_simple(FairShareConfig, "fair_share")
+        backfill = _parse_simple(BackfillPolicyConfig, "backfill")
 
         return SchedulingPolicy(
             scoring=scoring,
@@ -433,6 +447,8 @@ class PolicyStore:
             auto_tune=auto_tune,
             dispatch=dispatch,
             topology_spread=topology_spread,
+            fair_share=fair_share,
+            backfill=backfill,
         )
 
     # ── Diagnostics ──────────────────────────────────────────────────

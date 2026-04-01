@@ -317,6 +317,44 @@ class TopologySpreadConfig:
     max_penalty: int = 40
 
 
+@dataclass(frozen=True, slots=True)
+class FairShareConfig:
+    """Quota-aware fair-share scheduling parameters."""
+
+    max_score_adjustment: int = 40
+    deadband: float = 0.05
+    priority_cap: int = 160
+
+
+@dataclass(frozen=True, slots=True)
+class GangSchedulingConfig:
+    """Gang scheduling parameters."""
+
+    # Maximum seconds to wait for all gang members before timing out.
+    # 0 = wait indefinitely (rely on job deadline instead).
+    wait_timeout_s: int = 600
+    # When a gang times out: "fail" = mark all members failed,
+    # "degrade" = release members for independent scheduling.
+    timeout_action: str = "fail"
+
+
+@dataclass(frozen=True, slots=True)
+class BackfillPolicyConfig:
+    """Backfill & reservation scheduling parameters."""
+
+    enabled: bool = True
+    max_reservations: int = 50
+    default_estimated_duration_s: int = 300
+    max_backfill_duration_s: int = 0
+    planning_horizon_s: int = 3600
+    min_gap_s: int = 30
+    reservation_min_priority: int = 70
+    reservation_imminent_boost: int = 30
+    reservation_imminent_window_s: int = 60
+    reservation_approaching_boost: int = 15
+    reservation_approaching_window_s: int = 300
+
+
 # =====================================================================
 # Composite policy — single source of truth
 # =====================================================================
@@ -356,6 +394,9 @@ class SchedulingPolicy:
     auto_tune: AutoTuneConfig = field(default_factory=AutoTuneConfig)
     dispatch: DispatchConfig = field(default_factory=DispatchConfig)
     topology_spread: TopologySpreadConfig = field(default_factory=TopologySpreadConfig)
+    fair_share: FairShareConfig = field(default_factory=FairShareConfig)
+    backfill: BackfillPolicyConfig = field(default_factory=BackfillPolicyConfig)
+    gang: GangSchedulingConfig = field(default_factory=GangSchedulingConfig)
 
 
 # =====================================================================

@@ -332,6 +332,7 @@ def apply_business_filters(
     available_slots: int,
     parent_jobs: dict[str, Job],
     now: datetime.datetime,
+    extra_context: dict[str, object] | None = None,
 ) -> list[Job]:
     """Apply hard scheduling gates and priority boost via the constraint engine.
 
@@ -341,6 +342,9 @@ def apply_business_filters(
 
     Returns the filtered + boosted candidate list.  Does NOT touch DB —
     callers must pre-fetch completed_job_ids and parent_jobs.
+
+    ``extra_context`` is merged into ``ctx.data`` before evaluation,
+    allowing callers to inject quota accounts, fair-share ratios, etc.
     """
     ctx = SchedulingContext(
         now=now,
@@ -348,6 +352,8 @@ def apply_business_filters(
         available_slots=available_slots,
         parent_jobs=parent_jobs,
     )
+    if extra_context:
+        ctx.data.update(extra_context)
     engine = get_scheduling_engine()
     return engine.run(candidates, ctx)
 

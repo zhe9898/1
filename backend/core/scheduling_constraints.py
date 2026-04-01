@@ -110,7 +110,13 @@ class DependencyGate(SchedulingConstraint):
 
 
 class GangSchedulingGate(SchedulingConstraint):
-    """Drop jobs whose gang members aren't all ready."""
+    """Drop jobs whose gang members aren't all ready.
+
+    Supports a configurable timeout: if a gang has been waiting longer
+    than ``wait_timeout_s``, the configured ``timeout_action`` fires:
+    - ``"fail"``    — drop the gang (all members rejected).
+    - ``"degrade"`` — release members for independent scheduling.
+    """
 
     name = "gang_scheduling"
     order = 30
@@ -121,6 +127,27 @@ class GangSchedulingGate(SchedulingConstraint):
         gang_id = getattr(job, "gang_id", None)
         if not gang_id:
             return True, ""
+
+        # ── Gang timeout check ───────────────────────────────────────
+        try:
+            from backend.core.scheduling_policy_store import get_policy_store
+
+            gcfg = get_policy_store().active.gang
+            wait_timeout_s = gcfg.wait_timeout_s
+            timeout_action = gcfg.timeout_action
+        except Exception:
+            wait_timeout_s = 600
+            timeout_action = "fail"
+
+        if wait_timeout_s > 0:
+            age_s = (ctx.now - job.created_at).total_seconds()
+            if age_s > wait_timeout_s:
+                if timeout_action == "degrade":
+                    # Release for independent scheduling — pass the gate
+                    return True, f"gang_timeout_degraded:{gang_id}:age={age_s:.0f}s"
+                # Default: fail
+                return False, f"gang_timeout_expired:{gang_id}:age={age_s:.0f}s>{wait_timeout_s}s"
+
         ready, reason = calculate_gang_scheduling_readiness(
             job,
             ctx.surviving_candidates,
@@ -220,6 +247,39 @@ _DEFAULT_CONSTRAINTS: list[SchedulingConstraint] = sorted(
 )
 
 
+def _build_default_engine() -> SchedulingEngine:
+    """Build the default engine with built-in + optional new constraints."""
+    engine = SchedulingEngine()
+
+    # Register quota-aware and backfill constraints (lazy to avoid import
+    # errors if the modules are not yet present — defensive coding).
+    try:
+        from backend.core.quota_aware_scheduling import (
+            FairShareScoreModifier,
+            QuotaAwareGate,
+        )
+
+        engine.register(QuotaAwareGate())
+        engine.register(FairShareScoreModifier())
+    except Exception:
+        pass  # Module not available — skip
+
+    try:
+        from backend.core.backfill_scheduling import (
+            BackfillGate,
+            ReservationHonorGate,
+            get_reservation_manager,
+        )
+
+        mgr = get_reservation_manager()
+        engine.register(ReservationHonorGate(mgr))
+        engine.register(BackfillGate(mgr))
+    except Exception:
+        pass  # Module not available — skip
+
+    return engine
+
+
 class SchedulingEngine:
     """Evaluates a list of constraints against candidate jobs.
 
@@ -288,7 +348,7 @@ class SchedulingEngine:
 
 
 # Module-level singleton (process lifecycle)
-_engine = SchedulingEngine()
+_engine = _build_default_engine()
 
 
 def get_scheduling_engine() -> SchedulingEngine:
