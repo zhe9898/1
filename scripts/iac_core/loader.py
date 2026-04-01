@@ -300,10 +300,15 @@ def _build_service_entry(
     stop_grace = svc.get("stop_grace_period") or _default_grace.get(name, "10s")
     stop_grace_period_block = dict_to_yaml_block({"stop_grace_period": stop_grace})
 
-    # --- deploy (resources) ---
+    # --- deploy (resources + update_config) ---
     deploy_block = ""
     deploy_cfg = svc.get("deploy")
-    if isinstance(deploy_cfg, dict):
+    if not isinstance(deploy_cfg, dict):
+        deploy_cfg = {}
+    # gateway / frontend 采用 start-first 滚动更新
+    if name in ("gateway", "frontend"):
+        deploy_cfg.setdefault("update_config", {})["order"] = "start-first"
+    if deploy_cfg:
         raw = yaml.dump({"deploy": deploy_cfg}, default_flow_style=False, sort_keys=False)
         deploy_block = "".join(f"    {line}\n" for line in raw.splitlines() if line.strip())
 

@@ -26,9 +26,6 @@ def get_model() -> Any:
     try:
         import sentence_transformers
 
-        if sentence_transformers is None:
-            HAS_MODEL = False  # type: ignore[unreachable]
-            return None
         model_instance = sentence_transformers.SentenceTransformer("all-MiniLM-L6-v2")
         return model_instance
     except Exception:

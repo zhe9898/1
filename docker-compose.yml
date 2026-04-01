@@ -163,13 +163,12 @@ services:
         max-size: 10m
         max-file: '3'
     deploy:
-      update_config:
-        order: start-first
-    deploy:
       resources:
         limits:
           cpus: '2.0'
           memory: 1G
+      update_config:
+        order: start-first
 
   runner-agent:
     build:
