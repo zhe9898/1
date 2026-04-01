@@ -20,12 +20,16 @@ _JOB_KIND_REGISTRY: dict[str, type[BaseModel]] = {}
 # Registry mapping job kind to result schema validator
 _JOB_RESULT_REGISTRY: dict[str, type[BaseModel]] = {}
 
+# Registry mapping job kind to extension/discovery metadata
+_JOB_KIND_METADATA_REGISTRY: dict[str, dict[str, Any]] = {}
+
 
 def register_job_kind(
     kind: str,
     *,
     payload_schema: type[BaseModel] | None = None,
     result_schema: type[BaseModel] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Register a job kind with optional payload and result schemas.
 
@@ -46,6 +50,11 @@ def register_job_kind(
     if result_schema is not None:
         _JOB_RESULT_REGISTRY[kind] = result_schema
 
+    if metadata is not None:
+        _JOB_KIND_METADATA_REGISTRY[kind] = dict(metadata)
+    else:
+        _JOB_KIND_METADATA_REGISTRY.setdefault(kind, {"source": "core"})
+
 
 def unregister_job_kind(kind: str) -> None:
     """Unregister a job kind.
@@ -55,6 +64,7 @@ def unregister_job_kind(kind: str) -> None:
     """
     _JOB_KIND_REGISTRY.pop(kind, None)
     _JOB_RESULT_REGISTRY.pop(kind, None)
+    _JOB_KIND_METADATA_REGISTRY.pop(kind, None)
 
 
 def is_job_kind_registered(kind: str) -> bool:
@@ -66,7 +76,7 @@ def is_job_kind_registered(kind: str) -> bool:
     Returns:
         True if registered, False otherwise
     """
-    return kind in _JOB_KIND_REGISTRY or kind in _JOB_RESULT_REGISTRY
+    return kind in _JOB_KIND_REGISTRY or kind in _JOB_RESULT_REGISTRY or kind in _JOB_KIND_METADATA_REGISTRY
 
 
 def get_registered_job_kinds() -> list[str]:
@@ -75,7 +85,7 @@ def get_registered_job_kinds() -> list[str]:
     Returns:
         List of job kind identifiers
     """
-    all_kinds = set(_JOB_KIND_REGISTRY.keys()) | set(_JOB_RESULT_REGISTRY.keys())
+    all_kinds = set(_JOB_KIND_REGISTRY.keys()) | set(_JOB_RESULT_REGISTRY.keys()) | set(_JOB_KIND_METADATA_REGISTRY.keys())
     return sorted(all_kinds)
 
 
@@ -453,6 +463,7 @@ def get_job_kind_info(kind: str) -> dict[str, Any]:
     """
     payload_schema = _JOB_KIND_REGISTRY.get(kind)
     result_schema = _JOB_RESULT_REGISTRY.get(kind)
+    metadata = dict(_JOB_KIND_METADATA_REGISTRY.get(kind, {}))
 
     return {
         "kind": kind,
@@ -460,6 +471,7 @@ def get_job_kind_info(kind: str) -> dict[str, Any]:
         "has_result_schema": result_schema is not None,
         "payload_schema": payload_schema.model_json_schema() if payload_schema else None,
         "result_schema": result_schema.model_json_schema() if result_schema else None,
+        "metadata": metadata,
     }
 
 

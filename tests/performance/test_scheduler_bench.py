@@ -51,6 +51,7 @@ def _node(
         zone="z1",
         capabilities=frozenset({"shell", "docker"}),
         accepted_kinds=frozenset({"shell.exec", "docker.run"}),
+        worker_pools=frozenset({"batch"}),
         max_concurrency=max_concurrency,
         active_lease_count=active_lease_count,
         cpu_cores=16,

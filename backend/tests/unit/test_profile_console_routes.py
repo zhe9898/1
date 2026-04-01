@@ -25,12 +25,13 @@ def test_profile_endpoint_reports_public_profile(monkeypatch) -> None:
         assert data["runtime_profile"] == "gateway-kernel"
         assert "nodes" in data["router_names"]
         assert "jobs" in data["router_names"]
-        assert data["console_route_names"] == ["dashboard", "nodes", "jobs", "connectors"]
+        assert data["console_route_names"] == ["dashboard", "nodes", "jobs", "connectors", "triggers"]
         assert data["capability_keys"] == [
             "gateway.capabilities",
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
+            "gateway.triggers",
         ]
         assert data["requested_pack_keys"] == []
         assert data["resolved_pack_keys"] == []
@@ -105,6 +106,7 @@ def test_console_menu_hides_admin_entries_without_token() -> None:
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
+            "gateway.triggers",
         }
 
         overview = client.get("/api/v1/console/overview")
@@ -134,6 +136,7 @@ def test_console_menu_shows_settings_for_admin_override() -> None:
             "nodes",
             "jobs",
             "connectors",
+            "triggers",
             "settings",
         ]
         assert profile_data["capability_keys"] == [
@@ -141,6 +144,7 @@ def test_console_menu_shows_settings_for_admin_override() -> None:
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
+            "gateway.triggers",
             "gateway.settings",
         ]
 
@@ -150,6 +154,7 @@ def test_console_menu_shows_settings_for_admin_override() -> None:
             "gateway.nodes",
             "gateway.jobs",
             "gateway.connectors",
+            "gateway.triggers",
             "gateway.settings",
         }
     finally:

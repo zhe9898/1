@@ -15,6 +15,7 @@ from .node import Node
 from .scheduling_decision import SchedulingDecision
 from .system import SystemLog
 from .tenant_scheduling_policy import TenantSchedulingPolicy
+from .trigger import Trigger, TriggerDelivery
 from .user import Base, PushSubscription, User, WebAuthnCredential
 
 # Legacy business domain models (board, asset, memory, scene) no longer exported here.
@@ -35,4 +36,6 @@ __all__ = [
     "SystemLog",
     "SchedulingDecision",
     "TenantSchedulingPolicy",
+    "Trigger",
+    "TriggerDelivery",
 ]

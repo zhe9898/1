@@ -42,6 +42,7 @@ class NodeContractPayload(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
     # Kind contract — which job kinds this node accepts
     accepted_kinds: list[str] = Field(default_factory=list)
+    worker_pools: list[str] = Field(default_factory=list)
     # Edge computing telemetry (dynamic, reported each heartbeat)
     network_latency_ms: int | None = Field(default=None, ge=0, le=60_000)
     bandwidth_mbps: int | None = Field(default=None, ge=0, le=100_000)
@@ -101,6 +102,7 @@ class NodeResponse(BaseModel):
     status: str
     status_view: StatusView
     capabilities: list[str]
+    worker_pools: list[str]
     metadata: dict[str, object]
     actions: list[ControlAction] = Field(default_factory=list)
     registered_at: datetime.datetime

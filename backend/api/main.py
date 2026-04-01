@@ -32,6 +32,7 @@ from backend.api import audit_logs as audit_logs_router
 from backend.api import auth as auth_router
 from backend.api import connectors as connectors_router
 from backend.api import console as console_router
+from backend.api import extensions as extensions_router
 from backend.api import jobs as jobs_router
 from backend.api import kernel as kernel_router
 from backend.api import node_approval as node_approval_router
@@ -43,6 +44,7 @@ from backend.api import routes
 from backend.api import scheduling_governance as scheduling_governance_router
 from backend.api import sessions as sessions_router
 from backend.api import settings as settings_router
+from backend.api import triggers as triggers_router
 from backend.api import user_management as user_management_router
 from backend.api import workflows as workflows_router
 from backend.api.deps import get_settings
@@ -52,6 +54,7 @@ from backend.core.gateway_profile import (
     normalize_gateway_pack_keys,
     normalize_gateway_profile,
 )
+from backend.core.extension_sdk import bootstrap_extension_runtime
 from backend.core.redis_client import RedisClient, get_logger
 from backend.core.runtime_support import connect_redis_with_retry
 from backend.core.version import get_runtime_version
@@ -160,6 +163,8 @@ async def lifespan(app: FastAPI) -> object:
     if app.state.redis is None:
         logger.error("Redis unavailable after retries; API will run with degraded capabilities")
 
+    bootstrap_extension_runtime()
+
     # Emit an explicit trace on SIGTERM so orchestrated shutdown stays visible.
     def _sigterm_handler(signum: int, frame: object) -> None:
         logger.info("SIGTERM received (signal=%s), initiating graceful shutdown", signum)
@@ -212,6 +217,8 @@ _API_STABILITY_TAGS: list[dict[str, object]] = [
     {"name": "quotas", "description": "Tenant resource quotas", "x-stability": "beta"},
     {"name": "alerts", "description": "Alert rules & notifications", "x-stability": "beta"},
     {"name": "kernel", "description": "Kernel introspection & capabilities", "x-stability": "beta"},
+    {"name": "extensions", "description": "Extension SDK manifests, published schemas, workflow templates", "x-stability": "beta"},
+    {"name": "triggers", "description": "Unified trigger registry, ingress, and delivery history", "x-stability": "beta"},
     {"name": "node-approval", "description": "Node enrollment approval flow", "x-stability": "stable"},
     {"name": "audit-logs", "description": "Audit trail query", "x-stability": "stable"},
     {"name": "permissions", "description": "RBAC permission management", "x-stability": "stable"},
@@ -385,6 +392,8 @@ _ALL_ROUTERS = {
     "node_approval": node_approval_router.router,
     "jobs": jobs_router.router,
     "connectors": connectors_router.router,
+    "triggers": triggers_router.router,
+    "extensions": extensions_router.router,
     "user_management": user_management_router.router,
     "audit_logs": audit_logs_router.router,
     "permissions": permissions_router.router,

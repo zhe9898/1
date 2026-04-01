@@ -45,6 +45,8 @@ def _resource_schema() -> ResourceSchemaResponse:
             },
             "submit_encoding": {
                 "capabilities": "tags",
+                "accepted_kinds": "tags",
+                "worker_pools": "tags",
                 "metadata": "json",
             },
             "secret_delivery": {
@@ -163,6 +165,18 @@ def _resource_schema() -> ResourceSchemaResponse:
                         label="Capabilities",
                         input_type="tags",
                         placeholder="job.execute,connector.invoke",
+                    ),
+                    FormFieldSchema(
+                        key="accepted_kinds",
+                        label="Accepted Kinds",
+                        input_type="tags",
+                        placeholder="connector.invoke,shell.exec",
+                    ),
+                    FormFieldSchema(
+                        key="worker_pools",
+                        label="Worker Pools",
+                        input_type="tags",
+                        placeholder="interactive,batch",
                     ),
                     FormFieldSchema(
                         key="metadata",

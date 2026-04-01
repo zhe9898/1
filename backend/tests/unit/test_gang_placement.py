@@ -40,6 +40,7 @@ def _node(
         zone="z1",
         capabilities=frozenset(),
         accepted_kinds=frozenset(),
+        worker_pools=frozenset({"batch"}),
         max_concurrency=max_concurrency,
         active_lease_count=active_lease_count,
         cpu_cores=8,

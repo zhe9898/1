@@ -15,6 +15,13 @@ class JobCreateRequest(BaseModel):
     lease_seconds: int = Field(default=30, ge=5, le=3600)
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
     priority: int = Field(default=50, ge=0, le=100)
+    queue_class: str | None = Field(default=None, pattern="^(realtime|interactive|batch|gpu-heavy|analytics)$")
+    worker_pool: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9](?:[a-z0-9._-]{0,63})$",
+    )
     target_os: str | None = Field(default=None, min_length=1, max_length=64)
     target_arch: str | None = Field(default=None, min_length=1, max_length=64)
     target_executor: str | None = Field(default=None, min_length=1, max_length=64)
@@ -117,6 +124,8 @@ class JobResponse(BaseModel):
     connector_id: str | None
     idempotency_key: str | None
     priority: int
+    queue_class: str
+    worker_pool: str
     target_os: str | None
     target_arch: str | None
     target_executor: str | None

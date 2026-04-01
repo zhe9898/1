@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -77,6 +78,27 @@ def _noop_result() -> MagicMock:
 def _control_plane_migration_text() -> str:
     path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "9f2c7a1d4e61_control_plane_schema_hardening.py"
     return path.read_text(encoding="utf-8")
+
+
+def _trigger_migration_text() -> str:
+    path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "b7c8d9e0f1a2_trigger_control_plane_tables.py"
+    return path.read_text(encoding="utf-8")
+
+
+def _queue_lane_migration_text() -> str:
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "backend"
+        / "alembic"
+        / "versions"
+        / "e6f7a8b9c0d1_queue_lane_worker_pool_contracts.py"
+    )
+    return path.read_text(encoding="utf-8")
+
+
+def _contracts_metadata() -> dict[str, object]:
+    path = Path(__file__).resolve().parents[3] / "contracts" / "metadata.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _job(**overrides: object) -> Job:
@@ -200,6 +222,8 @@ async def test_create_job_reuses_existing_idempotency_key() -> None:
     assert response.job_id == "job-existing"
     assert response.idempotency_key == "invoke-1"
     assert response.priority == 50
+    assert response.queue_class == "interactive"
+    assert response.worker_pool == "interactive"
     assert response.status_view.key == "pending"
     assert response.lease_state_view.key == "none"
     db.add.assert_not_called()
@@ -450,6 +474,7 @@ async def test_heartbeat_updates_existing_node_contract_fields(monkeypatch: pyte
     assert response.os == "linux"
     assert response.arch == "arm64"
     assert response.zone == "edge-a"
+    assert response.worker_pools == ["batch", "interactive"]
     assert response.protocol_version == "runner.v2"
     assert response.lease_version == "job-lease.v2"
     assert response.enrollment_status == "active"
@@ -508,6 +533,7 @@ async def test_provision_node_issues_one_time_token(monkeypatch: pytest.MonkeyPa
     assert response.node.node_id == "node-new"
     assert response.node.enrollment_status == "pending"
     assert response.node.status == "offline"
+    assert response.node.worker_pools == ["interactive"]
     assert response.node.status_view.key == "offline"
     assert response.node.enrollment_status_view.key == "pending"
     assert response.node_token.startswith("zkn_")
@@ -633,3 +659,40 @@ def test_control_plane_schema_migration_covers_node_and_job_protocol_columns() -
     assert "_ensure_job_attempts_schema" in rendered
     assert '"ux_jobs_tenant_idempotency_key"' in rendered
     assert '"ux_nodes_tenant_node_id"' in rendered
+
+
+def test_trigger_control_plane_migration_covers_trigger_tables() -> None:
+    rendered = _trigger_migration_text()
+
+    assert "_ensure_triggers_schema" in rendered
+    assert "_ensure_trigger_deliveries_schema" in rendered
+    assert '"triggers"' in rendered
+    assert '"trigger_deliveries"' in rendered
+    assert '"trigger_id"' in rendered
+    assert '"delivery_id"' in rendered
+    assert '"ux_triggers_tenant_trigger_id"' in rendered
+    assert '"ux_trigger_deliveries_tenant_trigger_idempotency"' in rendered
+
+
+def test_queue_lane_migration_covers_job_and_node_worker_contracts() -> None:
+    rendered = _queue_lane_migration_text()
+
+    assert "_ensure_job_queue_contract_schema" in rendered
+    assert "_ensure_node_worker_pool_schema" in rendered
+    assert '"queue_class"' in rendered
+    assert '"worker_pool"' in rendered
+    assert '"worker_pools"' in rendered
+    assert '"ix_jobs_queue_class"' in rendered
+    assert '"ix_jobs_worker_pool"' in rendered
+
+
+def test_contracts_metadata_indexes_trigger_contracts() -> None:
+    metadata = _contracts_metadata()
+    contracts = metadata["contracts"]
+    contracts_root = Path(__file__).resolve().parents[3] / "contracts"
+
+    assert "triggers" in contracts
+    assert "triggers/README.md" in contracts["triggers"]
+    assert "triggers/manual-trigger.example.json" in contracts["triggers"]
+    for relative_path in contracts["triggers"]:
+        assert (contracts_root / relative_path).exists()

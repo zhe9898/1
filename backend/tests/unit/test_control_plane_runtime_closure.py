@@ -17,6 +17,7 @@ def test_kernel_guest_control_plane_surfaces_have_real_api_routes() -> None:
         "/api/v1/nodes",
         "/api/v1/jobs",
         "/api/v1/connectors",
+        "/api/v1/triggers",
     }
     assert expected_paths.issubset(mounted_paths)
 
@@ -30,6 +31,7 @@ def test_kernel_admin_control_plane_surfaces_have_real_api_routes() -> None:
         "/api/v1/nodes",
         "/api/v1/jobs",
         "/api/v1/connectors",
+        "/api/v1/triggers",
         "/api/v1/settings/schema",
     }
     assert expected_paths.issubset(mounted_paths)

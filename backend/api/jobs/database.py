@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.errors import zen
 from backend.core.job_scheduler import SchedulerNodeSnapshot, build_node_snapshot
 from backend.core.redis_client import RedisClient
+from backend.core.worker_pool import resolve_job_queue_contract, resolve_job_queue_contract_from_record
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.job_log import JobLog
@@ -186,12 +187,22 @@ def _build_snapshots(
 
 
 def _job_definition_matches(job: Job, payload: JobCreateRequest) -> bool:
+    existing_queue_class, existing_worker_pool = resolve_job_queue_contract_from_record(job)
+    requested_queue_class, requested_worker_pool = resolve_job_queue_contract(
+        kind=payload.kind,
+        source=payload.source,
+        requested_queue_class=payload.queue_class,
+        requested_worker_pool=payload.worker_pool,
+        required_gpu_vram_mb=payload.required_gpu_vram_mb,
+    )
     return (
         job.kind == payload.kind
         and job.connector_id == payload.connector_id
         and dict(job.payload or {}) == payload.payload
         and job.lease_seconds == payload.lease_seconds
         and job.priority == payload.priority
+        and existing_queue_class == requested_queue_class
+        and existing_worker_pool == requested_worker_pool
         and job.target_os == payload.target_os
         and job.target_arch == payload.target_arch
         and job.target_executor == payload.target_executor

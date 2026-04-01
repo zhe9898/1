@@ -71,6 +71,18 @@ _KERNEL_CONTROL_PLANE_SURFACES: tuple[ControlPlaneSurface, ...] = (
         requires_admin=False,
     ),
     ControlPlaneSurface(
+        capability_key="gateway.triggers",
+        route_name="triggers",
+        route_path="/triggers",
+        label="Triggers",
+        description="Unified trigger registry, webhook ingress, and delivery history",
+        endpoint="/v1/triggers",
+        backend_router="triggers",
+        frontend_view="TriggersView",
+        profiles=("gateway-kernel",),
+        requires_admin=False,
+    ),
+    ControlPlaneSurface(
         capability_key="gateway.settings",
         route_name="settings",
         route_path="/settings",

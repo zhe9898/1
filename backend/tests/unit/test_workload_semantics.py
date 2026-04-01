@@ -183,6 +183,8 @@ def test_get_workload_info():
     assert info["kind"] == "container.run"
     assert info["category"] == "batch"
     assert info["gang_capable"] is True
+    assert info["default_queue_class"] == "batch"
+    assert info["default_worker_pool"] == "batch"
     assert "cpu_cores" in info["resource_profile"]
     assert "pre_start" in info["lifecycle_hooks"]
     assert info["lifecycle_hooks"]["pre_start"] == "pull_image"
@@ -191,4 +193,5 @@ def test_get_workload_info():
 def test_get_workload_info_unknown():
     info = get_workload_info("totally.unknown")
     assert info["kind"] == "totally.unknown"
+    assert info["default_queue_class"] == "batch"
     assert info["description"] == "Unregistered workload kind"

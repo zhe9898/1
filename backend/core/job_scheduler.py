@@ -13,6 +13,7 @@ from backend.core.job_scoring import (  # noqa: F401 – re-export
     _stable_tiebreak,
     score_job_for_node,
 )
+from backend.core.worker_pool import infer_node_worker_pools, resolve_job_queue_contract_from_record
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -34,6 +35,7 @@ class SchedulerNodeSnapshot:
     zone: str | None
     capabilities: frozenset[str]
     accepted_kinds: frozenset[str]
+    worker_pools: frozenset[str]
     max_concurrency: int
     active_lease_count: int
     cpu_cores: int
@@ -73,6 +75,16 @@ def build_node_snapshot(node: Node, *, active_lease_count: int, reliability_scor
         zone=node.zone,
         capabilities=frozenset(node.capabilities or []),
         accepted_kinds=frozenset(getattr(node, "accepted_kinds", None) or []),
+        worker_pools=frozenset(
+            infer_node_worker_pools(
+                worker_pools=getattr(node, "worker_pools", None),
+                accepted_kinds=getattr(node, "accepted_kinds", None),
+                capabilities=node.capabilities,
+                gpu_vram_mb=node.gpu_vram_mb,
+                profile=node.profile,
+                metadata=dict(getattr(node, "metadata_json", None) or {}),
+            )
+        ),
         max_concurrency=max(int(node.max_concurrency or 1), 1),
         active_lease_count=active_lease_count,
         cpu_cores=max(int(node.cpu_cores or 0), 0),
@@ -153,6 +165,10 @@ def node_blockers_for_job(  # noqa: C901
             blockers.append(f"kind={job.kind}:not-in-node-contract")
     elif accepted_kinds and job.kind not in accepted_kinds:
         blockers.append("kind=not-accepted-by-runner")
+
+    _queue_class, worker_pool = resolve_job_queue_contract_from_record(job)
+    if node.worker_pools and worker_pool not in node.worker_pools:
+        blockers.append(f"worker_pool!={worker_pool}")
 
     if job.target_os and job.target_os != node.os:
         blockers.append(f"os!={job.target_os}")

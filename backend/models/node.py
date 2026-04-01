@@ -42,6 +42,7 @@ class Node(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online", index=True)
     capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     accepted_kinds: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    worker_pools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # Edge computing node attributes
     network_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bandwidth_mbps: Mapped[int | None] = mapped_column(Integer, nullable=True)

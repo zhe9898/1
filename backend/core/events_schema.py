@@ -115,6 +115,91 @@ class SchedulerEventPayload(BaseModel):
     error: str = Field("", description="错误信息")
 
 
+class TriggerEventTriggerSnapshot(BaseModel):
+    """Trigger snapshot embedded in trigger:events payloads."""
+
+    trigger_id: str = Field(..., description="Trigger ID")
+
+    kind: str = Field(..., description="Trigger kind")
+
+    status: str = Field(..., description="Trigger status")
+
+    last_delivery_status: str | None = None
+
+    last_delivery_id: str | None = None
+
+    last_delivery_target_kind: str | None = None
+
+    last_delivery_target_id: str | None = None
+
+
+class TriggerEventDeliverySnapshot(BaseModel):
+    """Delivery snapshot embedded in fired and failed trigger events."""
+
+    delivery_id: str = Field(..., description="Trigger delivery ID")
+
+    status: str = Field(..., description="dispatching | accepted | failed")
+
+    source_kind: str | None = None
+
+    target_kind: str | None = None
+
+    target_id: str | None = None
+
+    error_message: str | None = None
+
+    fired_at: str | None = None
+
+    delivered_at: str | None = None
+
+
+class TriggerEventPayload(BaseModel):
+    """trigger:events payload for unified trigger lifecycle events."""
+
+    event_id: str | None = Field(default=None, description="Control event ID")
+
+    action: str = Field(..., description="upserted | updated | paused | activated | fired | delivery_failed")
+
+    ts: str | None = Field(default=None, description="Event timestamp")
+
+    trigger: TriggerEventTriggerSnapshot = Field(..., description="Trigger snapshot")
+
+    delivery: TriggerEventDeliverySnapshot | None = Field(
+        default=None,
+        description="Delivery snapshot for fired and delivery_failed actions",
+    )
+
+    @classmethod
+    def from_redis_message(cls, data: str | bytes | dict[str, object]) -> TriggerEventPayload | None:
+        """Deserialize a trigger:events Redis payload into the contract model."""
+
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                return None
+
+        if not isinstance(data, dict):
+            return None
+
+        trigger_snapshot = data.get("trigger")
+        if not isinstance(trigger_snapshot, dict):
+            return None
+
+        normalized = dict(data)
+        delivery_snapshot = normalized.get("delivery")
+        if delivery_snapshot is not None and not isinstance(delivery_snapshot, dict):
+            return None
+
+        try:
+            return cls.model_validate(normalized)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+
 class VoiceEventPayload(BaseModel):
     """voice:events 通道 payload；语音转文字结果回推。"""
 

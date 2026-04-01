@@ -61,6 +61,20 @@ def _resource_schema() -> ResourceSchemaResponse:
                 description="Selectors and priority determine placement.",
                 fields=[
                     FormFieldSchema(key="priority", label="Priority", input_type="number", value=50, required=True),
+                    FormFieldSchema(
+                        key="queue_class",
+                        label="Queue Class",
+                        input_type="select",
+                        options=[
+                            FormFieldOption(value="", label="Auto"),
+                            FormFieldOption(value="realtime", label="Realtime"),
+                            FormFieldOption(value="interactive", label="Interactive"),
+                            FormFieldOption(value="batch", label="Batch"),
+                            FormFieldOption(value="gpu-heavy", label="GPU Heavy"),
+                            FormFieldOption(value="analytics", label="Analytics"),
+                        ],
+                    ),
+                    FormFieldSchema(key="worker_pool", label="Worker Pool", placeholder="optional override"),
                     FormFieldSchema(key="lease_seconds", label="Lease Seconds", input_type="number", value=30, required=True),
                     FormFieldSchema(key="timeout_seconds", label="Timeout Seconds", input_type="number", value=300, required=True),
                     FormFieldSchema(key="max_retries", label="Max Retries", input_type="number", value=0, required=True),

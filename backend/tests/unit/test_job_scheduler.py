@@ -281,3 +281,23 @@ def test_scheduler_filters_out_resource_shortage() -> None:
     )
 
     assert selected == []
+
+
+def test_scheduler_filters_out_worker_pool_mismatch() -> None:
+    now = _utcnow()
+    node = build_node_snapshot(
+        _node(node_id="node-a", capabilities=["connector.invoke"], worker_pools=["batch"]),
+        active_lease_count=0,
+        reliability_score=1.0,
+    )
+    selected = select_jobs_for_node(
+        [_job(job_id="job-interactive", kind="connector.invoke")],
+        node,
+        [node],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+        recent_failed_job_ids=set(),
+        limit=1,
+    )
+
+    assert selected == []

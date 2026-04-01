@@ -4,6 +4,7 @@ import uuid
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
 from backend.core.control_plane_state import job_attention_reason, job_lease_state, job_lease_state_view, job_status_view
+from backend.core.worker_pool import resolve_job_queue_contract_from_record
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
@@ -74,6 +75,7 @@ def _to_response(job: Job, *, now: datetime.datetime | None = None) -> JobRespon
     current_time = now or _utcnow()
     lease_state = job_lease_state(status=job.status, leased_until=job.leased_until, now=current_time)
     status_view = job_status_view(job.status)
+    queue_class, worker_pool = resolve_job_queue_contract_from_record(job)
     return JobResponse(
         job_id=job.job_id,
         kind=job.kind,
@@ -83,6 +85,8 @@ def _to_response(job: Job, *, now: datetime.datetime | None = None) -> JobRespon
         connector_id=job.connector_id,
         idempotency_key=job.idempotency_key,
         priority=job.priority,
+        queue_class=queue_class,
+        worker_pool=worker_pool,
         target_os=job.target_os,
         target_arch=job.target_arch,
         target_executor=job.target_executor,

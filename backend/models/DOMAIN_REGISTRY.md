@@ -1,7 +1,7 @@
 <!-- AUTO-GENERATED — do not edit manually.
      Source of truth: domain_registry.json (schema v1.1, ADR-0047)
      Regenerate with: python scripts/generate_domain_registry_md.py
-     Last generated: 2026-03-29T03:18:24Z -->
+     Last generated: 2026-04-01T15:14:13Z -->
 
 # ZEN70 Domain Registry
 
@@ -38,12 +38,8 @@
 | `connector.py` | `backend/models/connector.py` | `control-plane` | ✅ Active | — |
 | `alert.py` | `backend/models/alert.py` | `control-plane` | ✅ Active | — |
 | `workflow.py` | `backend/models/workflow.py` | `control-plane` | ✅ Active | — |
+| `trigger.py` | `backend/models/trigger.py` | `control-plane` | ✅ Active | — |
 | `tenant.py` | `backend/models/tenant.py` | `control-plane` | ✅ Active | — |
-| `asset.py` | `backend/models/asset.py` | `business-layer` | ⛔ Inactive | needs: `api-route`, `migration`, `changelog` |
-| `device.py` | `backend/models/device.py` | `business-layer` | ⛔ Inactive | needs: `api-route`, `migration`, `changelog` |
-| `scene.py` | `backend/models/scene.py` | `business-layer` | ⛔ Inactive | needs: `api-route`, `migration`, `changelog` |
-| `memory.py` | `backend/models/memory.py` | `business-layer` | ⛔ Inactive | needs: `api-route`, `migration`, `changelog` |
-| `board.py` | `backend/models/board.py` | `business-layer` | ⛔ Inactive | needs: `api-route`, `migration`, `changelog` |
 
 ---
 

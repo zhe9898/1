@@ -142,7 +142,7 @@ def test_console_menu_has_envelope_and_control_plane_entries() -> None:
     data = _assert_success_envelope(response)["data"]
     assert data["product"] == "ZEN70 Gateway Kernel"
     route_names = {item["route_name"] for item in data["items"]}
-    assert {"dashboard", "nodes", "jobs", "connectors"}.issubset(route_names)
+    assert {"dashboard", "nodes", "jobs", "connectors", "triggers"}.issubset(route_names)
     assert "settings" not in route_names
 
 

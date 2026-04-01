@@ -31,6 +31,8 @@ class Job(Base):
     connector_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50, index=True)
+    queue_class: Mapped[str] = mapped_column(String(32), nullable=False, default="batch", index=True)
+    worker_pool: Mapped[str] = mapped_column(String(64), nullable=False, default="batch", index=True)
     target_os: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     target_arch: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     target_executor: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

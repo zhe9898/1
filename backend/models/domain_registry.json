@@ -104,6 +104,12 @@
       "active": true
     },
     {
+      "file": "trigger.py",
+      "path": "backend/models/trigger.py",
+      "domain": "control-plane",
+      "active": true
+    },
+    {
       "file": "tenant.py",
       "path": "backend/models/tenant.py",
       "domain": "control-plane",

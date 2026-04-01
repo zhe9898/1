@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Extension SDK / Kind Registry Surface**：新增版本化 extension manifest、job kind / connector kind 发布元数据、workflow template 注册与渲染，以及 `/api/v1/extensions` 发现接口，避免业务团队直接改核心注册表。
+
+- **Unified Trigger Control Plane**锛氭柊澧?`triggers` / `trigger_deliveries` 鎺у埗闈㈣〃銆乵anual / cron / webhook / event trigger kind 鍐呯疆娉ㄥ唽銆?`/api/v1/triggers` 鍙戠幇 / fire / delivery history 锛屼互鍙?`/api/v1/triggers/webhooks/{tenant_id}/{trigger_id}` ingress 鎺ュ叆锛岀粺涓€缈昏瘧涓?job 鎴?workflow template 鍚姩銆?
 ## [3.42] - 2026-03-28
 
 ### Added

@@ -31,7 +31,10 @@ CHANNEL_JOB_EVENTS: str = "job:events"
 """Job 控制面事件频道：创建/拉取/完成/失败。"""
 
 CHANNEL_CONNECTOR_EVENTS: str = "connector:events"
-"""Connector 控制面事件频道：注册/触发/自检。"""
+"""Connector control-plane events: registration, test, invoke lifecycle."""
+
+CHANNEL_TRIGGER_EVENTS: str = "trigger:events"
+"""Trigger control-plane events: upsert, pause/activate, fire, delivery audit."""
 
 
 # ---------------------------------------------------------------------------

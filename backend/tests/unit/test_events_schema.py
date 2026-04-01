@@ -6,6 +6,7 @@ import json
 
 from backend.core.events_schema import (
     SwitchEventPayload,
+    TriggerEventPayload,
     build_switch_event,
 )
 
@@ -47,3 +48,44 @@ def test_from_redis_message_invalid_returns_none() -> None:
     assert SwitchEventPayload.from_redis_message("not json") is None
     assert SwitchEventPayload.from_redis_message({}) is None
     assert SwitchEventPayload.from_redis_message({"no": "state"}) is None
+
+
+def test_trigger_event_payload_parses_delivery_snapshot() -> None:
+    payload = {
+        "event_id": "evt-1",
+        "action": "fired",
+        "ts": "2026-04-01T00:00:00+00:00",
+        "trigger": {
+            "trigger_id": "trigger-1",
+            "kind": "manual",
+            "status": "active",
+            "last_delivery_status": "accepted",
+            "last_delivery_id": "delivery-1",
+            "last_delivery_target_kind": "job",
+            "last_delivery_target_id": "job-1",
+        },
+        "delivery": {
+            "delivery_id": "delivery-1",
+            "status": "accepted",
+            "source_kind": "manual",
+            "target_kind": "job",
+            "target_id": "job-1",
+            "error_message": None,
+            "fired_at": "2026-04-01T00:00:00+00:00",
+            "delivered_at": "2026-04-01T00:00:01+00:00",
+        },
+    }
+
+    parsed = TriggerEventPayload.from_redis_message(json.dumps(payload))
+
+    assert parsed is not None
+    assert parsed.action == "fired"
+    assert parsed.trigger.trigger_id == "trigger-1"
+    assert parsed.delivery is not None
+    assert parsed.delivery.delivery_id == "delivery-1"
+
+
+def test_trigger_event_payload_rejects_missing_trigger_snapshot() -> None:
+    payload = {"event_id": "evt-1", "action": "fired", "delivery": {"delivery_id": "delivery-1", "status": "accepted"}}
+
+    assert TriggerEventPayload.from_redis_message(payload) is None

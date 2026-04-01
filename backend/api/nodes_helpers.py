@@ -34,6 +34,7 @@ from backend.core.control_plane_state import (
 from backend.core.errors import zen
 from backend.core.node_auth import generate_node_token, hash_node_token
 from backend.core.protocol_version import validate_lease_version, validate_protocol_version
+from backend.core.worker_pool import infer_node_worker_pools
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -136,6 +137,14 @@ def _to_response(node: Node, *, active_lease_count: int = 0, now: datetime.datet
         status=node.status,
         status_view=StatusView(**node_status_view(node.status)),
         capabilities=list(node.capabilities or []),
+        worker_pools=infer_node_worker_pools(
+            worker_pools=getattr(node, "worker_pools", None),
+            accepted_kinds=getattr(node, "accepted_kinds", None),
+            capabilities=node.capabilities,
+            gpu_vram_mb=node.gpu_vram_mb,
+            profile=node.profile,
+            metadata=dict(node.metadata_json or {}),
+        ),
         metadata=dict(node.metadata_json or {}),
         actions=_build_node_actions(node),
         registered_at=node.registered_at,
@@ -183,6 +192,24 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
     node.metadata_json = payload.metadata
     # Edge computing attributes (optional, with defaults)
     node.accepted_kinds = getattr(payload, "accepted_kinds", None) or []
+    try:
+        node.worker_pools = infer_node_worker_pools(
+            worker_pools=getattr(payload, "worker_pools", None),
+            accepted_kinds=node.accepted_kinds,
+            capabilities=node.capabilities,
+            gpu_vram_mb=node.gpu_vram_mb,
+            profile=node.profile,
+            metadata=node.metadata_json,
+            strict=True,
+        )
+    except ValueError as e:
+        raise zen(
+            "ZEN-NODE-4002",
+            str(e),
+            status_code=400,
+            recovery_hint="Use worker pool names that match the published node contract",
+            details={"node_id": payload.node_id, "worker_pools": getattr(payload, "worker_pools", None)},
+        ) from e
     node.network_latency_ms = getattr(payload, "network_latency_ms", None)
     node.bandwidth_mbps = getattr(payload, "bandwidth_mbps", None)
     node.cached_data_keys = getattr(payload, "cached_data_keys", None) or []

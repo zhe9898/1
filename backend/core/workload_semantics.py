@@ -151,6 +151,12 @@ def list_workload_descriptors() -> list[WorkloadDescriptor]:
 def get_workload_info(kind: str) -> dict[str, Any]:
     """Get serialisable workload info for API/diagnostics."""
     w = get_workload_descriptor(kind)
+    from backend.core.worker_pool import default_worker_pool_for_queue_class, infer_queue_class
+
+    queue_class = infer_queue_class(
+        kind=w.kind,
+        required_gpu_vram_mb=w.resource_profile.gpu_vram_mb,
+    )
     return {
         "kind": w.kind,
         "category": w.category.value,
@@ -160,6 +166,8 @@ def get_workload_info(kind: str) -> dict[str, Any]:
         "gang_capable": w.gang_capable,
         "batch_capable": w.batch_capable,
         "scheduling_profile": w.scheduling_profile,
+        "default_queue_class": queue_class,
+        "default_worker_pool": default_worker_pool_for_queue_class(queue_class),
         "resource_profile": {
             "cpu_cores": w.resource_profile.cpu_cores,
             "memory_mb": w.resource_profile.memory_mb,

@@ -17,11 +17,15 @@ from pydantic import BaseModel, ValidationError
 # Registry mapping connector kind to config schema validator
 _CONNECTOR_KIND_REGISTRY: dict[str, type[BaseModel]] = {}
 
+# Registry mapping connector kind to extension/discovery metadata
+_CONNECTOR_KIND_METADATA_REGISTRY: dict[str, dict[str, Any]] = {}
+
 
 def register_connector_kind(
     kind: str,
     *,
-    config_schema: type[BaseModel],
+    config_schema: type[BaseModel] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Register a connector kind with config schema.
 
@@ -35,7 +39,13 @@ def register_connector_kind(
         ...     method: str = "POST"
         >>> register_connector_kind("http", config_schema=HttpConnectorConfig)
     """
-    _CONNECTOR_KIND_REGISTRY[kind] = config_schema
+    if config_schema is not None:
+        _CONNECTOR_KIND_REGISTRY[kind] = config_schema
+
+    if metadata is not None:
+        _CONNECTOR_KIND_METADATA_REGISTRY[kind] = dict(metadata)
+    else:
+        _CONNECTOR_KIND_METADATA_REGISTRY.setdefault(kind, {"source": "core"})
 
 
 def unregister_connector_kind(kind: str) -> None:
@@ -45,6 +55,7 @@ def unregister_connector_kind(kind: str) -> None:
         kind: Connector kind identifier
     """
     _CONNECTOR_KIND_REGISTRY.pop(kind, None)
+    _CONNECTOR_KIND_METADATA_REGISTRY.pop(kind, None)
 
 
 def is_connector_kind_registered(kind: str) -> bool:
@@ -56,7 +67,7 @@ def is_connector_kind_registered(kind: str) -> bool:
     Returns:
         True if registered, False otherwise
     """
-    return kind in _CONNECTOR_KIND_REGISTRY
+    return kind in _CONNECTOR_KIND_REGISTRY or kind in _CONNECTOR_KIND_METADATA_REGISTRY
 
 
 def get_registered_connector_kinds() -> list[str]:
@@ -65,7 +76,7 @@ def get_registered_connector_kinds() -> list[str]:
     Returns:
         List of connector kind identifiers
     """
-    return sorted(_CONNECTOR_KIND_REGISTRY.keys())
+    return sorted(set(_CONNECTOR_KIND_REGISTRY.keys()) | set(_CONNECTOR_KIND_METADATA_REGISTRY.keys()))
 
 
 def validate_connector_config(kind: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -157,11 +168,13 @@ def get_connector_kind_info(kind: str) -> dict[str, Any]:
         Dictionary with kind information
     """
     config_schema = _CONNECTOR_KIND_REGISTRY.get(kind)
+    metadata = dict(_CONNECTOR_KIND_METADATA_REGISTRY.get(kind, {}))
 
     return {
         "kind": kind,
         "has_config_schema": config_schema is not None,
         "config_schema": config_schema.model_json_schema() if config_schema else None,
+        "metadata": metadata,
     }
 
 

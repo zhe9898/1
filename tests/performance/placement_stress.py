@@ -38,6 +38,7 @@ def _node(node_id: str, *, max_concurrency: int = 16) -> SchedulerNodeSnapshot:
         zone=f"z{hash(node_id) % 4}",
         capabilities=frozenset({"shell", "docker"}),
         accepted_kinds=frozenset({"shell.exec"}),
+        worker_pools=frozenset({"batch"}),
         max_concurrency=max_concurrency,
         active_lease_count=0,
         cpu_cores=16,
