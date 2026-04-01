@@ -57,7 +57,7 @@ def _resource_fit_bonus(job: Job, node: SchedulerNodeSnapshot) -> int:
 
 
 def _stable_tiebreak(job_id: str, node_id: str) -> int:
-    digest = hashlib.sha1(f"{job_id}:{node_id}".encode("utf-8")).hexdigest()  # noqa: S324
+    digest = hashlib.sha1(f"{job_id}:{node_id}".encode("utf-8")).hexdigest()  # nosec  # noqa: S324
     return int(digest[:8], 16)
 
 

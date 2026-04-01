@@ -69,6 +69,7 @@ jobs:
           git diff --exit-code -- contracts/metadata.json contracts/openapi docs/openapi-kernel.json docs/openapi-iot.json docs/openapi-ops.json docs/openapi-full.json docs/openapi.json
         env:
           PYTHONPATH: ${{ github.workspace }}
+          DOMAIN: "localhost"
 
       - name: pip-audit (security)
         run: pip-audit -r backend/requirements-core.txt --strict --desc on

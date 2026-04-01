@@ -90,6 +90,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           PYTHONPATH: ${{ github.workspace }}
+          DOMAIN: "localhost"
         run: |
           python scripts/generate_contracts.py
           git diff --exit-code -- contracts/metadata.json contracts/openapi docs/openapi-kernel.json docs/openapi-iot.json docs/openapi-ops.json docs/openapi-full.json docs/openapi.json

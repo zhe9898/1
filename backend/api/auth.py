@@ -61,6 +61,6 @@ try:
         generate_authentication_challenge,
         verify_authentication,
     )
-except ImportError:
+except (ImportError, RuntimeError):
     generate_authentication_challenge = None  # type: ignore[assignment]
     verify_authentication = None  # type: ignore[assignment]
