@@ -658,6 +658,22 @@ class TopologySentinel:
 
         self._process_mount_state_change(mount, new_state, cur_state)
 
+    def _probe_gpu(self) -> None:
+        """Step 2: GPU 状态核验并打污点，支持离线自治（本地 nvidia-smi 不依赖 Redis）。"""
+        r = self._redis
+        if self._redis_ok() and r is not None:
+            try:
+                gpu_state = self._check_gpu()
+                r.hset(REDIS_KEY_GPU, mapping=gpu_state)  # type: ignore[arg-type]
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+                if logger:
+                    logger.warning("GPU state write failed: %s", e)
+        elif self.is_zombie:
+            try:
+                self._check_gpu()
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError):
+                pass
+
     def run_once(self) -> None:
         """执行一次检测周期与强一致性调谐。"""
         # Step 0: 系统盘 95% 物理熔断预检（法典 3.3 最高优先级）
@@ -675,21 +691,8 @@ class TopologySentinel:
                 if logger:
                     logger.error("Error handling mount %s: %s", mount.path, e)
 
-        # Step 2: 处理 GPU 状态核验并打污点
-        r = self._redis
-        if self._redis_ok() and r is not None:
-            try:
-                gpu_state = self._check_gpu()
-                r.hset(REDIS_KEY_GPU, mapping=gpu_state)  # type: ignore[arg-type]
-            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-                if logger:
-                    logger.warning("GPU state write failed: %s", e)
-        elif self.is_zombie:
-            # 离线自治：仍然执行 GPU 检测（本地 nvidia-smi），不写 Redis
-            try:
-                self._check_gpu()
-            except (OSError, ValueError, KeyError, RuntimeError, TypeError):
-                pass
+        # Step 2: GPU 状态核验
+        self._probe_gpu()
 
         # Step 3: K3s 调谐循环 (Reconcile loop)
         try:
