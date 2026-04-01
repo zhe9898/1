@@ -99,7 +99,7 @@ class OutcomeSignal:
     # Context at completion
     node_utilisation: float  # active_lease / max_concurrency at completion
     timestamp: datetime.datetime = field(
-        default_factory=lambda: datetime.datetime.utcnow(),
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from backend.core.events_schema import (
+    ReservationEventPayload,
     SwitchEventPayload,
     TriggerEventPayload,
     build_switch_event,
@@ -89,3 +90,36 @@ def test_trigger_event_payload_rejects_missing_trigger_snapshot() -> None:
     payload = {"event_id": "evt-1", "action": "fired", "delivery": {"delivery_id": "delivery-1", "status": "accepted"}}
 
     assert TriggerEventPayload.from_redis_message(payload) is None
+
+
+def test_reservation_event_payload_parses_snapshot() -> None:
+    payload = {
+        "event_id": "evt-2",
+        "action": "created",
+        "ts": "2026-04-01T00:00:00+00:00",
+        "reservation": {
+            "job_id": "job-1",
+            "tenant_id": "default",
+            "node_id": "node-a",
+            "start_at": "2026-04-01T00:05:00+00:00",
+            "end_at": "2026-04-01T00:10:00+00:00",
+            "priority": 90,
+            "cpu_cores": 4.0,
+            "memory_mb": 2048.0,
+            "gpu_vram_mb": 0.0,
+            "slots": 1,
+        },
+        "reason": "dispatch_backfill_plan",
+        "source": "dispatch",
+    }
+
+    parsed = ReservationEventPayload.from_redis_message(json.dumps(payload))
+
+    assert parsed is not None
+    assert parsed.action == "created"
+    assert parsed.reservation.job_id == "job-1"
+    assert parsed.reservation.node_id == "node-a"
+
+
+def test_reservation_event_payload_rejects_missing_snapshot() -> None:
+    assert ReservationEventPayload.from_redis_message({"event_id": "evt-2", "action": "created"}) is None

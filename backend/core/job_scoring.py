@@ -179,7 +179,13 @@ def score_job_for_node(
 
     reliability_score = int(max(0.0, min(node.reliability_score, 1.0)) * sw.reliability_max)
 
-    strategy = getattr(job, "scheduling_strategy", None) or SchedulingStrategy.SPREAD
+    from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+    _tuner = get_scheduler_tuner()
+
+    strategy = getattr(job, "scheduling_strategy", None)
+    if not strategy:
+        strategy = _tuner.recommend_strategy() or SchedulingStrategy.SPREAD
     try:
         strategy_enum = SchedulingStrategy(strategy)
     except ValueError:
@@ -205,9 +211,6 @@ def score_job_for_node(
     _active_jobs = active_jobs_on_node or []
 
     # ── Self-learning weight adjustments ─────────────────────────────
-    from backend.core.scheduler_auto_tune import get_scheduler_tuner
-
-    _tuner = get_scheduler_tuner()
     _adj = _tuner.get_adjustment  # shorthand
 
     breakdown = {

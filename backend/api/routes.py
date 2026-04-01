@@ -28,6 +28,7 @@ from backend.core.redis_client import (
     CHANNEL_CONNECTOR_EVENTS,
     CHANNEL_JOB_EVENTS,
     CHANNEL_NODE_EVENTS,
+    CHANNEL_RESERVATION_EVENTS,
     CHANNEL_TRIGGER_EVENTS,
     RedisClient,
 )
@@ -155,6 +156,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
     - CHANNEL_NODE_EVENTS: Node registration, heartbeat, drain
     - CHANNEL_JOB_EVENTS: Job creation, lease, completion, failure
     - CHANNEL_CONNECTOR_EVENTS: Connector registration, invocation
+    - CHANNEL_RESERVATION_EVENTS: Reservation lifecycle and backfill planning
     - CHANNEL_TRIGGER_EVENTS: Trigger lifecycle, fire, delivery audit
 
     Business/IoT channels (hardware, switch) are NOT subscribed in default kernel.
@@ -164,6 +166,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
             CHANNEL_NODE_EVENTS,
             CHANNEL_JOB_EVENTS,
             CHANNEL_CONNECTOR_EVENTS,
+            CHANNEL_RESERVATION_EVENTS,
             CHANNEL_TRIGGER_EVENTS,
         )
         # 首包：回显 connection_id
@@ -202,6 +205,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
                 CHANNEL_NODE_EVENTS,
                 CHANNEL_JOB_EVENTS,
                 CHANNEL_CONNECTOR_EVENTS,
+                CHANNEL_RESERVATION_EVENTS,
                 CHANNEL_TRIGGER_EVENTS,
             )
         except (ConnectionError, asyncio.CancelledError):

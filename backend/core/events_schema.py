@@ -200,6 +200,57 @@ class TriggerEventPayload(BaseModel):
             return None
 
 
+class ReservationEventSnapshot(BaseModel):
+    """Reservation snapshot embedded in reservation:events payloads."""
+
+    job_id: str = Field(..., description="Reserved job ID")
+    tenant_id: str = Field(..., description="Tenant owning the reservation")
+    node_id: str = Field(..., description="Reserved node ID")
+    start_at: str = Field(..., description="Reservation start time")
+    end_at: str = Field(..., description="Reservation end time")
+    priority: int = Field(..., description="Reserved job priority")
+    cpu_cores: float = 0.0
+    memory_mb: float = 0.0
+    gpu_vram_mb: float = 0.0
+    slots: int = 1
+
+
+class ReservationEventPayload(BaseModel):
+    """reservation:events payload for reservation lifecycle and planning events."""
+
+    event_id: str | None = Field(default=None, description="Control event ID")
+    action: str = Field(..., description="created | canceled | expired")
+    ts: str | None = Field(default=None, description="Event timestamp")
+    reservation: ReservationEventSnapshot = Field(..., description="Reservation snapshot")
+    reason: str | None = Field(default=None, description="Why the reservation changed")
+    source: str | None = Field(default=None, description="Originating runtime component")
+
+    @classmethod
+    def from_redis_message(cls, data: str | bytes | dict[str, object]) -> ReservationEventPayload | None:
+        """Deserialize a reservation:events Redis payload into the contract model."""
+
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                return None
+
+        if not isinstance(data, dict):
+            return None
+
+        reservation_snapshot = data.get("reservation")
+        if not isinstance(reservation_snapshot, dict):
+            return None
+
+        try:
+            return cls.model_validate(data)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+
 class VoiceEventPayload(BaseModel):
     """voice:events 通道 payload；语音转文字结果回推。"""
 

@@ -45,6 +45,12 @@ from backend.core.scheduling_constraints import SchedulingConstraint, Scheduling
 logger = logging.getLogger(__name__)
 
 
+def _resolve_tenant_id(value: object) -> str:
+    if isinstance(value, str) and value.strip():
+        return value
+    return "default"
+
+
 # =====================================================================
 # Configuration
 # =====================================================================
@@ -92,6 +98,7 @@ class ResourceReservation:
     memory_mb: float = 0.0
     gpu_vram_mb: float = 0.0
     slots: int = 1
+    tenant_id: str = "default"
 
     def overlaps(self, start: datetime.datetime, end: datetime.datetime) -> bool:
         """Check if a time window overlaps with this reservation."""
@@ -114,6 +121,7 @@ class ResourceReservation:
         """Serialise to a JSON-safe dict (for Redis store)."""
         return {
             "job_id": self.job_id,
+            "tenant_id": self.tenant_id,
             "node_id": self.node_id,
             "start_at": self.start_at.isoformat(),
             "end_at": self.end_at.isoformat(),
@@ -129,6 +137,7 @@ class ResourceReservation:
         """Deserialise from a JSON dict."""
         return cls(
             job_id=str(data["job_id"]),
+            tenant_id=str(data.get("tenant_id", "default")),
             node_id=str(data["node_id"]),
             start_at=datetime.datetime.fromisoformat(str(data["start_at"])),
             end_at=datetime.datetime.fromisoformat(str(data["end_at"])),
@@ -167,8 +176,25 @@ class ReservationStore(ABC):
         ...
 
     @abstractmethod
-    def get_by_node(self, node_id: str, *, after: datetime.datetime | None = None) -> list[ResourceReservation]:
+    def get_by_node(
+        self,
+        node_id: str,
+        *,
+        tenant_id: str = "default",
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
         """Get reservations for a node, optionally filtered by time."""
+        ...
+
+    @abstractmethod
+    def list(
+        self,
+        *,
+        tenant_id: str | None = None,
+        node_id: str | None = None,
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
+        """List reservations with optional tenant/node/time filtering."""
         ...
 
     @abstractmethod
@@ -188,7 +214,7 @@ class InMemoryReservationStore(ReservationStore):
     def __init__(self, max_reservations: int = 50) -> None:
         self._max = max_reservations
         self._reservations: dict[str, ResourceReservation] = {}
-        self._node_index: dict[str, list[str]] = {}
+        self._node_index: dict[tuple[str, str], list[str]] = {}
 
     def put(self, reservation: ResourceReservation) -> bool:
         if reservation.job_id in self._reservations:
@@ -196,13 +222,13 @@ class InMemoryReservationStore(ReservationStore):
         if len(self._reservations) >= self._max:
             return False
         self._reservations[reservation.job_id] = reservation
-        self._node_index.setdefault(reservation.node_id, []).append(reservation.job_id)
+        self._node_index.setdefault((reservation.tenant_id, reservation.node_id), []).append(reservation.job_id)
         return True
 
     def remove(self, job_id: str) -> ResourceReservation | None:
         r = self._reservations.pop(job_id, None)
         if r is not None:
-            nlist = self._node_index.get(r.node_id, [])
+            nlist = self._node_index.get((r.tenant_id, r.node_id), [])
             if job_id in nlist:
                 nlist.remove(job_id)
         return r
@@ -210,12 +236,34 @@ class InMemoryReservationStore(ReservationStore):
     def get(self, job_id: str) -> ResourceReservation | None:
         return self._reservations.get(job_id)
 
-    def get_by_node(self, node_id: str, *, after: datetime.datetime | None = None) -> list[ResourceReservation]:
-        jids = self._node_index.get(node_id, [])
+    def get_by_node(
+        self,
+        node_id: str,
+        *,
+        tenant_id: str = "default",
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
+        jids = self._node_index.get((tenant_id, node_id), [])
         result = [self._reservations[jid] for jid in jids if jid in self._reservations]
         if after is not None:
             result = [r for r in result if r.end_at > after]
         return sorted(result, key=lambda r: r.start_at)
+
+    def list(
+        self,
+        *,
+        tenant_id: str | None = None,
+        node_id: str | None = None,
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
+        result = list(self._reservations.values())
+        if tenant_id is not None:
+            result = [r for r in result if r.tenant_id == tenant_id]
+        if node_id is not None:
+            result = [r for r in result if r.node_id == node_id]
+        if after is not None:
+            result = [r for r in result if r.end_at > after]
+        return sorted(result, key=lambda r: (r.start_at, r.node_id, r.job_id))
 
     def count(self) -> int:
         return len(self._reservations)
@@ -245,8 +293,8 @@ class RedisReservationStore(ReservationStore):
     def _data_key(self, job_id: str) -> str:
         return f"{self._PREFIX}:data:{job_id}"
 
-    def _node_key(self, node_id: str) -> str:
-        return f"{self._PREFIX}:node:{node_id}"
+    def _node_key(self, tenant_id: str, node_id: str) -> str:
+        return f"{self._PREFIX}:tenant:{tenant_id}:node:{node_id}"
 
     def _count_key(self) -> str:
         return f"{self._PREFIX}:count"
@@ -268,7 +316,7 @@ class RedisReservationStore(ReservationStore):
             ex=max(int((reservation.end_at - datetime.datetime.now(datetime.UTC)).total_seconds()), 60),
         )
         pipe.zadd(
-            self._node_key(reservation.node_id),
+            self._node_key(reservation.tenant_id, reservation.node_id),
             {reservation.job_id: reservation.start_at.timestamp()},
         )
         pipe.incr(self._count_key())
@@ -284,7 +332,7 @@ class RedisReservationStore(ReservationStore):
         reservation = ResourceReservation.from_dict(data)
         pipe = r.pipeline(transaction=True)
         pipe.delete(self._data_key(job_id))
-        pipe.zrem(self._node_key(reservation.node_id), job_id)
+        pipe.zrem(self._node_key(reservation.tenant_id, reservation.node_id), job_id)
         pipe.decr(self._count_key())
         pipe.execute()
         return reservation
@@ -296,21 +344,58 @@ class RedisReservationStore(ReservationStore):
             return None
         return ResourceReservation.from_dict(json.loads(raw))
 
-    def get_by_node(self, node_id: str, *, after: datetime.datetime | None = None) -> list[ResourceReservation]:
+    def get_by_node(
+        self,
+        node_id: str,
+        *,
+        tenant_id: str = "default",
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
         r = self._redis
         min_score = after.timestamp() if after else "-inf"
-        jids = r.zrangebyscore(self._node_key(node_id), min_score, "+inf")
+        jids = r.zrangebyscore(self._node_key(tenant_id, node_id), min_score, "+inf")
         result: list[ResourceReservation] = []
         for jid_bytes in jids:
             jid = jid_bytes.decode() if isinstance(jid_bytes, bytes) else str(jid_bytes)
             raw = r.get(self._data_key(jid))
             if raw is None:
-                r.zrem(self._node_key(node_id), jid)  # stale index entry
+                r.zrem(self._node_key(tenant_id, node_id), jid)  # stale index entry
                 continue
             reservation = ResourceReservation.from_dict(json.loads(raw))
             if after is None or reservation.end_at > after:
                 result.append(reservation)
         return sorted(result, key=lambda rv: rv.start_at)
+
+    def list(
+        self,
+        *,
+        tenant_id: str | None = None,
+        node_id: str | None = None,
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
+        if tenant_id is not None and node_id is not None:
+            return self.get_by_node(node_id, tenant_id=tenant_id, after=after)
+
+        cursor = 0
+        result: list[ResourceReservation] = []
+        while True:
+            cursor, keys = self._redis.scan(cursor=cursor, match=f"{self._PREFIX}:data:*", count=100)
+            for raw_key in keys:
+                key = raw_key.decode() if isinstance(raw_key, bytes) else str(raw_key)
+                job_id = key.rsplit(":", 1)[-1]
+                reservation = self.get(job_id)
+                if reservation is None:
+                    continue
+                if tenant_id is not None and reservation.tenant_id != tenant_id:
+                    continue
+                if node_id is not None and reservation.node_id != node_id:
+                    continue
+                if after is not None and reservation.end_at <= after:
+                    continue
+                result.append(reservation)
+            if cursor == 0:
+                break
+        return sorted(result, key=lambda rv: (rv.start_at, rv.node_id, rv.job_id))
 
     def count(self) -> int:
         r = self._redis
@@ -323,7 +408,7 @@ class RedisReservationStore(ReservationStore):
         removed = 0
         # Scan node keys and remove entries whose data has expired
         cursor = 0
-        node_prefix = f"{self._PREFIX}:node:"
+        node_prefix = f"{self._PREFIX}:tenant:"
         while True:
             cursor, keys = r.scan(cursor, match=f"{node_prefix}*", count=100)
             for nkey in keys:
@@ -385,6 +470,7 @@ class ReservationManager:
 
         reservation = ResourceReservation(
             job_id=job.job_id,
+            tenant_id=_resolve_tenant_id(getattr(job, "tenant_id", "default")),
             node_id=node.node_id,
             start_at=start_at,
             end_at=end_at,
@@ -415,10 +501,21 @@ class ReservationManager:
         self,
         node_id: str,
         *,
+        tenant_id: str = "default",
         after: datetime.datetime | None = None,
     ) -> list[ResourceReservation]:
         """Get active reservations for a node, optionally filtered by time."""
-        return self._store.get_by_node(node_id, after=after)
+        return self._store.get_by_node(node_id, tenant_id=tenant_id, after=after)
+
+    def list_reservations(
+        self,
+        *,
+        tenant_id: str | None = None,
+        node_id: str | None = None,
+        after: datetime.datetime | None = None,
+    ) -> list[ResourceReservation]:
+        """List reservations with optional tenant/node/time filtering."""
+        return self._store.list(tenant_id=tenant_id, node_id=node_id, after=after)
 
     def get_reservation(self, job_id: str) -> ResourceReservation | None:
         """Get a specific job's reservation."""
@@ -432,10 +529,15 @@ class ReservationManager:
     def reservation_count(self) -> int:
         return self._store.count()
 
+    @property
+    def store_backend(self) -> str:
+        return "redis" if isinstance(self._store, RedisReservationStore) else "memory"
+
     def find_backfill_window(
         self,
         node: SchedulerNodeSnapshot,
         *,
+        tenant_id: str | None = None,
         now: datetime.datetime,
         required_duration_s: int,
     ) -> tuple[datetime.datetime, datetime.datetime] | None:
@@ -443,7 +545,8 @@ class ReservationManager:
 
         Returns (gap_start, gap_end) or None if no suitable gap exists.
         """
-        reservations = self.get_node_reservations(node.node_id, after=now)
+        resolved_tenant_id = tenant_id or _resolve_tenant_id(getattr(node, "tenant_id", "default"))
+        reservations = self.get_node_reservations(node.node_id, tenant_id=resolved_tenant_id, after=now)
 
         if not reservations:
             # No reservations — entire horizon is open
@@ -515,7 +618,10 @@ class BackfillEvaluator:
 
         # Check against node reservations
         estimated_end = now + datetime.timedelta(seconds=duration)
-        reservations = self._reservation_mgr.get_node_reservations(node.node_id, after=now)
+        tenant_id = _resolve_tenant_id(getattr(job, "tenant_id", None))
+        if tenant_id == "default":
+            tenant_id = _resolve_tenant_id(getattr(node, "tenant_id", "default"))
+        reservations = self._reservation_mgr.get_node_reservations(node.node_id, tenant_id=tenant_id, after=now)
 
         for r in reservations:
             if r.job_id == job.job_id:
@@ -570,6 +676,10 @@ class ReservationHonorGate(SchedulingConstraint):
 
         # If within or past reservation start, boost priority significantly
         time_to_start = (reservation.start_at - ctx.now).total_seconds()
+        if time_to_start <= 0:
+            current_pri = int(job.priority or 50)
+            job.priority = priority_cap
+            return True, f"reservation_due:max_priority:+{priority_cap - current_pri}:time_to_start:{time_to_start:.0f}s"
         if time_to_start <= imminent_window:
             boost = imminent_boost
         elif time_to_start <= approaching_window:

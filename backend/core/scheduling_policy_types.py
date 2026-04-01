@@ -236,6 +236,12 @@ class QueueConfig:
 class SolverConfig:
     """Global placement solver scoring bonuses."""
 
+    enabled_in_dispatch: bool = True
+    dispatch_time_budget_ms: float = 8.0
+    max_jobs_per_dispatch: int = 96
+    max_nodes_per_dispatch: int = 64
+    max_candidate_pairs_per_dispatch: int = 4096
+    plan_affinity_bonus: int = 120
     spread_bonus: int = 30
     binpack_bonus: int = 25
     affinity_bonus: int = 20

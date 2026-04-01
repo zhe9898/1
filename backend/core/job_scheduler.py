@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import heapq
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -35,7 +36,6 @@ class SchedulerNodeSnapshot:
     zone: str | None
     capabilities: frozenset[str]
     accepted_kinds: frozenset[str]
-    worker_pools: frozenset[str]
     max_concurrency: int
     active_lease_count: int
     cpu_cores: int
@@ -56,6 +56,8 @@ class SchedulerNodeSnapshot:
     thermal_state: str
     cloud_connectivity: str
     metadata_json: dict[str, object]
+    worker_pools: frozenset[str] = field(default_factory=frozenset)
+    tenant_id: str = "default"
 
 
 @dataclass(slots=True)
@@ -105,6 +107,7 @@ def build_node_snapshot(node: Node, *, active_lease_count: int, reliability_scor
         thermal_state=str(getattr(node, "thermal_state", None) or "normal"),
         cloud_connectivity=str(getattr(node, "cloud_connectivity", None) or "unknown"),
         metadata_json=dict(getattr(node, "metadata_json", None) or {}),
+        tenant_id=str(getattr(node, "tenant_id", "default") or "default"),
     )
 
 
@@ -298,12 +301,23 @@ def select_jobs_for_node(  # noqa: C901
     recent_failed_job_ids: set[str],
     active_jobs_on_node: list[Job] | None = None,
     limit: int,
+    placement_plan: dict[str, str] | None = None,
 ) -> list[ScoredJob]:
     available_slots = max(node.max_concurrency - node.active_lease_count, 0)
     if available_slots <= 0:
         return []
     total_active_nodes = len(active_nodes)
     _active_jobs = active_jobs_on_node or []
+    _reservation_mgr = None
+    _backfill_eval = None
+    try:
+        from backend.core.backfill_scheduling import BackfillEvaluator, get_reservation_manager
+
+        _reservation_mgr = get_reservation_manager()
+        _backfill_eval = BackfillEvaluator(_reservation_mgr)
+    except Exception:
+        _reservation_mgr = None
+        _backfill_eval = None
 
     # ── Phase A: Cheap pre-filter → compatible candidates ─────────────
     compatible: list[Job] = []
@@ -324,6 +338,12 @@ def select_jobs_for_node(  # noqa: C901
             continue
         if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
             continue
+        if _backfill_eval is not None and _reservation_mgr is not None:
+            priority = int(getattr(job, "priority", 0) or 0)
+            if priority < _reservation_mgr.config.reservation_min_priority:
+                can_backfill, _reason = _backfill_eval.can_backfill(job, node, now=now)
+                if not can_backfill:
+                    continue
         compatible.append(job)
 
     if not compatible:
@@ -390,6 +410,11 @@ def select_jobs_for_node(  # noqa: C901
         )
 
         # ── Placement policy accept gate ─────────────────────────────
+        if placement_plan and placement_plan.get(job.job_id) == node.node_id:
+            plan_bonus = _get_solver_config().plan_affinity_bonus
+            total += plan_bonus
+            breakdown["solver_plan_affinity"] = plan_bonus
+
         from backend.core.placement_policy import get_placement_policy
 
         _pp = get_placement_policy()
@@ -479,30 +504,56 @@ class PlacementSolver:
         now: datetime.datetime,
         accepted_kinds: set[str],
         recent_failed_job_ids: set[str] | None = None,
+        active_jobs_by_node: dict[str, list[Job]] | None = None,
+        metrics: dict[str, object] | None = None,
+        deadline_monotonic: float | None = None,
     ) -> dict[str, str]:
         """Run the global placement solver.
 
         Returns mapping {job_id: preferred_node_id}.
         """
+        if metrics is not None:
+            metrics.setdefault("solver_invoked", True)
+            metrics.setdefault("timed_out", False)
         if not jobs or not nodes:
+            if metrics is not None:
+                metrics["assignments"] = 0
+                metrics["result"] = "empty_window"
             return {}
 
         live_nodes = [n for n in nodes if is_node_eligible(n, now)]
+        if metrics is not None:
+            metrics["live_nodes"] = len(live_nodes)
         if not live_nodes:
+            if metrics is not None:
+                metrics["assignments"] = 0
+                metrics["result"] = "no_live_nodes"
             return {}
 
         failed_ids = recent_failed_job_ids or set()
+        node_active_jobs = active_jobs_by_node or {}
         total_active = len(live_nodes)
 
         # ── Phase 1: Build feasible candidates ───────────────────────
         candidates: list[PlacementCandidate] = []
         for job in jobs:
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                if metrics is not None:
+                    metrics["timed_out"] = True
+                    metrics["assignments"] = 0
+                    metrics["result"] = "time_budget_exceeded"
+                return {}
             for node in live_nodes:
                 if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
                     continue
                 candidates.append(PlacementCandidate(job=job, node=node))
 
+        if metrics is not None:
+            metrics["feasible_pairs"] = len(candidates)
         if not candidates:
+            if metrics is not None:
+                metrics["assignments"] = 0
+                metrics["result"] = "no_feasible_pairs"
             return {}
 
         # ── Phase 2: Score each candidate ────────────────────────────
@@ -513,6 +564,12 @@ class PlacementSolver:
             accepted_kinds=accepted_kinds,
         )
         for c in candidates:
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                if metrics is not None:
+                    metrics["timed_out"] = True
+                    metrics["assignments"] = 0
+                    metrics["result"] = "time_budget_exceeded"
+                return {}
             ec = eligible_cache.get(c.job.job_id, 1)
             total, breakdown = score_job_for_node(
                 c.job,
@@ -521,7 +578,7 @@ class PlacementSolver:
                 total_active_nodes=total_active,
                 eligible_nodes_count=max(ec, 1),
                 recent_failed_job_ids=failed_ids,
-                active_jobs_on_node=[],
+                active_jobs_on_node=list(node_active_jobs.get(c.node.node_id, [])),
             )
             c.score = total
             c.breakdown = dict(breakdown)
@@ -530,7 +587,16 @@ class PlacementSolver:
         self._apply_global_adjustments(candidates, live_nodes)
 
         # ── Phase 4: Greedy weighted matching ────────────────────────
-        return self._greedy_match(candidates, live_nodes)
+        plan = self._greedy_match(
+            candidates,
+            live_nodes,
+            deadline_monotonic=deadline_monotonic,
+            metrics=metrics,
+        )
+        if metrics is not None and "result" not in metrics:
+            metrics["assignments"] = len(plan)
+            metrics["result"] = "planned" if plan else "no_assignments"
+        return plan
 
     def _apply_global_adjustments(
         self,
@@ -579,6 +645,9 @@ class PlacementSolver:
         self,
         candidates: list[PlacementCandidate],
         live_nodes: list[SchedulerNodeSnapshot],
+        *,
+        deadline_monotonic: float | None = None,
+        metrics: dict[str, object] | None = None,
     ) -> dict[str, str]:
         """Greedy descending-score assignment with capacity deduction.
 
@@ -610,6 +679,12 @@ class PlacementSolver:
         gang_cap_deltas: dict[str, dict[str, int]] = {}  # gang_id → {node_id: slots_used}
 
         while heap:
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                if metrics is not None:
+                    metrics["timed_out"] = True
+                    metrics["assignments"] = 0
+                    metrics["result"] = "time_budget_exceeded"
+                return {}
             neg_score, job_id, node_id = heapq.heappop(heap)
             if job_id in assigned_jobs:
                 continue
@@ -685,3 +760,72 @@ def get_placement_solver() -> PlacementSolver:
     if _solver is None:
         _solver = PlacementSolver()
     return _solver
+
+
+def build_time_budgeted_placement_plan(
+    jobs: list[Job],
+    nodes: list[SchedulerNodeSnapshot],
+    *,
+    now: datetime.datetime,
+    accepted_kinds: set[str],
+    recent_failed_job_ids: set[str] | None = None,
+    active_jobs_by_node: dict[str, list[Job]] | None = None,
+    decision_context: dict[str, object] | None = None,
+) -> dict[str, str]:
+    """Run the global solver only when it fits a strict dispatch latency budget."""
+    solver_cfg = _get_solver_config()
+    if decision_context is not None:
+        decision_context.clear()
+        decision_context.update(
+            {
+                "enabled": bool(solver_cfg.enabled_in_dispatch),
+                "attempted": False,
+                "candidate_jobs": len(jobs),
+                "candidate_nodes": len(nodes),
+                "candidate_pairs_upper_bound": len(jobs) * len(nodes),
+                "dispatch_time_budget_ms": solver_cfg.dispatch_time_budget_ms,
+                "timed_out": False,
+                "assignments": 0,
+            }
+        )
+    if not solver_cfg.enabled_in_dispatch:
+        if decision_context is not None:
+            decision_context["reason"] = "disabled"
+        return {}
+    if not jobs or not nodes:
+        if decision_context is not None:
+            decision_context["reason"] = "empty_window"
+        return {}
+    if len(jobs) > solver_cfg.max_jobs_per_dispatch:
+        if decision_context is not None:
+            decision_context["reason"] = "oversized_job_window"
+        return {}
+    if len(nodes) > solver_cfg.max_nodes_per_dispatch:
+        if decision_context is not None:
+            decision_context["reason"] = "oversized_node_window"
+        return {}
+    if len(jobs) * len(nodes) > solver_cfg.max_candidate_pairs_per_dispatch:
+        if decision_context is not None:
+            decision_context["reason"] = "oversized_candidate_matrix"
+        return {}
+
+    deadline_monotonic = None
+    if solver_cfg.dispatch_time_budget_ms > 0:
+        deadline_monotonic = time.monotonic() + (solver_cfg.dispatch_time_budget_ms / 1000.0)
+    if decision_context is not None:
+        decision_context["attempted"] = True
+        decision_context["reason"] = "solver_attempted"
+    plan = get_placement_solver().solve(
+        jobs,
+        nodes,
+        now=now,
+        accepted_kinds=accepted_kinds,
+        recent_failed_job_ids=recent_failed_job_ids,
+        active_jobs_by_node=active_jobs_by_node,
+        metrics=decision_context,
+        deadline_monotonic=deadline_monotonic,
+    )
+    if decision_context is not None:
+        decision_context["assignments"] = len(plan)
+        decision_context["reason"] = str(decision_context.get("result", "planned" if plan else "no_assignments"))
+    return plan

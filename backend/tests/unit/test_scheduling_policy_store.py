@@ -255,6 +255,25 @@ class TestValidation:
         errors = validate_policy(policy)
         assert any("weight" in e for e in errors)
 
+    def test_solver_dispatch_limits_must_be_positive(self):
+        from backend.core.scheduling_policy_types import SolverConfig
+
+        policy = SchedulingPolicy(
+            solver=SolverConfig(
+                dispatch_time_budget_ms=-1,
+                max_jobs_per_dispatch=0,
+                max_nodes_per_dispatch=0,
+                max_candidate_pairs_per_dispatch=0,
+                plan_affinity_bonus=-1,
+            )
+        )
+        errors = validate_policy(policy)
+        assert any("dispatch_time_budget_ms" in e for e in errors)
+        assert any("max_jobs_per_dispatch" in e for e in errors)
+        assert any("max_nodes_per_dispatch" in e for e in errors)
+        assert any("max_candidate_pairs_per_dispatch" in e for e in errors)
+        assert any("plan_affinity_bonus" in e for e in errors)
+
 
 # =====================================================================
 # Diff generation

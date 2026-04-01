@@ -696,3 +696,15 @@ def test_contracts_metadata_indexes_trigger_contracts() -> None:
     assert "triggers/manual-trigger.example.json" in contracts["triggers"]
     for relative_path in contracts["triggers"]:
         assert (contracts_root / relative_path).exists()
+
+
+def test_contracts_metadata_indexes_reservation_contracts() -> None:
+    metadata = _contracts_metadata()
+    contracts = metadata["contracts"]
+    contracts_root = Path(__file__).resolve().parents[3] / "contracts"
+
+    assert "reservations" in contracts
+    assert "reservations/README.md" in contracts["reservations"]
+    assert "reservations/manual-reservation.example.json" in contracts["reservations"]
+    for relative_path in contracts["reservations"]:
+        assert (contracts_root / relative_path).exists()

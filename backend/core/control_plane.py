@@ -83,6 +83,18 @@ _KERNEL_CONTROL_PLANE_SURFACES: tuple[ControlPlaneSurface, ...] = (
         requires_admin=False,
     ),
     ControlPlaneSurface(
+        capability_key="gateway.reservations",
+        route_name="reservations",
+        route_path="/reservations",
+        label="Reservations",
+        description="Time-dimension reservations, backfill windows, and planning diagnostics",
+        endpoint="/v1/reservations",
+        backend_router="reservations",
+        frontend_view="ReservationsView",
+        profiles=("gateway-kernel",),
+        requires_admin=False,
+    ),
+    ControlPlaneSurface(
         capability_key="gateway.settings",
         route_name="settings",
         route_path="/settings",

@@ -103,6 +103,16 @@ def validate_policy(policy: SchedulingPolicy) -> list[str]:  # noqa: C901
         errors.append(f"retry.max_exponent < 1: {rp2.max_exponent}")
 
     sol = policy.solver
+    if sol.dispatch_time_budget_ms < 0:
+        errors.append(f"solver.dispatch_time_budget_ms < 0: {sol.dispatch_time_budget_ms}")
+    if sol.max_jobs_per_dispatch < 1:
+        errors.append(f"solver.max_jobs_per_dispatch < 1: {sol.max_jobs_per_dispatch}")
+    if sol.max_nodes_per_dispatch < 1:
+        errors.append(f"solver.max_nodes_per_dispatch < 1: {sol.max_nodes_per_dispatch}")
+    if sol.max_candidate_pairs_per_dispatch < 1:
+        errors.append(f"solver.max_candidate_pairs_per_dispatch < 1: {sol.max_candidate_pairs_per_dispatch}")
+    if sol.plan_affinity_bonus < 0:
+        errors.append(f"solver.plan_affinity_bonus < 0: {sol.plan_affinity_bonus}")
     if sol.spread_bonus < 0:
         errors.append(f"solver.spread_bonus < 0: {sol.spread_bonus}")
 

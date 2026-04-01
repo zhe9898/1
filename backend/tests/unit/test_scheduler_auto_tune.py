@@ -753,6 +753,81 @@ class TestScoringIntegration:
         assert "learned_node_bias" in breakdown
         assert breakdown["learned_node_bias"] == 15
 
+    def test_recommended_strategy_is_used_when_job_has_no_explicit_strategy(self) -> None:
+        from backend.core.job_scoring import score_job_for_node
+        from backend.core.scheduling_strategies import SchedulingStrategy
+
+        job = MagicMock()
+        job.priority = 60
+        job.created_at = _utcnow()
+        job.target_zone = None
+        job.job_id = "j3"
+        job.scheduling_strategy = None
+        job.data_locality_key = None
+        job.power_budget_watts = None
+        job.thermal_sensitivity = None
+        job.affinity_labels = {}
+        job.batch_key = None
+        job.target_executor = None
+        job.required_cpu_cores = 0
+        job.required_memory_mb = 0
+        job.required_gpu_vram_mb = 0
+        job.required_storage_mb = 0
+        job.deadline_at = None
+        job.sla_seconds = None
+
+        from backend.core.job_scheduler import SchedulerNodeSnapshot
+
+        node = SchedulerNodeSnapshot(
+            node_id="n1",
+            os="linux",
+            arch="amd64",
+            executor="docker",
+            zone="zone-a",
+            capabilities=frozenset(),
+            accepted_kinds=frozenset({"shell.exec"}),
+            max_concurrency=4,
+            active_lease_count=0,
+            cpu_cores=8,
+            memory_mb=16384,
+            gpu_vram_mb=0,
+            storage_mb=100000,
+            reliability_score=0.90,
+            last_seen_at=_utcnow(),
+            enrollment_status="active",
+            status="online",
+            drain_status="active",
+            network_latency_ms=5,
+            bandwidth_mbps=1000,
+            cached_data_keys=frozenset(),
+            power_capacity_watts=500,
+            current_power_watts=200,
+            thermal_state="normal",
+            cloud_connectivity="online",
+            metadata_json={},
+        )
+
+        with patch("backend.core.job_scoring.calculate_strategy_score", return_value=37) as mock_strategy_score:
+            with patch("backend.core.scheduler_auto_tune.get_scheduler_tuner") as mock_get:
+                mock_tuner = MagicMock()
+                mock_tuner.recommend_strategy.return_value = "binpack"
+                mock_tuner.get_adjustment.return_value = 1.0
+                mock_tuner.get_node_bias.return_value = 0.0
+                mock_get.return_value = mock_tuner
+
+                _, breakdown = score_job_for_node(
+                    job,
+                    node,
+                    now=_utcnow(),
+                    total_active_nodes=5,
+                    eligible_nodes_count=3,
+                    recent_failed_job_ids=set(),
+                )
+
+        mock_tuner.recommend_strategy.assert_called_once()
+        assert breakdown["strategy"] == 37
+        assert mock_strategy_score.call_args.args[0] is SchedulingStrategy.BINPACK
+
 
 class TestSingleton:
     def test_get_scheduler_tuner_returns_same_instance(self) -> None:

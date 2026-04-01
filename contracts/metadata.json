@@ -15,6 +15,10 @@
     "triggers": [
       "triggers/README.md",
       "triggers/manual-trigger.example.json"
+    ],
+    "reservations": [
+      "reservations/README.md",
+      "reservations/manual-reservation.example.json"
     ]
   }
 }

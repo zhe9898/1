@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import datetime
 
-from backend.core.job_scheduler import build_node_snapshot, select_jobs_for_node
+from backend.core.backfill_scheduling import get_reservation_manager, reset_reservation_manager
+from backend.core.job_scheduler import build_node_snapshot, build_time_budgeted_placement_plan, select_jobs_for_node
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -77,6 +78,14 @@ def _node(**overrides: object) -> Node:
     for key, value in overrides.items():
         setattr(node, key, value)
     return node
+
+
+def setup_function() -> None:
+    reset_reservation_manager()
+
+
+def teardown_function() -> None:
+    reset_reservation_manager()
 
 
 def test_scheduler_prefers_high_priority_eligible_jobs() -> None:
@@ -301,3 +310,147 @@ def test_scheduler_filters_out_worker_pool_mismatch() -> None:
     )
 
     assert selected == []
+
+
+def test_scheduler_blocks_low_priority_jobs_that_would_delay_reservation() -> None:
+    now = _utcnow()
+    node_record = _node(node_id="node-a", max_concurrency=2)
+    node = build_node_snapshot(node_record, active_lease_count=0, reliability_score=1.0)
+    reservation_mgr = get_reservation_manager()
+    reservation_mgr.create_reservation(
+        _job(job_id="job-reserved", tenant_id="default", priority=90, estimated_duration_s=120),
+        node,
+        start_at=now + datetime.timedelta(minutes=2),
+    )
+
+    selected = select_jobs_for_node(
+        [
+            _job(job_id="job-too-long", priority=20, estimated_duration_s=300),
+            _job(job_id="job-short", priority=10, estimated_duration_s=60),
+        ],
+        node,
+        [node],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+        recent_failed_job_ids=set(),
+        limit=2,
+    )
+
+    assert [item.job.job_id for item in selected] == ["job-short"]
+
+
+def test_scheduler_honors_time_budgeted_global_plan() -> None:
+    now = _utcnow()
+    node = build_node_snapshot(_node(node_id="node-a"), active_lease_count=0, reliability_score=1.0)
+    other = build_node_snapshot(_node(node_id="node-b"), active_lease_count=0, reliability_score=1.0)
+    selected = select_jobs_for_node(
+        [
+            _job(job_id="job-self", priority=50),
+            _job(job_id="job-other", priority=100),
+        ],
+        node,
+        [node, other],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+        recent_failed_job_ids=set(),
+        limit=1,
+        placement_plan={"job-self": "node-a", "job-other": "node-b"},
+    )
+
+    assert [item.job.job_id for item in selected] == ["job-self"]
+
+
+def test_scheduler_can_fallback_when_plan_points_elsewhere() -> None:
+    now = _utcnow()
+    node = build_node_snapshot(_node(node_id="node-a"), active_lease_count=0, reliability_score=1.0)
+    other = build_node_snapshot(_node(node_id="node-b"), active_lease_count=0, reliability_score=1.0)
+    selected = select_jobs_for_node(
+        [_job(job_id="job-fallback", priority=80)],
+        node,
+        [node, other],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+        recent_failed_job_ids=set(),
+        limit=1,
+        placement_plan={"job-fallback": "node-b"},
+    )
+
+    assert [item.job.job_id for item in selected] == ["job-fallback"]
+
+
+def test_build_time_budgeted_placement_plan_skips_oversized_windows(monkeypatch) -> None:
+    from backend.core.scheduling_policy_types import SolverConfig
+
+    now = _utcnow()
+    node = build_node_snapshot(_node(node_id="node-a"), active_lease_count=0, reliability_score=1.0)
+
+    class _GuardSolver:
+        def solve(self, *args, **kwargs):
+            raise AssertionError("solver should not run when the candidate window exceeds the budget")
+
+    monkeypatch.setattr("backend.core.job_scheduler.get_placement_solver", lambda: _GuardSolver())
+    monkeypatch.setattr(
+        "backend.core.job_scheduler._get_solver_config",
+        lambda: SolverConfig(max_jobs_per_dispatch=1),
+    )
+
+    plan = build_time_budgeted_placement_plan(
+        [_job(job_id="job-1"), _job(job_id="job-2")],
+        [node],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+    )
+
+    assert plan == {}
+
+
+def test_build_time_budgeted_placement_plan_uses_active_jobs_by_node() -> None:
+    now = _utcnow()
+    node_a = build_node_snapshot(_node(node_id="node-a"), active_lease_count=0, reliability_score=1.0)
+    node_b = build_node_snapshot(_node(node_id="node-b"), active_lease_count=0, reliability_score=1.0)
+
+    plan = build_time_budgeted_placement_plan(
+        [_job(job_id="job-batch", batch_key="album-42")],
+        [node_a, node_b],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+        active_jobs_by_node={
+            "node-a": [
+                _job(
+                    job_id="job-running",
+                    status="leased",
+                    batch_key="album-42",
+                )
+            ]
+        },
+    )
+
+    assert plan == {"job-batch": "node-a"}
+
+
+def test_build_time_budgeted_placement_plan_exposes_solver_timeout(monkeypatch) -> None:
+    now = _utcnow()
+    node = build_node_snapshot(_node(node_id="node-a"), active_lease_count=0, reliability_score=1.0)
+
+    class _TimeoutSolver:
+        def solve(self, *args, metrics=None, **kwargs):
+            assert metrics is not None
+            metrics["timed_out"] = True
+            metrics["result"] = "time_budget_exceeded"
+            return {}
+
+    monkeypatch.setattr("backend.core.job_scheduler.get_placement_solver", lambda: _TimeoutSolver())
+
+    context: dict[str, object] = {}
+    plan = build_time_budgeted_placement_plan(
+        [_job(job_id="job-1")],
+        [node],
+        now=now,
+        accepted_kinds={"connector.invoke"},
+        decision_context=context,
+    )
+
+    assert plan == {}
+    assert context["attempted"] is True
+    assert context["timed_out"] is True
+    assert context["reason"] == "time_budget_exceeded"

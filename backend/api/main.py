@@ -40,6 +40,7 @@ from backend.api import nodes as nodes_router
 from backend.api import permissions as permissions_router
 from backend.api import profile as profile_router
 from backend.api import quotas as quotas_router
+from backend.api import reservations as reservations_router
 from backend.api import routes
 from backend.api import scheduling_governance as scheduling_governance_router
 from backend.api import sessions as sessions_router
@@ -219,6 +220,7 @@ _API_STABILITY_TAGS: list[dict[str, object]] = [
     {"name": "kernel", "description": "Kernel introspection & capabilities", "x-stability": "beta"},
     {"name": "extensions", "description": "Extension SDK manifests, published schemas, workflow templates", "x-stability": "beta"},
     {"name": "triggers", "description": "Unified trigger registry, ingress, and delivery history", "x-stability": "beta"},
+    {"name": "reservations", "description": "Time-dimension reservations and backfill planning windows", "x-stability": "beta"},
     {"name": "node-approval", "description": "Node enrollment approval flow", "x-stability": "stable"},
     {"name": "audit-logs", "description": "Audit trail query", "x-stability": "stable"},
     {"name": "permissions", "description": "RBAC permission management", "x-stability": "stable"},
@@ -393,6 +395,7 @@ _ALL_ROUTERS = {
     "jobs": jobs_router.router,
     "connectors": connectors_router.router,
     "triggers": triggers_router.router,
+    "reservations": reservations_router.router,
     "extensions": extensions_router.router,
     "user_management": user_management_router.router,
     "audit_logs": audit_logs_router.router,

@@ -31,9 +31,11 @@ from backend.core.control_plane_state import (
     node_drain_status_view,
     node_status_view,
 )
+from backend.core.backfill_scheduling import get_reservation_manager
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.governance_facade import get_governance_facade
 from backend.core.job_scheduler import (
+    build_time_budgeted_placement_plan,
     build_node_snapshot,
     count_eligible_nodes_for_job,
     node_blockers_for_job,
@@ -41,7 +43,8 @@ from backend.core.job_scheduler import (
     select_jobs_for_node,
 )
 from backend.core.node_auth import authenticate_node_request
-from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
+from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
+from backend.core.reservation_runtime import choose_reservation_slot
 from backend.core.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
     SCHED_FLAG_EXECUTOR_VALIDATION,
@@ -87,6 +90,23 @@ def _get_dispatch_config() -> DispatchConfig:
     return get_policy_store().active.dispatch
 
 
+async def _publish_reservation_event(
+    redis: RedisClient | None,
+    action: str,
+    reservation: object,
+    *,
+    reason: str | None = None,
+    source: str = "dispatch",
+) -> None:
+    payload = {
+        "reservation": getattr(reservation, "to_dict")(),
+        "source": source,
+    }
+    if reason:
+        payload["reason"] = reason
+    await publish_control_event(redis, CHANNEL_RESERVATION_EVENTS, action, payload)
+
+
 @router.post("/pull", response_model=list[JobLeaseResponse])
 async def pull_jobs(  # noqa: C901
     payload: JobPullRequest,
@@ -102,6 +122,12 @@ async def pull_jobs(  # noqa: C901
         tenant_id=payload.tenant_id,
     )
     now = _utcnow()
+    _reservation_mgr = get_reservation_manager()
+    _expired_reservations = [r for r in _reservation_mgr.list_reservations(tenant_id=payload.tenant_id) if r.is_expired(now)]
+    if _expired_reservations:
+        _reservation_mgr.cleanup_expired(now)
+        for reservation in _expired_reservations:
+            await _publish_reservation_event(redis, "expired", reservation, reason="window_elapsed")
     _governance = get_governance_facade()
 
     # ── Governance pre-dispatch admission ────────────────────────────
@@ -290,6 +316,18 @@ async def pull_jobs(  # noqa: C901
 
     # ── Quota-aware fair-share data (injected into constraint context) ─
     _extra_ctx: dict[str, object] = {}
+    _leased_result = await db.execute(
+        select(Job).where(
+            Job.tenant_id == payload.tenant_id,
+            Job.status == "leased",
+        )
+    )
+    _leased_jobs = list(_leased_result.scalars().all())
+    _active_jobs_by_node: dict[str, list[Job]] = defaultdict(list)
+    for leased_job in _leased_jobs:
+        leased_node_id = getattr(leased_job, "node_id", None)
+        if leased_node_id:
+            _active_jobs_by_node[str(leased_node_id)].append(leased_job)
     try:
         from backend.core.quota_aware_scheduling import (
             FairShareCalculator,
@@ -298,13 +336,6 @@ async def pull_jobs(  # noqa: C901
         )
 
         # Build per-tenant resource usage from all leased jobs in this tenant
-        _leased_result = await db.execute(
-            select(Job).where(
-                Job.tenant_id == payload.tenant_id,
-                Job.status == "leased",
-            )
-        )
-        _leased_jobs = list(_leased_result.scalars().all())
         _quota_accounts = build_quota_accounts(_leased_jobs)
         _extra_ctx["_quota_accounts"] = _quota_accounts
 
@@ -342,15 +373,8 @@ async def pull_jobs(  # noqa: C901
         now=now,
     )
 
-    # Load active jobs on this node for anti-affinity check
-    active_jobs_result = await db.execute(
-        select(Job).where(
-            Job.tenant_id == payload.tenant_id,
-            Job.node_id == payload.node_id,
-            Job.status == "leased",
-        )
-    )
-    active_jobs_on_node = list(active_jobs_result.scalars().all())
+    # Reuse the tenant-wide leased snapshot to avoid a second node-local query.
+    active_jobs_on_node = list(_active_jobs_by_node.get(payload.node_id, []))
 
     _audit.candidates_count = len(candidates)
 
@@ -367,6 +391,17 @@ async def pull_jobs(  # noqa: C901
     from backend.core.placement_policy import set_placement_enabled
 
     set_placement_enabled(_ff_placement)
+    _solver_dispatch_context: dict[str, object] = {}
+    placement_plan = build_time_budgeted_placement_plan(
+        candidates,
+        active_node_snapshots,
+        now=now,
+        accepted_kinds=accepted_kinds,
+        recent_failed_job_ids=recent_failed_job_ids,
+        active_jobs_by_node=_active_jobs_by_node,
+        decision_context=_solver_dispatch_context,
+    )
+    _audit.context["solver_dispatch"] = _solver_dispatch_context
 
     selected = select_jobs_for_node(
         candidates,
@@ -377,6 +412,7 @@ async def pull_jobs(  # noqa: C901
         recent_failed_job_ids=recent_failed_job_ids,
         active_jobs_on_node=active_jobs_on_node,
         limit=payload.limit,
+        placement_plan=placement_plan,
     )
 
     # ── Phase 4: Preemption enforcement ──────────────────────────────
@@ -429,6 +465,7 @@ async def pull_jobs(  # noqa: C901
                     recent_failed_job_ids=recent_failed_job_ids,
                     active_jobs_on_node=[j for j in active_jobs_on_node if j.job_id != victim_job.job_id],
                     limit=1,
+                    placement_plan=placement_plan,
                 )
                 break  # one preemption per pull cycle
 
@@ -501,7 +538,16 @@ async def pull_jobs(  # noqa: C901
             f"job leased by {payload.node_id} attempt={job.attempt} score={scored.score} eligible_nodes={scored.eligible_nodes_count}",
             tenant_id=job.tenant_id,
         )
+        existing_reservation = _reservation_mgr.get_reservation(job.job_id)
+        if existing_reservation is not None and _reservation_mgr.cancel_reservation(job.job_id):
+            await _publish_reservation_event(
+                redis,
+                "canceled",
+                existing_reservation,
+                reason="leased",
+            )
         leased_jobs.append(job)
+        _active_jobs_by_node.setdefault(payload.node_id, []).append(job)
         _governance.record_backoff_success(job.job_id)
 
         # Record placement in decision audit
@@ -510,6 +556,51 @@ async def pull_jobs(  # noqa: C901
             score=scored.score,
             breakdown=scored.score_breakdown,
             eligible_nodes=scored.eligible_nodes_count,
+        )
+
+    _leased_job_ids = {job.job_id for job in leased_jobs}
+    for candidate in sorted(
+        candidates,
+        key=lambda item: (-int(item.priority or 0), item.created_at, item.job_id),
+    ):
+        if candidate.job_id in _leased_job_ids:
+            continue
+        if _reservation_mgr.get_reservation(candidate.job_id) is not None:
+            continue
+        if int(candidate.priority or 0) < _reservation_mgr.config.reservation_min_priority:
+            continue
+        slot = choose_reservation_slot(
+            candidate,
+            active_node_snapshots,
+            _active_jobs_by_node,
+            now=now,
+            accepted_kinds=None,
+            reservation_mgr=_reservation_mgr,
+        )
+        if slot is None:
+            continue
+        reservation_node, reservation_start_at, _reservation_end_at = slot
+        created_reservation = _reservation_mgr.create_reservation(
+            candidate,
+            reservation_node,
+            start_at=reservation_start_at,
+        )
+        if created_reservation is None:
+            continue
+        await _append_log(
+            db,
+            candidate.job_id,
+            (
+                f"reservation created on {reservation_node.node_id} "
+                f"start={created_reservation.start_at.isoformat()} end={created_reservation.end_at.isoformat()}"
+            ),
+            tenant_id=candidate.tenant_id,
+        )
+        await _publish_reservation_event(
+            redis,
+            "created",
+            created_reservation,
+            reason="dispatch_backfill_plan",
         )
 
     # ── Scheduling metrics ────────────────────────────────────────────

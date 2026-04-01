@@ -20,11 +20,12 @@ from backend.api.deps import (
     get_redis,
     get_tenant_db,
 )
+from backend.core.backfill_scheduling import get_reservation_manager
 from backend.core.errors import zen
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
 from backend.core.node_auth import authenticate_node_request
-from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
+from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
 
 from .database import (
     _append_log,
@@ -91,6 +92,30 @@ def _record_tuner_outcome(
         pass
 
 
+async def _cancel_job_reservation(
+    redis: RedisClient | None,
+    job_id: str,
+    *,
+    reason: str,
+) -> None:
+    reservation_mgr = get_reservation_manager()
+    reservation = reservation_mgr.get_reservation(job_id)
+    if reservation is None:
+        return
+    if not reservation_mgr.cancel_reservation(job_id):
+        return
+    await publish_control_event(
+        redis,
+        CHANNEL_RESERVATION_EVENTS,
+        "canceled",
+        {
+            "reservation": reservation.to_dict(),
+            "reason": reason,
+            "source": "job_lifecycle",
+        },
+    )
+
+
 @router.post("/{id}/result", response_model=JobResponse)
 async def complete_job(
     id: str,
@@ -132,6 +157,7 @@ async def complete_job(
     job.leased_until = None
     job.updated_at = now
     await db.flush()
+    await _cancel_job_reservation(redis, job.job_id, reason="completed")
     await _append_log(
         db,
         job.job_id,
@@ -246,6 +272,7 @@ async def fail_job(
         job.retry_at = retry_at
         job.updated_at = now
         await db.flush()
+        await _cancel_job_reservation(redis, job.job_id, reason="requeued")
         await _append_log(
             db,
             job.job_id,
@@ -274,6 +301,7 @@ async def fail_job(
     job.leased_until = None
     job.updated_at = now
     await db.flush()
+    await _cancel_job_reservation(redis, job.job_id, reason="failed")
     await _append_log(
         db,
         job.job_id,
@@ -427,6 +455,7 @@ async def cancel_job(
     job.completed_at = now
     job.updated_at = now
     await db.flush()
+    await _cancel_job_reservation(redis, job.job_id, reason="canceled")
     await _append_log(
         db,
         job.job_id,
@@ -479,6 +508,7 @@ async def retry_job_now(
     job.attempt_count = 0
     job.updated_at = now
     await db.flush()
+    await _cancel_job_reservation(redis, job.job_id, reason="manual_retry")
     await _append_log(
         db,
         job.job_id,

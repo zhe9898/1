@@ -36,6 +36,9 @@ CHANNEL_CONNECTOR_EVENTS: str = "connector:events"
 CHANNEL_TRIGGER_EVENTS: str = "trigger:events"
 """Trigger control-plane events: upsert, pause/activate, fire, delivery audit."""
 
+CHANNEL_RESERVATION_EVENTS: str = "reservation:events"
+"""Reservation control-plane events: created, canceled, expired, backfill planning audit."""
+
 
 # ---------------------------------------------------------------------------
 # Switch State Keys (开关状态键)
