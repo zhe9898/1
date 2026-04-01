@@ -419,16 +419,18 @@ def get_runtime_version() -> str:
     """Read VERSION from pyproject.toml or fallback."""
     try:
         import tomllib
+
         with open("pyproject.toml", "rb") as f:
             data = tomllib.load(f)
-        return data.get("project", {}).get("version", "unknown")
+        return str(data.get("project", {}).get("version", "unknown"))
     except Exception:
         return "unknown"
 
 
-def get_model_registry():
+def get_model_registry() -> object:
     """Lazy import to avoid circular dependency."""
-    from backend.ai_router import model_registry  # type: ignore[import-untyped]
+    from backend.ai_router import model_registry  # type: ignore[attr-defined]
+
     return model_registry
 
 

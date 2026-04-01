@@ -5,15 +5,11 @@ from typing import Final
 from backend.core.pack_registry import (
     PROFILE_ALIASES,
     PUBLIC_PROFILE_SURFACE,
-)
-from backend.core.pack_registry import (
     normalize_base_profile,
     normalize_requested_pack_keys,
 )
 from backend.core.pack_registry import requested_pack_keys as resolve_requested_pack_keys
-from backend.core.pack_registry import (
-    resolve_gateway_image_target as resolve_pack_registry_gateway_image_target,
-)
+from backend.core.pack_registry import resolve_gateway_image_target as resolve_pack_registry_gateway_image_target
 from backend.core.pack_registry import resolve_pack_keys as resolve_effective_pack_keys
 from backend.core.pack_registry import (
     selected_router_names,
@@ -49,9 +45,7 @@ CORE_ROUTER_NAMES: Final[tuple[str, ...]] = (
     "connectors",
 )
 
-OPTIONAL_ROUTER_NAMES: Final[tuple[str, ...]] = (
-    "cluster",
-)
+OPTIONAL_ROUTER_NAMES: Final[tuple[str, ...]] = ("cluster",)
 
 PUBLIC_PROFILE_BY_RUNTIME: Final[dict[str, str]] = {profile: profile for profile in PUBLIC_PROFILE_SURFACE}
 
@@ -101,7 +95,6 @@ def is_cluster_enabled(
     *,
     selected_packs: str | list[str] | tuple[str, ...] | set[str] | None = None,
 ) -> bool:
-
 
     del profile, selected_packs
     return False

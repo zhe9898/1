@@ -3,6 +3,7 @@
 Extracted from console.py for maintainability. Contains all Pydantic
 view-models and pure helper functions used by console route handlers.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -13,6 +14,7 @@ from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import StatusView
 from backend.core.control_plane import iter_control_plane_surfaces
 from backend.core.control_plane_state import (
+    node_heartbeat_state,
     severity_view,
     tone_view,
 )
@@ -20,10 +22,6 @@ from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, to_public_profile
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.node import Node
-from backend.core.control_plane_state import (
-    node_heartbeat_state,
-    node_capacity_state,
-)
 
 
 def _utcnow() -> datetime.datetime:

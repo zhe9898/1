@@ -142,12 +142,8 @@ async def assert_rls_ready(session: AsyncSession) -> None:
     )
     if probe_table:
         try:
-            await session.execute(
-                text("SET LOCAL zen70.current_tenant = '__rls_probe_tenant__'")
-            )
-            result = await session.execute(
-                text(f"SELECT COUNT(*) FROM {probe_table}")  # noqa: S608
-            )
+            await session.execute(text("SET LOCAL zen70.current_tenant = '__rls_probe_tenant__'"))
+            result = await session.execute(text(f"SELECT COUNT(*) FROM {probe_table}"))  # noqa: S608
             count = result.scalar() or 0
             if count != 0:
                 raise RuntimeError(
@@ -156,15 +152,11 @@ async def assert_rls_ready(session: AsyncSession) -> None:
                     "Policy may not be enforcing tenant isolation."
                 )
             # Reset to no tenant context
-            await session.execute(
-                text("SET LOCAL zen70.current_tenant = ''")
-            )
+            await session.execute(text("SET LOCAL zen70.current_tenant = ''"))
         except RuntimeError:
             raise
         except Exception as exc:
-            raise RuntimeError(
-                f"RLS functional probe failed on table '{probe_table}': {exc}"
-            ) from exc
+            raise RuntimeError(f"RLS functional probe failed on table '{probe_table}': {exc}") from exc
 
     _mark_session_ready(session)
 

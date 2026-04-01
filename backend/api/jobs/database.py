@@ -60,7 +60,7 @@ async def move_to_dead_letter_queue(
     # Add to Redis sorted set for fast time-based queries
     dlq_key = f"dlq:{job.tenant_id}:jobs"
     try:
-        await redis.zadd(dlq_key, {job.job_id: score})
+        await redis.zadd(dlq_key, {job.job_id: score})  # type: ignore[attr-defined]
         # Set 90-day expiration on the DLQ key
         await redis.expire(dlq_key, 90 * 24 * 3600)
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
@@ -104,8 +104,8 @@ async def remove_from_dead_letter_queue(
 
     dlq_key = f"dlq:{tenant_id}:jobs"
     try:
-        removed = await redis.zrem(dlq_key, job_id)
-        return removed > 0
+        removed = await redis.zrem(dlq_key, job_id)  # type: ignore[attr-defined]
+        return bool(removed > 0)
     except (OSError, ValueError, KeyError, RuntimeError, TypeError):
         return False
 
@@ -368,17 +368,9 @@ async def _get_job_by_id_for_update(
     Raises:
         zen("ZEN-JOB-4040"): Job not found
     """
-    stmt = (
-        select(Job)
-        .where(Job.tenant_id == tenant_id, Job.job_id == job_id)
-        .with_for_update(skip_locked=skip_locked)
-    )
+    stmt = select(Job).where(Job.tenant_id == tenant_id, Job.job_id == job_id).with_for_update(skip_locked=skip_locked)
     result = await db.execute(stmt)
     job = result.scalars().first()
     if job is None:
         raise zen("ZEN-JOB-4040", "job not found", status_code=404)
     return job
-
-
-
-

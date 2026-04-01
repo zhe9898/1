@@ -4,6 +4,7 @@ Extracted from business_scheduling.py for maintainability.
 Contains the SchedulingConstraint base, built-in gates, SchedulingContext,
 SchedulingEngine, and the module-level singleton.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -100,7 +101,8 @@ class DependencyGate(SchedulingConstraint):
         if not depends_on:
             return True, ""
         satisfied, blocking = check_job_dependencies_satisfied(
-            job, ctx.completed_job_ids,
+            job,
+            ctx.completed_job_ids,
         )
         if not satisfied:
             return False, f"blocked_by:{','.join(blocking[:3])}"
@@ -120,7 +122,9 @@ class GangSchedulingGate(SchedulingConstraint):
         if not gang_id:
             return True, ""
         ready, reason = calculate_gang_scheduling_readiness(
-            job, ctx.surviving_candidates, ctx.available_slots,
+            job,
+            ctx.surviving_candidates,
+            ctx.available_slots,
         )
         if not ready:
             return False, reason
@@ -139,7 +143,9 @@ class PriorityBoostModifier(SchedulingConstraint):
 
         if job.deadline_at or job.sla_seconds or job.parent_job_id:
             boosted = calculate_boosted_priority(
-                job, now=ctx.now, parent_jobs=ctx.parent_jobs,
+                job,
+                now=ctx.now,
+                parent_jobs=ctx.parent_jobs,
             )
             if boosted > job.priority:
                 job.priority = boosted
@@ -159,6 +165,7 @@ class ConnectorCoolingGate(SchedulingConstraint):
         # Connector cooling state is checked via the failure control plane
         # which is process-local. Import lazily to avoid circular deps.
         from backend.core.failure_control_plane import get_failure_control_plane
+
         fcp = get_failure_control_plane()
         until = fcp._connector_cool_until.get(connector_id)
         if until is not None and ctx.now < until:
@@ -261,7 +268,8 @@ class SchedulingEngine:
         ctx.surviving_candidates = after_hard
         result: list[Job] = []
         gang_gate = next(
-            (c for c in self._constraints if c.name == "gang_scheduling"), None,
+            (c for c in self._constraints if c.name == "gang_scheduling"),
+            None,
         )
         for job in after_hard:
             if gang_gate:

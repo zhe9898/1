@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import DateTime, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.user import Base
@@ -54,7 +54,8 @@ class Workflow(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=False),
         default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)

@@ -1,10 +1,10 @@
 """
 ZEN70 Agent Action Router - AI 代理执行软开关操作。
 """
+
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
@@ -21,8 +21,9 @@ def _agent_enabled() -> bool:
 
 
 async def _is_feature_flag_enabled(db: AsyncSession, key: str) -> bool:
-    from backend.models.feature_flag import FeatureFlag
     from sqlalchemy import select
+
+    from backend.models.feature_flag import FeatureFlag
 
     result = await db.execute(select(FeatureFlag).where(FeatureFlag.key == key))
     flag = result.scalars().first()

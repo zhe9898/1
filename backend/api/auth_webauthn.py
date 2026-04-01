@@ -1,6 +1,7 @@
 """
 ZEN70 Auth WebAuthn - WebAuthn 注册与登录
 """
+
 from __future__ import annotations
 
 import json
@@ -10,40 +11,50 @@ try:
 except ImportError:
     bytes_to_base64url = None  # type: ignore[assignment]
 
-from fastapi import APIRouter, Depends, Request, Response
-from fastapi import status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+import backend.core.auth_helpers as _auth_helpers
 from backend.api.auth_shared import assert_user_active, build_token_response_model, register_login_session, request_tenant_id
 from backend.api.deps import get_db, get_redis
 from backend.api.models.auth import (
     TokenResponse,
-    WebAuthnLoginBeginRequest, WebAuthnLoginBeginResponse,
+    WebAuthnLoginBeginRequest,
+    WebAuthnLoginBeginResponse,
     WebAuthnLoginCompleteRequest,
-    WebAuthnRegisterBeginRequest, WebAuthnRegisterBeginResponse,
+    WebAuthnRegisterBeginRequest,
+    WebAuthnRegisterBeginResponse,
     WebAuthnRegisterCompleteRequest,
 )
-import backend.core.auth_helpers as _auth_helpers
 from backend.core.auth_helpers import (
-    CHALLENGE_TTL, CODE_BAD_REQUEST, CODE_NOT_FOUND, CODE_SERVER_ERROR,
+    CHALLENGE_TTL,
+    CODE_BAD_REQUEST,
+    CODE_NOT_FOUND,
+    CODE_SERVER_ERROR,
     client_ip,
-    log_auth, request_id, require_db_redis, zen,
+    log_auth,
+    request_id,
+    require_db_redis,
+    zen,
 )
+
 # Keep direct references for re-export; function bodies use _auth() for patchability
 check_webauthn_rate_limit = _auth_helpers.check_webauthn_rate_limit
 consume_challenge = _auth_helpers.consume_challenge
 credential_id_to_base64url = _auth_helpers.credential_id_to_base64url
 expected_challenge_bytes = _auth_helpers.expected_challenge_bytes
 origin_from_request = _auth_helpers.origin_from_request
-from backend.core.redis_client import RedisClient
-from backend.models.user import User, WebAuthnCredential
+from backend.core.redis_client import RedisClient  # noqa: E402
+from backend.models.user import User, WebAuthnCredential  # noqa: E402
 
 try:
     from backend.core.webauthn import (
-        generate_authentication_challenge, generate_registration_challenge,
-        verify_authentication, verify_registration,
+        generate_authentication_challenge,
+        generate_registration_challenge,
+        verify_authentication,
+        verify_registration,
     )
 except (ImportError, RuntimeError):
     generate_authentication_challenge = None  # type: ignore[assignment]
@@ -57,6 +68,7 @@ router = APIRouter()
 def _auth_mod():  # type: ignore[no-untyped-def]
     """Lazy lookup of backend.api.auth so patches on that module take effect."""
     import sys
+
     return sys.modules.get("backend.api.auth") or __import__("backend.api.auth", fromlist=["auth"])
 
 
@@ -83,7 +95,9 @@ async def register_begin(
     user_id_bytes = str(user.id).encode("utf-8")
 
     _, challenge_b64, options_json_str = generate_registration_challenge(
-        username=req.username, display_name=req.display_name or req.username, user_id=user_id_bytes,
+        username=req.username,
+        display_name=req.display_name or req.username,
+        user_id=user_id_bytes,
     )
     options_dict = json.loads(options_json_str)
     payload = json.dumps({"user_id": user.id, "username": user.username, "tenant_id": tenant_id, "flow": "register"})
@@ -162,10 +176,7 @@ async def login_begin(
         log_auth("webauthn_login_begin", False, rid, username=req.username, detail="no_credentials")
         raise zen(CODE_NOT_FOUND, "No credentials found for user", status.HTTP_404_NOT_FOUND)
 
-    allow_credentials: list[dict[str, object]] = [
-        {"id": c.credential_id, "type": "public-key", "transports": ["internal", "usb", "nfc"]}
-        for c in creds
-    ]
+    allow_credentials: list[dict[str, object]] = [{"id": c.credential_id, "type": "public-key", "transports": ["internal", "usb", "nfc"]} for c in creds]
     _, challenge_b64, options_json_str = _auth_mod().generate_authentication_challenge(allow_credentials=allow_credentials)
     options_dict = json.loads(options_json_str)
     payload = json.dumps({"user_id": user.id, "username": user.username, "tenant_id": tenant_id, "flow": "login"})
@@ -185,6 +196,7 @@ async def login_complete(
     redis: RedisClient = Depends(get_redis),
 ) -> TokenResponse:
     require_db_redis(db, redis)
+    assert db is not None
     rid, cip = request_id(request), client_ip(request)
     await _auth_mod().check_webauthn_rate_limit(redis, cip, rid)
 
@@ -196,10 +208,10 @@ async def login_complete(
     if not cred_id_b64:
         raise zen(CODE_BAD_REQUEST, "Invalid credential: missing id", status.HTTP_400_BAD_REQUEST)
 
-    cred_result = await db.execute(  # type: ignore[union-attr]
+    cred_result = await db.execute(
         select(WebAuthnCredential).where(
             WebAuthnCredential.credential_id == cred_id_b64,
-            WebAuthnCredential.user_id == int(data["user_id"]),  # type: ignore[call-overload]
+            WebAuthnCredential.user_id == int(str(data["user_id"])),  # type: ignore[call-overload, unused-ignore]
         )
     )
     cred = cred_result.scalar_one_or_none()
@@ -220,8 +232,9 @@ async def login_complete(
         log_auth("webauthn_login_complete", False, rid, username=req.username, detail=str(e))
         raise zen(CODE_BAD_REQUEST, "Authentication verification failed", status.HTTP_400_BAD_REQUEST)
 
-    cred.sign_count = verification.new_sign_count  # type: ignore[attr-defined]
-    user_result = await db.execute(select(User).where(User.id == cred.user_id, User.tenant_id == challenge_tenant_id))  # type: ignore[union-attr]
+    cred.sign_count = verification.new_sign_count
+    assert db is not None
+    user_result = await db.execute(select(User).where(User.id == cred.user_id, User.tenant_id == challenge_tenant_id))
     login_user = user_result.scalar_one_or_none()
     if login_user is None:
         log_auth("webauthn_login_complete", False, rid, username=req.username, detail="user_not_found")
@@ -237,7 +250,7 @@ async def login_complete(
         ai_route_preference=login_user.ai_route_preference,
     )
     await register_login_session(
-        db,  # type: ignore[arg-type]
+        db,
         tenant_id=login_user.tenant_id,
         user_id=str(cred.user_id),
         username=req.username,

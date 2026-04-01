@@ -1,13 +1,13 @@
 """
 ZEN70 Memory Summarizer Worker - 对话记忆提取与日摘要。
 """
+
 from __future__ import annotations
 
 import datetime
-import re
 import logging
+import re
 from typing import Any
-from unittest.mock import AsyncMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,7 +76,7 @@ class MemorySummarizerWorker:
     ) -> list[str]:
         result = await session.execute(
             # Placeholder query - real impl uses pgvector cosine distance
-            ...  # type: ignore[arg-type]
+            ...  # type: ignore[call-overload]
         )
         rows = result.all()
         candidates = []
@@ -97,13 +97,11 @@ class MemorySummarizerWorker:
     ) -> None:
         for fact_data in facts:
             vec = embedder.encode(fact_data["text"]).tolist()
-            supersede_ids = await self._select_supersede_candidate_ids(
-                session, tenant_id, user_sub, vec
-            )
+            supersede_ids = await self._select_supersede_candidate_ids(session, tenant_id, user_sub, vec)
             for old_id in supersede_ids:
                 old_fact = await session.get(MemoryFact, old_id)
                 if old_fact:
-                    old_fact.deprecated = True
+                    old_fact.deprecated = True  # type: ignore[assignment]
 
             new_fact = MemoryFact(
                 tenant_id=tenant_id,

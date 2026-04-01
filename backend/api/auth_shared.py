@@ -1,30 +1,33 @@
 """
 ZEN70 Auth Shared - 共享辅助函数（所有 auth 子模块使用）
 """
+
 from __future__ import annotations
 
 import base64
 import json
 import logging
 import sys
-import bcrypt
 
+import bcrypt
 from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.deps import is_superadmin_role
 from backend.api.models.auth import TokenResponse
 from backend.core.auth_helpers import (
     CODE_DB_UNAVAILABLE,
     CODE_FORBIDDEN,
     log_auth,
-    token_response as _token_response_impl,
+)
+from backend.core.auth_helpers import token_response as _token_response_impl
+from backend.core.auth_helpers import (
     zen,
 )
-from backend.core.rls import set_tenant_context as _set_tenant_context_impl
-from backend.api.deps import is_superadmin_role
 from backend.core.jwt import get_access_token_expire_seconds
+from backend.core.rls import set_tenant_context as _set_tenant_context_impl
 from backend.models.user import User
 
 _logger = logging.getLogger(__name__)
@@ -34,15 +37,19 @@ _logger = logging.getLogger(__name__)
 # 以下函数透过 sys.modules 查找 backend.api.auth 命名空间，保证 mock 生效
 # ---------------------------------------------------------------------------
 
-def _auth_mod():  # noqa: ANN202
+
+def _auth_mod() -> object:  # noqa: ANN202
     mod = sys.modules.get("backend.api.auth")
     if mod is not None:
         return mod
+
     # 模块尚未加载时回退到实现
     class _Fallback:
         token_response = staticmethod(_token_response_impl)
         set_tenant_context = staticmethod(_set_tenant_context_impl)
+
     return _Fallback()
+
 
 BCRYPT_ROUNDS = 12
 
@@ -56,7 +63,7 @@ def build_token_response_model(
     ai_route_preference: str = "auto",
 ) -> TokenResponse:
     """统一构造 TokenResponse 模型。"""
-    body = _auth_mod().token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference)
+    body = _auth_mod().token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference)  # type: ignore[attr-defined]
     return TokenResponse(
         access_token=str(body["access_token"]),
         token_type=str(body["token_type"]),
@@ -84,8 +91,7 @@ def assert_user_active(
     if user.is_active:
         return
     log_auth(flow, False, rid, username=username or user.username, client_ip_str=client_ip_str, detail="inactive_user")
-    raise zen(CODE_FORBIDDEN, "Account is disabled", status.HTTP_403_FORBIDDEN,
-              recovery_hint="Contact your tenant administrator to reactivate this account")
+    raise zen(CODE_FORBIDDEN, "Account is disabled", status.HTTP_403_FORBIDDEN, recovery_hint="Contact your tenant administrator to reactivate this account")
 
 
 async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
@@ -97,8 +103,12 @@ async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
         msg = str(exc).lower()
         if 'relation "users" does not exist' not in msg and "undefinedtableerror" not in msg:
             raise
-        raise zen(CODE_DB_UNAVAILABLE, "Database schema not initialized", status.HTTP_503_SERVICE_UNAVAILABLE,
-                  recovery_hint="Run bootstrap or migrations before handling auth traffic") from exc
+        raise zen(
+            CODE_DB_UNAVAILABLE,
+            "Database schema not initialized",
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            recovery_hint="Run bootstrap or migrations before handling auth traffic",
+        ) from exc
 
 
 async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> str | None:
@@ -106,7 +116,7 @@ async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> s
     if is_superadmin_role(current_admin):
         return None
     tenant_id = str(current_admin.get("tenant_id") or "default")
-    await _auth_mod().set_tenant_context(db, tenant_id)
+    await _auth_mod().set_tenant_context(db, tenant_id)  # type: ignore[attr-defined]
     return tenant_id
 
 
@@ -124,6 +134,7 @@ def enforce_admin_scope(current_admin: dict[str, str], tenant_id: str, *, action
 
 # ── Session/Token Lifecycle Helpers ──────────────────────────────────
 
+
 def extract_jti_from_token(access_token: str) -> str | None:
     """Extract jti claim from a JWT without verification (payload is base64)."""
     try:
@@ -135,7 +146,8 @@ def extract_jti_from_token(access_token: str) -> str | None:
         if padding != 4:
             payload_b64 += "=" * padding
         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        return payload.get("jti")
+        jti: str | None = payload.get("jti")
+        return jti
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError, KeyError, TypeError):
         return None
 

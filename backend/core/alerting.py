@@ -103,7 +103,7 @@ async def _enqueue_notify_job(
         kind="alert.notify",
         source="gateway-alerting",
         status="pending",
-        priority=80,   # high – alerts need timely delivery
+        priority=80,  # high – alerts need timely delivery
         max_retries=3,
         payload={
             "alert_id": alert.id,
@@ -121,7 +121,9 @@ async def _enqueue_notify_job(
     await db.flush()
     logger.debug(
         "Enqueued alert.notify job %s for alert %s (rule=%s)",
-        job.job_id, alert.id, alert.rule_name,
+        job.job_id,
+        alert.id,
+        alert.rule_name,
     )
     return job
 
@@ -158,7 +160,8 @@ async def evaluate_node_offline_rules(db: AsyncSession, tenant_id: str) -> list[
         for node in nodes_result.scalars().all():
             lag = int((now - node.last_seen_at).total_seconds())
             alert = await _fire_alert(
-                db, rule,
+                db,
+                rule,
                 f"Node '{node.name}' ({node.node_id}) missed heartbeat for {lag}s",
                 {"node_id": node.node_id, "last_seen_at": node.last_seen_at.isoformat(), "lag_seconds": lag},
             )
@@ -189,29 +192,34 @@ async def evaluate_job_failure_rules(db: AsyncSession, tenant_id: str) -> list[A
         threshold_pct = float(rule.condition.get("threshold_pct", 20))
         since = now - datetime.timedelta(minutes=window_m)
 
-        total = (await db.execute(
-            select(func.count()).where(
-                Job.tenant_id == tenant_id,
-                Job.created_at >= since,
-                Job.status.in_(("completed", "failed")),
+        total = (
+            await db.execute(
+                select(func.count()).where(
+                    Job.tenant_id == tenant_id,
+                    Job.created_at >= since,
+                    Job.status.in_(("completed", "failed")),
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
         if total == 0:
             continue
 
-        failed = (await db.execute(
-            select(func.count()).where(
-                Job.tenant_id == tenant_id,
-                Job.created_at >= since,
-                Job.status == "failed",
+        failed = (
+            await db.execute(
+                select(func.count()).where(
+                    Job.tenant_id == tenant_id,
+                    Job.created_at >= since,
+                    Job.status == "failed",
+                )
             )
-        )).scalar() or 0
+        ).scalar() or 0
 
         pct = failed / total * 100
         if pct >= threshold_pct:
             alert = await _fire_alert(
-                db, rule,
+                db,
+                rule,
                 f"Job failure rate {pct:.1f}% exceeds {threshold_pct}% (window={window_m}m)",
                 {"failed": failed, "total": total, "pct": round(pct, 1), "window_minutes": window_m},
             )

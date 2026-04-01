@@ -107,10 +107,7 @@ def validate_job_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         return validated.model_dump(mode="python")
     except ValidationError as e:
         error_details = e.errors()
-        raise ValueError(
-            f"Job payload validation failed for kind '{kind}': "
-            f"{len(error_details)} error(s) - {error_details[0]['msg']}"
-        ) from e
+        raise ValueError(f"Job payload validation failed for kind '{kind}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}") from e
 
 
 def validate_job_result(kind: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -136,15 +133,13 @@ def validate_job_result(kind: str, result: dict[str, Any]) -> dict[str, Any]:
         return validated.model_dump(mode="python")
     except ValidationError as e:
         error_details = e.errors()
-        raise ValueError(
-            f"Job result validation failed for kind '{kind}': "
-            f"{len(error_details)} error(s) - {error_details[0]['msg']}"
-        ) from e
+        raise ValueError(f"Job result validation failed for kind '{kind}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}") from e
 
 
 # ============================================================================
 # Built-in Job Kinds
 # ============================================================================
+
 
 class ShellExecPayload(BaseModel):
     """Payload schema for shell.exec job kind."""
@@ -201,8 +196,10 @@ register_job_kind(
 # Extended built-in job kinds for edge-computing platform
 # ============================================================================
 
+
 class ContainerRunPayload(BaseModel):
     """Payload schema for container.run job kind."""
+
     image: str
     command: list[str] = []
     env: dict[str, str] = {}
@@ -215,6 +212,7 @@ class ContainerRunPayload(BaseModel):
 
 class ContainerRunResult(BaseModel):
     """Result schema for container.run job kind."""
+
     exit_code: int
     stdout: str = ""
     stderr: str = ""
@@ -224,6 +222,7 @@ class ContainerRunResult(BaseModel):
 
 class HealthcheckPayload(BaseModel):
     """Payload schema for healthcheck job kind."""
+
     target: str  # URL, host:port, or service name
     check_type: str = "http"  # http | tcp | dns | exec
     timeout: int = 10
@@ -233,6 +232,7 @@ class HealthcheckPayload(BaseModel):
 
 class HealthcheckResult(BaseModel):
     """Result schema for healthcheck job kind."""
+
     healthy: bool
     latency_ms: float = 0.0
     status_code: int | None = None
@@ -241,6 +241,7 @@ class HealthcheckResult(BaseModel):
 
 class MLInferencePayload(BaseModel):
     """Payload schema for ml.inference job kind."""
+
     model_id: str
     input_data: dict[str, Any] = {}
     input_uri: str | None = None
@@ -252,6 +253,7 @@ class MLInferencePayload(BaseModel):
 
 class MLInferenceResult(BaseModel):
     """Result schema for ml.inference job kind."""
+
     predictions: list[Any] = []
     output_uri: str | None = None
     inference_time_ms: float = 0.0
@@ -260,6 +262,7 @@ class MLInferenceResult(BaseModel):
 
 class MediaTranscodePayload(BaseModel):
     """Payload schema for media.transcode job kind."""
+
     input_uri: str
     output_uri: str
     codec: str = "h264"  # h264 | h265 | vp9 | av1
@@ -271,6 +274,7 @@ class MediaTranscodePayload(BaseModel):
 
 class MediaTranscodeResult(BaseModel):
     """Result schema for media.transcode job kind."""
+
     output_uri: str = ""
     duration_seconds: float = 0.0
     output_size_bytes: int = 0
@@ -279,6 +283,7 @@ class MediaTranscodeResult(BaseModel):
 
 class ScriptRunPayload(BaseModel):
     """Payload schema for script.run job kind."""
+
     interpreter: str = "bash"  # bash | python | node | powershell
     script: str  # inline script content
     args: list[str] = []
@@ -288,6 +293,7 @@ class ScriptRunPayload(BaseModel):
 
 class ScriptRunResult(BaseModel):
     """Result schema for script.run job kind."""
+
     exit_code: int
     stdout: str = ""
     stderr: str = ""
@@ -296,6 +302,7 @@ class ScriptRunResult(BaseModel):
 
 class WasmRunPayload(BaseModel):
     """Payload schema for wasm.run job kind."""
+
     module_uri: str  # URL or local path to .wasm file
     function: str = "_start"
     args: list[str] = []
@@ -306,6 +313,7 @@ class WasmRunPayload(BaseModel):
 
 class WasmRunResult(BaseModel):
     """Result schema for wasm.run job kind."""
+
     exit_code: int = 0
     stdout: str = ""
     stderr: str = ""
@@ -314,6 +322,7 @@ class WasmRunResult(BaseModel):
 
 class CronTickPayload(BaseModel):
     """Payload schema for cron.tick job kind — scheduled trigger execution."""
+
     schedule_id: str
     cron_expression: str  # e.g. "*/5 * * * *"
     action: str  # logical action name to invoke
@@ -323,6 +332,7 @@ class CronTickPayload(BaseModel):
 
 class CronTickResult(BaseModel):
     """Result schema for cron.tick job kind."""
+
     triggered: bool = True
     action_result: dict[str, Any] = {}
     next_fire_at: str | None = None  # ISO8601
@@ -330,6 +340,7 @@ class CronTickResult(BaseModel):
 
 class DataSyncPayload(BaseModel):
     """Payload schema for data.sync job kind — edge↔cloud data synchronisation."""
+
     source_uri: str
     dest_uri: str
     direction: str = "push"  # push | pull | bidirectional
@@ -341,6 +352,7 @@ class DataSyncPayload(BaseModel):
 
 class DataSyncResult(BaseModel):
     """Result schema for data.sync job kind."""
+
     files_transferred: int = 0
     bytes_transferred: int = 0
     conflicts: int = 0
@@ -392,13 +404,14 @@ register_job_kind(
 
 register_job_kind(
     "data.sync",
-           payload_schema=DataSyncPayload,
+    payload_schema=DataSyncPayload,
     result_schema=DataSyncResult,
 )
 
 
 class FileTransferPayload(BaseModel):
     """Payload schema for file.transfer job kind — local file copy with integrity."""
+
     src: str
     dst: str
     overwrite: bool = False
@@ -408,6 +421,7 @@ class FileTransferPayload(BaseModel):
 
 class FileTransferResult(BaseModel):
     """Result schema for file.transfer job kind."""
+
     src: str = ""
     dst: str = ""
     bytes: int = 0
@@ -426,6 +440,7 @@ register_job_kind(
 # ============================================================================
 # Job Kind Discovery
 # ============================================================================
+
 
 def get_job_kind_info(kind: str) -> dict[str, Any]:
     """Get information about a registered job kind.

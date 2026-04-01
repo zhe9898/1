@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/v1/workflows", tags=["workflows"])
 
 # ── Request / Response models ──────────────────────────────────────────────
 
+
 class WorkflowCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     description: str | None = Field(default=None)
@@ -67,6 +68,7 @@ def _to_response(wf: Workflow) -> WorkflowResponse:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
+
 @router.post("", response_model=WorkflowDetailResponse)
 async def start_workflow(
     payload: WorkflowCreateRequest,
@@ -83,13 +85,14 @@ async def start_workflow(
         created_by=current_user["username"],
     )
 
-    steps_result = await db.execute(
-        select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id)
-    )
+    steps_result = await db.execute(select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id))
     steps_status = [
         StepStatus(
-            step_id=ws.step_id, job_id=ws.job_id, status=ws.status,
-            result=ws.result, error_message=ws.error_message,
+            step_id=ws.step_id,
+            job_id=ws.job_id,
+            status=ws.status,
+            result=ws.result,
+            error_message=ws.error_message,
             started_at=ws.started_at.isoformat() if ws.started_at else None,
             completed_at=ws.completed_at.isoformat() if ws.completed_at else None,
         )
@@ -136,13 +139,14 @@ async def get_workflow(
     if workflow is None:
         raise zen("ZEN-WF-4040", "Workflow not found", status_code=404)
 
-    steps_result = await db.execute(
-        select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id)
-    )
+    steps_result = await db.execute(select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id))
     steps_status = [
         StepStatus(
-            step_id=ws.step_id, job_id=ws.job_id, status=ws.status,
-            result=ws.result, error_message=ws.error_message,
+            step_id=ws.step_id,
+            job_id=ws.job_id,
+            status=ws.status,
+            result=ws.result,
+            error_message=ws.error_message,
             started_at=ws.started_at.isoformat() if ws.started_at else None,
             completed_at=ws.completed_at.isoformat() if ws.completed_at else None,
         )

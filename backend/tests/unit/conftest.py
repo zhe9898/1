@@ -16,10 +16,10 @@ import os
 # ---------------------------------------------------------------------------
 os.environ.setdefault("DOMAIN", "localhost")
 
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from datetime import UTC, datetime, timedelta  # noqa: E402
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

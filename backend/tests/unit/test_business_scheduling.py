@@ -8,13 +8,10 @@ from __future__ import annotations
 
 import datetime
 
-import pytest
-
 from backend.core.business_scheduling import (
     apply_business_filters,
     calculate_boosted_priority,
     calculate_sla_breach_risk,
-    check_job_dependencies_satisfied,
     find_preemption_candidates,
     should_preempt_for_job,
 )

@@ -37,11 +37,14 @@ from __future__ import annotations
 
 import datetime
 import logging
-import math
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.core.scheduling_policy_types import AutoTuneConfig
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +110,9 @@ class OutcomeSignal:
 # Guardrail constants — read from policy store at init time
 
 
-def _get_auto_tune_config():
+def _get_auto_tune_config() -> AutoTuneConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.auto_tune
 
 
@@ -124,7 +128,8 @@ def _max_multiplier() -> float:
 # Backward-compatible module-level constants from AutoTuneConfig defaults.
 # Tests and external callers may import these; values come from the dataclass
 # defaults so they stay in-sync with policy-store configuration.
-from backend.core.scheduling_policy_types import AutoTuneConfig as _ATCDefaults
+from backend.core.scheduling_policy_types import AutoTuneConfig as _ATCDefaults  # noqa: E402
+
 _atc_defaults = _ATCDefaults()
 MIN_MULTIPLIER: float = _atc_defaults.min_multiplier
 MAX_MULTIPLIER: float = _atc_defaults.max_multiplier
@@ -182,19 +187,13 @@ class AdaptiveWeightStore:
                 continue
             contribution = abs(raw_value) / total
             # EMA update of contribution strength
-            state.contribution_ema = (
-                (1 - self.learning_rate) * state.contribution_ema
-                + self.learning_rate * contribution
-            )
+            state.contribution_ema = (1 - self.learning_rate) * state.contribution_ema + self.learning_rate * contribution
             # EMA update of success rate
-            state.success_rate = (
-                (1 - self.learning_rate) * state.success_rate
-                + self.learning_rate * (1.0 if success else 0.0)
-            )
+            state.success_rate = (1 - self.learning_rate) * state.success_rate + self.learning_rate * (1.0 if success else 0.0)
             state.sample_count += 1
             # Only adjust after cold-start threshold
             if state.sample_count < _get_auto_tune_config().min_samples:
-                continue    
+                continue
             # Delta proportional to contribution and outcome
             delta = self.learning_rate * reward * contribution
             state.multiplier = _clamp(state.multiplier + delta)
@@ -269,14 +268,8 @@ class NodePerformanceTracker:
     def record(self, node_id: str, success: bool, latency_ms: float) -> None:
         perf = self._nodes[node_id]
         perf.sample_count += 1
-        perf.success_rate = (
-            (1 - self._EMA_ALPHA) * perf.success_rate
-            + self._EMA_ALPHA * (1.0 if success else 0.0)
-        )
-        perf.avg_latency_ms = (
-            (1 - self._EMA_ALPHA) * perf.avg_latency_ms
-            + self._EMA_ALPHA * latency_ms
-        )
+        perf.success_rate = (1 - self._EMA_ALPHA) * perf.success_rate + self._EMA_ALPHA * (1.0 if success else 0.0)
+        perf.avg_latency_ms = (1 - self._EMA_ALPHA) * perf.avg_latency_ms + self._EMA_ALPHA * latency_ms
 
     def get_bias(self, node_id: str) -> float:
         """Return a scoring bias (-20 to +20) based on learned node performance.
@@ -324,14 +317,8 @@ class KindPerformanceTracker:
     def record(self, kind: str, success: bool, latency_ms: float) -> None:
         perf = self._kinds[kind]
         perf.sample_count += 1
-        perf.success_rate = (
-            (1 - self._EMA_ALPHA) * perf.success_rate
-            + self._EMA_ALPHA * (1.0 if success else 0.0)
-        )
-        perf.avg_latency_ms = (
-            (1 - self._EMA_ALPHA) * perf.avg_latency_ms
-            + self._EMA_ALPHA * latency_ms
-        )
+        perf.success_rate = (1 - self._EMA_ALPHA) * perf.success_rate + self._EMA_ALPHA * (1.0 if success else 0.0)
+        perf.avg_latency_ms = (1 - self._EMA_ALPHA) * perf.avg_latency_ms + self._EMA_ALPHA * latency_ms
 
     def get_risk(self, kind: str) -> float:
         """Return kind failure risk (0.0=safe, 1.0=always fails)."""
@@ -374,14 +361,8 @@ class StrategyEffectivenessTracker:
     def record(self, strategy: str, success: bool, latency_ms: float) -> None:
         perf = self._strategies[strategy]
         perf.sample_count += 1
-        perf.success_rate = (
-            (1 - self._EMA_ALPHA) * perf.success_rate
-            + self._EMA_ALPHA * (1.0 if success else 0.0)
-        )
-        perf.avg_latency_ms = (
-            (1 - self._EMA_ALPHA) * perf.avg_latency_ms
-            + self._EMA_ALPHA * latency_ms
-        )
+        perf.success_rate = (1 - self._EMA_ALPHA) * perf.success_rate + self._EMA_ALPHA * (1.0 if success else 0.0)
+        perf.avg_latency_ms = (1 - self._EMA_ALPHA) * perf.avg_latency_ms + self._EMA_ALPHA * latency_ms
 
     def recommend(self) -> str | None:
         """Return strategy with highest success rate, or None if insufficient data."""
@@ -513,17 +494,13 @@ class SchedulerTuner:
 
     def snapshot(self) -> dict[str, object]:
         """Full diagnostic snapshot for admin/explain endpoints."""
-        recent_success = sum(
-            1 for s in self._recent_signals if s.success
-        )
+        recent_success = sum(1 for s in self._recent_signals if s.success)
         recent_total = len(self._recent_signals)
         return {
             "enabled": self._enabled,
             "total_signals": self._total_signals,
             "recent_window_size": recent_total,
-            "recent_success_rate": (
-                round(recent_success / recent_total, 4) if recent_total else 0.0
-            ),
+            "recent_success_rate": (round(recent_success / recent_total, 4) if recent_total else 0.0),
             "dimension_weights": self.weights.snapshot(),
             "node_performance": self.node_tracker.snapshot(),
             "kind_performance": self.kind_tracker.snapshot(),

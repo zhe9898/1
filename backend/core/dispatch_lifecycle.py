@@ -26,7 +26,7 @@ import datetime
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +172,7 @@ class FilteringStage:
 
         # Backoff filter
         pre_count = len(ctx.candidates)
-        ctx.candidates = [
-            c for c in ctx.candidates
-            if not facade.should_skip_backoff(getattr(c, "job_id", ""), ctx.now)
-        ]
+        ctx.candidates = [c for c in ctx.candidates if not facade.should_skip_backoff(getattr(c, "job_id", ""), ctx.now)]
         ctx.backoff_skipped = pre_count - len(ctx.candidates)
 
         # Circuit breaker + executor contract filter
@@ -208,11 +205,11 @@ class BusinessStage:
     async def execute(self, ctx: DispatchContext) -> bool:
         from backend.core.business_scheduling import apply_business_filters
 
-        ctx.candidates = apply_business_filters(
-            ctx.candidates,
+        ctx.candidates = apply_business_filters(  # type: ignore[assignment]
+            ctx.candidates,  # type: ignore[arg-type]
             completed_job_ids=ctx.completed_dep_ids,
             available_slots=ctx.available_slots,
-            parent_jobs=ctx.parent_jobs,
+            parent_jobs=ctx.parent_jobs,  # type: ignore[arg-type]
             now=ctx.now,
         )
         ctx.record_stage_time("business")
@@ -236,7 +233,7 @@ class PlacementStage:
             nodes = getattr(ctx, "_active_node_snapshots", [])
             if nodes:
                 ctx.placement_hints = solver.solve(
-                    ctx.candidates,
+                    ctx.candidates,  # type: ignore[arg-type]
                     nodes,
                     now=ctx.now,
                     accepted_kinds=ctx.accepted_kinds,
@@ -330,14 +327,14 @@ def get_dispatch_pipeline() -> DispatchPipeline:
 # ============================================================================
 
 
-def _noop_db_stub():
+def _noop_db_stub() -> Any:
     """Placeholder for when stage is called outside of a DB session.
 
     Real usage in dispatch.py passes the actual AsyncSession via ctx.
     """
 
     class _Stub:
-        async def execute(self, *a, **kw):  # noqa: ANN
+        async def execute(self, *a: Any, **kw: Any) -> Any:  # noqa: ANN
             return type("R", (), {"scalars": lambda self: type("S", (), {"first": lambda self: None, "all": lambda self: []})()})()
 
     return _Stub()

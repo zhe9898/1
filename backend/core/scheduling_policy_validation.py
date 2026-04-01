@@ -10,13 +10,12 @@ from typing import Any
 
 from backend.core.scheduling_policy_types import SchedulingPolicy
 
-
 # =====================================================================
 # Validation
 # =====================================================================
 
 
-def validate_policy(policy: SchedulingPolicy) -> list[str]:
+def validate_policy(policy: SchedulingPolicy) -> list[str]:  # noqa: C901
     """Return a list of validation errors (empty = valid)."""
     errors: list[str] = []
 
@@ -121,7 +120,7 @@ def validate_policy(policy: SchedulingPolicy) -> list[str]:
     if at.min_multiplier <= 0:
         errors.append(f"auto_tune.min_multiplier <= 0: {at.min_multiplier}")
     if at.max_multiplier <= at.min_multiplier:
-        errors.append(f"auto_tune.max_multiplier <= min_multiplier")
+        errors.append("auto_tune.max_multiplier <= min_multiplier")
     if at.learning_rate <= 0 or at.learning_rate > 1.0:
         errors.append(f"auto_tune.learning_rate out of (0,1]: {at.learning_rate}")
     if at.history_window < 1:
@@ -129,7 +128,7 @@ def validate_policy(policy: SchedulingPolicy) -> list[str]:
 
     dc = policy.dispatch
     if dc.candidate_max < dc.candidate_min:
-        errors.append(f"dispatch.candidate_max < candidate_min")
+        errors.append("dispatch.candidate_max < candidate_min")
     if not 0.0 <= dc.default_reliability_score <= 1.0:
         errors.append(f"dispatch.default_reliability_score out of [0,1]: {dc.default_reliability_score}")
     if dc.dlq_scan_limit < 1:

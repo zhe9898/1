@@ -13,15 +13,16 @@ import math
 from dataclasses import dataclass
 from typing import Final
 
-from backend.core.scheduling_policy_types import AgingConfig, QueueConfig
+from backend.core.scheduling_policy_types import QueueConfig
 
 # ============================================================================
 # Priority Layer Definitions — resolved from policy store
 # ============================================================================
 
 
-def _get_queue_config():
+def _get_queue_config() -> QueueConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.queue
 
 
@@ -131,16 +132,14 @@ def get_priority_layer_stats(jobs: list[object]) -> dict[str, dict[str, object]]
         }
     """
 
-    stats: dict[str, dict[str, object]] = {
-        layer: {"count": 0, "oldest": None} for layer in PRIORITY_LAYER_ORDER
-    }
+    stats: dict[str, dict[str, object]] = {layer: {"count": 0, "oldest": None} for layer in PRIORITY_LAYER_ORDER}
 
     for job in jobs:
         priority = getattr(job, "priority", 50)
         created_at = getattr(job, "created_at", None)
 
         layer = get_priority_layer(priority)
-        stats[layer]["count"] = int(stats[layer]["count"]) + 1  # type: ignore[arg-type]
+        stats[layer]["count"] = int(stats[layer]["count"]) + 1  # type: ignore[call-overload]
 
         if created_at:
             current_oldest = stats[layer]["oldest"]
@@ -216,7 +215,7 @@ def _load_scheduling_config() -> dict:
     Returns a dict with the same shape as before for backward compat.
     """
     if hasattr(_load_scheduling_config, "_cache"):
-        return _load_scheduling_config._cache  # type: ignore[attr-defined]
+        return dict(_load_scheduling_config._cache)  # type: ignore[attr-defined, unused-ignore]
     qc = _get_queue_config()
     defaults = {
         "aging": {
@@ -235,7 +234,7 @@ def _load_scheduling_config() -> dict:
 def reset_scheduling_config_cache() -> None:
     """Force re-read of system.yaml on next access (for tests / hot-reload)."""
     if hasattr(_load_scheduling_config, "_cache"):
-        del _load_scheduling_config._cache  # type: ignore[attr-defined]
+        del _load_scheduling_config._cache  # type: ignore[attr-defined, unused-ignore]
 
 
 def get_aging_config() -> dict:
@@ -294,6 +293,7 @@ class TenantQuota:
 def _get_service_class_config() -> dict[str, dict[str, object]]:
     """Resolve service class config from policy store."""
     from backend.core.scheduling_policy_store import get_policy_store
+
     scs = get_policy_store().active.service_classes
     return {
         name: {
@@ -361,26 +361,21 @@ class GlobalFairScheduler:
 
         quotas: dict[str, TenantQuota] = {}
         try:
-            import yaml
             from pathlib import Path
 
-            config = yaml.safe_load(
-                Path("system.yaml").read_text(encoding="utf-8")
-            )
+            import yaml  # type: ignore[import-untyped, unused-ignore]
+
+            config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
             sched = config.get("scheduling", {}) or {}
-            self.__class__._default_service_class = sched.get(
-                "default_service_class", _qc.default_service_class
-            )
+            self.__class__._default_service_class = sched.get("default_service_class", _qc.default_service_class)
             raw_quotas = sched.get("tenant_quotas", {}) or {}
             for tenant_id, cfg in raw_quotas.items():
                 if isinstance(cfg, dict):
                     sc = str(cfg.get("service_class", self._default_service_class))
                     sc_defaults = _get_service_class_config().get(sc, _get_service_class_config()["standard"])
                     quotas[tenant_id] = TenantQuota(
-                        max_jobs_per_round=int(
-                            cfg.get("max_jobs_per_round", sc_defaults["max_jobs_per_round"])
-                        ),
-                        weight=float(sc_defaults["weight"]),
+                        max_jobs_per_round=int(cfg.get("max_jobs_per_round", sc_defaults["max_jobs_per_round"])),
+                        weight=float(sc_defaults["weight"]),  # type: ignore[arg-type]
                         service_class=sc,
                     )
         except Exception:
@@ -398,11 +393,11 @@ class GlobalFairScheduler:
         # Fall back to default service class
         sc = self._default_service_class
         _scc = _get_service_class_config()
-        sc_defaults = _scc.get(sc, _scc["standard"])
+        sc_defaults = _scc.get(sc or "standard", _scc["standard"])
         return TenantQuota(
-            max_jobs_per_round=int(sc_defaults["max_jobs_per_round"]),
-            weight=float(sc_defaults["weight"]),
-            service_class=sc,
+            max_jobs_per_round=int(sc_defaults["max_jobs_per_round"]),  # type: ignore[call-overload]
+            weight=float(sc_defaults["weight"]),  # type: ignore[arg-type]
+            service_class=sc or "standard",
         )
 
     def get_all_quotas(self) -> dict[str, TenantQuota]:

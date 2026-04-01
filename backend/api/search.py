@@ -8,7 +8,6 @@ containing ``vector-pack``.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -61,13 +60,13 @@ class SemanticSearchResponse(BaseModel):
 def _encode_query(query_text: str) -> list[float] | None:
     """Encode text to 384-dim vector using the shared sentence-transformer model."""
     try:
-        from backend.workers.ai_worker import get_model, HAS_MODEL
+        from backend.workers.ai_worker import HAS_MODEL, get_model
 
         model = get_model()
         if model is None or not HAS_MODEL:
             return None
         vec = model.encode(query_text)
-        return vec.tolist()  # type: ignore[union-attr]
+        return vec.tolist()  # type: ignore[no-any-return]
     except Exception:
         logger.warning("Embedding model unavailable for search", exc_info=True)
         return None
@@ -96,8 +95,7 @@ async def semantic_search(
     vec_literal = "[" + ",".join(str(v) for v in vec) + "]"
 
     if body.scope in ("memory", "all"):
-        sql = text(
-            """
+        sql = text("""
             SELECT id::text, fact_text, 1 - (text_embedding <=> :vec ::vector(384)) AS score
             FROM memory_facts
             WHERE tenant_id = :tid
@@ -106,8 +104,7 @@ async def semantic_search(
               AND text_embedding IS NOT NULL
             ORDER BY text_embedding <=> :vec ::vector(384)
             LIMIT :lim
-            """
-        )
+            """)
         rows = (
             await db.execute(
                 sql,
@@ -168,8 +165,7 @@ async def _keyword_fallback(
     pattern = f"%{body.query}%"
 
     if body.scope in ("memory", "all"):
-        sql = text(
-            """
+        sql = text("""
             SELECT id::text, fact_text
             FROM memory_facts
             WHERE tenant_id = :tid AND user_sub = :uid
@@ -177,11 +173,8 @@ async def _keyword_fallback(
               AND fact_text ILIKE :pat
             ORDER BY created_at DESC
             LIMIT :lim
-            """
-        )
-        rows = (
-            await db.execute(sql, {"tid": user.tenant_id, "uid": user.sub, "pat": pattern, "lim": body.limit})
-        ).all()
+            """)
+        rows = (await db.execute(sql, {"tid": user.tenant_id, "uid": user.sub, "pat": pattern, "lim": body.limit})).all()
         for row in rows:
             hits.append(SearchHit(id=row[0], source="memory", text=row[1], score=0.5))
 
@@ -204,8 +197,7 @@ async def _asset_keyword_search(
 ) -> list[SearchHit]:
     """ILIKE search across asset metadata fields."""
     pattern = f"%{query_text}%"
-    sql = text(
-        """
+    sql = text("""
         SELECT id::text, COALESCE(label, original_filename, file_path) AS display,
                asset_type, ai_tags
         FROM assets
@@ -215,8 +207,7 @@ async def _asset_keyword_search(
                OR ai_tags::text ILIKE :pat)
         ORDER BY created_at DESC
         LIMIT :lim
-        """
-    )
+        """)
     rows = (await db.execute(sql, {"tid": user.tenant_id, "pat": pattern, "lim": limit})).all()
     hits: list[SearchHit] = []
     for row in rows:

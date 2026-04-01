@@ -9,6 +9,7 @@ Architecture boundary:
   - This router receives pre-processed measurements via HTTPS
   - No HealthKit/Health Connect SDK dependency in the Python runtime
 """
+
 from __future__ import annotations
 
 import datetime
@@ -16,7 +17,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_tenant_db
@@ -26,11 +27,21 @@ router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
 # ── Request / Response Models ────────────────────────────────────────
 
-VALID_METRIC_TYPES = frozenset({
-    "steps", "heart_rate", "sleep", "blood_oxygen", "weight",
-    "blood_pressure", "calories", "distance", "active_minutes",
-    "body_temperature", "respiratory_rate",
-})
+VALID_METRIC_TYPES = frozenset(
+    {
+        "steps",
+        "heart_rate",
+        "sleep",
+        "blood_oxygen",
+        "weight",
+        "blood_pressure",
+        "calories",
+        "distance",
+        "active_minutes",
+        "body_temperature",
+        "respiratory_rate",
+    }
+)
 
 
 class HealthMeasurement(BaseModel):
@@ -75,6 +86,7 @@ class HealthSummaryItem(BaseModel):
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
+
 
 @router.post("/ingest", response_model=HealthIngestResponse)
 async def ingest_health_data(
@@ -213,7 +225,7 @@ async def health_summary(
     return [
         HealthSummaryItem(
             metric_type=row.metric_type,
-            count=row.count,
+            count=int(str(row.count)),
             min_value=row.min_value,
             max_value=row.max_value,
             avg_value=float(row.avg_value),

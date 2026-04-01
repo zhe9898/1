@@ -4,6 +4,7 @@ ZEN70 Jobs API – Lifecycle endpoints.
 Split from routes.py for maintainability. Contains the state-machine
 transition endpoints: complete, fail, progress, renew, cancel, retry.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -24,7 +25,6 @@ from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
 from backend.core.node_auth import authenticate_node_request
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
-from backend.models.job import Job
 
 from .database import (
     _append_log,
@@ -55,6 +55,7 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 # ── Self-learning outcome feedback helper ────────────────────────────
 
+
 def _record_tuner_outcome(
     job: object,
     *,
@@ -70,11 +71,7 @@ def _record_tuner_outcome(
         from backend.core.scheduler_auto_tune import OutcomeSignal, get_scheduler_tuner
 
         started = getattr(job, "started_at", None)
-        latency_ms = (
-            (now - started).total_seconds() * 1000.0
-            if started
-            else 0.0
-        )
+        latency_ms = (now - started).total_seconds() * 1000.0 if started else 0.0
 
         signal = OutcomeSignal(
             job_id=getattr(job, "job_id", ""),
@@ -111,7 +108,7 @@ async def complete_job(
     _assert_valid_lease_owner(job, payload, "result")
     if job.status == "completed":
         return _to_response(job)
-                           
+
     attempt = await _get_attempt_for_callback(db, job, payload)
     if attempt is None:
         raise zen(
@@ -197,11 +194,14 @@ async def fail_job(
     now = _utcnow()
 
     # Infer failure category if not provided
-    failure_category_str = payload.failure_category or infer_failure_category(
-        error_message=payload.error,
-        exit_code=payload.error_details.get("exit_code") if payload.error_details else None,
-        error_details=payload.error_details,
-    ).value
+    failure_category_str = (
+        payload.failure_category
+        or infer_failure_category(
+            error_message=payload.error,
+            exit_code=payload.error_details.get("exit_code") if payload.error_details else None,  # type: ignore[arg-type]
+            error_details=payload.error_details,
+        ).value
+    )
 
     # ── Failure control plane: track node/connector/kind failures ────
     _fcp = get_failure_control_plane()
@@ -250,7 +250,10 @@ async def fail_job(
             db,
             job.job_id,
             payload.log
-            or f"job failed on {payload.node_id}; requeued retry={job.retry_count}/{job.max_retries} category={failure_category_str} retry_at={retry_at.isoformat()}",
+            or (
+                f"job failed on {payload.node_id}; requeued retry={job.retry_count}/{job.max_retries}"
+                f" category={failure_category_str} retry_at={retry_at.isoformat()}"
+            ),
             level="warning",
             tenant_id=job.tenant_id,
         )

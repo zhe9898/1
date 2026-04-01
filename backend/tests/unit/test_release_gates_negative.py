@@ -33,10 +33,8 @@ PACKAGE_SCRIPT = SCRIPTS_DIR / "package_v3_43.py"
 REGISTRY_PATH = Path(__file__).resolve().parents[4] / "backend" / "models" / "domain_registry.json"
 
 
-
-
-
 # ── Negative Test 1: lockfile missing → gate must exit non-zero ───────────────
+
 
 def test_lockfile_gate_fails_when_backend_lock_missing(tmp_path: Path) -> None:
     """
@@ -59,13 +57,9 @@ def test_lockfile_gate_fails_when_backend_lock_missing(tmp_path: Path) -> None:
     )
     # Gate 3 must reject: missing backend/requirements-ci.lock
     assert result.returncode != 0, (
-        "NEGATIVE TEST FAILED: packaging succeeded despite missing backend lockfile.\n"
-        f"stdout: {result.stdout[-500:]}\nstderr: {result.stderr[-500:]}"
+        "NEGATIVE TEST FAILED: packaging succeeded despite missing backend lockfile.\n" f"stdout: {result.stdout[-500:]}\nstderr: {result.stderr[-500:]}"
     )
-    assert (
-        "requirements-ci.lock" in result.stdout + result.stderr
-        or result.returncode != 0
-    ), "Gate should mention the missing lockfile"
+    assert "requirements-ci.lock" in result.stdout + result.stderr or result.returncode != 0, "Gate should mention the missing lockfile"
 
 
 def test_lockfile_gate_fails_when_frontend_lock_missing(tmp_path: Path) -> None:
@@ -86,13 +80,11 @@ def test_lockfile_gate_fails_when_frontend_lock_missing(tmp_path: Path) -> None:
         cwd=str(tmp_path),
         timeout=30,
     )
-    assert result.returncode != 0, (
-        "NEGATIVE TEST FAILED: packaging succeeded despite missing frontend lockfile.\n"
-        f"stderr: {result.stderr[-500:]}"
-    )
+    assert result.returncode != 0, "NEGATIVE TEST FAILED: packaging succeeded despite missing frontend lockfile.\n" f"stderr: {result.stderr[-500:]}"
 
 
 # ── Negative Test 2: domain_registry.json corrupt → SystemExit ───────────────
+
 
 def test_domain_registry_corrupt_json_hard_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
@@ -106,14 +98,13 @@ def test_domain_registry_corrupt_json_hard_fails(tmp_path: Path, monkeypatch: py
     # (module-level singleton _INACTIVE_BUSINESS_PATHS is already loaded;
     #  we test _load_inactive_business_paths() with a patched registry path)
     import scripts.package_v3_43 as pkg  # noqa: PLC0415 (lazy import for isolation)
+
     monkeypatch.setattr(pkg, "DOMAIN_REGISTRY_PATH", fake_registry)
 
     with pytest.raises(SystemExit) as exc_info:
         pkg._load_inactive_business_paths()  # type: ignore[attr-defined]
 
-    assert exc_info.value.code != 0 or isinstance(exc_info.value.code, str), (
-        "SystemExit must carry a non-zero code or descriptive message"
-    )
+    assert exc_info.value.code != 0 or isinstance(exc_info.value.code, str), "SystemExit must carry a non-zero code or descriptive message"
 
 
 def test_domain_registry_missing_file_hard_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,6 +123,7 @@ def test_domain_registry_missing_file_hard_fails(tmp_path: Path, monkeypatch: py
 
 # ── Negative Test 3: frozen path drifts → _run_gate must detect it ───────────
 
+
 def test_frozen_openapi_path_drift_detected(tmp_path: Path) -> None:
     """
     ADR-0047 Gate 4 (negative): snapshot 里有路径，但实际 surface 已经不含该路径。
@@ -144,13 +136,15 @@ def test_frozen_openapi_path_drift_detected(tmp_path: Path) -> None:
     # Write a fake locked snapshot with a path that does NOT exist in the real app
     fake_snapshot = snapshot_dir / "openapi_locked.json"
     fake_snapshot.write_text(
-        json.dumps({
-            "version": "v3.42",
-            "freeze_scope": "path-surface-only",
-            "freeze_boundary": "test",
-            "allowlist_prefixes": ["/api/v1/nonexistent-ghost-route"],
-            "paths": ["/api/v1/nonexistent-ghost-route/list"],
-        }),
+        json.dumps(
+            {
+                "version": "v3.42",
+                "freeze_scope": "path-surface-only",
+                "freeze_boundary": "test",
+                "allowlist_prefixes": ["/api/v1/nonexistent-ghost-route"],
+                "paths": ["/api/v1/nonexistent-ghost-route/list"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -164,13 +158,11 @@ def test_frozen_openapi_path_drift_detected(tmp_path: Path) -> None:
     )
     # Either: snapshot not found (exit 1) or surface drift (exit 1)
     # Both are correct — the gate must be non-zero
-    assert result.returncode != 0, (
-        "NEGATIVE TEST FAILED: freeze --check reported 0 despite path drift.\n"
-        f"stdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+    assert result.returncode != 0, "NEGATIVE TEST FAILED: freeze --check reported 0 despite path drift.\n" f"stdout: {result.stdout}\nstderr: {result.stderr}"
 
 
 # ── Negative Test 4: gate command not found → must SystemExit ─────────────────
+
 
 def test_run_gate_missing_command_hard_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """
@@ -186,14 +178,13 @@ def test_run_gate_missing_command_hard_fails(monkeypatch: pytest.MonkeyPatch) ->
         )
 
     code = exc_info.value.code
-    assert code != 0 or isinstance(code, str), (
-        "SystemExit must carry non-zero code or error message string"
-    )
+    assert code != 0 or isinstance(code, str), "SystemExit must carry non-zero code or error message string"
     if isinstance(code, str):
         assert "gate command not found" in code.lower() or "aborted" in code.lower()
 
 
 # ── Negative Test 5: forbidden artifact bleeds into zip → post-validate fails ─
+
 
 def test_forbidden_business_model_not_in_zip(tmp_path: Path) -> None:
     """
@@ -228,9 +219,11 @@ def test_forbidden_business_model_not_in_zip(tmp_path: Path) -> None:
 
 # ── Utility ───────────────────────────────────────────────────────────────────
 
+
 def _env() -> dict[str, str]:
     """Clean env dict with ZEN70_SKIP_RELEASE_GATE unset for negative tests."""
     import os
+
     env = dict(os.environ)
     env.pop("ZEN70_SKIP_RELEASE_GATE", None)
     return env

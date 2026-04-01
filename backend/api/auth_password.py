@@ -1,22 +1,28 @@
 """
 ZEN70 Auth Password - 密码认证
 """
+
 from __future__ import annotations
 
 import asyncio
 
 import bcrypt
-from fastapi import APIRouter, Depends, Request
-from fastapi import status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth_shared import assert_user_active, build_token_response_model, register_login_session, request_tenant_id
 from backend.api.deps import get_db, get_redis
-from backend.api.models.auth import TokenResponse, PasswordLoginRequest
+from backend.api.models.auth import PasswordLoginRequest, TokenResponse
 from backend.core.auth_helpers import (
-    CODE_BAD_REQUEST, CODE_TOO_MANY, CODE_UNAUTHORIZED,
-    client_ip, log_auth, request_id, require_db_redis, zen,
+    CODE_BAD_REQUEST,
+    CODE_TOO_MANY,
+    CODE_UNAUTHORIZED,
+    client_ip,
+    log_auth,
+    request_id,
+    require_db_redis,
+    zen,
 )
 from backend.core.redis_client import RedisClient
 from backend.models.user import User
@@ -56,6 +62,7 @@ async def password_login(
         await asyncio.sleep(30)
 
     from backend.api.auth_shared import first_user_or_schema_unavailable
+
     await first_user_or_schema_unavailable(db)  # type: ignore[arg-type]
     result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == username))  # type: ignore[union-attr]
     user = result.scalar_one_or_none()
@@ -83,7 +90,9 @@ async def password_login(
 
     log_auth("password_login", True, rid, username=username, client_ip_str=cip)
     resp = build_token_response_model(
-        str(user.id), user.username, user.role,
+        str(user.id),
+        user.username,
+        user.role,
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference,
     )

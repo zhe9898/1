@@ -1,6 +1,7 @@
 """
 ZEN70 MQTT Worker - Frigate 事件处理。
 """
+
 from __future__ import annotations
 
 import base64
@@ -20,9 +21,7 @@ logger = logging.getLogger("zen70.mqtt_worker")
 async def get_media_path(session: AsyncSession) -> str:
     from backend.models.feature_flag import SystemConfig
 
-    result = await session.execute(
-        select(SystemConfig).where(SystemConfig.key == "media_path")
-    )
+    result = await session.execute(select(SystemConfig).where(SystemConfig.key == "media_path"))
     config = result.scalar_one_or_none()
     if config is not None:
         return config.value
@@ -36,7 +35,7 @@ async def process_event(event: dict[str, Any]) -> None:
     if not after.get("has_snapshot", False):
         return
 
-    async with _async_session_factory() as session:
+    async with _async_session_factory() as session:  # type: ignore[misc]
         media_path = await get_media_path(session)
 
         event_id = after.get("id", "unknown")

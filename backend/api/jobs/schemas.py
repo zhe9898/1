@@ -131,4 +131,3 @@ def _resource_schema() -> ResourceSchemaResponse:
             ),
         ],
     )
-

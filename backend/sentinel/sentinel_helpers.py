@@ -2,6 +2,7 @@
 
 Extracted from topology_sentinel.py for maintainability.
 """
+
 from __future__ import annotations
 
 import http.client

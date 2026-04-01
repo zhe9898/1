@@ -30,16 +30,18 @@ from typing import cast
 import redis
 
 from backend.sentinel.sentinel_helpers import (
-    DISK_CRITICAL_THRESHOLD,
     DEFAULT_PENDING_TTL,
-    HWState,
-    MountPoint,
+    DISK_CRITICAL_THRESHOLD,
     REDIS_CHANNEL_EVENTS,
     REDIS_CHANNEL_MELTDOWN,
     REDIS_KEY_GPU,
+    HWState,
+    MountPoint,
     _docker_api_get,
     _docker_api_post,
-    set_logger as _set_helpers_logger,
+)
+from backend.sentinel.sentinel_helpers import set_logger as _set_helpers_logger
+from backend.sentinel.sentinel_helpers import (
     setup_logging,
 )
 

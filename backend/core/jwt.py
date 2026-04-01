@@ -127,9 +127,9 @@ async def _blacklist_jti(redis_conn: RedisBlacklistStore | None, jti: object | N
         # This is acceptable because tokens are short-lived (default 15 min).
         if jti is not None:
             logging.getLogger("zen70.jwt").warning(
-                "jti blacklist write skipped (Redis unavailable): jti=%s ttl=%ds — "
-                "token will expire naturally at exp claim",
-                jti, ttl_seconds,
+                "jti blacklist write skipped (Redis unavailable): jti=%s ttl=%ds — " "token will expire naturally at exp claim",
+                jti,
+                ttl_seconds,
             )
         return
     try:
@@ -137,7 +137,8 @@ async def _blacklist_jti(redis_conn: RedisBlacklistStore | None, jti: object | N
     except (OSError, RuntimeError, TypeError, ValueError, RedisError) as exc:
         logging.getLogger("zen70.jwt").warning(
             "jti blacklist write FAILED (Redis error): jti=%s — token remains valid until exp: %s",
-            jti, exc,
+            jti,
+            exc,
         )
 
 
@@ -145,23 +146,17 @@ async def is_jti_blacklisted(redis_conn: RedisBlacklistStore | None, jti: object
     if redis_conn is None or jti is None:
         if _REVOCATION_STRICT:
             # Strict mode: Redis required. Fail closed — treat as blacklisted.
-            logging.getLogger("zen70.jwt").warning(
-                "is_jti_blacklisted: Redis unavailable in strict mode, denying token jti=%s", jti
-            )
+            logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis unavailable in strict mode, denying token jti=%s", jti)
             return True
         return False
     try:
         return await redis_conn.get(f"jwt:blacklist:{jti}") is not None
     except (OSError, RuntimeError, TypeError, ValueError, RedisError) as exc:
         if _REVOCATION_STRICT:
-            logging.getLogger("zen70.jwt").warning(
-                "is_jti_blacklisted: Redis error in strict mode, denying token jti=%s: %s", jti, exc
-            )
+            logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis error in strict mode, denying token jti=%s: %s", jti, exc)
             return True
         # Non-strict: fail open (token passes). Log at warning so it's visible.
-        logging.getLogger("zen70.jwt").warning(
-            "is_jti_blacklisted: Redis error, failing open for jti=%s: %s", jti, exc
-        )
+        logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis error, failing open for jti=%s: %s", jti, exc)
         return False
 
 

@@ -4,6 +4,7 @@ ZEN70 Nodes API – Pydantic models.
 Split from nodes.py for maintainability.  All request/response schemas
 and the bootstrap receipt model live here.
 """
+
 from __future__ import annotations
 
 import datetime

@@ -53,25 +53,17 @@ async def purge_old_jobs(session: AsyncSession) -> int:
     """
     cutoff = _cutoff(RETENTION_JOBS_DAYS)
     # Fetch IDs first so we can clean job_attempts in the same batch.
-    id_query = (
-        select(Job.job_id)
-        .where(Job.status.in_(TERMINAL_STATUSES), Job.updated_at < cutoff)
-        .limit(RETENTION_BATCH_SIZE)
-    )
+    id_query = select(Job.job_id).where(Job.status.in_(TERMINAL_STATUSES), Job.updated_at < cutoff).limit(RETENTION_BATCH_SIZE)
     result = await session.execute(id_query)
     job_ids = list(result.scalars().all())
     if not job_ids:
         return 0
 
     # Delete matching job_attempts first (no FK cascade).
-    await session.execute(
-        delete(JobAttempt).where(JobAttempt.job_id.in_(job_ids))
-    )
+    await session.execute(delete(JobAttempt).where(JobAttempt.job_id.in_(job_ids)))
 
     # Delete jobs (cascades to job_logs).
-    await session.execute(
-        delete(Job).where(Job.job_id.in_(job_ids))
-    )
+    await session.execute(delete(Job).where(Job.job_id.in_(job_ids)))
     await session.commit()
     logger.info("data_retention: purged %d terminal jobs (cutoff=%s)", len(job_ids), cutoff.isoformat())
     return len(job_ids)
@@ -80,31 +72,25 @@ async def purge_old_jobs(session: AsyncSession) -> int:
 async def purge_old_scheduling_decisions(session: AsyncSession) -> int:
     """Delete scheduling_decisions older than RETENTION_SCHEDULING_DAYS."""
     cutoff = _cutoff(RETENTION_SCHEDULING_DAYS)
-    stmt = (
-        delete(SchedulingDecision)
-        .where(SchedulingDecision.created_at < cutoff)
-    )
+    stmt = delete(SchedulingDecision).where(SchedulingDecision.created_at < cutoff)
     result = await session.execute(stmt)
-    count = result.rowcount  # type: ignore[assignment]
+    count = result.rowcount  # type: ignore[attr-defined]
     if count:
         await session.commit()
         logger.info("data_retention: purged %d scheduling_decisions (cutoff=%s)", count, cutoff.isoformat())
-    return count
+    return int(count)
 
 
 async def purge_old_audit_logs(session: AsyncSession) -> int:
     """Delete audit_logs older than RETENTION_AUDIT_DAYS."""
     cutoff = _cutoff(RETENTION_AUDIT_DAYS)
-    stmt = (
-        delete(AuditLog)
-        .where(AuditLog.created_at < cutoff)
-    )
+    stmt = delete(AuditLog).where(AuditLog.created_at < cutoff)
     result = await session.execute(stmt)
-    count = result.rowcount  # type: ignore[assignment]
+    count = result.rowcount  # type: ignore[attr-defined]
     if count:
         await session.commit()
         logger.info("data_retention: purged %d audit_logs (cutoff=%s)", count, cutoff.isoformat())
-    return count
+    return int(count)
 
 
 async def run_retention_cycle(session: AsyncSession) -> dict[str, int]:

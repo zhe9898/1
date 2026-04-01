@@ -39,7 +39,7 @@ class FailureCategory(str, Enum):
     UNKNOWN = "unknown"
 
 
-def infer_failure_category(
+def infer_failure_category(  # noqa: C901
     error_message: str,
     exit_code: int | None = None,
     error_details: dict[str, Any] | None = None,
@@ -119,10 +119,7 @@ def infer_failure_category(
             return FailureCategory.NETWORK_ERROR
 
     # Priority 5: Permission errors (high confidence)
-    if any(
-        p in msg_lower
-        for p in ["permission denied", "access denied", "forbidden", "unauthorized", "eacces", "eperm", "401", "403"]
-    ):
+    if any(p in msg_lower for p in ["permission denied", "access denied", "forbidden", "unauthorized", "eacces", "eperm", "401", "403"]):
         return FailureCategory.PERMISSION_DENIED
 
     # Priority 6: Missing dependency (medium confidence)
@@ -218,6 +215,7 @@ def calculate_retry_delay_seconds(
     """
     if base_delay is None or max_delay is None:
         from backend.core.scheduling_policy_store import get_policy_store
+
         rp = get_policy_store().active.retry
         if base_delay is None:
             base_delay = rp.base_delay_seconds
@@ -229,11 +227,13 @@ def calculate_retry_delay_seconds(
 
     if failure_category in (FailureCategory.RESOURCE_EXHAUSTED, FailureCategory.NODE_UNHEALTHY):
         from backend.core.scheduling_policy_store import get_policy_store
+
         _rp = get_policy_store().active.retry
         multiplier = _rp.resource_exhausted_multiplier
         delay = base_delay * multiplier * (2 ** min(retry_count, _rp.max_exponent))
     else:
         from backend.core.scheduling_policy_store import get_policy_store as _gps
+
         delay = base_delay * (2 ** min(retry_count, _gps().active.retry.max_exponent))
 
-    return min(delay, max_delay)
+    return int(min(delay, max_delay))

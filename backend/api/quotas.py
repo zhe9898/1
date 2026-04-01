@@ -50,6 +50,7 @@ async def set_quota_endpoint(
     valid_types = set(DEFAULT_QUOTAS.keys())
     if payload.resource_type not in valid_types:
         from backend.core.errors import zen
+
         raise zen("ZEN-QUOTA-4000", f"Unknown resource_type. Valid: {sorted(valid_types)}", status_code=400)
 
     quota = await set_quota(

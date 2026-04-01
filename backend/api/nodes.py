@@ -6,6 +6,7 @@ This module wires them together behind FastAPI route definitions and
 re-exports all public names so existing ``from backend.api.nodes import …``
 statements keep working.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -21,25 +22,6 @@ from backend.api.deps import (
     get_redis,
     get_tenant_db,
 )
-from backend.api.ui_contracts import ResourceSchemaResponse
-from backend.core.errors import zen
-from backend.core.node_auth import authenticate_node_request
-from backend.core.quota import check_node_quota
-from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
-from backend.models.node import Node
-
-# ── Re-exports (backward-compat) ────────────────────────────────────────────
-from backend.api.nodes_models import (  # noqa: F401 – re-exported for consumers
-    BootstrapReceipt,
-    NodeContractPayload,
-    NodeDrainRequest,
-    NodeHeartbeatRequest,
-    NodeProvisionRequest,
-    NodeProvisionResponse,
-    NodeRegisterRequest,
-    NodeResponse,
-    _utcnow,
-)
 from backend.api.nodes_helpers import (  # noqa: F401 – re-exported for consumers
     _apply_contract,
     _bootstrap_notes,
@@ -53,6 +35,25 @@ from backend.api.nodes_helpers import (  # noqa: F401 – re-exported for consum
     _resource_schema,
     _to_response,
 )
+
+# ── Re-exports (backward-compat) ────────────────────────────────────────────
+from backend.api.nodes_models import (  # noqa: F401 – re-exported for consumers
+    BootstrapReceipt,
+    NodeContractPayload,
+    NodeDrainRequest,
+    NodeHeartbeatRequest,
+    NodeProvisionRequest,
+    NodeProvisionResponse,
+    NodeRegisterRequest,
+    NodeResponse,
+    _utcnow,
+)
+from backend.api.ui_contracts import ResourceSchemaResponse
+from backend.core.errors import zen
+from backend.core.node_auth import authenticate_node_request
+from backend.core.quota import check_node_quota
+from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
+from backend.models.node import Node
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
 
@@ -228,6 +229,7 @@ async def register_node(
     )
     if _exec_warnings:
         import logging as _log
+
         _log.getLogger("api.nodes").warning(
             "Executor contract warnings for node %s: %s",
             node.node_id,

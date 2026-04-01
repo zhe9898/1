@@ -96,15 +96,13 @@ def validate_connector_config(kind: str, config: dict[str, Any]) -> dict[str, An
         return validated.model_dump(mode="python")
     except ValidationError as e:
         error_details = e.errors()
-        raise ValueError(
-            f"Connector config validation failed for kind '{kind}': "
-            f"{len(error_details)} error(s) - {error_details[0]['msg']}"
-        ) from e
+        raise ValueError(f"Connector config validation failed for kind '{kind}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}") from e
 
 
 # ============================================================================
 # Built-in Connector Kinds
 # ============================================================================
+
 
 class HttpConnectorConfig(BaseModel):
     """Config schema for http connector kind."""
@@ -147,6 +145,7 @@ register_connector_kind("webhook", config_schema=WebhookConnectorConfig)
 # ============================================================================
 # Connector Kind Discovery
 # ============================================================================
+
 
 def get_connector_kind_info(kind: str) -> dict[str, Any]:
     """Get information about a registered connector kind.

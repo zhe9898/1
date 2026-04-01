@@ -239,7 +239,7 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
     db.add = MagicMock()
     db.execute.side_effect = [
         _scalar_result(node),
-        _count_result(0),     # admission control: pending+leased count=0
+        _count_result(0),  # admission control: pending+leased count=0
         _scalar_result(None),  # feature flag: sched_decision_audit
         _scalar_result(None),  # feature flag: sched_placement_policies
         _scalar_result(None),  # feature flag: sched_preemption

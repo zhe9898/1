@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.user import Base
@@ -24,11 +24,16 @@ class Asset(Base):
     camera: Mapped[str | None] = mapped_column(String(128), nullable=True)
     event_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     embedding_status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="pending", index=True,
+        String(16),
+        nullable=False,
+        default="pending",
+        index=True,
     )  # pending | done | failed
     ai_tags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     is_emotion_highlight: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.datetime.utcnow,
+        DateTime,
+        nullable=False,
+        default=datetime.datetime.utcnow,
     )

@@ -4,6 +4,7 @@ Extracted from nodes_helpers.py for maintainability.
 Contains the ``_resource_schema`` FormSchema definition and
 bootstrap receipt/command builders.
 """
+
 from __future__ import annotations
 
 import os

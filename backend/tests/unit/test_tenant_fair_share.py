@@ -19,14 +19,11 @@ import pytest
 from backend.core.business_scheduling import (
     SchedulingContext,
     SchedulingEngine,
-    TenantFairShareGate,
     apply_business_filters,
 )
 from backend.core.queue_stratification import (
-    DEFAULT_TENANT_QUOTA,
     SERVICE_CLASS_CONFIG,
     GlobalFairScheduler,
-    TenantQuota,
     get_fair_scheduler,
 )
 from backend.models.job import Job
@@ -165,10 +162,7 @@ class TestGlobalFairScheduler:
     def test_apply_fair_share_multi_tenant(self) -> None:
         """Multiple tenants each get their own quota allocation."""
         fs = GlobalFairScheduler()
-        jobs = (
-            [_job(job_id=f"t1-{i}", tenant_id="t1") for i in range(10)]
-            + [_job(job_id=f"t2-{i}", tenant_id="t2") for i in range(10)]
-        )
+        jobs = [_job(job_id=f"t1-{i}", tenant_id="t1") for i in range(10)] + [_job(job_id=f"t2-{i}", tenant_id="t2") for i in range(10)]
         filtered = fs.apply_fair_share(jobs)
         t1_count = sum(1 for j in filtered if j.tenant_id == "t1")
         t2_count = sum(1 for j in filtered if j.tenant_id == "t2")
@@ -215,10 +209,7 @@ class TestTenantFairShareGate:
         now = _utcnow()
         # Create more jobs than the standard quota allows
         quota = SERVICE_CLASS_CONFIG["standard"]["max_jobs_per_round"]
-        jobs = [
-            _job(job_id=f"j-{i}", tenant_id="default")
-            for i in range(int(quota) + 10)
-        ]
+        jobs = [_job(job_id=f"j-{i}", tenant_id="default") for i in range(int(quota) + 10)]
         result = apply_business_filters(
             jobs,
             completed_job_ids=set(),
@@ -232,10 +223,7 @@ class TestTenantFairShareGate:
         """Fair-share quota is tracked per-tenant independently."""
         now = _utcnow()
         quota = int(SERVICE_CLASS_CONFIG["standard"]["max_jobs_per_round"])
-        jobs = (
-            [_job(job_id=f"t1-{i}", tenant_id="t1") for i in range(quota + 5)]
-            + [_job(job_id=f"t2-{i}", tenant_id="t2") for i in range(3)]
-        )
+        jobs = [_job(job_id=f"t1-{i}", tenant_id="t1") for i in range(quota + 5)] + [_job(job_id=f"t2-{i}", tenant_id="t2") for i in range(3)]
         result = apply_business_filters(
             jobs,
             completed_job_ids=set(),

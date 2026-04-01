@@ -56,6 +56,7 @@ async def list_kernel_capabilities(
 async def get_kernel_capability(key: str) -> CapabilityDetail:
     """Get a single capability contract by key."""
     from backend.core.errors import zen
+
     cap = get_capability(key)
     if cap is None:
         raise zen("ZEN-KERNEL-4040", f"Capability '{key}' not found", status_code=404)

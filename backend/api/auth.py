@@ -9,16 +9,12 @@ ZEN70 Auth Router - 统一身份认证路由组装
   - auth_user:      账号管理
   - auth_invite:    OOB 邀请系统
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from backend.api import auth_bootstrap
-from backend.api import auth_invite
-from backend.api import auth_password
-from backend.api import auth_pin
-from backend.api import auth_user
-from backend.api import auth_webauthn
+from backend.api import auth_bootstrap, auth_invite, auth_password, auth_pin, auth_user, auth_webauthn
 from backend.api import push as push_router
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -50,7 +46,7 @@ PIN_RATE_LIMIT_WINDOW = auth_pin.PIN_RATE_LIMIT_WINDOW
 PIN_RATE_LIMIT_MAX = auth_pin.PIN_RATE_LIMIT_MAX
 
 # Re-export helpers so tests can patch on backend.api.auth namespace
-from backend.core.auth_helpers import (  # noqa: E402
+from backend.core.auth_helpers import (  # noqa: E402, F401
     check_webauthn_rate_limit,
     consume_challenge,
     credential_id_to_base64url,
@@ -58,7 +54,7 @@ from backend.core.auth_helpers import (  # noqa: E402
     origin_from_request,
     token_response,
 )
-from backend.core.rls import set_tenant_context  # noqa: E402
+from backend.core.rls import set_tenant_context  # noqa: E402, F401
 
 try:
     from backend.core.webauthn import (  # noqa: E402

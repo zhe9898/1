@@ -7,8 +7,6 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.errors import zen
-
 # ── Prometheus query whitelist ──────────────────────────────────────
 METRIC_QUERIES: dict[str, str] = {
     "cpu_usage": 'avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) * 100',

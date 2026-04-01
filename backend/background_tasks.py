@@ -67,6 +67,7 @@ async def data_retention_worker() -> None:
             logger.exception("data_retention_worker: unexpected crash, restarting in 5s")
             await asyncio.sleep(5)
 
+
 # -------------------- Bit-Rot 巡检（法典 3.2.3）--------------------
 BITROT_DB_PATH = Path("/app/data/bitrot.db") if Path("/app").exists() else Path("bitrot.db")
 _bitrot_dirs_raw = os.getenv("BITROT_SCAN_DIRS", "")

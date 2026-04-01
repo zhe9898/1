@@ -1,14 +1,9 @@
 """Tests for scheduler self-learning auto-tune engine.
 
-Covers:
-- AdaptiveWeightStore (EMA multiplier learning, cold-start, clamping, decay)
-- NodePerformanceTracker (per-node success/latency EMA, bias)
-- KindPerformanceTracker (per-kind success EMA, risk)
-- StrategyEffectivenessTracker (per-strategy EMA, recommend)
-- SchedulerTuner (orchestrator: record, adjust, snapshot, reset, enable/disable)
-- GovernanceFacade tuner proxy delegation
-- lifecycle _record_tuner_outcome helper
+Covers AdaptiveWeightStore, Node/Kind/StrategyPerformanceTrackers,
+SchedulerTuner orchestrator, GovernanceFacade proxy, lifecycle helpers.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -17,8 +12,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.core.scheduler_auto_tune import (
-    DEFAULT_DECAY_RATE,
-    DEFAULT_LEARNING_RATE,
     MAX_MULTIPLIER,
     MIN_MULTIPLIER,
     MIN_SAMPLES_BEFORE_ADJUST,
@@ -54,11 +47,6 @@ def _make_signal(**overrides) -> OutcomeSignal:
     return OutcomeSignal(**defaults)
 
 
-# =====================================================================
-# TuningDimension
-# =====================================================================
-
-
 class TestTuningDimension:
     def test_all_dimensions_are_strings(self) -> None:
         for dim in TuningDimension:
@@ -66,18 +54,26 @@ class TestTuningDimension:
 
     def test_expected_dimensions_exist(self) -> None:
         names = {d.value for d in TuningDimension}
-        for expected in (
-            "priority", "age", "scarcity", "reliability", "strategy",
-            "zone", "resource_fit", "data_locality", "latency",
-            "power", "thermal", "affinity", "sla_urgency", "batch",
-            "load_penalty", "freshness_penalty", "failure_penalty",
-        ):
-            assert expected in names, f"missing dimension: {expected}"
-
-
-# =====================================================================
-# OutcomeSignal
-# =====================================================================
+        expected = {
+            "priority",
+            "age",
+            "scarcity",
+            "reliability",
+            "strategy",
+            "zone",
+            "resource_fit",
+            "data_locality",
+            "latency",
+            "power",
+            "thermal",
+            "affinity",
+            "sla_urgency",
+            "batch",
+            "load_penalty",
+            "freshness_penalty",
+            "failure_penalty",
+        }
+        assert expected <= names, f"missing: {expected - names}"
 
 
 class TestOutcomeSignal:
@@ -88,16 +84,18 @@ class TestOutcomeSignal:
 
     def test_default_timestamp(self) -> None:
         sig = OutcomeSignal(
-            job_id="j", node_id="n", kind="k", strategy="s",
-            tenant_id="t", score_breakdown={}, success=True,
-            latency_ms=0, retry_count=0, node_utilisation=0,
+            job_id="j",
+            node_id="n",
+            kind="k",
+            strategy="s",
+            tenant_id="t",
+            score_breakdown={},
+            success=True,
+            latency_ms=0,
+            retry_count=0,
+            node_utilisation=0,
         )
         assert isinstance(sig.timestamp, datetime.datetime)
-
-
-# =====================================================================
-# AdaptiveWeightStore
-# =====================================================================
 
 
 class TestAdaptiveWeightStore:
@@ -176,11 +174,6 @@ class TestAdaptiveWeightStore:
         assert store.get("priority") == 1.0
 
 
-# =====================================================================
-# NodePerformanceTracker
-# =====================================================================
-
-
 class TestNodePerformanceTracker:
     def test_unknown_node_bias_zero(self) -> None:
         tracker = NodePerformanceTracker()
@@ -228,11 +221,6 @@ class TestNodePerformanceTracker:
         assert tracker.get_bias("node-1") == 0.0
 
 
-# =====================================================================
-# KindPerformanceTracker
-# =====================================================================
-
-
 class TestKindPerformanceTracker:
     def test_unknown_kind_zero_risk(self) -> None:
         tracker = KindPerformanceTracker()
@@ -273,11 +261,6 @@ class TestKindPerformanceTracker:
         assert tracker.get_risk("kind-a") == 0.0
 
 
-# =====================================================================
-# StrategyEffectivenessTracker
-# =====================================================================
-
-
 class TestStrategyEffectivenessTracker:
     def test_no_data_recommend_none(self) -> None:
         tracker = StrategyEffectivenessTracker()
@@ -310,11 +293,6 @@ class TestStrategyEffectivenessTracker:
             tracker.record("spread", success=True, latency_ms=100)
         tracker.reset()
         assert tracker.recommend() is None
-
-
-# =====================================================================
-# SchedulerTuner — orchestrator
-# =====================================================================
 
 
 class TestSchedulerTuner:
@@ -370,20 +348,24 @@ class TestSchedulerTuner:
     def test_get_adjustment_after_learning(self) -> None:
         tuner = SchedulerTuner()
         for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 20):
-            tuner.record_outcome(_make_signal(
-                score_breakdown={"priority": 100},
-                success=True,
-            ))
+            tuner.record_outcome(
+                _make_signal(
+                    score_breakdown={"priority": 100},
+                    success=True,
+                )
+            )
         adj = tuner.get_adjustment("priority")
         assert adj >= 1.0
 
     def test_decay_moves_toward_baseline(self) -> None:
         tuner = SchedulerTuner()
         for _ in range(MIN_SAMPLES_BEFORE_ADJUST + 30):
-            tuner.record_outcome(_make_signal(
-                score_breakdown={"priority": 100},
-                success=True,
-            ))
+            tuner.record_outcome(
+                _make_signal(
+                    score_breakdown={"priority": 100},
+                    success=True,
+                )
+            )
         before = tuner.get_adjustment("priority")
         for _ in range(50):
             tuner.decay()
@@ -426,11 +408,6 @@ class TestSchedulerTuner:
             tuner.record_outcome(_make_signal(strategy="spread", success=False))
         rec = tuner.recommend_strategy()
         assert rec == "balanced"
-
-
-# =====================================================================
-# GovernanceFacade tuner proxies
-# =====================================================================
 
 
 class TestGovernanceFacadeTunerProxies:
@@ -538,11 +515,6 @@ class TestGovernanceFacadeTunerProxies:
         assert result == "binpack"
 
 
-# =====================================================================
-# lifecycle _record_tuner_outcome helper
-# =====================================================================
-
-
 class TestRecordTunerOutcome:
     def test_records_success_outcome(self) -> None:
         from backend.api.jobs.lifecycle import _record_tuner_outcome
@@ -603,13 +575,11 @@ class TestRecordTunerOutcome:
         ):
             # Must not raise
             _record_tuner_outcome(
-                MagicMock(), node_id="n1", success=True, now=_utcnow(),
+                MagicMock(),
+                node_id="n1",
+                success=True,
+                now=_utcnow(),
             )
-
-
-# =====================================================================
-# Integration: score_job_for_node applies tuner adjustments
-# =====================================================================
 
 
 class TestScoringIntegration:
@@ -639,18 +609,31 @@ class TestScoringIntegration:
         from backend.core.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
-            node_id="n1", os="linux", arch="amd64", executor="docker",
-            zone="zone-a", capabilities=frozenset(),
+            node_id="n1",
+            os="linux",
+            arch="amd64",
+            executor="docker",
+            zone="zone-a",
+            capabilities=frozenset(),
             accepted_kinds=frozenset({"shell.exec"}),
-            max_concurrency=4, active_lease_count=0,
-            cpu_cores=8, memory_mb=16384, gpu_vram_mb=0,
-            storage_mb=100000, reliability_score=0.95,
+            max_concurrency=4,
+            active_lease_count=0,
+            cpu_cores=8,
+            memory_mb=16384,
+            gpu_vram_mb=0,
+            storage_mb=100000,
+            reliability_score=0.95,
             last_seen_at=_utcnow(),
-            enrollment_status="active", status="online",
-            drain_status="active", network_latency_ms=5,
-            bandwidth_mbps=1000, cached_data_keys=frozenset(),
-            power_capacity_watts=500, current_power_watts=200,
-            thermal_state="normal", cloud_connectivity="online",
+            enrollment_status="active",
+            status="online",
+            drain_status="active",
+            network_latency_ms=5,
+            bandwidth_mbps=1000,
+            cached_data_keys=frozenset(),
+            power_capacity_watts=500,
+            current_power_watts=200,
+            thermal_state="normal",
+            cloud_connectivity="online",
             metadata_json={},
         )
 
@@ -664,8 +647,12 @@ class TestScoringIntegration:
             mock_get.return_value = mock_tuner
 
             score_base, bd_base = score_job_for_node(
-                job, node, now=_utcnow(), total_active_nodes=5,
-                eligible_nodes_count=3, recent_failed_job_ids=set(),
+                job,
+                node,
+                now=_utcnow(),
+                total_active_nodes=5,
+                eligible_nodes_count=3,
+                recent_failed_job_ids=set(),
             )
 
         # Double priority multiplier
@@ -682,8 +669,12 @@ class TestScoringIntegration:
             mock_get.return_value = mock_tuner
 
             score_boosted, bd_boosted = score_job_for_node(
-                job, node, now=_utcnow(), total_active_nodes=5,
-                eligible_nodes_count=3, recent_failed_job_ids=set(),
+                job,
+                node,
+                now=_utcnow(),
+                total_active_nodes=5,
+                eligible_nodes_count=3,
+                recent_failed_job_ids=set(),
             )
 
         assert bd_boosted["priority"] == bd_base["priority"] * 2
@@ -714,18 +705,31 @@ class TestScoringIntegration:
         from backend.core.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
-            node_id="n1", os="linux", arch="amd64", executor="docker",
-            zone="zone-a", capabilities=frozenset(),
+            node_id="n1",
+            os="linux",
+            arch="amd64",
+            executor="docker",
+            zone="zone-a",
+            capabilities=frozenset(),
             accepted_kinds=frozenset({"shell.exec"}),
-            max_concurrency=4, active_lease_count=0,
-            cpu_cores=8, memory_mb=16384, gpu_vram_mb=0,
-            storage_mb=100000, reliability_score=0.90,
+            max_concurrency=4,
+            active_lease_count=0,
+            cpu_cores=8,
+            memory_mb=16384,
+            gpu_vram_mb=0,
+            storage_mb=100000,
+            reliability_score=0.90,
             last_seen_at=_utcnow(),
-            enrollment_status="active", status="online",
-            drain_status="active", network_latency_ms=5,
-            bandwidth_mbps=1000, cached_data_keys=frozenset(),
-            power_capacity_watts=500, current_power_watts=200,
-            thermal_state="normal", cloud_connectivity="online",
+            enrollment_status="active",
+            status="online",
+            drain_status="active",
+            network_latency_ms=5,
+            bandwidth_mbps=1000,
+            cached_data_keys=frozenset(),
+            power_capacity_watts=500,
+            current_power_watts=200,
+            thermal_state="normal",
+            cloud_connectivity="online",
             metadata_json={},
         )
 
@@ -738,17 +742,16 @@ class TestScoringIntegration:
             mock_get.return_value = mock_tuner
 
             _, breakdown = score_job_for_node(
-                job, node, now=_utcnow(), total_active_nodes=5,
-                eligible_nodes_count=3, recent_failed_job_ids=set(),
+                job,
+                node,
+                now=_utcnow(),
+                total_active_nodes=5,
+                eligible_nodes_count=3,
+                recent_failed_job_ids=set(),
             )
 
         assert "learned_node_bias" in breakdown
         assert breakdown["learned_node_bias"] == 15
-
-
-# =====================================================================
-# Module singleton
-# =====================================================================
 
 
 class TestSingleton:

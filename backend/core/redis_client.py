@@ -365,7 +365,7 @@ class RedisClient:
             keys = await self._redis.keys(f"{KEY_NODE_PREFIX}*")
             result: dict[str, NodeInfo] = {}
             for key in keys:
-                nid = key[len(KEY_NODE_PREFIX) :] if key.startswith(KEY_NODE_PREFIX) else key.split(":")[-1]
+                nid = key[len(KEY_NODE_PREFIX) :] if key.startswith(KEY_NODE_PREFIX) else key.split(":")[-1]  # noqa: E203
                 node = await self.get_node(nid)
                 if node:
                     result[nid] = node
@@ -429,7 +429,7 @@ class RedisClient:
 
             for key, data in zip(keys, results):
                 if data:
-                    name = key[len(KEY_SWITCH_PREFIX) :] if key.startswith(KEY_SWITCH_PREFIX) else key.split(":")[-1]
+                    name = key[len(KEY_SWITCH_PREFIX) :] if key.startswith(KEY_SWITCH_PREFIX) else key.split(":")[-1]  # noqa: E203
                     result[name] = {
                         "state": data.get("state", ""),
                         "reason": data.get("reason"),

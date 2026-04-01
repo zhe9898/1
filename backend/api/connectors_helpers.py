@@ -3,6 +3,7 @@
 Extracted from connectors.py for maintainability.
 Route handlers remain in connectors.py.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -15,7 +16,6 @@ from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSecti
 from backend.core.control_plane_state import connector_status_view
 from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.connector import Connector
-
 
 # ── Pydantic request/response models ─────────────────────────────────
 

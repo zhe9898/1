@@ -1,4 +1,5 @@
 """Tests for dispatch_lifecycle — pipeline abstraction and placement hints."""
+
 from __future__ import annotations
 
 import datetime
@@ -10,7 +11,6 @@ from backend.core.dispatch_lifecycle import (
     DispatchContext,
     DispatchPipeline,
     DispatchResult,
-    DispatchStage,
     apply_placement_hints,
     get_dispatch_pipeline,
 )
@@ -23,7 +23,9 @@ def _utcnow() -> datetime.datetime:
 class TestDispatchContext:
     def test_defaults(self) -> None:
         ctx = DispatchContext(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         assert ctx.tenant_id == "t1"
         assert ctx.burst_active is False
@@ -56,6 +58,7 @@ class TestDispatchPipeline:
     async def test_all_pass_pipeline(self) -> None:
         class OkStage:
             name = "ok"
+
             async def execute(self, ctx: DispatchContext) -> bool:
                 return True
 
@@ -69,11 +72,13 @@ class TestDispatchPipeline:
     async def test_stage_short_circuit(self) -> None:
         class DenyStage:
             name = "deny"
+
             async def execute(self, ctx: DispatchContext) -> bool:
                 return False
 
         class NeverReachedStage:
             name = "never"
+
             async def execute(self, ctx: DispatchContext) -> bool:
                 ctx.filtered_count = 999
                 return True
@@ -89,6 +94,7 @@ class TestDispatchPipeline:
     async def test_stage_exception_handled(self) -> None:
         class BrokenStage:
             name = "broken"
+
             async def execute(self, ctx: DispatchContext) -> bool:
                 raise RuntimeError("boom")
 
@@ -106,7 +112,8 @@ class TestApplyPlacementHints:
         assert len(result) == 1
 
     def test_matching_hint_boosts_score(self) -> None:
-        from dataclasses import dataclass, field as dc_field
+        from dataclasses import dataclass
+        from dataclasses import field as dc_field
 
         @dataclass
         class SJ:

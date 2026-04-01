@@ -102,6 +102,7 @@ class ResourceReservationPolicy:
     def __init__(self, *, reserve_pct: float | None = None, min_priority: int | None = None) -> None:
         if reserve_pct is None or min_priority is None:
             from backend.core.scheduling_policy_store import get_policy_store
+
             rr = get_policy_store().active.resource_reservation
             if reserve_pct is None:
                 reserve_pct = rr.reserve_pct
@@ -155,7 +156,11 @@ class ThermalCapPolicy:
         self.blocked_states = blocked_states or frozenset({"throttling"})
 
     def adjust_score(
-        self, job: Job, node: SchedulerNodeSnapshot, current_score: int, breakdown: dict[str, int],
+        self,
+        job: Job,
+        node: SchedulerNodeSnapshot,
+        current_score: int,
+        breakdown: dict[str, int],
     ) -> tuple[int, dict[str, int]]:
         return current_score, breakdown
 
@@ -177,7 +182,7 @@ class BinPackConsolidationPolicy:
     Applied *after* per-job strategy scoring so that jobs still use their
     declared strategy for the primary score, but the system-level preference
     for consolidation nudges placement toward already-busy nodes.
-    
+
     This is a global optimization layer on top of per-job strategy.
     """
 
@@ -223,7 +228,11 @@ class PowerAwarePolicy:
         self.penalty = penalty
 
     def adjust_score(
-        self, job: Job, node: SchedulerNodeSnapshot, current_score: int, breakdown: dict[str, int],
+        self,
+        job: Job,
+        node: SchedulerNodeSnapshot,
+        current_score: int,
+        breakdown: dict[str, int],
     ) -> tuple[int, dict[str, int]]:
         if node.power_capacity_watts <= 0:
             return current_score, breakdown
@@ -295,6 +304,7 @@ class CompositePlacementPolicy:
 
 def _lazy_topology_spread(**kwargs):  # type: ignore[no-untyped-def]
     from backend.core.scheduling_resilience import TopologySpreadPolicy
+
     return TopologySpreadPolicy(**kwargs)
 
 
@@ -303,7 +313,7 @@ _BUILTIN_POLICIES: dict[str, type] = {
     "thermal_cap": ThermalCapPolicy,
     "binpack_consolidation": BinPackConsolidationPolicy,
     "power_aware": PowerAwarePolicy,
-    "topology_spread": _lazy_topology_spread,
+    "topology_spread": _lazy_topology_spread,  # type: ignore[dict-item]
 }
 
 
@@ -314,8 +324,9 @@ def load_placement_policies() -> CompositePlacementPolicy:
     """
     policies_config: list[dict] = []
     try:
-        import yaml
         from pathlib import Path
+
+        import yaml  # type: ignore[import-untyped, unused-ignore]
 
         config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
         policies_config = (config.get("scheduling", {}) or {}).get("placement_policies", []) or []

@@ -14,6 +14,7 @@ from .models import DeadLetterQueueResponse, JobActionRequest, JobRequeueRequest
 
 router = APIRouter()
 
+
 @router.get("/dead-letter", response_model=DeadLetterQueueResponse)
 async def list_dead_letter_queue(
     limit: int = 50,
@@ -35,22 +36,19 @@ async def list_dead_letter_queue(
         dlq_key = f"dlq:{tenant_id}:jobs"
         try:
             # Get total count
-            total = await redis.zcard(dlq_key)
+            total = await redis.zcard(dlq_key)  # type: ignore[attr-defined]
 
             # Get paginated job IDs (sorted by timestamp, newest first)
-            job_ids = await redis.zrevrange(dlq_key, offset, offset + limit - 1)
+            job_ids = await redis.zrevrange(dlq_key, offset, offset + limit - 1)  # type: ignore[attr-defined]
 
             if not job_ids:
                 return DeadLetterQueueResponse(total=total, items=[])
 
             # Fetch job details from PostgreSQL
-            stmt = (
-                select(Job)
-                .where(
-                    Job.tenant_id == tenant_id,
-                    Job.job_id.in_(job_ids),
-                    Job.status == "failed",
-                )
+            stmt = select(Job).where(
+                Job.tenant_id == tenant_id,
+                Job.job_id.in_(job_ids),
+                Job.status == "failed",
             )
 
             if failure_category:
@@ -73,12 +71,9 @@ async def list_dead_letter_queue(
             pass
 
     # Fallback: PostgreSQL-only query
-    stmt = (
-        select(Job)
-        .where(
-            Job.tenant_id == tenant_id,
-            Job.status == "failed",
-        )
+    stmt = select(Job).where(
+        Job.tenant_id == tenant_id,
+        Job.status == "failed",
     )
 
     if failure_category:
@@ -219,4 +214,3 @@ async def remove_job_from_dead_letter(
         "removed_at": _utcnow().isoformat(),
         "reason": payload.reason or "manual removal",
     }
-

@@ -24,8 +24,8 @@ from backend.core.errors import zen
 from backend.models.job import Job
 from backend.models.workflow import Workflow, WorkflowStep
 
-
 # ── DAG Validation ────────────────────────────────────────────────────────
+
 
 def validate_dag(steps: list[dict]) -> None:
     """Validate DAG structure: unique IDs, valid depends_on, no cycles.
@@ -81,6 +81,7 @@ def topological_order(steps: list[dict]) -> list[str]:
 
 
 # ── Workflow Lifecycle ────────────────────────────────────────────────────
+
 
 async def create_workflow(
     db: AsyncSession,
@@ -140,9 +141,7 @@ async def _advance_workflow(
 ) -> None:
     """Dispatch Jobs for all steps whose dependencies are completed."""
     # Load current step states
-    result = await db.execute(
-        select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id)
-    )
+    result = await db.execute(select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id))
     step_records = {ws.step_id: ws for ws in result.scalars().all()}
 
     completed_ids = {sid for sid, ws in step_records.items() if ws.status == "completed"}
@@ -175,11 +174,7 @@ async def _advance_workflow(
             payload = dict(step_def.get("payload", {}))
             payload["_workflow_id"] = workflow.workflow_id
             payload["_step_id"] = step_id
-            payload["_context"] = {
-                dep: step_records[dep].result
-                for dep in deps
-                if step_records[dep].result
-            }
+            payload["_context"] = {dep: step_records[dep].result for dep in deps if step_records[dep].result}
 
             job = Job(
                 tenant_id=workflow.tenant_id,
@@ -213,9 +208,7 @@ async def on_step_job_completed(
 
     Advances the workflow: marks step completed, dispatches next ready steps.
     """
-    wf_result = await db.execute(
-        select(Workflow).where(Workflow.workflow_id == workflow_id)
-    )
+    wf_result = await db.execute(select(Workflow).where(Workflow.workflow_id == workflow_id))
     workflow = wf_result.scalars().first()
     if workflow is None:
         return
@@ -251,9 +244,7 @@ async def on_step_job_failed(
     error_message: str,
 ) -> None:
     """Called when a workflow step's Job fails."""
-    wf_result = await db.execute(
-        select(Workflow).where(Workflow.workflow_id == workflow_id)
-    )
+    wf_result = await db.execute(select(Workflow).where(Workflow.workflow_id == workflow_id))
     workflow = wf_result.scalars().first()
     if workflow is None:
         return

@@ -5,6 +5,7 @@ Split from the monolithic routes.py. Contains: create_job, list_jobs,
 get_job, list_job_attempts, get_job_schema, and _check_concurrent_limits.
 Dispatch (pull/explain) lives in dispatch.py; lifecycle callbacks in lifecycle.py.
 """
+
 import uuid
 
 from fastapi import APIRouter, Depends
@@ -154,7 +155,8 @@ async def create_job(
     from backend.core.scheduling_resilience import AdmissionController, SchedulingMetrics
 
     admitted, admission_reason, admission_details = await AdmissionController.check_admission(
-        db, tenant_id,
+        db,
+        tenant_id,
     )
     if not admitted:
         SchedulingMetrics.record_admission_rejection()
@@ -287,7 +289,6 @@ async def create_job(
     return response
 
 
-
 @router.get("", response_model=list[JobResponse])
 async def list_jobs(
     job_id: str | None = None,
@@ -357,4 +358,3 @@ async def list_job_attempts(
 # ============================================================================
 # Dead-Letter Queue API Endpoints
 # ============================================================================
-

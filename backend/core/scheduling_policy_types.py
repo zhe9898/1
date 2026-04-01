@@ -12,7 +12,6 @@ import datetime
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-
 # =====================================================================
 # Per-subsystem frozen configs
 # =====================================================================
@@ -208,20 +207,24 @@ class QueueConfig:
     aging: AgingConfig = field(default_factory=AgingConfig)
     default_tenant_quota: int = 10
     starvation_threshold_seconds: int = 3600
-    priority_layers: dict[str, tuple[int, int]] = field(default_factory=lambda: {
-        "critical": (90, 100),
-        "high": (70, 89),
-        "normal": (40, 69),
-        "low": (20, 39),
-        "batch": (0, 19),
-    })
-    layer_aging_multipliers: dict[str, float] = field(default_factory=lambda: {
-        "critical": 0.0,
-        "high": 0.5,
-        "normal": 1.0,
-        "low": 1.5,
-        "batch": 2.0,
-    })
+    priority_layers: dict[str, tuple[int, int]] = field(
+        default_factory=lambda: {
+            "critical": (90, 100),
+            "high": (70, 89),
+            "normal": (40, 69),
+            "low": (20, 39),
+            "batch": (0, 19),
+        }
+    )
+    layer_aging_multipliers: dict[str, float] = field(
+        default_factory=lambda: {
+            "critical": 0.0,
+            "high": 0.5,
+            "normal": 1.0,
+            "low": 1.5,
+            "batch": 2.0,
+        }
+    )
     tenant_cache_ttl_seconds: float = 60.0
     default_service_class: str = "standard"
 

@@ -16,8 +16,8 @@ from backend.core.data_retention import (
     run_retention_cycle,
 )
 
-
 # -------------------- helpers --------------------
+
 
 def _mock_session(scalars_result: list | None = None, rowcount: int = 0) -> AsyncMock:
     session = AsyncMock()
@@ -32,6 +32,7 @@ def _mock_session(scalars_result: list | None = None, rowcount: int = 0) -> Asyn
 
 # -------------------- _cutoff --------------------
 
+
 class TestCutoff:
     def test_cutoff_returns_past_datetime(self) -> None:
         now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
@@ -42,6 +43,7 @@ class TestCutoff:
 
 
 # -------------------- purge_old_jobs --------------------
+
 
 class TestPurgeOldJobs:
     @pytest.mark.asyncio
@@ -64,6 +66,7 @@ class TestPurgeOldJobs:
 
 # -------------------- purge_old_scheduling_decisions --------------------
 
+
 class TestPurgeOldSchedulingDecisions:
     @pytest.mark.asyncio
     async def test_no_decisions_to_purge(self) -> None:
@@ -80,6 +83,7 @@ class TestPurgeOldSchedulingDecisions:
 
 
 # -------------------- purge_old_audit_logs --------------------
+
 
 class TestPurgeOldAuditLogs:
     @pytest.mark.asyncio
@@ -98,6 +102,7 @@ class TestPurgeOldAuditLogs:
 
 # -------------------- run_retention_cycle --------------------
 
+
 class TestRunRetentionCycle:
     @pytest.mark.asyncio
     async def test_full_cycle_returns_summary(self) -> None:
@@ -106,7 +111,7 @@ class TestRunRetentionCycle:
         # Third call: purge_old_jobs delete jobs
         # Fourth call: purge_old_scheduling_decisions → rowcount=5
         # Fifth call: purge_old_audit_logs → rowcount=10
-        call_count = 0
+        _call_count = 0  # noqa: F841
         results: list[MagicMock] = []
 
         # jobs select result
@@ -159,6 +164,7 @@ class TestRunRetentionCycle:
 
 
 # -------------------- constants --------------------
+
 
 class TestConstants:
     def test_terminal_statuses(self) -> None:

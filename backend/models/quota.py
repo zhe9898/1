@@ -18,9 +18,7 @@ class Quota(Base):
     """
 
     __tablename__ = "quotas"
-    __table_args__ = (
-        Index("ix_quotas_tenant_resource", "tenant_id", "resource_type", unique=True),
-    )
+    __table_args__ = (Index("ix_quotas_tenant_resource", "tenant_id", "resource_type", unique=True),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

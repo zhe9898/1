@@ -196,5 +196,3 @@ def _matches_job_list_filters(
     if required_capability and required_capability not in list(job.required_capabilities or []):
         return False
     return True
-
-

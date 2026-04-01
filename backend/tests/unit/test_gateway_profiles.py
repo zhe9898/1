@@ -31,9 +31,6 @@ def test_legacy_pack_presets_collapse_to_kernel_profile() -> None:
     assert normalize_gateway_profile("gateway-ops") == "gateway-kernel"
 
 
-
-
-
 def test_gateway_iot_profile_enables_iot_surface_only() -> None:
     enabled = get_enabled_router_names("gateway-iot")
 

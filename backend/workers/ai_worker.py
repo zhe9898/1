@@ -1,6 +1,7 @@
 """
 ZEN70 AI Worker - 资产嵌入向量处理。
 """
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db import _async_session_factory as AsyncSessionLocal
 
@@ -24,9 +24,10 @@ def get_model() -> Any:
         return model_instance
 
     try:
-        import sentence_transformers  # type: ignore[import-untyped]
+        import sentence_transformers
+
         if sentence_transformers is None:
-            HAS_MODEL = False
+            HAS_MODEL = False  # type: ignore[unreachable]
             return None
         model_instance = sentence_transformers.SentenceTransformer("all-MiniLM-L6-v2")
         return model_instance
@@ -36,18 +37,16 @@ def get_model() -> Any:
 
 
 try:
-    from PIL import Image  # type: ignore[import-untyped]
+    from PIL import Image
 except ImportError:
-    Image = None  # type: ignore[assignment,misc]
+    Image = None  # type: ignore[assignment]
 
 
 async def process_pending_assets() -> int:
     from backend.models.asset import Asset
 
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Asset).where(Asset.embedding_status == "pending").limit(50)  # type: ignore[attr-defined]
-        )
+    async with AsyncSessionLocal() as session:  # type: ignore[misc]
+        result = await session.execute(select(Asset).where(Asset.embedding_status == "pending").limit(50))
         assets = result.scalars().all()
 
         if not assets:

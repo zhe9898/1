@@ -45,4 +45,3 @@ def test_gateway_iot_profile_can_enable_mqtt_and_iot_image_target() -> None:
     assert "mosquitto" in services
     assert "runner-agent" in services
     assert "target: gateway-iot" in services["gateway"]["build_block"]
-

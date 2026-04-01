@@ -14,8 +14,8 @@ import datetime
 
 import pytest
 
-
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
@@ -208,10 +208,12 @@ class TestCompositePlacementPolicy:
             ThermalCapPolicy,
         )
 
-        composite = CompositePlacementPolicy(policies=[
-            ThermalCapPolicy(),
-            ResourceReservationPolicy(),
-        ])
+        composite = CompositePlacementPolicy(
+            policies=[
+                ThermalCapPolicy(),
+                ResourceReservationPolicy(),
+            ]
+        )
         # Order should be sorted by .order
         assert composite.policies[0].order <= composite.policies[1].order
 
@@ -222,10 +224,12 @@ class TestCompositePlacementPolicy:
             ThermalCapPolicy,
         )
 
-        composite = CompositePlacementPolicy(policies=[
-            ThermalCapPolicy(blocked_states=frozenset({"hot"})),
-            ResourceReservationPolicy(),
-        ])
+        composite = CompositePlacementPolicy(
+            policies=[
+                ThermalCapPolicy(blocked_states=frozenset({"hot"})),
+                ResourceReservationPolicy(),
+            ]
+        )
         node = _make_node_snapshot(thermal_state="hot")
         job = _make_job()
         ok, reason = composite.accept(job, node, 100)
@@ -302,7 +306,9 @@ class TestSchedulingDecisionLogger:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.candidates_count = 10
         logger.record_placement("job-1", score=150, breakdown={"priority": 50}, eligible_nodes=3)
@@ -316,7 +322,9 @@ class TestSchedulingDecisionLogger:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.record_rejection("job-3", "capacity=full")
         assert len(logger.rejections) == 1
@@ -326,7 +334,9 @@ class TestSchedulingDecisionLogger:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.record_preemption("victim-1", "urgent-1", "sla_breach")
         assert logger.preemptions_count == 1
@@ -336,7 +346,9 @@ class TestSchedulingDecisionLogger:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.record_policy_rejection("job-4", "thermal_cap", "node is throttling")
         assert logger.policy_rejections == 1
@@ -445,7 +457,8 @@ class TestScoringWithPlacementPolicy:
         now = _utcnow()
 
         total, breakdown = score_job_for_node(
-            job, node,
+            job,
+            node,
             now=now,
             total_active_nodes=3,
             eligible_nodes_count=2,
@@ -558,9 +571,16 @@ class TestExtendedJobKinds:
 
         kinds = get_registered_job_kinds()
         expected = [
-            "shell.exec", "http.request", "container.run", "healthcheck",
-            "ml.inference", "media.transcode", "script.run", "wasm.run",
-            "cron.tick", "data.sync",
+            "shell.exec",
+            "http.request",
+            "container.run",
+            "healthcheck",
+            "ml.inference",
+            "media.transcode",
+            "script.run",
+            "wasm.run",
+            "cron.tick",
+            "data.sync",
         ]
         for k in expected:
             assert k in kinds, f"{k} not registered"
@@ -568,10 +588,13 @@ class TestExtendedJobKinds:
     def test_container_run_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("container.run", {
-            "image": "nginx:latest",
-            "command": ["echo", "hello"],
-        })
+        valid = validate_job_payload(
+            "container.run",
+            {
+                "image": "nginx:latest",
+                "command": ["echo", "hello"],
+            },
+        )
         assert valid["image"] == "nginx:latest"
         assert valid["pull_policy"] == "IfNotPresent"  # default
 
@@ -584,78 +607,102 @@ class TestExtendedJobKinds:
     def test_healthcheck_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("healthcheck", {
-            "target": "http://localhost:8080/health",
-        })
+        valid = validate_job_payload(
+            "healthcheck",
+            {
+                "target": "http://localhost:8080/health",
+            },
+        )
         assert valid["check_type"] == "http"
         assert valid["timeout"] == 10
 
     def test_ml_inference_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("ml.inference", {
-            "model_id": "resnet50",
-            "input_data": {"tensor": [1, 2, 3]},
-        })
+        valid = validate_job_payload(
+            "ml.inference",
+            {
+                "model_id": "resnet50",
+                "input_data": {"tensor": [1, 2, 3]},
+            },
+        )
         assert valid["runtime"] == "onnx"
         assert valid["precision"] == "fp32"
 
     def test_media_transcode_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("media.transcode", {
-            "input_uri": "s3://bucket/input.mp4",
-            "output_uri": "s3://bucket/output.mp4",
-        })
+        valid = validate_job_payload(
+            "media.transcode",
+            {
+                "input_uri": "s3://bucket/input.mp4",
+                "output_uri": "s3://bucket/output.mp4",
+            },
+        )
         assert valid["codec"] == "h264"
 
     def test_script_run_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("script.run", {
-            "script": "echo hello",
-            "interpreter": "bash",
-        })
+        valid = validate_job_payload(
+            "script.run",
+            {
+                "script": "echo hello",
+                "interpreter": "bash",
+            },
+        )
         assert valid["timeout"] == 300
 
     def test_wasm_run_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("wasm.run", {
-            "module_uri": "/path/to/module.wasm",
-        })
+        valid = validate_job_payload(
+            "wasm.run",
+            {
+                "module_uri": "/path/to/module.wasm",
+            },
+        )
         assert valid["function"] == "_start"
         assert valid["memory_pages"] == 256
 
     def test_cron_tick_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("cron.tick", {
-            "schedule_id": "sched-001",
-            "cron_expression": "*/5 * * * *",
-            "action": "run_cleanup",
-        })
+        valid = validate_job_payload(
+            "cron.tick",
+            {
+                "schedule_id": "sched-001",
+                "cron_expression": "*/5 * * * *",
+                "action": "run_cleanup",
+            },
+        )
         assert valid["timeout"] == 120
 
     def test_data_sync_payload_validation(self):
         from backend.core.job_kind_registry import validate_job_payload
 
-        valid = validate_job_payload("data.sync", {
-            "source_uri": "/edge/data/",
-            "dest_uri": "s3://bucket/sync/",
-        })
+        valid = validate_job_payload(
+            "data.sync",
+            {
+                "source_uri": "/edge/data/",
+                "dest_uri": "s3://bucket/sync/",
+            },
+        )
         assert valid["direction"] == "push"
         assert valid["conflict_resolution"] == "latest-wins"
 
     def test_result_schema_registered(self):
         from backend.core.job_kind_registry import validate_job_result
 
-        result = validate_job_result("container.run", {
-            "exit_code": 0,
-            "stdout": "ok",
-            "container_id": "abc123",
-            "duration_seconds": 2.5,
-        })
+        result = validate_job_result(
+            "container.run",
+            {
+                "exit_code": 0,
+                "stdout": "ok",
+                "container_id": "abc123",
+                "duration_seconds": 2.5,
+            },
+        )
         assert result["exit_code"] == 0
 
     def test_kind_info_has_schemas(self):
@@ -762,7 +809,9 @@ class TestAuditRejectionRecording:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.record_rejection("job-5", "kind_circuit_open:ml.inference")
         assert len(logger.rejections) == 1
@@ -772,7 +821,9 @@ class TestAuditRejectionRecording:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.record_rejection("job-6", "executor_kind_incompat:wasm excludes shell.exec")
         assert len(logger.rejections) == 1
@@ -782,7 +833,9 @@ class TestAuditRejectionRecording:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.context["feature_flags"] = {
             "decision_audit": True,
@@ -796,7 +849,9 @@ class TestAuditRejectionRecording:
         from backend.core.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
-            tenant_id="t1", node_id="n1", now=_utcnow(),
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
         )
         logger.context["burst_active"] = True
         assert logger.context["burst_active"] is True
@@ -805,6 +860,7 @@ class TestAuditRejectionRecording:
 # ====================================================================
 # Per-kind quota
 # ====================================================================
+
 
 class TestPerKindQuota:
     """Tests for per-kind concurrent job quota enforcement."""
@@ -832,6 +888,7 @@ class TestPerKindQuota:
         from unittest.mock import AsyncMock, MagicMock
 
         from fastapi import HTTPException
+
         from backend.core.quota import check_per_kind_quota
 
         db = AsyncMock()
@@ -841,6 +898,7 @@ class TestPerKindQuota:
 
         class FakeQuota:
             limit = 5
+
         _scalar_quota = MagicMock()
         _scalar_quota.scalars.return_value.first.return_value = FakeQuota()
 
@@ -874,12 +932,15 @@ class TestPerKindQuota:
         from unittest.mock import AsyncMock, MagicMock
 
         from fastapi import HTTPException
+
         from backend.core.quota import check_per_kind_quota
 
         db = AsyncMock()
+
         # Specific key returns quota with limit=2
         class FakeQuota:
             limit = 2
+
         _scalar_specific = MagicMock()
         _scalar_specific.scalars.return_value.first.return_value = FakeQuota()
         _scalar_count = MagicMock()
@@ -895,6 +956,7 @@ class TestPerKindQuota:
 # ====================================================================
 # Configurable scheduling constants
 # ====================================================================
+
 
 class TestConfigurableSchedulingConstants:
     """Tests for system.yaml-backed scheduling configuration."""
@@ -968,6 +1030,7 @@ class TestConfigurableSchedulingConstants:
 # ====================================================================
 # Explain governance context
 # ====================================================================
+
 
 class TestExplainGovernanceContext:
     """Tests for governance context in explain trace."""
@@ -1074,6 +1137,7 @@ class TestExplainGovernanceContext:
 # Release gate CI hardening
 # ====================================================================
 
+
 class TestReleaseGateHardening:
     """Tests for CI environment bypass prevention."""
 
@@ -1089,6 +1153,7 @@ class TestReleaseGateHardening:
 # ====================================================================
 # Bandit hard gate
 # ====================================================================
+
 
 class TestBanditHardGate:
     """Tests for CI bandit step being a hard failure."""
@@ -1110,6 +1175,7 @@ class TestBanditHardGate:
 # ====================================================================
 # API stability labels
 # ====================================================================
+
 
 class TestAPIStabilityLabels:
     """Tests for API stability tier annotations on OpenAPI tags."""
@@ -1147,6 +1213,7 @@ class TestAPIStabilityLabels:
 # Strategy versioning
 # ====================================================================
 
+
 class TestStrategyVersioning:
     """Tests for config_version tracking on tenant scheduling policies."""
 
@@ -1168,6 +1235,7 @@ class TestStrategyVersioning:
 # Operator action actor identity
 # ====================================================================
 
+
 class TestOperatorActor:
     """Tests for actor identity in failure control plane governance events."""
 
@@ -1175,6 +1243,7 @@ class TestOperatorActor:
     async def test_release_quarantine_records_actor(self):
         """release_quarantine should record actor identity in governance event."""
         import datetime
+
         from backend.core.failure_control_plane import FailureControlPlane
 
         fcp = FailureControlPlane()
@@ -1195,6 +1264,7 @@ class TestOperatorActor:
     async def test_pending_audit_includes_actor(self):
         """pending_audit_events should include actor field."""
         import datetime
+
         from backend.core.failure_control_plane import FailureControlPlane
 
         fcp = FailureControlPlane()
@@ -1211,6 +1281,7 @@ class TestOperatorActor:
     async def test_auto_governance_defaults_to_system(self):
         """Auto-triggered governance events should default actor to 'system'."""
         import datetime
+
         from backend.core.failure_control_plane import FailureControlPlane
 
         fcp = FailureControlPlane()
@@ -1234,28 +1305,22 @@ class TestOperatorActor:
 # Console split verification
 # ====================================================================
 
+
 class TestConsoleSplit:
     """Verify console helpers extraction didn't break imports."""
 
     def test_console_helpers_importable(self):
         from backend.api.console_helpers import (
             build_menu_response,
-            build_summary_cards,
-            build_attention,
             route_target,
-            selector_summary,
-            sorted_segments,
-            build_node_overview_bucket,
-            build_job_overview_bucket,
-            build_connector_overview_bucket,
-            ConsoleOverviewResponse,
-            ConsoleDiagnosticsResponse,
         )
+
         assert callable(build_menu_response)
         assert callable(route_target)
 
     def test_console_router_still_works(self):
-        from backend.api.console import router, get_console_overview, get_console_diagnostics
+        from backend.api.console import get_console_diagnostics, get_console_overview, router
+
         assert router.prefix == "/api/v1/console"
         assert callable(get_console_overview)
         assert callable(get_console_diagnostics)

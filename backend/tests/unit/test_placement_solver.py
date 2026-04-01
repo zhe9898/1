@@ -1,10 +1,9 @@
 """Tests for PlacementSolver — global constraint-satisfaction optimiser."""
+
 from __future__ import annotations
 
 import datetime
 from unittest.mock import MagicMock
-
-import pytest
 
 from backend.core.job_scheduler import (
     PlacementCandidate,
@@ -113,7 +112,10 @@ class TestPlacementSolver:
         jobs = [_job(f"j{i}") for i in range(3)]
         nodes = [_node(f"n{i}") for i in range(3)]
         plan = solver.solve(
-            jobs, nodes, now=_utcnow(), accepted_kinds={"shell.exec"},
+            jobs,
+            nodes,
+            now=_utcnow(),
+            accepted_kinds={"shell.exec"},
         )
         # All jobs should be placed
         assert len(plan) == 3
@@ -124,7 +126,10 @@ class TestPlacementSolver:
         jobs = [_job(f"j{i}") for i in range(5)]
         nodes = [_node("n1", max_concurrency=2), _node("n2", max_concurrency=2)]
         plan = solver.solve(
-            jobs, nodes, now=_utcnow(), accepted_kinds={"shell.exec"},
+            jobs,
+            nodes,
+            now=_utcnow(),
+            accepted_kinds={"shell.exec"},
         )
         # Only 4 jobs can fit (2 + 2)
         assert len(plan) <= 4

@@ -83,7 +83,7 @@ def extract_client_info(request: Request) -> tuple[str | None, str | None]:
     if forwarded_for:
         ip_address = forwarded_for.split(",")[0].strip()
     else:
-        ip_address = request.client.host if request.client else None
+        ip_address = request.client.host if request.client else ""
 
     user_agent = request.headers.get("User-Agent")
 

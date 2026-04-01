@@ -11,16 +11,17 @@ from backend.models.job import Job
 from .database import _append_log, _get_job_by_id_for_update
 from .helpers import _utcnow
 from .models import (
+    ConcurrentLimitInfo,
     JobPriorityUpdateRequest,
     JobPriorityUpdateResponse,
+    JobTypeStatsItem,
     JobTypeStatsResponse,
     QueueLayerStats,
     QueueStatsResponse,
-    JobTypeStatsItem,
-    ConcurrentLimitInfo,
 )
 
 router = APIRouter()
+
 
 @router.get("/queue/stats", response_model=QueueStatsResponse)
 async def get_queue_stats(
@@ -41,7 +42,7 @@ async def get_queue_stats(
     jobs = list(result.scalars().all())
 
     # Calculate stats
-    layer_stats = get_priority_layer_stats(jobs)
+    layer_stats = get_priority_layer_stats(jobs)  # type: ignore[arg-type]
 
     # Convert to response format
     by_priority = {
@@ -102,7 +103,7 @@ async def update_job_priority(
         db,
         job.job_id,
         f"priority updated by {current_user.get('username', 'admin')} from {old_priority} to {payload.priority} ({old_layer} -> {new_layer}) "
-                f"reason={payload.reason}",
+        f"reason={payload.reason}",
         level="info",
         tenant_id=job.tenant_id,
     )

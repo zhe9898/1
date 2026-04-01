@@ -90,10 +90,16 @@ _DEFAULT_CONTRACTS: dict[str, ExecutorContract] = {
     "k8s": ExecutorContract(
         name="k8s",
         description="Kubernetes pod-based execution via kubelet API",
-        supported_kinds=frozenset({
-            "container.run", "shell.exec", "http.request",
-            "healthcheck", "cron.tick", "data.sync",
-        }),
+        supported_kinds=frozenset(
+            {
+                "container.run",
+                "shell.exec",
+                "http.request",
+                "healthcheck",
+                "cron.tick",
+                "data.sync",
+            }
+        ),
         min_memory_mb=512,
         min_cpu_cores=1,
         max_concurrency_hint=32,
@@ -102,20 +108,30 @@ _DEFAULT_CONTRACTS: dict[str, ExecutorContract] = {
     "remote-ssh": ExecutorContract(
         name="remote-ssh",
         description="Remote execution via SSH tunnel to edge device",
-        supported_kinds=frozenset({
-            "shell.exec", "script.run", "healthcheck",
-            "iot.collect", "data.sync",
-        }),
+        supported_kinds=frozenset(
+            {
+                "shell.exec",
+                "script.run",
+                "healthcheck",
+                "iot.collect",
+                "data.sync",
+            }
+        ),
         min_memory_mb=128,
         stability_tier="ga",
     ),
     "edge-native": ExecutorContract(
         name="edge-native",
         description="Lightweight on-device executor for constrained IoT/edge nodes",
-        supported_kinds=frozenset({
-            "shell.exec", "iot.collect", "healthcheck",
-            "data.sync", "cron.tick",
-        }),
+        supported_kinds=frozenset(
+            {
+                "shell.exec",
+                "iot.collect",
+                "healthcheck",
+                "data.sync",
+                "cron.tick",
+            }
+        ),
         min_memory_mb=32,
         max_concurrency_hint=4,
         stability_tier="ga",
@@ -146,8 +162,9 @@ class ExecutorRegistry:
         self._contracts = dict(_DEFAULT_CONTRACTS)
         # Overlay from system.yaml
         try:
-            import yaml
             from pathlib import Path
+
+            import yaml  # type: ignore[import-untyped, unused-ignore]
 
             config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
             raw = (config.get("scheduling", {}) or {}).get("executor_contracts", {}) or {}
@@ -208,13 +225,9 @@ class ExecutorRegistry:
         if contract.requires_gpu and gpu_vram_mb <= 0:
             warnings.append(f"executor '{executor}' requires GPU but node reports 0 VRAM")
         if contract.min_memory_mb > 0 and memory_mb < contract.min_memory_mb:
-            warnings.append(
-                f"executor '{executor}' recommends >={contract.min_memory_mb}MB memory, node has {memory_mb}MB"
-            )
+            warnings.append(f"executor '{executor}' recommends >={contract.min_memory_mb}MB memory, node has {memory_mb}MB")
         if contract.min_cpu_cores > 0 and cpu_cores < contract.min_cpu_cores:
-            warnings.append(
-                f"executor '{executor}' recommends >={contract.min_cpu_cores} CPU cores, node has {cpu_cores}"
-            )
+            warnings.append(f"executor '{executor}' recommends >={contract.min_cpu_cores} CPU cores, node has {cpu_cores}")
         return warnings
 
     def is_kind_supported(self, executor: str, kind: str) -> bool | None:

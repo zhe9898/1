@@ -40,11 +40,11 @@ from backend.api import permissions as permissions_router
 from backend.api import profile as profile_router
 from backend.api import quotas as quotas_router
 from backend.api import routes
+from backend.api import scheduling_governance as scheduling_governance_router
 from backend.api import sessions as sessions_router
 from backend.api import settings as settings_router
 from backend.api import user_management as user_management_router
 from backend.api import workflows as workflows_router
-from backend.api import scheduling_governance as scheduling_governance_router
 from backend.api.deps import get_settings
 from backend.api.models import ErrorResponse, HealthResponse
 from backend.core.gateway_profile import get_enabled_router_names as resolve_enabled_router_names
@@ -405,6 +405,7 @@ for router_name, router_obj in _ALL_ROUTERS.items():
 _pack_declared_routers: set[str] = set()
 for pk in _gateway_packs:
     from backend.core.pack_registry import PACK_DEFINITIONS
+
     _pdef = PACK_DEFINITIONS.get(pk)
     if _pdef:
         _pack_declared_routers.update(_pdef.routers)

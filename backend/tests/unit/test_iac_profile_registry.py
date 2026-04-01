@@ -8,7 +8,6 @@ from scripts.iac_core.profiles import (
 )
 
 
-
 def test_unknown_profile_is_rejected_by_registry() -> None:
     assert is_profile_known("gateway-kernel")
     assert is_profile_known("gateway-iot")

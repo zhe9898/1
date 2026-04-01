@@ -4,6 +4,7 @@ Extracted from job_scheduler.py for maintainability.
 Contains all scoring bonus/penalty helpers and the main
 ``score_job_for_node`` function.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -12,6 +13,7 @@ import math
 from typing import TYPE_CHECKING
 
 from backend.core.business_scheduling import calculate_sla_breach_risk
+from backend.core.scheduling_policy_types import NodeFreshnessPolicy, ScoringWeights
 from backend.core.scheduling_strategies import (
     SchedulingStrategy,
     calculate_anti_affinity_penalty,
@@ -24,13 +26,15 @@ if TYPE_CHECKING:
     from backend.models.job import Job
 
 
-def _get_scoring_weights():
+def _get_scoring_weights() -> ScoringWeights:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.scoring
 
 
-def _get_freshness_policy():
+def _get_freshness_policy() -> NodeFreshnessPolicy:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.freshness
 
 
@@ -65,8 +69,7 @@ def _freshness_penalty(node: SchedulerNodeSnapshot, now: datetime.datetime) -> i
     if age_seconds <= fp.grace_period_seconds:
         return 0
     ratio = min(
-        (age_seconds - fp.grace_period_seconds)
-        / max(fp.stale_after_seconds - fp.grace_period_seconds, 1),
+        (age_seconds - fp.grace_period_seconds) / max(fp.stale_after_seconds - fp.grace_period_seconds, 1),
         1.0,
     )
     return int(sw.freshness_penalty_max * ratio)
@@ -139,7 +142,7 @@ def score_job_for_node(
     eligible_nodes_count: int,
     recent_failed_job_ids: set[str],
     active_jobs_on_node: list[Job] | None = None,
-) -> int:
+) -> tuple[int, dict[str, int]]:
     """Score job-node match with edge computing factors and scheduling strategies.
 
     Returns (total_score, breakdown_dict) for explain-trace debugging.
@@ -172,11 +175,7 @@ def score_job_for_node(
     age_seconds = max((now - job.created_at).total_seconds(), 0)
     age_score = int(sw.age_max * (1.0 - math.exp(-age_seconds / sw.age_half_life_seconds)))
 
-    scarcity_score = (
-        int(sw.scarcity_max * max(total_active_nodes - eligible_nodes_count, 0) / total_active_nodes)
-        if total_active_nodes > 0
-        else 0
-    )
+    scarcity_score = int(sw.scarcity_max * max(total_active_nodes - eligible_nodes_count, 0) / total_active_nodes) if total_active_nodes > 0 else 0
 
     reliability_score = int(max(0.0, min(node.reliability_score, 1.0)) * sw.reliability_max)
 
@@ -232,7 +231,9 @@ def score_job_for_node(
     load_penalty = int(sw.load_penalty_max * (node.active_lease_count / max(node.max_concurrency, 1)))
     recent_failure_penalty = sw.failure_penalty if job.job_id in recent_failed_job_ids else 0
     anti_affinity_penalty = calculate_anti_affinity_penalty(
-        job, node, active_jobs_on_node=_active_jobs,
+        job,
+        node,
+        active_jobs_on_node=_active_jobs,
     )
     freshness = _freshness_penalty(node, now)
     breakdown["load_penalty"] = -int(load_penalty * _adj("load_penalty"))

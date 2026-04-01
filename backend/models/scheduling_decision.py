@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.user import Base
@@ -33,7 +33,9 @@ class SchedulingDecision(Base):
 
     # Dispatch cycle metadata
     cycle_ts: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=False), nullable=False, index=True,
+        DateTime(timezone=False),
+        nullable=False,
+        index=True,
     )
     candidates_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     selected_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

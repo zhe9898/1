@@ -20,8 +20,6 @@ from .user import Base, PushSubscription, User, WebAuthnCredential
 # Legacy business domain models (board, asset, memory, scene) no longer exported here.
 
 
-
-
 __all__ = [
     "Base",
     "User",

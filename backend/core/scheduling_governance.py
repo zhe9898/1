@@ -63,8 +63,8 @@ async def upsert_tenant_policy(
         policy = TenantSchedulingPolicy(
             tenant_id=tenant_id,
             service_class=service_class,
-            max_jobs_per_round=max_jobs_per_round or int(sc_defaults["max_jobs_per_round"]),
-            fair_share_weight=fair_share_weight or float(sc_defaults["weight"]),
+            max_jobs_per_round=max_jobs_per_round or int(sc_defaults["max_jobs_per_round"]),  # type: ignore[call-overload]
+            fair_share_weight=fair_share_weight or float(sc_defaults["weight"]),  # type: ignore[arg-type]
             priority_boost=priority_boost,
             max_concurrent_jobs=max_concurrent_jobs,
             placement_policy=placement_policy,
@@ -92,9 +92,7 @@ async def upsert_tenant_policy(
 
 async def list_tenant_policies(db: AsyncSession) -> list[TenantSchedulingPolicy]:
     """Return all tenant scheduling policies."""
-    result = await db.execute(
-        select(TenantSchedulingPolicy).order_by(TenantSchedulingPolicy.tenant_id)
-    )
+    result = await db.execute(select(TenantSchedulingPolicy).order_by(TenantSchedulingPolicy.tenant_id))
     return list(result.scalars().all())
 
 
@@ -161,30 +159,36 @@ class SchedulingDecisionLogger:
         breakdown: dict[str, int] | None = None,
         eligible_nodes: int = 0,
     ) -> None:
-        self.placements.append({
-            "job_id": job_id,
-            "score": score,
-            "breakdown": breakdown or {},
-            "eligible_nodes": eligible_nodes,
-        })
+        self.placements.append(
+            {
+                "job_id": job_id,
+                "score": score,
+                "breakdown": breakdown or {},
+                "eligible_nodes": eligible_nodes,
+            }
+        )
 
     def record_rejection(self, job_id: str, reason: str) -> None:
         self.rejections.append({"job_id": job_id, "reason": reason})
 
     def record_preemption(self, victim_job_id: str, by_job_id: str, reason: str) -> None:
         self.preemptions_count += 1
-        self.context.setdefault("preemptions", []).append({
-            "victim": victim_job_id,
-            "by": by_job_id,
-            "reason": reason,
-        })
+        self.context.setdefault("preemptions", []).append(
+            {
+                "victim": victim_job_id,
+                "by": by_job_id,
+                "reason": reason,
+            }
+        )
 
     def record_policy_rejection(self, job_id: str, policy_name: str, reason: str) -> None:
         self.policy_rejections += 1
-        self.rejections.append({
-            "job_id": job_id,
-            "reason": f"policy:{policy_name}: {reason}",
-        })
+        self.rejections.append(
+            {
+                "job_id": job_id,
+                "reason": f"policy:{policy_name}: {reason}",
+            }
+        )
 
     async def flush(self, db: AsyncSession) -> SchedulingDecision | None:
         """Write the accumulated decision record to DB.
@@ -250,9 +254,7 @@ async def is_scheduling_feature_enabled(
     """
     from backend.models.feature_flag import FeatureFlag
 
-    result = await db.execute(
-        select(FeatureFlag).where(FeatureFlag.key == flag_key)
-    )
+    result = await db.execute(select(FeatureFlag).where(FeatureFlag.key == flag_key))
     flag = result.scalars().first()
     if flag is not None:
         return bool(flag.enabled)
@@ -267,9 +269,7 @@ async def set_scheduling_feature(
     """Set a scheduling feature flag (upsert)."""
     from backend.models.feature_flag import FeatureFlag
 
-    result = await db.execute(
-        select(FeatureFlag).where(FeatureFlag.key == flag_key)
-    )
+    result = await db.execute(select(FeatureFlag).where(FeatureFlag.key == flag_key))
     flag = result.scalars().first()
     if flag is None:
         flag = FeatureFlag(
@@ -288,9 +288,7 @@ async def get_all_scheduling_flags(db: AsyncSession) -> dict[str, bool]:
     """Return current state of all scheduling feature flags."""
     from backend.models.feature_flag import FeatureFlag
 
-    result = await db.execute(
-        select(FeatureFlag).where(FeatureFlag.category == "scheduling")
-    )
+    result = await db.execute(select(FeatureFlag).where(FeatureFlag.category == "scheduling"))
     db_flags = {f.key: bool(f.enabled) for f in result.scalars().all()}
     # Merge with defaults
     merged = dict(_SCHEDULING_FLAG_DEFAULTS)

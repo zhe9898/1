@@ -53,9 +53,7 @@ async def check_connector_quota(db: AsyncSession, tenant_id: str) -> None:
     limit = await _get_limit(db, tenant_id, "connectors")
     if limit == -1:
         return
-    count_result = await db.execute(
-        select(func.count()).where(Connector.tenant_id == tenant_id)
-    )
+    count_result = await db.execute(select(func.count()).where(Connector.tenant_id == tenant_id))
     used = count_result.scalar() or 0
     if used >= limit:
         raise zen(
@@ -128,17 +126,11 @@ async def check_per_kind_quota(db: AsyncSession, tenant_id: str, kind: str) -> N
 async def get_quota_status(db: AsyncSession, tenant_id: str) -> dict[str, dict[str, int]]:
     """Return current usage vs limit for all quota types."""
     # Collect live counts
-    node_count = (await db.execute(
-        select(func.count()).where(Node.tenant_id == tenant_id, Node.enrollment_status.in_(("pending", "active")))
-    )).scalar() or 0
+    node_count = (await db.execute(select(func.count()).where(Node.tenant_id == tenant_id, Node.enrollment_status.in_(("pending", "active"))))).scalar() or 0
 
-    connector_count = (await db.execute(
-        select(func.count()).where(Connector.tenant_id == tenant_id)
-    )).scalar() or 0
+    connector_count = (await db.execute(select(func.count()).where(Connector.tenant_id == tenant_id))).scalar() or 0
 
-    job_concurrent = (await db.execute(
-        select(func.count()).where(Job.tenant_id == tenant_id, Job.status == "leased")
-    )).scalar() or 0
+    job_concurrent = (await db.execute(select(func.count()).where(Job.tenant_id == tenant_id, Job.status == "leased"))).scalar() or 0
 
     result: dict[str, dict[str, int]] = {}
     for resource_type, used in [
@@ -151,10 +143,12 @@ async def get_quota_status(db: AsyncSession, tenant_id: str) -> dict[str, dict[s
 
     # Per-kind breakdown: show usage for each kind that has active leases
     kind_counts_result = await db.execute(
-        select(Job.kind, func.count()).where(
+        select(Job.kind, func.count())
+        .where(
             Job.tenant_id == tenant_id,
             Job.status == "leased",
-        ).group_by(Job.kind)
+        )
+        .group_by(Job.kind)
     )
     for kind, count in kind_counts_result.all():
         if kind:

@@ -4,11 +4,15 @@ import datetime
 import heapq
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.core.scheduling_policy_types import SolverConfig
+
 from backend.core.job_scoring import (  # noqa: F401 – re-export
     _stable_tiebreak,
     score_job_for_node,
 )
-from backend.core.scheduling_strategies import check_node_affinity
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -17,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _node_stale_seconds() -> int:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.freshness.stale_after_seconds
 
 
@@ -102,6 +107,7 @@ def is_node_eligible(node: SchedulerNodeSnapshot, now: datetime.datetime) -> boo
         return False
     return (now - node.last_seen_at).total_seconds() <= _node_stale_seconds()
 
+
 def _resource_blockers(job: Job, node: SchedulerNodeSnapshot) -> list[str]:
     blockers: list[str] = []
     required_executor = (getattr(job, "target_executor", None) or "").strip()
@@ -122,7 +128,7 @@ def _resource_blockers(job: Job, node: SchedulerNodeSnapshot) -> list[str]:
     return blockers
 
 
-def node_blockers_for_job(
+def node_blockers_for_job(  # noqa: C901
     job: Job,
     node: SchedulerNodeSnapshot,
     *,
@@ -266,7 +272,7 @@ def batch_eligible_counts(
     return counts
 
 
-def select_jobs_for_node(
+def select_jobs_for_node(  # noqa: C901
     jobs: list[Job],
     node: SchedulerNodeSnapshot,
     active_nodes: list[SchedulerNodeSnapshot],
@@ -296,6 +302,7 @@ def select_jobs_for_node(
             continue
         # Executor contract kind-compatibility check
         from backend.core.executor_registry import get_executor_registry
+
         compat, _compat_reason = get_executor_registry().kind_compatible(node.executor, job.kind)
         if not compat:
             continue
@@ -310,7 +317,10 @@ def select_jobs_for_node(
     # Deferred to after pre-filter so we don't compute counts for
     # jobs that can never match this node.
     eligible_cache = batch_eligible_counts(
-        compatible, active_nodes, now=now, accepted_kinds=accepted_kinds,
+        compatible,
+        active_nodes,
+        now=now,
+        accepted_kinds=accepted_kinds,
     )
 
     # ── Phase C: Score + top-K pruning ────────────────────────────────
@@ -322,13 +332,23 @@ def select_jobs_for_node(
     score_floor = -10_000  # updated once we have target_k items
     # Compute theoretical max score dynamically from active scoring weights
     from backend.core.scheduling_policy_store import get_policy_store
+
     _sw = get_policy_store().active.scoring
     _THEORETICAL_MAX = (
-        _sw.priority_max + _sw.age_max + _sw.scarcity_max
-        + _sw.reliability_max + _sw.strategy_max + _sw.zone_match_bonus
-        + _sw.resource_fit_max + _sw.executor_match_bonus
-        + _sw.data_locality_bonus + _sw.latency_max + _sw.power_max
-        + _sw.thermal_max + _sw.affinity_max + _sw.sla_urgency_max
+        _sw.priority_max
+        + _sw.age_max
+        + _sw.scarcity_max
+        + _sw.reliability_max
+        + _sw.strategy_max
+        + _sw.zone_match_bonus
+        + _sw.resource_fit_max
+        + _sw.executor_match_bonus
+        + _sw.data_locality_bonus
+        + _sw.latency_max
+        + _sw.power_max
+        + _sw.thermal_max
+        + _sw.affinity_max
+        + _sw.sla_urgency_max
         + _sw.batch_co_location_max
     )
 
@@ -398,14 +418,16 @@ def select_jobs_for_node(
 # Scoring dimensions used by the solver for multi-node ranking.
 
 
-def _get_solver_config():
+def _get_solver_config() -> SolverConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.solver
 
 
 @dataclass(slots=True)
 class PlacementCandidate:
     """A (job, node) pair evaluated by the solver."""
+
     job: Job
     node: SchedulerNodeSnapshot
     score: int = 0
@@ -469,12 +491,17 @@ class PlacementSolver:
 
         # ── Phase 2: Score each candidate ────────────────────────────
         eligible_cache = batch_eligible_counts(
-            jobs, live_nodes, now=now, accepted_kinds=accepted_kinds,
+            jobs,
+            live_nodes,
+            now=now,
+            accepted_kinds=accepted_kinds,
         )
         for c in candidates:
             ec = eligible_cache.get(c.job.job_id, 1)
             total, breakdown = score_job_for_node(
-                c.job, c.node, now=now,
+                c.job,
+                c.node,
+                now=now,
                 total_active_nodes=total_active,
                 eligible_nodes_count=max(ec, 1),
                 recent_failed_job_ids=failed_ids,
@@ -538,10 +565,7 @@ class PlacementSolver:
         live_nodes: list[SchedulerNodeSnapshot],
     ) -> dict[str, str]:
         """Greedy descending-score assignment with capacity deduction."""
-        remaining_cap: dict[str, int] = {
-            n.node_id: max(n.max_concurrency - n.active_lease_count, 0)
-            for n in live_nodes
-        }
+        remaining_cap: dict[str, int] = {n.node_id: max(n.max_concurrency - n.active_lease_count, 0) for n in live_nodes}
 
         # Use a max-heap (negate scores for Python's min-heap)
         heap = [(-c.score, c.job.job_id, c.node.node_id) for c in candidates]

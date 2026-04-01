@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, Boolean
+from sqlalchemy import Boolean, DateTime, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.user import Base
@@ -59,9 +59,7 @@ class Session(Base):
         default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
         nullable=False,
     )
-    expires_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=False), nullable=False, index=True
-    )
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=False), nullable=False, index=True)
     revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # username of admin who revoked, or "self" for user's own logout

@@ -14,15 +14,12 @@ from __future__ import annotations
 import asyncio
 import datetime
 
-import pytest
-
 from backend.core.failure_control_plane import (
     BURST_THRESHOLD,
     CONNECTOR_COOLING_THRESHOLD,
     KIND_CIRCUIT_THRESHOLD,
     NODE_QUARANTINE_THRESHOLD,
     FailureControlPlane,
-    GovernanceEvent,
 )
 
 
@@ -45,12 +42,14 @@ class TestGovernanceNodeQuarantine:
         fcp = FailureControlPlane()
         now = _utcnow()
         for i in range(NODE_QUARANTINE_THRESHOLD):
-            actions = _run(fcp.record_failure(
-                node_id="n1",
-                job_id=f"j-{i}",
-                category="runtime",
-                now=now,
-            ))
+            actions = _run(
+                fcp.record_failure(
+                    node_id="n1",
+                    job_id=f"j-{i}",
+                    category="runtime",
+                    now=now,
+                )
+            )
         assert "node_quarantined" in actions
         # Check governance timeline
         timeline = _run(fcp.governance_timeline())
@@ -83,13 +82,15 @@ class TestGovernanceConnectorCooling:
         fcp = FailureControlPlane()
         now = _utcnow()
         for i in range(CONNECTOR_COOLING_THRESHOLD):
-            _run(fcp.record_failure(
-                node_id="n1",
-                job_id=f"j-{i}",
-                category="connector",
-                connector_id="c1",
-                now=now + datetime.timedelta(seconds=i),
-            ))
+            _run(
+                fcp.record_failure(
+                    node_id="n1",
+                    job_id=f"j-{i}",
+                    category="connector",
+                    connector_id="c1",
+                    now=now + datetime.timedelta(seconds=i),
+                )
+            )
         timeline = _run(fcp.governance_timeline())
         cooling_events = [e for e in timeline if e["event_type"] == "cooling"]
         assert len(cooling_events) == 1
@@ -103,13 +104,15 @@ class TestGovernanceKindCircuit:
         fcp = FailureControlPlane()
         now = _utcnow()
         for i in range(KIND_CIRCUIT_THRESHOLD):
-            _run(fcp.record_failure(
-                node_id=f"n-{i % 3}",
-                job_id=f"j-{i}",
-                category="kind",
-                kind="http.request",
-                now=now + datetime.timedelta(seconds=i),
-            ))
+            _run(
+                fcp.record_failure(
+                    node_id=f"n-{i % 3}",
+                    job_id=f"j-{i}",
+                    category="kind",
+                    kind="http.request",
+                    now=now + datetime.timedelta(seconds=i),
+                )
+            )
         timeline = _run(fcp.governance_timeline())
         circuit_events = [e for e in timeline if e["event_type"] == "circuit_open"]
         assert len(circuit_events) == 1
@@ -120,13 +123,15 @@ class TestGovernanceKindCircuit:
         fcp = FailureControlPlane()
         now = _utcnow()
         for i in range(KIND_CIRCUIT_THRESHOLD):
-            _run(fcp.record_failure(
-                node_id="n1",
-                job_id=f"j-{i}",
-                category="kind",
-                kind="http.request",
-                now=now + datetime.timedelta(seconds=i),
-            ))
+            _run(
+                fcp.record_failure(
+                    node_id="n1",
+                    job_id=f"j-{i}",
+                    category="kind",
+                    kind="http.request",
+                    now=now + datetime.timedelta(seconds=i),
+                )
+            )
         _run(fcp.reset_kind_circuit("http.request"))
         timeline = _run(fcp.governance_timeline())
         reset_events = [e for e in timeline if e["event_type"] == "circuit_reset"]
@@ -141,12 +146,14 @@ class TestGovernanceBurst:
         now = _utcnow()
         # Need to spread across nodes to avoid quarantine blocking burst
         for i in range(BURST_THRESHOLD):
-            _run(fcp.record_failure(
-                node_id=f"n-{i}",  # unique nodes to avoid quarantine
-                job_id=f"j-{i}",
-                category="runtime",
-                now=now + datetime.timedelta(seconds=i),
-            ))
+            _run(
+                fcp.record_failure(
+                    node_id=f"n-{i}",  # unique nodes to avoid quarantine
+                    job_id=f"j-{i}",
+                    category="runtime",
+                    now=now + datetime.timedelta(seconds=i),
+                )
+            )
         timeline = _run(fcp.governance_timeline())
         burst_events = [e for e in timeline if e["event_type"] == "burst"]
         assert len(burst_events) >= 1
@@ -162,13 +169,15 @@ class TestGovernanceTimeline:
             _run(fcp.record_failure(node_id="n1", job_id=f"j-{i}", category="runtime", now=now))
         # Create cooling event
         for i in range(CONNECTOR_COOLING_THRESHOLD):
-            _run(fcp.record_failure(
-                node_id=f"n-{i + 10}",
-                job_id=f"j-c-{i}",
-                category="connector",
-                connector_id="c1",
-                now=now + datetime.timedelta(seconds=i),
-            ))
+            _run(
+                fcp.record_failure(
+                    node_id=f"n-{i + 10}",
+                    job_id=f"j-c-{i}",
+                    category="connector",
+                    connector_id="c1",
+                    now=now + datetime.timedelta(seconds=i),
+                )
+            )
 
         all_events = _run(fcp.governance_timeline())
         assert len(all_events) >= 2
@@ -188,12 +197,14 @@ class TestGovernanceTimeline:
         for i in range(NODE_QUARANTINE_THRESHOLD):
             _run(fcp.record_failure(node_id="n1", job_id=f"j-{i}", category="runtime", now=now))
         for i in range(NODE_QUARANTINE_THRESHOLD):
-            _run(fcp.record_failure(
-                node_id="n2",
-                job_id=f"j2-{i}",
-                category="runtime",
-                now=now + datetime.timedelta(minutes=10),
-            ))
+            _run(
+                fcp.record_failure(
+                    node_id="n2",
+                    job_id=f"j2-{i}",
+                    category="runtime",
+                    now=now + datetime.timedelta(minutes=10),
+                )
+            )
 
         n1_events = _run(fcp.governance_timeline(resource_id="n1"))
         for e in n1_events:
@@ -221,13 +232,15 @@ class TestGovernanceTimeline:
         # Create multiple events
         for n in range(5):
             for i in range(NODE_QUARANTINE_THRESHOLD):
-                _run(fcp.record_failure(
-                    node_id=f"n-{n}",
-                    job_id=f"j-{n}-{i}",
-                    category="runtime",
-                    now=now + datetime.timedelta(seconds=n * 10 + i),
-                ))
-        all_events = _run(fcp.governance_timeline())
+                _run(
+                    fcp.record_failure(
+                        node_id=f"n-{n}",
+                        job_id=f"j-{n}-{i}",
+                        category="runtime",
+                        now=now + datetime.timedelta(seconds=n * 10 + i),
+                    )
+                )
+        _all_events = _run(fcp.governance_timeline())  # noqa: F841
         limited = _run(fcp.governance_timeline(limit=2))
         assert len(limited) <= 2
 
@@ -237,12 +250,14 @@ class TestGovernanceTimeline:
         now = _utcnow()
         for n in range(3):
             for i in range(NODE_QUARANTINE_THRESHOLD):
-                _run(fcp.record_failure(
-                    node_id=f"n-{n}",
-                    job_id=f"j-{n}-{i}",
-                    category="runtime",
-                    now=now + datetime.timedelta(minutes=n),
-                ))
+                _run(
+                    fcp.record_failure(
+                        node_id=f"n-{n}",
+                        job_id=f"j-{n}-{i}",
+                        category="runtime",
+                        now=now + datetime.timedelta(minutes=n),
+                    )
+                )
         events = _run(fcp.governance_timeline())
         if len(events) >= 2:
             # First (newest) should be >= second

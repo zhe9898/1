@@ -1,6 +1,7 @@
 """
 ZEN70 Alert Manager Worker - 告警分发（Bark / Server酱 / 数据库日志）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,7 +62,7 @@ async def trigger_alert_endpoint(
 ) -> dict[str, Any]:
     log_entry = SystemLog()
     log_entry.action = f"ALERT_{payload.level.upper()}"
-    log_entry.detail = f"{payload.title}: {payload.message}"
+    log_entry.details = f"{payload.title}: {payload.message}"
     db.add(log_entry)
     await db.commit()
 

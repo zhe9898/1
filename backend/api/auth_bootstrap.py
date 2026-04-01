@@ -1,11 +1,11 @@
 """
 ZEN70 Auth Bootstrap - 系统初始化（首次运行）
 """
+
 from __future__ import annotations
 
 import bcrypt
-from fastapi import APIRouter, Depends
-from fastapi import status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_db, get_redis
@@ -47,6 +47,7 @@ async def sys_status(db: AsyncSession | None = Depends(get_db)) -> dict[str, boo
     if db is None:
         raise zen(CODE_DB_UNAVAILABLE, "DB unavailable", status.HTTP_503_SERVICE_UNAVAILABLE)
     from backend.api.auth_shared import first_user_or_schema_unavailable
+
     has_user = (await first_user_or_schema_unavailable(db)) is not None
     return {"initialized": has_user}
 
@@ -60,6 +61,7 @@ async def bootstrap(
     """初始化第一个管理员账户。只有在库为空时可用。"""
     require_db_redis(db, redis)
     from backend.api.auth_shared import first_user_or_schema_unavailable
+
     first_user = await first_user_or_schema_unavailable(db)  # type: ignore[arg-type]
     if first_user is not None:
         raise zen(CODE_FORBIDDEN, "System already initialized", status.HTTP_403_FORBIDDEN)

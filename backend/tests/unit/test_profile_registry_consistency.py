@@ -27,7 +27,6 @@ def test_system_yaml_product_matches_backend_constant() -> None:
     ]
 
 
-
 def test_system_yaml_default_kernel_has_no_plaintext_tunnel_or_phantom_switches() -> None:
     config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
     assert config.get("secrets") == {}

@@ -30,7 +30,6 @@ from backend.core.scheduling_governance import (
     SCHED_FLAG_TENANT_POLICY_DB,
     delete_tenant_policy,
     get_all_scheduling_flags,
-    is_scheduling_feature_enabled,
     list_tenant_policies,
     set_scheduling_feature,
     upsert_tenant_policy,
@@ -219,6 +218,7 @@ async def set_flag(
     }
     if payload.key not in valid_keys:
         from backend.core.errors import zen
+
         raise zen("ZEN-SCHED-4000", f"Unknown flag key. Valid: {sorted(valid_keys)}", status_code=400)
 
     await set_scheduling_feature(db, payload.key, payload.enabled)
@@ -299,10 +299,7 @@ async def list_placement_policies(
 ) -> list[PlacementPolicyInfoResponse]:
     """List active placement policies."""
     composite = get_placement_policy()
-    return [
-        PlacementPolicyInfoResponse(name=p.name, order=p.order)
-        for p in composite.policies
-    ]
+    return [PlacementPolicyInfoResponse(name=p.name, order=p.order) for p in composite.policies]
 
 
 # ── Overview ──────────────────────────────────────────────────────────
@@ -318,9 +315,7 @@ async def scheduling_overview(
     flags = await get_all_scheduling_flags(db)
 
     one_hour_ago = datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - datetime.timedelta(hours=1)
-    decisions_count_result = await db.execute(
-        select(func.count()).where(SchedulingDecision.cycle_ts >= one_hour_ago)
-    )
+    decisions_count_result = await db.execute(select(func.count()).where(SchedulingDecision.cycle_ts >= one_hour_ago))
     recent_decisions = decisions_count_result.scalar() or 0
 
     registry = get_executor_registry()
@@ -342,9 +337,6 @@ async def scheduling_overview(
             )
             for c in sorted(contracts.values(), key=lambda x: x.name)
         ],
-        placement_policies=[
-            PlacementPolicyInfoResponse(name=p.name, order=p.order)
-            for p in composite.policies
-        ],
+        placement_policies=[PlacementPolicyInfoResponse(name=p.name, order=p.order) for p in composite.policies],
         recent_decisions_count=recent_decisions,
     )

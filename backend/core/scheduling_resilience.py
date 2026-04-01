@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
-from collections import Counter, defaultdict, deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -68,6 +68,7 @@ class TopologySpreadPolicy:
         max_penalty: int | None = None,
     ) -> None:
         from backend.core.scheduling_policy_store import get_policy_store
+
         ts = get_policy_store().active.topology_spread
         self.max_skew = max_skew if max_skew is not None else ts.max_skew
         self.penalty_per_skew = penalty_per_skew if penalty_per_skew is not None else ts.penalty_per_skew
@@ -145,6 +146,7 @@ class PreemptionBudgetPolicy:
     @classmethod
     def _resolve_limits(cls) -> tuple[int, int]:
         from backend.core.scheduling_policy_store import get_policy_store
+
         pp = get_policy_store().active.preemption
         return (
             cls.max_preemptions_per_window if cls.max_preemptions_per_window is not None else pp.max_per_window,
@@ -163,10 +165,7 @@ class PreemptionBudgetPolicy:
         cutoff = now - datetime.timedelta(seconds=window_s)
         recent = sum(1 for t in cls._recent_preemptions if t > cutoff)
         if recent >= max_pw:
-            return False, (
-                f"preemption_budget_exhausted: "
-                f"{recent}/{max_pw} in {window_s}s"
-            )
+            return False, (f"preemption_budget_exhausted: " f"{recent}/{max_pw} in {window_s}s")
         return True, ""
 
     @classmethod
@@ -218,6 +217,7 @@ class SchedulingBackoff:
     @classmethod
     def _resolve(cls) -> tuple[float, float, int]:
         from backend.core.scheduling_policy_store import get_policy_store
+
         bp = get_policy_store().active.backoff
         cls._CLEANUP_INTERVAL = bp.cleanup_interval
         return (
@@ -244,9 +244,10 @@ class SchedulingBackoff:
             cls._entries[job_id] = entry
         entry.attempts += 1
         from backend.core.scheduling_policy_store import get_policy_store
+
         _max_exp = get_policy_store().active.backoff.max_exponent
         exp = min(entry.attempts - 1, _max_exp)  # cap exponent to avoid overflow
-        delay = min(base_delay * (2 ** exp), max_delay)
+        delay = min(base_delay * (2**exp), max_delay)
         entry.next_try = now + datetime.timedelta(seconds=delay)
 
         # Periodic cleanup of stale entries
@@ -306,6 +307,7 @@ class AdmissionController:
         if cls.DEFAULT_MAX_PENDING_PER_TENANT is not None:
             return cls.DEFAULT_MAX_PENDING_PER_TENANT
         from backend.core.scheduling_policy_store import get_policy_store
+
         return get_policy_store().active.admission.max_pending_per_tenant
 
     @staticmethod
@@ -333,7 +335,7 @@ class AdmissionController:
             return (
                 False,
                 f"queue_depth_exceeded: {count}/{limit} active jobs for tenant",
-                {"current": count, "limit": limit, "tenant_id": tenant_id},
+                {"current": count, "limit": limit, "tenant_id": tenant_id},  # type: ignore[dict-item]
             )
         return True, "", {"current": count, "limit": limit}
 

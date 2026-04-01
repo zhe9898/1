@@ -1,11 +1,11 @@
 """
 ZEN70 Auth PIN - PIN 降级认证与设置
 """
+
 from __future__ import annotations
 
 import bcrypt
-from fastapi import APIRouter, Depends, Request
-from fastapi import status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,9 +13,18 @@ from backend.api.auth_shared import assert_user_active, build_token_response_mod
 from backend.api.deps import get_current_user, get_db, get_redis
 from backend.api.models.auth import PinLoginRequest, PinSetRequest, TokenResponse
 from backend.core.auth_helpers import (
-    CODE_BAD_REQUEST, CODE_DB_UNAVAILABLE, CODE_NOT_FOUND,
-    CODE_TOO_MANY, CODE_UNAUTHORIZED, CODE_FORBIDDEN,
-    client_ip, is_private_ip, log_auth, request_id, require_db_redis, zen,
+    CODE_BAD_REQUEST,
+    CODE_DB_UNAVAILABLE,
+    CODE_FORBIDDEN,
+    CODE_NOT_FOUND,
+    CODE_TOO_MANY,
+    CODE_UNAUTHORIZED,
+    client_ip,
+    is_private_ip,
+    log_auth,
+    request_id,
+    require_db_redis,
+    zen,
 )
 from backend.core.redis_client import RedisClient
 from backend.models.user import User
@@ -84,7 +93,9 @@ async def pin_login(
 
     log_auth("pin_login", True, rid, username=req.username, client_ip_str=cip)
     resp = build_token_response_model(
-        str(user.id), user.username, user.role,
+        str(user.id),
+        user.username,
+        user.role,
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference or "auto",
     )

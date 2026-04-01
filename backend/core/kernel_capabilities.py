@@ -97,7 +97,6 @@ KERNEL_CAPABILITIES: Final[dict[str, KernelCapability]] = {
         ),
         scopes=("admin:users",),
     ),
-
     # ── Control Plane ─────────────────────────────────────────────────────
     "control.nodes.manage": KernelCapability(
         key="control.nodes.manage",
@@ -137,7 +136,6 @@ KERNEL_CAPABILITIES: Final[dict[str, KernelCapability]] = {
         ),
         scopes=("read:connectors", "write:connectors"),
     ),
-
     # ── Platform ──────────────────────────────────────────────────────────
     "platform.audit.query": KernelCapability(
         key="platform.audit.query",

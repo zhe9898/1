@@ -15,6 +15,8 @@ import math
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from backend.core.scheduling_policy_types import StrategyConfig
+
 if TYPE_CHECKING:
     from backend.core.job_scheduler import SchedulerNodeSnapshot
     from backend.models.job import Job
@@ -37,8 +39,9 @@ class NodeAffinityRule(str, Enum):
     PREFERRED = "preferred"  # Job SHOULD run on nodes matching affinity (soft constraint)
 
 
-def _get_strategy_config():
+def _get_strategy_config() -> StrategyConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.strategy
 
 
@@ -193,7 +196,7 @@ def calculate_strategy_score(
         return calculate_balanced_score(job, node)
     else:
         # Default to spread
-        return calculate_spread_score(node)
+        return calculate_spread_score(node)  # type: ignore[unreachable]
 
 
 def check_node_affinity(

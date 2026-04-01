@@ -2,6 +2,7 @@
 
 Models and helper functions extracted to console_helpers.py for maintainability.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -12,16 +13,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.connectors import _build_connector_actions, _connector_attention_reason
-from backend.api.console_helpers import (
+from backend.api.console_helpers import (  # noqa: F401 -- Re-export for external consumers (test_console_overview.py)
+    _ATTEMPT_LOOKBACK_HOURS,
     ConsoleConnectorDiagnostic,
     ConsoleDiagnosticsResponse,
     ConsoleMenuResponse,
+    ConsoleNodeDiagnostic,
     ConsoleOverviewResponse,
     ConsoleStaleJobDiagnostic,
     ConsoleUnschedulableJobDiagnostic,
     ControlPlaneSurfaceResponse,
     ControlPlaneSurfacesResponse,
-    _ATTEMPT_LOOKBACK_HOURS,
+    OverviewBucket,
     _utcnow,
     build_attention,
     build_connector_overview_bucket,
@@ -32,9 +35,6 @@ from backend.api.console_helpers import (
     route_target,
     selector_summary,
     sorted_segments,
-    # Re-export for external consumers (test_console_overview.py)
-    ConsoleNodeDiagnostic,
-    OverviewBucket,
 )
 from backend.api.deps import get_current_user, get_current_user_optional, get_tenant_db
 from backend.api.jobs.helpers import _build_job_actions

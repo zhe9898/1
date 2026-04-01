@@ -11,12 +11,11 @@ Covers:
 from __future__ import annotations
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from backend.core.governance_facade import GovernanceFacade, get_governance_facade
-
 
 # ── Seal / Unseal ────────────────────────────────────────────────────
 
@@ -211,7 +210,9 @@ class TestDecisionLoggerFactory:
         ) as MockLogger:
             logger = facade.create_decision_logger("tenant-1", "node-a", now)
             MockLogger.assert_called_once_with(
-                tenant_id="tenant-1", node_id="node-a", now=now,
+                tenant_id="tenant-1",
+                node_id="node-a",
+                now=now,
             )
             assert logger == MockLogger.return_value
 

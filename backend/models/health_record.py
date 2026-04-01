@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, JSON, String, Text
+from sqlalchemy import JSON, DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.user import Base
@@ -39,7 +39,9 @@ class HealthRecord(Base):
 
     # When the measurement was recorded by the device
     recorded_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=False), nullable=False, index=True,
+        DateTime(timezone=False),
+        nullable=False,
+        index=True,
     )
     # When the measurement was ingested by the gateway
     ingested_at: Mapped[datetime.datetime] = mapped_column(

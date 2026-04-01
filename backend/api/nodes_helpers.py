@@ -5,6 +5,7 @@ Split from nodes.py for maintainability.  Contains response builders,
 contract application, filtering, and database helpers.
 Schema and bootstrap helpers are in ``nodes_schema.py``.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -37,7 +38,6 @@ from backend.models.job import Job
 from backend.models.node import Node
 
 from .nodes_models import (
-    BootstrapReceipt,
     NodeContractPayload,
     NodeResponse,
     _utcnow,

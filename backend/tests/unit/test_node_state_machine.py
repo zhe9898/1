@@ -13,6 +13,7 @@ Verifies that the enrollment_status state machine is closed:
 These tests guard against the previously-confirmed bypass where
 heartbeat_node() unconditionally set enrollment_status = "active".
 """
+
 from __future__ import annotations
 
 import datetime
@@ -135,21 +136,16 @@ def test_heartbeat_revoked_node_returns_403() -> None:
     - This test audits the source code to confirm the defensive gate is present and correct.
     """
     import inspect
+
     from backend.api.nodes import heartbeat_node
 
     source = inspect.getsource(heartbeat_node)
     # Verify the defense-in-depth revoked gate exists
-    assert "enrollment_status == \"revoked\"" in source, (
-        "ADR-0047: heartbeat_node MUST contain a revoked enrollment_status gate "
-        "(defense-in-depth against race conditions / partial revocation)"
+    assert 'enrollment_status == "revoked"' in source, (
+        "ADR-0047: heartbeat_node MUST contain a revoked enrollment_status gate " "(defense-in-depth against race conditions / partial revocation)"
     )
-    assert "ZEN-NODE-4032" in source, (
-        "ADR-0047: revoked gate must raise ZEN-NODE-4032"
-    )
-    assert "status_code=403" in source, (
-        "ADR-0047: revoked gate must return 403 Forbidden"
-    )
-
+    assert "ZEN-NODE-4032" in source, "ADR-0047: revoked gate must raise ZEN-NODE-4032"
+    assert "status_code=403" in source, "ADR-0047: revoked gate must return 403 Forbidden"
 
 
 @pytest.mark.asyncio
@@ -162,8 +158,8 @@ async def test_heartbeat_active_node_succeeds(monkeypatch: pytest.MonkeyPatch) -
     db = AsyncMock()
     db.flush = AsyncMock()
     db.execute.side_effect = [
-        _scalar_result(node),       # authenticate_node_request
-        _rows_result([]),            # _get_active_lease_counts
+        _scalar_result(node),  # authenticate_node_request
+        _rows_result([]),  # _get_active_lease_counts
     ]
 
     response = await heartbeat_node(

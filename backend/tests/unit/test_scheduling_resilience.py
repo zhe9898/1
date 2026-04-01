@@ -11,7 +11,6 @@ Covers:
 from __future__ import annotations
 
 import datetime
-import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -357,7 +356,9 @@ class TestAdmissionController:
         mock_db.execute.return_value = mock_result
 
         admitted, reason, details = await AdmissionController.check_admission(
-            mock_db, "tenant-a", max_pending=1000,
+            mock_db,
+            "tenant-a",
+            max_pending=1000,
         )
         assert admitted is True
         assert reason == ""
@@ -371,7 +372,9 @@ class TestAdmissionController:
         mock_db.execute.return_value = mock_result
 
         admitted, reason, details = await AdmissionController.check_admission(
-            mock_db, "tenant-a", max_pending=1000,
+            mock_db,
+            "tenant-a",
+            max_pending=1000,
         )
         assert admitted is False
         assert "queue_depth_exceeded" in reason
@@ -385,7 +388,9 @@ class TestAdmissionController:
         mock_db.execute.return_value = mock_result
 
         admitted, reason, details = await AdmissionController.check_admission(
-            mock_db, "tenant-a", max_pending=1000,
+            mock_db,
+            "tenant-a",
+            max_pending=1000,
         )
         assert admitted is False
         assert details["limit"] == 1000
@@ -398,7 +403,8 @@ class TestAdmissionController:
         mock_db.execute.return_value = mock_result
 
         admitted, _, details = await AdmissionController.check_admission(
-            mock_db, "tenant-a",
+            mock_db,
+            "tenant-a",
         )
         assert admitted is True
         assert details["limit"] == AdmissionController.DEFAULT_MAX_PENDING_PER_TENANT
@@ -411,7 +417,9 @@ class TestAdmissionController:
         mock_db.execute.return_value = mock_result
 
         admitted, _, _ = await AdmissionController.check_admission(
-            mock_db, "tenant-a", max_pending=5,
+            mock_db,
+            "tenant-a",
+            max_pending=5,
         )
         assert admitted is True
 
@@ -423,7 +431,8 @@ class TestAdmissionController:
         mock_db.execute.return_value = mock_result
 
         admitted, _, details = await AdmissionController.check_admission(
-            mock_db, "tenant-a",
+            mock_db,
+            "tenant-a",
         )
         assert admitted is True
         assert details["current"] == 0

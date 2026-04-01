@@ -24,28 +24,38 @@ from backend.core.scheduling_constraints import (  # noqa: F401 – re-export
     TenantFairShareGate,
     get_scheduling_engine,
 )
+from backend.core.scheduling_policy_types import (
+    BatchScoringConfig,
+    PreemptionPolicy,
+    PriorityBoostConfig,
+    SLARiskConfig,
+)
 
 if TYPE_CHECKING:
     from backend.models.job import Job
 
 
-def _get_priority_boost_config():
+def _get_priority_boost_config() -> PriorityBoostConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.priority_boost
 
 
-def _get_preemption_policy():
+def _get_preemption_policy() -> PreemptionPolicy:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.preemption
 
 
-def _get_batch_scoring_config():
+def _get_batch_scoring_config() -> BatchScoringConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.batch_scoring
 
 
-def _get_sla_risk_config():
+def _get_sla_risk_config() -> SLARiskConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.sla_risk
 
 
@@ -84,9 +94,12 @@ def calculate_boosted_priority(
         if time_remaining > 0:
             effective += min(
                 _pbc.deadline_urgency_max,
-                int(_pbc.deadline_urgency_max * math.exp(
-                    -time_remaining / _pbc.deadline_half_life_seconds,
-                )),
+                int(
+                    _pbc.deadline_urgency_max
+                    * math.exp(
+                        -time_remaining / _pbc.deadline_half_life_seconds,
+                    )
+                ),
             )
 
     # SLA breach risk
@@ -97,6 +110,7 @@ def calculate_boosted_priority(
             effective += _pbc.sla_breach_bonus
 
     from backend.core.scheduling_policy_store import get_policy_store
+
     _sw = get_policy_store().active.scoring
     return max(0, min(_sw.priority_max, effective))
 

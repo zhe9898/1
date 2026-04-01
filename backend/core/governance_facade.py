@@ -102,7 +102,8 @@ class GovernanceFacade:
         from backend.core.scheduling_resilience import AdmissionController
 
         admitted, reason, details = await AdmissionController.check_admission(
-            db, tenant_id,
+            db,
+            tenant_id,
         )
         if not admitted:
             return AdmissionResult(admitted=False, reason=reason, details=details)
@@ -148,6 +149,7 @@ class GovernanceFacade:
             if lower in valid:
                 return lower
         from backend.core.scheduling_policy_store import get_policy_store
+
         return get_policy_store().active.default_strategy
 
     # ── Post-dispatch audit ──────────────────────────────────────────
@@ -161,7 +163,7 @@ class GovernanceFacade:
     ) -> None:
         """Flush the decision audit logger if the flag is enabled."""
         if enabled and hasattr(audit_logger, "flush"):
-            await audit_logger.flush(db)  # type: ignore[attr-defined]
+            await audit_logger.flush(db)
 
     # ── Guarded feature flag mutation ────────────────────────────────
 
@@ -173,11 +175,7 @@ class GovernanceFacade:
     ) -> None:
         """Set a scheduling feature flag — blocked when governance is sealed."""
         if self._sealed:
-            msg = (
-                f"governance is sealed ({self._seal_reason}); "
-                f"cannot mutate flag '{flag_key}'. "
-                f"Call unseal(operator=...) first."
-            )
+            msg = f"governance is sealed ({self._seal_reason}); " f"cannot mutate flag '{flag_key}'. " f"Call unseal(operator=...) first."
             raise RuntimeError(msg)
         from backend.core.scheduling_governance import set_scheduling_feature
 
@@ -251,7 +249,10 @@ class GovernanceFacade:
     # ── Decision audit factory ───────────────────────────────────────
 
     def create_decision_logger(
-        self, tenant_id: str, node_id: str, now: datetime.datetime,
+        self,
+        tenant_id: str,
+        node_id: str,
+        now: datetime.datetime,
     ) -> object:
         """Create a SchedulingDecisionLogger for this dispatch cycle."""
         from backend.core.scheduling_governance import SchedulingDecisionLogger
@@ -352,7 +353,10 @@ class GovernanceFacade:
         from backend.core.executor_registry import get_executor_registry
 
         return get_executor_registry().validate_node_executor(
-            executor, memory_mb=memory_mb, cpu_cores=cpu_cores, gpu_vram_mb=gpu_vram_mb,
+            executor,
+            memory_mb=memory_mb,
+            cpu_cores=cpu_cores,
+            gpu_vram_mb=gpu_vram_mb,
         )
 
     def get_executor_contract(self, executor: str) -> object | None:
@@ -422,13 +426,13 @@ class GovernanceFacade:
         """Apply a new scheduling policy and return the new version number."""
         from backend.core.scheduling_policy_store import get_policy_store
 
-        return get_policy_store().apply(new_policy, operator=operator, reason=reason)
+        return get_policy_store().apply(new_policy, operator=operator, reason=reason).version  # type: ignore[arg-type]
 
     def rollback_policy(self, target_version: int, *, operator: str = "system") -> int:
         """Rollback to a previous policy version."""
         from backend.core.scheduling_policy_store import get_policy_store
 
-        return get_policy_store().rollback(target_version, operator=operator)
+        return get_policy_store().rollback(target_version, operator=operator).version
 
     def freeze_policy(self, *, reason: str = "") -> None:
         """Freeze the policy store — prevent further mutations."""

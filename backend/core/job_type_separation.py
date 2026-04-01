@@ -147,12 +147,12 @@ def apply_job_type_defaults(job: Job) -> None:
     # Apply default priority if not set or is default value (50)
     if job.priority is None or job.priority == 50:
         default_priority = get_job_type_config(job_type, "default_priority", 50)
-        job.priority = int(default_priority)  # type: ignore[arg-type]
+        job.priority = int(default_priority)  # type: ignore[call-overload]
 
     # Apply default max_retries if not set
     if job.max_retries is None or job.max_retries == 0:
         default_max_retries = get_job_type_config(job_type, "default_max_retries", 0)
-        job.max_retries = int(default_max_retries)  # type: ignore[arg-type]
+        job.max_retries = int(default_max_retries)  # type: ignore[call-overload]
 
 
 def get_job_type_stats(jobs: list[Job]) -> dict[str, dict[str, int]]:
@@ -207,7 +207,8 @@ def get_max_concurrent_limit(job_type: str, scope: str = "global") -> int:
     """
     key = f"max_concurrent_{scope}"
     default = 100 if job_type == JOB_TYPE_BACKGROUND else 10
-    return int(get_job_type_config(job_type, key, default))  # type: ignore[arg-type]
+    raw = get_job_type_config(job_type, key, default)
+    return int(str(raw))
 
 
 def format_concurrent_limit_error(

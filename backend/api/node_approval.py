@@ -46,9 +46,7 @@ def _to_approval_response(node: Node) -> NodeApprovalResponse:
 
 
 async def _get_node(db: AsyncSession, tenant_id: str, node_id: str) -> Node:
-    result = await db.execute(
-        select(Node).where(Node.tenant_id == tenant_id, Node.node_id == node_id)
-    )
+    result = await db.execute(select(Node).where(Node.tenant_id == tenant_id, Node.node_id == node_id))
     node = result.scalars().first()
     if node is None:
         raise zen("ZEN-NODE-4040", "Node not found", status_code=404)
@@ -63,10 +61,12 @@ async def list_pending_nodes(
     """List nodes awaiting approval (admin only)."""
     tenant_id = current_user["tenant_id"]
     result = await db.execute(
-        select(Node).where(
+        select(Node)
+        .where(
             Node.tenant_id == tenant_id,
             Node.enrollment_status == "pending",
-        ).order_by(Node.registered_at.asc())
+        )
+        .order_by(Node.registered_at.asc())
     )
     nodes = result.scalars().all()
     return [_to_approval_response(n) for n in nodes]
@@ -106,7 +106,9 @@ async def approve_node(
 
     await db.flush()
     await publish_control_event(
-        redis, CHANNEL_NODE_EVENTS, "approved",
+        redis,
+        CHANNEL_NODE_EVENTS,
+        "approved",
         {"node_id": node.node_id, "approved_by": current_user["username"]},
     )
 
@@ -146,7 +148,9 @@ async def reject_node(
 
     await db.flush()
     await publish_control_event(
-        redis, CHANNEL_NODE_EVENTS, "rejected",
+        redis,
+        CHANNEL_NODE_EVENTS,
+        "rejected",
         {"node_id": node.node_id, "rejected_by": current_user["username"]},
     )
 

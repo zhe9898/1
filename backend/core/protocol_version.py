@@ -13,19 +13,23 @@ from typing import Final
 # ============================================================================
 
 # Node protocol versions (registration, heartbeat, capabilities)
-SUPPORTED_PROTOCOL_VERSIONS: Final[frozenset[str]] = frozenset({
-    "runner.v1",  # legacy — still accepted for backward compat
-    "runner.v2",  # current — Go Runner / v3.43 baseline
-})
+SUPPORTED_PROTOCOL_VERSIONS: Final[frozenset[str]] = frozenset(
+    {
+        "runner.v1",  # legacy — still accepted for backward compat
+        "runner.v2",  # current — Go Runner / v3.43 baseline
+    }
+)
 
 # Job lease protocol versions (pull, renew, complete, fail)
-SUPPORTED_LEASE_VERSIONS: Final[frozenset[str]] = frozenset({
-    "job-lease.v1",  # legacy — still accepted
-    "job-lease.v2",  # current — Go Runner / v3.43 baseline
-})
+SUPPORTED_LEASE_VERSIONS: Final[frozenset[str]] = frozenset(
+    {
+        "job-lease.v1",  # legacy — still accepted
+        "job-lease.v2",  # current — Go Runner / v3.43 baseline
+    }
+)
 
 # Current recommended versions (for new nodes)
-CURRENT_PROTOCOL_VERSION: Final[str] = "runner.v2"   # v3.43 baseline
+CURRENT_PROTOCOL_VERSION: Final[str] = "runner.v2"  # v3.43 baseline
 CURRENT_LEASE_VERSION: Final[str] = "job-lease.v2"  # v3.43 baseline
 
 
@@ -102,10 +106,7 @@ def validate_protocol_version(version: str | None) -> str:
 
     normalized = version.strip()
     if not is_protocol_version_supported(normalized):
-        raise ValueError(
-            f"Unsupported protocol version: {normalized}. "
-            f"Supported versions: {', '.join(sorted(SUPPORTED_PROTOCOL_VERSIONS))}"
-        )
+        raise ValueError(f"Unsupported protocol version: {normalized}. " f"Supported versions: {', '.join(sorted(SUPPORTED_PROTOCOL_VERSIONS))}")
 
     return normalized
 
@@ -135,10 +136,7 @@ def validate_lease_version(version: str | None) -> str:
 
     normalized = version.strip()
     if not is_lease_version_supported(normalized):
-        raise ValueError(
-            f"Unsupported lease version: {normalized}. "
-            f"Supported versions: {', '.join(sorted(SUPPORTED_LEASE_VERSIONS))}"
-        )
+        raise ValueError(f"Unsupported lease version: {normalized}. " f"Supported versions: {', '.join(sorted(SUPPORTED_LEASE_VERSIONS))}")
 
     return normalized
 

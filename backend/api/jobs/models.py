@@ -279,4 +279,3 @@ class JobTypeStatsResponse(BaseModel):
     scheduled: JobTypeStatsItem
     background: JobTypeStatsItem
     concurrent_limits: dict[str, ConcurrentLimitInfo]
-

@@ -78,15 +78,11 @@ class FailureControlPlane:
         self._quarantine_until: dict[str, datetime.datetime] = {}
 
         # ── Connector cooling ────────────────────────────────────────
-        self._connector_events: dict[str, deque[FailureEvent]] = defaultdict(
-            lambda: deque(maxlen=200)
-        )
+        self._connector_events: dict[str, deque[FailureEvent]] = defaultdict(lambda: deque(maxlen=200))
         self._connector_cool_until: dict[str, datetime.datetime] = {}
 
         # ── Kind circuit breaker ─────────────────────────────────────
-        self._kind_events: dict[str, deque[FailureEvent]] = defaultdict(
-            lambda: deque(maxlen=200)
-        )
+        self._kind_events: dict[str, deque[FailureEvent]] = defaultdict(lambda: deque(maxlen=200))
         self._kind_circuit: dict[str, tuple[str, datetime.datetime]] = {}
         # state: "closed" | "open" | "half-open"
 
@@ -94,9 +90,7 @@ class FailureControlPlane:
         self._global_events: deque[FailureEvent] = deque(maxlen=500)
 
         # ── Governance timeline ──────────────────────────────────────
-        self._governance_timeline: deque[GovernanceEvent] = deque(
-            maxlen=_GOVERNANCE_TIMELINE_MAX
-        )
+        self._governance_timeline: deque[GovernanceEvent] = deque(maxlen=_GOVERNANCE_TIMELINE_MAX)
         # Buffer for DB-level audit entries. Callers drain after commit.
         self._pending_audit_events: list[dict[str, object]] = []
 
@@ -120,17 +114,19 @@ class FailureControlPlane:
             details=merged_details,
         )
         self._governance_timeline.append(evt)
-        self._pending_audit_events.append({
-            "action": f"fcp.{event_type}",
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "actor": actor,
-            "details": {
-                "event_type": event_type,
+        self._pending_audit_events.append(
+            {
+                "action": f"fcp.{event_type}",
+                "resource_type": resource_type,
                 "resource_id": resource_id,
-                **merged_details,
-            },
-        })
+                "actor": actor,
+                "details": {
+                    "event_type": event_type,
+                    "resource_id": resource_id,
+                    **merged_details,
+                },
+            }
+        )
 
     @property
     def pending_audit_events(self) -> list[dict[str, object]]:
@@ -176,9 +172,7 @@ class FailureControlPlane:
 
     # ── Node quarantine ──────────────────────────────────────────────
 
-    def _update_node(
-        self, node_id: str, now: datetime.datetime
-    ) -> dict[str, object]:
+    def _update_node(self, node_id: str, now: datetime.datetime) -> dict[str, object]:
         self._node_consecutive[node_id] += 1
         count = self._node_consecutive[node_id]
         if count >= NODE_QUARANTINE_THRESHOLD:
@@ -205,9 +199,7 @@ class FailureControlPlane:
             return {"node_quarantined": until.isoformat()}
         return {}
 
-    async def is_node_quarantined(
-        self, node_id: str, *, now: datetime.datetime
-    ) -> bool:
+    async def is_node_quarantined(self, node_id: str, *, now: datetime.datetime) -> bool:
         """Check if node is currently in quarantine."""
         async with self._lock:
             until = self._quarantine_until.get(node_id)
@@ -253,9 +245,7 @@ class FailureControlPlane:
             return {"connector_cooled": until.isoformat()}
         return {}
 
-    async def is_connector_cooling(
-        self, connector_id: str, *, now: datetime.datetime
-    ) -> bool:
+    async def is_connector_cooling(self, connector_id: str, *, now: datetime.datetime) -> bool:
         async with self._lock:
             until = self._connector_cool_until.get(connector_id)
             if until is None:
@@ -282,9 +272,7 @@ class FailureControlPlane:
 
         if state == "closed" and len(recent) >= KIND_CIRCUIT_THRESHOLD:
             self._kind_circuit[kind] = ("open", now)
-            logger.warning(
-                "kind '%s' circuit OPEN (%d failures in window)", kind, len(recent)
-            )
+            logger.warning("kind '%s' circuit OPEN (%d failures in window)", kind, len(recent))
             self._record_governance(
                 "circuit_open",
                 "kind",
@@ -333,9 +321,7 @@ class FailureControlPlane:
 
     # ── Global burst detection ───────────────────────────────────────
 
-    def _update_burst(
-        self, evt: FailureEvent, now: datetime.datetime
-    ) -> dict[str, object]:
+    def _update_burst(self, evt: FailureEvent, now: datetime.datetime) -> dict[str, object]:
         self._global_events.append(evt)
         cutoff = now - datetime.timedelta(seconds=BURST_WINDOW_S)
         recent = [e for e in self._global_events if e.ts >= cutoff]
@@ -389,19 +375,9 @@ class FailureControlPlane:
     async def snapshot(self, *, now: datetime.datetime) -> dict[str, object]:
         """Return a diagnostic snapshot of all control plane state."""
         async with self._lock:
-            quarantined = {
-                nid: until.isoformat()
-                for nid, until in self._quarantine_until.items()
-                if until > now
-            }
-            cooled = {
-                cid: until.isoformat()
-                for cid, until in self._connector_cool_until.items()
-                if until > now
-            }
-            circuits = {
-                k: state for k, (state, _) in self._kind_circuit.items()
-            }
+            quarantined = {nid: until.isoformat() for nid, until in self._quarantine_until.items() if until > now}
+            cooled = {cid: until.isoformat() for cid, until in self._connector_cool_until.items() if until > now}
+            circuits = {k: state for k, (state, _) in self._kind_circuit.items()}
             return {
                 "quarantined_nodes": quarantined,
                 "cooled_connectors": cooled,

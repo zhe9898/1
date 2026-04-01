@@ -13,21 +13,17 @@ Covers:
 from __future__ import annotations
 
 import datetime
-import math
 import os
 import tempfile
-from dataclasses import replace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from backend.core.scheduling_policy_store import (
     AdmissionPolicy,
     BackoffPolicy,
-    KindDefault,
     NodeFreshnessPolicy,
     PolicyStore,
-    PolicyVersion,
     PreemptionPolicy,
     ResourceReservationConfig,
     RetryPolicy,
@@ -38,10 +34,10 @@ from backend.core.scheduling_policy_store import (
     validate_policy,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
@@ -51,17 +47,31 @@ def _make_node_snapshot(**overrides):
     from backend.core.job_scheduler import SchedulerNodeSnapshot
 
     defaults = dict(
-        node_id="node-1", os="linux", arch="amd64", executor="docker",
-        zone="zone-a", capabilities=frozenset(),
+        node_id="node-1",
+        os="linux",
+        arch="amd64",
+        executor="docker",
+        zone="zone-a",
+        capabilities=frozenset(),
         accepted_kinds=frozenset({"shell.exec"}),
-        max_concurrency=4, active_lease_count=0, cpu_cores=8,
-        memory_mb=16384, gpu_vram_mb=0, storage_mb=100000,
-        reliability_score=0.95, last_seen_at=_utcnow(),
-        enrollment_status="active", status="online",
-        drain_status="active", network_latency_ms=5,
-        bandwidth_mbps=1000, cached_data_keys=frozenset(),
-        power_capacity_watts=500, current_power_watts=200,
-        thermal_state="normal", cloud_connectivity="online",
+        max_concurrency=4,
+        active_lease_count=0,
+        cpu_cores=8,
+        memory_mb=16384,
+        gpu_vram_mb=0,
+        storage_mb=100000,
+        reliability_score=0.95,
+        last_seen_at=_utcnow(),
+        enrollment_status="active",
+        status="online",
+        drain_status="active",
+        network_latency_ms=5,
+        bandwidth_mbps=1000,
+        cached_data_keys=frozenset(),
+        power_capacity_watts=500,
+        current_power_watts=200,
+        thermal_state="normal",
+        cloud_connectivity="online",
         metadata_json="{}",
     )
     defaults.update(overrides)
@@ -101,6 +111,7 @@ def _make_job(**overrides):
 def _reset_policy_store():
     """Reset the global policy store singleton between tests."""
     import backend.core.scheduling_policy_store as mod
+
     mod._store = None
     yield
     mod._store = None
@@ -109,6 +120,7 @@ def _reset_policy_store():
 # =====================================================================
 # Frozen dataclass defaults
 # =====================================================================
+
 
 class TestScoringWeightsDefaults:
     def test_default_values(self):
@@ -191,6 +203,7 @@ class TestSchedulingPolicyDefaults:
 # Validation
 # =====================================================================
 
+
 class TestValidation:
     def test_valid_default_policy(self):
         errors = validate_policy(SchedulingPolicy())
@@ -247,6 +260,7 @@ class TestValidation:
 # Diff generation
 # =====================================================================
 
+
 class TestDiff:
     def test_no_diff_same_policy(self):
         p = SchedulingPolicy()
@@ -271,6 +285,7 @@ class TestDiff:
 # =====================================================================
 # PolicyStore lifecycle
 # =====================================================================
+
 
 class TestPolicyStoreApply:
     def test_initial_version_zero(self):
@@ -313,7 +328,8 @@ class TestPolicyStoreRollback:
         store = PolicyStore()
         store.apply(
             SchedulingPolicy(default_strategy="binpack"),
-            operator="admin", reason="v1",
+            operator="admin",
+            reason="v1",
         )
         assert store.version == 1
         store.rollback(0, operator="admin")
@@ -357,7 +373,8 @@ class TestPolicyStoreSnapshot:
         store = PolicyStore()
         store.apply(
             SchedulingPolicy(default_strategy="binpack"),
-            operator="admin", reason="test",
+            operator="admin",
+            reason="test",
         )
         snap = store.snapshot()
         assert snap["version"] == 1
@@ -380,6 +397,7 @@ class TestPolicyStoreVersionDetail:
 # YAML load
 # =====================================================================
 
+
 class TestYAMLLoad:
     def test_load_from_yaml_with_policy_section(self):
         yaml_content = """\
@@ -394,7 +412,10 @@ scheduling:
     default_strategy: binpack
 """
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8",
+            mode="w",
+            suffix=".yaml",
+            delete=False,
+            encoding="utf-8",
         ) as f:
             f.write(yaml_content)
             f.flush()
@@ -418,7 +439,10 @@ scheduling:
     interval_seconds: 300
 """
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8",
+            mode="w",
+            suffix=".yaml",
+            delete=False,
+            encoding="utf-8",
         ) as f:
             f.write(yaml_content)
             f.flush()
@@ -445,7 +469,10 @@ scheduling:
       priority_max: 999
 """
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8",
+            mode="w",
+            suffix=".yaml",
+            delete=False,
+            encoding="utf-8",
         ) as f:
             f.write(yaml_content)
             f.flush()
@@ -465,10 +492,12 @@ scheduling:
 # Integration — scoring engine reads from policy store
 # =====================================================================
 
+
 class TestScoringIntegration:
     def _score_with_policy(self, policy, **job_overrides):
         """Score a job with a specific policy active."""
         import backend.core.scheduling_policy_store as mod
+
         mod._store = PolicyStore()
         mod._store.apply(policy, operator="test", reason="test")
 
@@ -478,8 +507,12 @@ class TestScoringIntegration:
         node = _make_node_snapshot()
         now = _utcnow()
         score, breakdown = score_job_for_node(
-            job, node, now=now, total_active_nodes=5,
-            eligible_nodes_count=3, recent_failed_job_ids=set(),
+            job,
+            node,
+            now=now,
+            total_active_nodes=5,
+            eligible_nodes_count=3,
+            recent_failed_job_ids=set(),
         )
         return score, breakdown
 
@@ -497,6 +530,7 @@ class TestScoringIntegration:
     def test_zone_bonus_from_policy(self):
         """Zone bonus reads from policy, not hardcoded 10."""
         import backend.core.scheduling_policy_store as mod
+
         mod._store = PolicyStore()
         policy = SchedulingPolicy(scoring=ScoringWeights(zone_match_bonus=25))
         mod._store.apply(policy, operator="test", reason="test")
@@ -506,8 +540,12 @@ class TestScoringIntegration:
         job = _make_job(target_zone="zone-a")
         node = _make_node_snapshot(zone="zone-a")
         _, bd = score_job_for_node(
-            job, node, now=_utcnow(), total_active_nodes=5,
-            eligible_nodes_count=3, recent_failed_job_ids=set(),
+            job,
+            node,
+            now=_utcnow(),
+            total_active_nodes=5,
+            eligible_nodes_count=3,
+            recent_failed_job_ids=set(),
         )
         # Zone bonus should use the policy value (25) not hardcoded (10)
         assert bd["zone"] >= 20
@@ -517,6 +555,7 @@ class TestFreshnessIntegration:
     def test_freshness_penalty_uses_policy(self):
         """Freshness penalty reads grace/stale from policy store."""
         import backend.core.scheduling_policy_store as mod
+
         mod._store = PolicyStore()
         # Set stale_after to 100 → more lenient
         policy = SchedulingPolicy(
@@ -537,6 +576,7 @@ class TestRetryIntegration:
     def test_retry_delay_reads_policy_defaults(self):
         """calculate_retry_delay_seconds() uses policy store defaults."""
         import backend.core.scheduling_policy_store as mod
+
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
             retry=RetryPolicy(base_delay_seconds=20, max_delay_seconds=300),
@@ -559,7 +599,10 @@ class TestRetryIntegration:
         )
 
         delay = calculate_retry_delay_seconds(
-            FailureCategory.TRANSIENT, 0, base_delay=5, max_delay=100,
+            FailureCategory.TRANSIENT,
+            0,
+            base_delay=5,
+            max_delay=100,
         )
         assert delay == 5
 
@@ -624,6 +667,7 @@ class TestResilienceIntegration:
 # Governance facade proxy
 # =====================================================================
 
+
 class TestGovernanceFacadeProxy:
     def test_policy_snapshot(self):
         from backend.core.governance_facade import get_governance_facade
@@ -652,19 +696,23 @@ class TestGovernanceFacadeProxy:
         # Should raise on apply
         with pytest.raises(ValueError, match="frozen"):
             facade.apply_policy(
-                SchedulingPolicy(), operator="admin", reason="nope",
+                SchedulingPolicy(),
+                operator="admin",
+                reason="nope",
             )
         facade.unfreeze_policy(operator="sre")
         # Should succeed now
         facade.apply_policy(
             SchedulingPolicy(default_strategy="binpack"),
-            operator="sre", reason="ok",
+            operator="sre",
+            reason="ok",
         )
 
 
 # =====================================================================
 # Audit log
 # =====================================================================
+
 
 class TestAuditLog:
     def test_apply_creates_audit_entry(self):

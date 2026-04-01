@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.user import Base
@@ -25,9 +25,7 @@ class AlertRule(Base):
     """
 
     __tablename__ = "alert_rules"
-    __table_args__ = (
-        Index("ix_alert_rules_tenant_enabled", "tenant_id", "enabled"),
-    )
+    __table_args__ = (Index("ix_alert_rules_tenant_enabled", "tenant_id", "enabled"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -69,7 +67,5 @@ class Alert(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     notified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    triggered_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=False), nullable=False, index=True
-    )
+    triggered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=False), nullable=False, index=True)
     resolved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)

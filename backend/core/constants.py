@@ -24,7 +24,6 @@ CHANNEL_HARDWARE_EVENTS: str = "hardware:events"
 """硬件探测事件频道：探针发布 → SSE 推送前端。"""
 
 
-
 CHANNEL_NODE_EVENTS: str = "node:events"
 """Node 控制面事件频道：注册/心跳/状态变更。"""
 

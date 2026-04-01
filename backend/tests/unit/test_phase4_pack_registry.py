@@ -30,8 +30,6 @@ def test_iot_pack_contract_isolated_from_kernel_default() -> None:
     )
 
 
-
-
 def test_available_pack_registry_contains_phase4_contracts() -> None:
     definitions = {definition.key: definition for definition in available_pack_definitions()}
 

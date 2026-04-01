@@ -1,6 +1,7 @@
 """
 ZEN70 Auth Invite - OOB 邀请系统（创建、WebAuthn 绑定、降级登录）
 """
+
 from __future__ import annotations
 
 import json
@@ -12,8 +13,7 @@ try:
 except ImportError:
     bytes_to_base64url = None  # type: ignore[assignment]
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi import status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,9 +21,19 @@ from backend.api.auth_shared import assert_user_active
 from backend.api.deps import get_current_admin, get_db, get_redis
 from backend.api.models.auth import InviteCreateRequest, InviteResponse, WebAuthnRegisterBeginResponse, WebAuthnRegisterCompleteRequest
 from backend.core.auth_helpers import (
-    CHALLENGE_TTL, CODE_BAD_REQUEST, CODE_NOT_FOUND, CODE_SERVER_ERROR,
-    client_ip, consume_challenge, expected_challenge_bytes, log_auth,
-    origin_from_request, request_id, require_db_redis, token_response, zen,
+    CHALLENGE_TTL,
+    CODE_BAD_REQUEST,
+    CODE_NOT_FOUND,
+    CODE_SERVER_ERROR,
+    client_ip,
+    consume_challenge,
+    expected_challenge_bytes,
+    log_auth,
+    origin_from_request,
+    request_id,
+    require_db_redis,
+    token_response,
+    zen,
 )
 from backend.core.redis_client import RedisClient
 from backend.models.user import User, WebAuthnCredential
@@ -43,8 +53,12 @@ INVITE_FALLBACK_CONFIRM_VALUE = "degrade-login"
 def _assert_invite_fallback_confirmation(confirm: str | None) -> None:
     if (confirm or "").strip().lower() == INVITE_FALLBACK_CONFIRM_VALUE:
         return
-    raise zen(CODE_BAD_REQUEST, "Invite fallback login requires explicit confirmation", status.HTTP_400_BAD_REQUEST,
-              recovery_hint="Resend the request with X-Invite-Fallback-Confirm: degrade-login after the operator confirms degraded access")
+    raise zen(
+        CODE_BAD_REQUEST,
+        "Invite fallback login requires explicit confirmation",
+        status.HTTP_400_BAD_REQUEST,
+        recovery_hint="Resend the request with X-Invite-Fallback-Confirm: degrade-login after the operator confirms degraded access",
+    )
 
 
 @router.post("/invites", response_model=InviteResponse)
@@ -57,6 +71,7 @@ async def create_invite(
     """生成一次性邀请凭证（仅管理员可用）"""
     require_db_redis(db, redis)
     from backend.api.auth_shared import bind_admin_scope
+
     scope_tenant_id = await bind_admin_scope(db, current_admin)
 
     stmt = select(User).where(User.id == req.user_id)
@@ -97,7 +112,9 @@ async def invite_webauthn_register_begin(
 
     user_id_bytes = str(user.id).encode("utf-8")
     _, challenge_b64, options_json_str = generate_registration_challenge(
-        username=user.username, display_name=user.display_name or user.username, user_id=user_id_bytes,
+        username=user.username,
+        display_name=user.display_name or user.username,
+        user_id=user_id_bytes,
     )
     challenge_payload = json.dumps({"user_id": user.id, "username": user.username, "flow": "register"})
     if not await redis.set_auth_challenge(challenge_b64, challenge_payload, ttl=CHALLENGE_TTL):
@@ -132,7 +149,9 @@ async def invite_webauthn_register_complete(
     origin = origin_from_request(request)
     try:
         verification = verify_registration(
-            credential=req.credential, expected_challenge=expected_challenge_bytes(challenge_b64), origin=origin,
+            credential=req.credential,
+            expected_challenge=expected_challenge_bytes(challenge_b64),
+            origin=origin,
         )
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
         raise zen("ZEN-AUTH-4002", f"WebAuthn verification failed: {e}", status_code=status.HTTP_400_BAD_REQUEST, recovery_hint="请重新发起注册流程")
@@ -140,7 +159,8 @@ async def invite_webauthn_register_complete(
     cred_id_b64 = bytes_to_base64url(verification.credential_id)  # type: ignore[attr-defined]
     raw_dev = req.credential.get("deviceName") or (req.credential.get("response") or {}).get("deviceName")  # type: ignore[attr-defined]
     new_cred = WebAuthnCredential(
-        user_id=user.id, credential_id=cred_id_b64,
+        user_id=user.id,
+        credential_id=cred_id_b64,
         public_key=verification.credential_public_key,  # type: ignore[attr-defined]
         sign_count=verification.sign_count,  # type: ignore[attr-defined]
         device_name=(raw_dev or "zen70-bound-device")[:128],  # type: ignore[index]

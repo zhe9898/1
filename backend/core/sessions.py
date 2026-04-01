@@ -111,12 +111,14 @@ async def create_session(
     # Evict oldest sessions if over limit
     active_sessions = await db.execute(
         select(Session)
-        .where(and_(
-            Session.tenant_id == tenant_id,
-            Session.user_id == user_id,
-            Session.is_active.is_(True),
-            Session.expires_at > now,
-        ))
+        .where(
+            and_(
+                Session.tenant_id == tenant_id,
+                Session.user_id == user_id,
+                Session.is_active.is_(True),
+                Session.expires_at > now,
+            )
+        )
         .order_by(Session.created_at.asc())
     )
     sessions = list(active_sessions.scalars().all())
@@ -220,11 +222,13 @@ async def revoke_all_user_sessions(
     """
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     result = await db.execute(
-        select(Session).where(and_(
-            Session.tenant_id == tenant_id,
-            Session.user_id == user_id,
-            Session.is_active.is_(True),
-        ))
+        select(Session).where(
+            and_(
+                Session.tenant_id == tenant_id,
+                Session.user_id == user_id,
+                Session.is_active.is_(True),
+            )
+        )
     )
     sessions = result.scalars().all()
     count = 0

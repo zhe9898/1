@@ -1,11 +1,11 @@
 """
 ZEN70 Auth User - 账号管理（列表、创建、AI 偏好、吊销凭证）
 """
+
 from __future__ import annotations
 
 import bcrypt
-from fastapi import APIRouter, Depends, Request
-from fastapi import status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,11 +13,18 @@ from sqlalchemy.orm import selectinload
 from backend.api.auth_shared import bind_admin_scope, build_token_response_model, enforce_admin_scope
 from backend.api.deps import get_current_admin, get_current_user, get_db
 from backend.api.models.auth import (
-    AiRoutePreferenceRequest, CreateUserRequest,
-    TokenResponse, UserItem, UserListResponse,
+    AiRoutePreferenceRequest,
+    CreateUserRequest,
+    TokenResponse,
+    UserItem,
+    UserListResponse,
 )
 from backend.core.auth_helpers import (
-    CODE_BAD_REQUEST, CODE_NOT_FOUND, log_auth, request_id, zen,
+    CODE_BAD_REQUEST,
+    CODE_NOT_FOUND,
+    log_auth,
+    request_id,
+    zen,
 )
 from backend.models.user import User, WebAuthnCredential
 
@@ -73,11 +80,18 @@ async def list_users(
     user_items = []
     for u in users:
         creds = [{"id": c.credential_id, "name": c.device_name, "created_at": str(c.created_at)} for c in u.credentials]
-        user_items.append(UserItem(
-            id=u.id, username=u.username, display_name=u.display_name,
-            role=u.role, tenant_id=u.tenant_id, is_active=u.is_active,
-            has_password=bool(u.password_hash), webauthn_credentials=creds,
-        ))
+        user_items.append(
+            UserItem(
+                id=u.id,
+                username=u.username,
+                display_name=u.display_name,
+                role=u.role,
+                tenant_id=u.tenant_id,
+                is_active=u.is_active,
+                has_password=bool(u.password_hash),
+                webauthn_credentials=creds,
+            )
+        )
     return UserListResponse(users=user_items)
 
 
@@ -100,9 +114,14 @@ async def create_user(
     await db.flush()
 
     return UserItem(
-        id=user.id, username=user.username, display_name=user.display_name,
-        role=user.role, tenant_id=user.tenant_id, is_active=user.is_active,
-        has_password=True, webauthn_credentials=[],
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        is_active=user.is_active,
+        has_password=True,
+        webauthn_credentials=[],
     )
 
 

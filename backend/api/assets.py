@@ -7,31 +7,50 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.core.errors import zen
 
 router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
 
 MEDIA_PATH: str | None = os.environ.get("MEDIA_PATH", None)
 
-_ALLOWED_EXTENSIONS: frozenset[str] = frozenset({
-    # Images
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg",
-    # Videos
-    ".mp4", ".webm", ".mov", ".avi", ".mkv",
-    # Documents
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv", ".json",
-})
+_ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        # Images
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".svg",
+        # Videos
+        ".mp4",
+        ".webm",
+        ".mov",
+        ".avi",
+        ".mkv",
+        # Documents
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".txt",
+        ".csv",
+        ".json",
+    }
+)
 
-_ALLOWED_MIME_PREFIXES: frozenset[str] = frozenset({
-    "image/",
-    "video/",
-    "audio/",
-    "application/pdf",
-})
+_ALLOWED_MIME_PREFIXES: frozenset[str] = frozenset(
+    {
+        "image/",
+        "video/",
+        "audio/",
+        "application/pdf",
+    }
+)
 
 
 async def upload_asset(

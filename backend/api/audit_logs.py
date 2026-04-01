@@ -109,7 +109,7 @@ async def list_audit_logs(
     # Order by newest first and limit
     query = query.order_by(desc(AuditLog.created_at)).limit(limit)
 
-    result = await db.execute(query)
-    logs = result.scalars().all()
+    db_result = await db.execute(query)
+    logs = db_result.scalars().all()
 
     return [_to_response(log) for log in logs]

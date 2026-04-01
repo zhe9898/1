@@ -185,7 +185,7 @@ async def get_node_machine_token(
     return credentials.credentials
 
 
-def require_scope(required_scope: str):
+def require_scope(required_scope: str) -> object:
     """Dependency factory for requiring specific permission scope.
 
     Usage:
@@ -201,10 +201,11 @@ def require_scope(required_scope: str):
     Returns:
         Dependency function that checks for the scope
     """
+
     async def _check_scope(
         current_user: dict[str, str] = Depends(get_current_user),
     ) -> dict[str, str]:
-        scopes = current_user.get("scopes", [])
+        scopes: object = current_user.get("scopes", [])
         if not isinstance(scopes, list):
             scopes = []
 

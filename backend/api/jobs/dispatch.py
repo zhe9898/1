@@ -5,14 +5,16 @@ Split from routes.py for maintainability. Contains the scheduling-heavy
 pull and explain endpoints that orchestrate queue stratification,
 business scheduling filters, and the scoring pipeline.
 """
+
 from __future__ import annotations
 
 import datetime
 import time
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import Integer, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
@@ -30,6 +32,7 @@ from backend.core.control_plane_state import (
     node_status_view,
 )
 from backend.core.failure_control_plane import get_failure_control_plane
+from backend.core.governance_facade import get_governance_facade
 from backend.core.job_scheduler import (
     build_node_snapshot,
     count_eligible_nodes_for_job,
@@ -39,16 +42,15 @@ from backend.core.job_scheduler import (
 )
 from backend.core.node_auth import authenticate_node_request
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
-from backend.core.governance_facade import get_governance_facade
 from backend.core.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
+    SCHED_FLAG_EXECUTOR_VALIDATION,
     SCHED_FLAG_PLACEMENT_POLICIES,
     SCHED_FLAG_PREEMPTION,
-    SCHED_FLAG_EXECUTOR_VALIDATION,
+    SchedulingDecisionLogger,
 )
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
-from sqlalchemy import Integer, case, func, literal, or_
 
 from .database import (
     _append_log,
@@ -71,19 +73,22 @@ from .models import (
     JobExplainResponse,
     JobLeaseResponse,
     JobPullRequest,
-    JobResponse,
 )
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
+if TYPE_CHECKING:
+    from backend.core.scheduling_policy_types import DispatchConfig
 
-def _get_dispatch_config():
+
+def _get_dispatch_config() -> DispatchConfig:
     from backend.core.scheduling_policy_store import get_policy_store
+
     return get_policy_store().active.dispatch
 
 
 @router.post("/pull", response_model=list[JobLeaseResponse])
-async def pull_jobs(
+async def pull_jobs(  # noqa: C901
     payload: JobPullRequest,
     db: AsyncSession = Depends(get_machine_tenant_db),
     redis: RedisClient | None = Depends(get_redis),
@@ -101,7 +106,10 @@ async def pull_jobs(
 
     # ── Governance pre-dispatch admission ────────────────────────────
     _admission = await _governance.pre_dispatch_admission(
-        db, tenant_id=payload.tenant_id, node_id=payload.node_id, now=now,
+        db,
+        tenant_id=payload.tenant_id,
+        node_id=payload.node_id,
+        now=now,
     )
     if not _admission.admitted:
         return []
@@ -113,8 +121,10 @@ async def pull_jobs(
     _ff_executor_val = await _governance.is_feature_enabled(db, SCHED_FLAG_EXECUTOR_VALIDATION)
 
     # ── Decision audit logger (governance facade) ────────────────────
-    _audit = _governance.create_decision_logger(
-        tenant_id=payload.tenant_id, node_id=payload.node_id, now=now,
+    _audit: SchedulingDecisionLogger = _governance.create_decision_logger(  # type: ignore[assignment]
+        tenant_id=payload.tenant_id,
+        node_id=payload.node_id,
+        now=now,
     )
 
     # ── Quarantine gate (also checked by facade above, kept for fcp ref) ─
@@ -182,6 +192,7 @@ async def pull_jobs(
     )
 
     from backend.core.scheduling_policy_store import get_policy_store as _gps
+
     _qcfg = _gps().active.queue
     _layers = _qcfg.priority_layers
     _layer_muls = _qcfg.layer_aging_multipliers
@@ -189,10 +200,7 @@ async def pull_jobs(
     # Build SQL CASE branches dynamically from policy-store layer definitions.
     # Sort layers descending by lower-bound so the first match wins.
     _sorted_layers = sorted(_layers.items(), key=lambda kv: kv[1][0], reverse=True)
-    _case_whens = [
-        (Job.priority >= lo, literal(float(_layer_muls.get(name, 1.0))))
-        for name, (lo, _hi) in _sorted_layers[:-1]
-    ]
+    _case_whens = [(Job.priority >= lo, literal(float(_layer_muls.get(name, 1.0)))) for name, (lo, _hi) in _sorted_layers[:-1]]
     _else_mul = float(_layer_muls.get(_sorted_layers[-1][0], 1.0)) if _sorted_layers else 1.0
     _layer_multiplier = case(*_case_whens, else_=literal(_else_mul))
 
@@ -208,13 +216,7 @@ async def pull_jobs(
         literal(100),
     )
 
-    query = (
-        select(Job)
-        .where(*_base_where)
-        .with_for_update(skip_locked=True)
-        .order_by(_effective_priority.desc(), Job.created_at.asc())
-        .limit(candidate_limit)
-    )
+    query = select(Job).where(*_base_where).with_for_update(skip_locked=True).order_by(_effective_priority.desc(), Job.created_at.asc()).limit(candidate_limit)
     if accepted_kinds:
         query = query.where(Job.kind.in_(accepted_kinds))
 
@@ -232,7 +234,7 @@ async def pull_jobs(
     # effective priority) for deterministic ordering with tiebreakers.
     from backend.core.queue_stratification import sort_jobs_by_stratified_priority
 
-    candidates = sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True)
+    candidates = sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True)  # type: ignore[assignment, arg-type]
 
     # ── Connector cooling & kind circuit breaker gate ────────────────
     # Beyond node quarantine (checked above), also honour kind-level
@@ -249,7 +251,8 @@ async def pull_jobs(
         # Executor contract kind-compat pre-check (governance facade)
         if _ff_executor_val and kind:
             _ef = _governance.filter_by_executor_contract(
-                requesting_node.executor, kind,
+                requesting_node.executor,
+                kind,
             )
             if not _ef.compatible:
                 _audit.record_rejection(c.job_id, f"executor_kind_incompat:{_ef.reason}")
@@ -278,9 +281,7 @@ async def pull_jobs(
 
     parent_ids = {c.parent_job_id for c in candidates if c.parent_job_id}
     if parent_ids:
-        parent_result = await db.execute(
-            select(Job).where(Job.tenant_id == payload.tenant_id, Job.job_id.in_(parent_ids))
-        )
+        parent_result = await db.execute(select(Job).where(Job.tenant_id == payload.tenant_id, Job.job_id.in_(parent_ids)))
         parent_jobs = {j.job_id: j for j in parent_result.scalars().all()}
     else:
         parent_jobs = {}
@@ -327,6 +328,7 @@ async def pull_jobs(
 
     # Toggle placement policies per feature flag
     from backend.core.placement_policy import set_placement_enabled
+
     set_placement_enabled(_ff_placement)
 
     selected = select_jobs_for_node(
@@ -345,20 +347,17 @@ async def pull_jobs(
     # candidates that were eligible but couldn't be placed, evaluate
     # preemption of currently-running low-priority jobs.
     # Gated by feature flag — allows disabling preemption globally.
-    if (
-        _ff_preemption
-        and not selected
-        and available_slots <= 0
-        and candidates
-        and active_jobs_on_node
-    ):
+    if _ff_preemption and not selected and available_slots <= 0 and candidates and active_jobs_on_node:
         from backend.core.business_scheduling import find_preemption_candidates
+
         _can_preempt, _budget_reason = _governance.can_preempt(now)
         if not _can_preempt:
             _governance.record_preemption_budget_hit()
         else:
             preemption_pairs = find_preemption_candidates(
-                candidates, active_jobs_on_node, now=now,
+                candidates,
+                active_jobs_on_node,
+                now=now,
             )
             for urgent_job, victim_job, reason in preemption_pairs:
                 # Release the victim's lease → returns to pending
@@ -419,6 +418,7 @@ async def pull_jobs(
     )
     dlq_result = await db.execute(dlq_query)
     for c in dlq_result.scalars().all():
+        assert c.deadline_at is not None
         c.status = "failed"
         c.error_message = f"deadline expired at {c.deadline_at.isoformat()}"
         c.failure_category = "deadline_expired"
@@ -542,7 +542,7 @@ async def explain_job(
         eligible = not reasons
         score: int | None = None
         if eligible:
-            score, _breakdown = score_job_for_node(
+            score, _breakdown = score_job_for_node(  # type: ignore[misc, unused-ignore]
                 job,
                 snapshot,
                 now=now,
@@ -590,6 +590,7 @@ async def explain_job(
     _kind_circuit = await _fcp_explain.get_kind_circuit_state(_kind, now=now) if _kind else None
 
     from backend.core.scheduling_governance import get_all_scheduling_flags
+
     _ff_flags = await get_all_scheduling_flags(db)
 
     _fair = get_fair_scheduler()
@@ -598,6 +599,7 @@ async def explain_job(
     _placement_policy_name = "default"
     try:
         from backend.core.placement_policy import get_placement_policy
+
         _pp = get_placement_policy()
         _placement_policy_name = getattr(_pp, "name", "composite") or "composite"
     except Exception:

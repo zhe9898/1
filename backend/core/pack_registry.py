@@ -279,6 +279,3 @@ def resolve_gateway_image_target(*, profile: object, raw_packs: object = None) -
         if definition.gateway_image_target == "gateway-iot":
             return "gateway-iot"
     return "gateway-kernel"
-
-
-
