@@ -183,7 +183,7 @@ class RedisClient:
             socket_keepalive=True,
         )
         try:
-            await self._redis.ping()
+            await self._redis.ping()  # type: ignore[misc]
             self.logger.info("Connected to Redis")
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Redis connection failed: %s", e, exc_info=True)
@@ -202,7 +202,7 @@ class RedisClient:
         if not self._redis:
             return False
         try:
-            await self._redis.ping()
+            await self._redis.ping()  # type: ignore[misc]
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.debug("Redis ping failed: %s", e)
@@ -222,7 +222,7 @@ class RedisClient:
         """代理 Redis GET。"""
         if not self._redis:
             return None
-        return await self._redis.get(key)
+        return cast("str | None", await self._redis.get(key))
 
     async def set(self, key: str, value: str | bytes | int | float, **kwargs: Any) -> object:
         """代理 Redis SET。"""
@@ -240,26 +240,26 @@ class RedisClient:
         """代理 Redis DELETE。"""
         if not self._redis:
             return 0
-        return await self._redis.delete(*keys)
+        return int(await self._redis.delete(*keys))
 
     async def incr(self, key: str) -> int:
         """代理 Redis INCR。"""
         if not self._redis:
             return 0
-        return await self._redis.incr(key)
+        return int(await self._redis.incr(key))
 
     async def expire(self, key: str, time_seconds: int) -> bool:
         """代理 Redis EXPIRE。"""
         if not self._redis:
             return False
-        return await self._redis.expire(key, time_seconds)
+        return bool(await self._redis.expire(key, time_seconds))
 
     async def publish(self, channel: str, message: str) -> int:
         """发布消息到 Redis 频道；未连接时返回 0。"""
         if not self._redis:
             return 0
         try:
-            return await self._redis.publish(channel, message)
+            return int(await self._redis.publish(channel, message))
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to publish to %s: %s", channel, e, exc_info=True)
             return 0
@@ -294,7 +294,7 @@ class RedisClient:
             return {}
 
         async def _get() -> dict[str, Capability]:
-            data = await self._redis.hgetall(KEY_CAPABILITIES)  # type: ignore[union-attr]
+            data = await self._redis.hgetall(KEY_CAPABILITIES)  # type: ignore[union-attr, misc]
             if not data:
                 return {}
             result: dict[str, Capability] = {}
@@ -312,7 +312,7 @@ class RedisClient:
         if not self._redis:
             return False
         try:
-            await self._redis.hset(KEY_CAPABILITIES, name, json.dumps(capability))
+            await self._redis.hset(KEY_CAPABILITIES, name, json.dumps(capability))  # type: ignore[misc]
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to set capability %s: %s", name, e, exc_info=True)
@@ -323,7 +323,7 @@ class RedisClient:
         if not self._redis:
             return False
         try:
-            await self._redis.hdel(KEY_CAPABILITIES, name)
+            await self._redis.hdel(KEY_CAPABILITIES, name)  # type: ignore[misc]
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to delete capability %s: %s", name, e, exc_info=True)
@@ -340,7 +340,7 @@ class RedisClient:
             info_dict: dict[str, object] = dict(info)
             info_dict["last_seen"] = time.time()
             mapping = _node_to_redis(cast(NodeInfo, info_dict))
-            await self._redis.hset(key, mapping=mapping)  # type: ignore[arg-type]
+            await self._redis.hset(key, mapping=mapping)  # type: ignore[misc]
             await self._redis.expire(key, 60)
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
@@ -353,7 +353,7 @@ class RedisClient:
         if not self._redis:
             return None
         try:
-            data = await self._redis.hgetall(key)
+            data = await self._redis.hgetall(key)  # type: ignore[misc]
             if not data:
                 return None
             return _redis_to_node(data)
@@ -403,7 +403,7 @@ class RedisClient:
             return None
 
         async def _get() -> SwitchState | None:
-            data = await self._redis.hgetall(key)  # type: ignore[union-attr]
+            data = await self._redis.hgetall(key)  # type: ignore[union-attr, misc]
             if not data:
                 return None
             return {
@@ -465,7 +465,7 @@ class RedisClient:
             }
             event: dict[str, object] = {"switch": name, "name": name, **payload}
             pipe = self._redis.pipeline()
-            pipe.hset(key, mapping=payload)  # type: ignore[arg-type]
+            pipe.hset(key, mapping=payload)
             pipe.publish(CHANNEL_SWITCH_EVENTS, json.dumps(event))
             await pipe.execute()
             return True
@@ -481,7 +481,7 @@ class RedisClient:
         if not self._redis:
             return None
         try:
-            data = await self._redis.hgetall(key)
+            data = await self._redis.hgetall(key)  # type: ignore[misc]
             if not data:
                 return None
             hw: HardwareState = {
@@ -502,11 +502,11 @@ class RedisClient:
         state: str,
         reason: str = "",
         uuid_val: str | None = None,
-    ) -> None:
+    ) -> bool:
         """更新硬件状态并发布 hardware:events。"""
         key = f"{KEY_HW_PREFIX}{path}"
         if not self._redis:
-            return False  # type: ignore[return-value]
+            return False
         try:
             ts = time.time()
             payload: dict[str, str] = {
@@ -518,13 +518,13 @@ class RedisClient:
             }
             event = dict(payload, timestamp=ts)  # JSON 序列化时 timestamp 为 float
             pipe = self._redis.pipeline()
-            pipe.hset(key, mapping=payload)  # type: ignore[arg-type]
+            pipe.hset(key, mapping=payload)
             pipe.publish(CHANNEL_HARDWARE_EVENTS, json.dumps(event))
             await pipe.execute()
-            return True  # type: ignore[return-value]
+            return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to set hardware %s: %s", path, e, exc_info=True)
-            return False  # type: ignore[return-value]
+            return False
 
     # -------------------- 锁 --------------------
 
@@ -559,7 +559,7 @@ class RedisClient:
             return False
         try:
             n = await self._redis.exists(key)
-            return n > 0
+            return bool(n > 0)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to check lock %s: %s", name, e, exc_info=True)
             return False
@@ -587,7 +587,7 @@ class RedisClient:
             value = await self._redis.get(key)
             if value:
                 await self._redis.delete(key)
-            return value
+            return cast("str | None", value)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to get auth challenge: %s", e, exc_info=True)
             return None
@@ -600,7 +600,7 @@ class RedisClient:
             n = await self._redis.incr(key)
             if n == 1:
                 await self._redis.expire(key, window_sec)
-            return n
+            return int(n)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to incr_with_expire %s: %s", key, e, exc_info=True)
             return 0

@@ -78,13 +78,15 @@ def _init_bitrot_db() -> None:
     """A-3: 同步函数，由 to_thread 调用。"""
     conn = sqlite3.connect(BITROT_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS file_hashes (
             filepath TEXT PRIMARY KEY,
             sha256 TEXT NOT NULL,
             last_checked REAL NOT NULL
         )
-    """)
+    """
+    )
     conn.commit()
     conn.close()
 

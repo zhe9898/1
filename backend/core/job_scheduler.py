@@ -798,7 +798,7 @@ class PlacementSolver:
         if total_capacity < len(jobs):
             ordered_units.sort(
                 key=lambda item: (
-                    -max(int(_job_attr(job, "priority") or 0) for job in item[1]),
+                    -max(_int_attr(_job_attr(job, "priority")) for job in item[1]),
                     min(getattr(job, "created_at", now) for job in item[1]),
                     str(item[0] or _job_attr(item[1][0], "job_id") or ""),
                 ),
