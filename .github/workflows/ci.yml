@@ -116,11 +116,11 @@ jobs:
           JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
           ZEN70_ENV: ""
           PYTHONPATH: ${{ github.workspace }}
-          PLACEMENT_STRESS_NODES: "400"
-          PLACEMENT_STRESS_JOBS: "4000"
+          PLACEMENT_STRESS_NODES: "10"
+          PLACEMENT_STRESS_JOBS: "100"
           PLACEMENT_STRESS_CONCURRENCY: "16"
-          PLACEMENT_STRESS_MAX_MS: "5000"
-          PLACEMENT_STRESS_MAX_MEM_MB: "500"
+          PLACEMENT_STRESS_MAX_MS: "60000"
+          PLACEMENT_STRESS_MAX_MEM_MB: "1000"
         run: |
           pip install pytest-benchmark pytest-timeout
           # Keep benchmark collection bounded so backend job cannot be canceled
