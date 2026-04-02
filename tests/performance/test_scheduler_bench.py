@@ -186,12 +186,23 @@ class TestScoringBench:
 
         jobs = [_job(f"j{i}") for i in range(1000)]
         nodes = [_node(f"n{i}") for i in range(100)]
+        total_active_nodes = len(nodes)
+        eligible_nodes_count = len(nodes)
+        recent_failed_job_ids: set[str] = set()
 
         def _score_all() -> int:
             total = 0
             for j in jobs[:10]:  # 10 jobs × 100 nodes = 1000 score calls
                 for n in nodes:
-                    total += score_job_for_node(j, n, now=_utcnow())
+                    score, _ = score_job_for_node(
+                        j,
+                        n,
+                        now=_utcnow(),
+                        total_active_nodes=total_active_nodes,
+                        eligible_nodes_count=eligible_nodes_count,
+                        recent_failed_job_ids=recent_failed_job_ids,
+                    )
+                    total += score
             return total
 
         result = benchmark(_score_all)
