@@ -28,6 +28,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from backend.api import alerts as alerts_router
+from backend.api import evaluations as evaluations_router
 from backend.api import audit_logs as audit_logs_router
 from backend.api import auth as auth_router
 from backend.api import connectors as connectors_router
@@ -403,6 +404,7 @@ _ALL_ROUTERS = {
     "sessions": sessions_router.router,
     "quotas": quotas_router.router,
     "alerts": alerts_router.router,
+    "evaluations": evaluations_router.router,
     "kernel": kernel_router.router,
     "workflows": workflows_router.router,
     "scheduling_governance": scheduling_governance_router.router,
