@@ -466,7 +466,7 @@ async def receive_trigger_webhook(
         input_payload = {"value": payload_raw}
 
     query_context = {key: value for key, value in request.query_params.items()}
-    context = {
+    context: dict[str, object] = {
         "method": request.method.upper(),
         "content_type": request.headers.get("content-type"),
         "user_agent": request.headers.get("user-agent"),

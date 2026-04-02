@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.core.connector_kind_registry import (
@@ -45,10 +45,10 @@ from backend.core.job_kind_registry import (
     HealthcheckResult,
     HttpRequestPayload,
     HttpRequestResult,
-    MLInferencePayload,
-    MLInferenceResult,
     MediaTranscodePayload,
     MediaTranscodeResult,
+    MLInferencePayload,
+    MLInferenceResult,
     ScriptRunPayload,
     ScriptRunResult,
     ShellExecPayload,
@@ -279,29 +279,32 @@ def _validate_manifest_versions(manifest: ExtensionManifest) -> None:
 
 
 def _register_manifest_kinds(manifest: ExtensionManifest) -> None:
-    for spec in manifest.job_kinds:
+    for job_spec in manifest.job_kinds:
         register_job_kind(
-            spec.kind,
-            payload_schema=spec.payload_schema,
-            result_schema=spec.result_schema,
+            job_spec.kind,
+            payload_schema=job_spec.payload_schema,
+            result_schema=job_spec.result_schema,
             metadata=_kind_metadata(
                 manifest,
-                schema_version=_require_semver(spec.schema_version, field_name=f"{spec.kind}.schema_version"),
-                stability=spec.stability,
-                description=spec.description,
+                schema_version=_require_semver(job_spec.schema_version, field_name=f"{job_spec.kind}.schema_version"),
+                stability=job_spec.stability,
+                description=job_spec.description,
                 source="core" if manifest.extension_id == "zen70.core" else "extension",
             ),
         )
 
-    for spec in manifest.connector_kinds:
+    for connector_spec in manifest.connector_kinds:
         register_connector_kind(
-            spec.kind,
-            config_schema=spec.config_schema,
+            connector_spec.kind,
+            config_schema=connector_spec.config_schema,
             metadata=_kind_metadata(
                 manifest,
-                schema_version=_require_semver(spec.schema_version, field_name=f"{spec.kind}.schema_version"),
-                stability=spec.stability,
-                description=spec.description,
+                schema_version=_require_semver(
+                    connector_spec.schema_version,
+                    field_name=f"{connector_spec.kind}.schema_version",
+                ),
+                stability=connector_spec.stability,
+                description=connector_spec.description,
                 source="core" if manifest.extension_id == "zen70.core" else "extension",
             ),
         )
@@ -331,12 +334,12 @@ def _register_manifest_templates(manifest: ExtensionManifest) -> None:
 
 
 def _unregister_manifest(manifest: ExtensionManifest) -> None:
-    for spec in manifest.workflow_templates:
-        unregister_workflow_template(spec.template_id)
-    for spec in manifest.job_kinds:
-        unregister_job_kind(spec.kind)
-    for spec in manifest.connector_kinds:
-        unregister_connector_kind(spec.kind)
+    for template_spec in manifest.workflow_templates:
+        unregister_workflow_template(template_spec.template_id)
+    for job_spec in manifest.job_kinds:
+        unregister_job_kind(job_spec.kind)
+    for connector_spec in manifest.connector_kinds:
+        unregister_connector_kind(connector_spec.kind)
 
 
 def register_extension_manifest(manifest: ExtensionManifest, *, replace_existing: bool = False) -> None:
@@ -452,9 +455,7 @@ def load_extension_manifests_from_dir(manifests_dir: str | Path | None = None) -
         manifest = _parse_file_manifest(_read_manifest_file(path), source_manifest_path=str(path))
         previous = seen_extension_ids.get(manifest.extension_id)
         if previous is not None:
-            raise ValueError(
-                f"Duplicate extension_id '{manifest.extension_id}' in '{previous}' and '{path}'"
-            )
+            raise ValueError(f"Duplicate extension_id '{manifest.extension_id}' in '{previous}' and '{path}'")
         seen_extension_ids[manifest.extension_id] = path
         manifests.append(manifest)
 
@@ -560,17 +561,32 @@ def ensure_builtin_extensions_registered() -> None:
             notes="Built-in contracts are semver-protected within the active major version.",
         ),
         job_kinds=(
-            JobKindSpec("shell.exec", payload_schema=ShellExecPayload, result_schema=ShellExecResult, description="Execute a shell command on a worker node."),
+            JobKindSpec(
+                "shell.exec",
+                payload_schema=ShellExecPayload,
+                result_schema=ShellExecResult,
+                description="Execute a shell command on a worker node.",
+            ),
             JobKindSpec("http.request", payload_schema=HttpRequestPayload, result_schema=HttpRequestResult, description="Execute an HTTP request."),
             JobKindSpec("container.run", payload_schema=ContainerRunPayload, result_schema=ContainerRunResult, description="Run a container image."),
             JobKindSpec("healthcheck", payload_schema=HealthcheckPayload, result_schema=HealthcheckResult, description="Run a health probe."),
             JobKindSpec("ml.inference", payload_schema=MLInferencePayload, result_schema=MLInferenceResult, description="Run ML inference."),
-            JobKindSpec("media.transcode", payload_schema=MediaTranscodePayload, result_schema=MediaTranscodeResult, description="Run media transcode workloads."),
+            JobKindSpec(
+                "media.transcode",
+                payload_schema=MediaTranscodePayload,
+                result_schema=MediaTranscodeResult,
+                description="Run media transcode workloads.",
+            ),
             JobKindSpec("script.run", payload_schema=ScriptRunPayload, result_schema=ScriptRunResult, description="Run an interpreted script."),
             JobKindSpec("wasm.run", payload_schema=WasmRunPayload, result_schema=WasmRunResult, stability="beta", description="Run WebAssembly workloads."),
             JobKindSpec("cron.tick", payload_schema=CronTickPayload, result_schema=CronTickResult, description="Execute a scheduled cron trigger."),
             JobKindSpec("data.sync", payload_schema=DataSyncPayload, result_schema=DataSyncResult, description="Synchronise data across boundaries."),
-            JobKindSpec("file.transfer", payload_schema=FileTransferPayload, result_schema=FileTransferResult, description="Transfer files with integrity checks."),
+            JobKindSpec(
+                "file.transfer",
+                payload_schema=FileTransferPayload,
+                result_schema=FileTransferResult,
+                description="Transfer files with integrity checks.",
+            ),
             JobKindSpec("connector.invoke", description="Control-plane connector invocation kind kept permissive for compatibility."),
         ),
         connector_kinds=(

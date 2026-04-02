@@ -86,13 +86,7 @@ def _trigger_migration_text() -> str:
 
 
 def _queue_lane_migration_text() -> str:
-    path = (
-        Path(__file__).resolve().parents[3]
-        / "backend"
-        / "alembic"
-        / "versions"
-        / "e6f7a8b9c0d1_queue_lane_worker_pool_contracts.py"
-    )
+    path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "e6f7a8b9c0d1_queue_lane_worker_pool_contracts.py"
     return path.read_text(encoding="utf-8")
 
 

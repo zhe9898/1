@@ -40,9 +40,7 @@ def normalize_worker_pool_name(value: str | None) -> str:
     if not normalized:
         raise ValueError("worker_pool must be a non-empty string")
     if not _WORKER_POOL_RE.fullmatch(normalized):
-        raise ValueError(
-            "worker_pool must match ^[a-z0-9](?:[a-z0-9._-]{0,63})$"
-        )
+        raise ValueError("worker_pool must match ^[a-z0-9](?:[a-z0-9._-]{0,63})$")
     return normalized
 
 
@@ -117,11 +115,7 @@ def resolve_job_queue_contract(
         requested_queue_class=requested_queue_class,
         required_gpu_vram_mb=required_gpu_vram_mb,
     )
-    worker_pool = (
-        normalize_worker_pool_name(requested_worker_pool)
-        if requested_worker_pool
-        else default_worker_pool_for_queue_class(queue_class)
-    )
+    worker_pool = normalize_worker_pool_name(requested_worker_pool) if requested_worker_pool else default_worker_pool_for_queue_class(queue_class)
     return queue_class, worker_pool
 
 
@@ -142,11 +136,7 @@ def resolve_job_queue_contract_from_record(job: Any) -> tuple[str, str]:
         )
     worker_pool_value = getattr(job, "worker_pool", None)
     try:
-        worker_pool = (
-            normalize_worker_pool_name(worker_pool_value)
-            if worker_pool_value
-            else default_worker_pool_for_queue_class(queue_class)
-        )
+        worker_pool = normalize_worker_pool_name(worker_pool_value) if worker_pool_value else default_worker_pool_for_queue_class(queue_class)
     except ValueError:
         worker_pool = default_worker_pool_for_queue_class(queue_class)
     return queue_class, worker_pool

@@ -150,16 +150,16 @@ def main() -> None:
     # ── Gate checks ──────────────────────────────────────────────────
     ok = True
     if elapsed_ms > 5000:
-        print(f"❌ FAIL: solve time {elapsed_ms:.0f}ms > 5000ms threshold")
+        print(f"FAIL: solve time {elapsed_ms:.0f}ms > 5000ms threshold")
         ok = False
     else:
-        print("\u2705 PASS: solve time within threshold")
+        print("PASS: solve time within threshold")
 
     if mem_delta_mb > 500:
-        print(f"\u274c FAIL: memory delta {mem_delta_mb:.0f}MB > 500MB threshold")
+        print(f"FAIL: memory delta {mem_delta_mb:.0f}MB > 500MB threshold")
         ok = False
     else:
-        print("\u2705 PASS: memory within threshold")
+        print("PASS: memory within threshold")
 
     if not ok:
         sys.exit(1)

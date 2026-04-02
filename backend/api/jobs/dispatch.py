@@ -26,17 +26,17 @@ from backend.api.deps import (
     get_tenant_db,
 )
 from backend.api.ui_contracts import StatusView
+from backend.core.backfill_scheduling import get_reservation_manager
 from backend.core.control_plane_state import (
     eligibility_view,
     node_drain_status_view,
     node_status_view,
 )
-from backend.core.backfill_scheduling import get_reservation_manager
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.governance_facade import get_governance_facade
 from backend.core.job_scheduler import (
-    build_time_budgeted_placement_plan,
     build_node_snapshot,
+    build_time_budgeted_placement_plan,
     count_eligible_nodes_for_job,
     node_blockers_for_job,
     score_job_for_node,

@@ -81,11 +81,13 @@ TriggerTargetContract = Annotated[JobTriggerTarget | WorkflowTemplateTriggerTarg
 def validate_trigger_target_contract(target: dict[str, Any]) -> dict[str, Any]:
     target_kind = str(target.get("target_kind") or "").strip()
     if target_kind == "job":
-        parsed: JobTriggerTarget | WorkflowTemplateTriggerTarget = JobTriggerTarget.model_validate(target)
+        parsed_job = JobTriggerTarget.model_validate(target)
         bootstrap_extension_runtime()
-        get_published_job_kind(parsed.job_kind)
+        get_published_job_kind(parsed_job.job_kind)
+        parsed: JobTriggerTarget | WorkflowTemplateTriggerTarget = parsed_job
     elif target_kind == "workflow_template":
-        parsed = WorkflowTemplateTriggerTarget.model_validate(target)
+        parsed_template = WorkflowTemplateTriggerTarget.model_validate(target)
+        parsed = parsed_template
     else:
         raise ValueError("Trigger target_kind must be 'job' or 'workflow_template'")
     if isinstance(parsed, WorkflowTemplateTriggerTarget):

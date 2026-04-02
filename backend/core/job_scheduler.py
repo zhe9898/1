@@ -5,6 +5,7 @@ import heapq
 import logging
 import time
 from dataclasses import dataclass, field
+from collections import deque
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,6 +26,38 @@ def _node_stale_seconds() -> int:
     from backend.core.scheduling_policy_store import get_policy_store
 
     return get_policy_store().active.freshness.stale_after_seconds
+
+
+def _text_attr(value: object) -> str | None:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    return None
+
+
+def _has_items_attr(value: object) -> bool:
+    if isinstance(value, (list, tuple, set, frozenset, dict)):
+        return bool(value)
+    return False
+
+
+def _int_attr(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    return 0
+
+
+def _bool_attr(value: object) -> bool:
+    return value if isinstance(value, bool) else False
+
+
+def _job_attr(job: Job, name: str) -> object:
+    raw_state = getattr(job, "__dict__", None)
+    if isinstance(raw_state, dict):
+        return raw_state.get(name)
+    return getattr(job, name, None)
 
 
 @dataclass(slots=True)
@@ -496,7 +529,7 @@ class PlacementSolver:
     strongly bias per-node selection without breaking the pull model.
     """
 
-    def solve(
+    def solve(  # noqa: C901
         self,
         jobs: list[Job],
         nodes: list[SchedulerNodeSnapshot],
@@ -529,6 +562,17 @@ class PlacementSolver:
                 metrics["assignments"] = 0
                 metrics["result"] = "no_live_nodes"
             return {}
+
+        fast_plan = self._solve_large_simple_batch(
+            jobs,
+            live_nodes,
+            now=now,
+            accepted_kinds=accepted_kinds,
+            active_jobs_by_node=active_jobs_by_node,
+            metrics=metrics,
+        )
+        if fast_plan is not None:
+            return fast_plan
 
         failed_ids = recent_failed_job_ids or set()
         node_active_jobs = active_jobs_by_node or {}
@@ -596,6 +640,132 @@ class PlacementSolver:
         if metrics is not None and "result" not in metrics:
             metrics["assignments"] = len(plan)
             metrics["result"] = "planned" if plan else "no_assignments"
+        return plan
+
+    def _solve_large_simple_batch(  # noqa: C901
+        self,
+        jobs: list[Job],
+        live_nodes: list[SchedulerNodeSnapshot],
+        *,
+        now: datetime.datetime,
+        accepted_kinds: set[str],
+        active_jobs_by_node: dict[str, list[Job]] | None = None,
+        metrics: dict[str, object] | None = None,
+    ) -> dict[str, str] | None:
+        """Use an O(J log N) assignment path for very large homogeneous batches.
+
+        The default solver builds a full candidate matrix, which is appropriate
+        for heterogeneous or gang workloads but unnecessarily expensive for
+        large batches of equivalent jobs. This fast path is intentionally
+        conservative and only activates when every job shares the same simple
+        routing contract and there is no gang or running-job locality state to
+        preserve.
+        """
+        candidate_pairs = len(jobs) * len(live_nodes)
+        if candidate_pairs < 200_000:
+            return None
+        if active_jobs_by_node:
+            return None
+        if not jobs or not live_nodes:
+            return {}
+
+        first_job = jobs[0]
+        base_kind = str(getattr(first_job, "kind", "") or "")
+        base_queue_class, base_worker_pool = resolve_job_queue_contract_from_record(first_job)
+        if not base_kind:
+            return None
+
+        for job in jobs:
+            job_kind = _text_attr(_job_attr(job, "kind")) or ""
+            requested_queue_class = _text_attr(_job_attr(job, "queue_class"))
+            requested_worker_pool = _text_attr(_job_attr(job, "worker_pool"))
+            if (
+                _job_attr(job, "gang_id")
+                or job_kind != base_kind
+                or (requested_queue_class is not None and requested_queue_class.lower() != base_queue_class)
+                or (requested_worker_pool is not None and requested_worker_pool.lower() != base_worker_pool)
+                or _text_attr(_job_attr(job, "target_os"))
+                or _text_attr(_job_attr(job, "target_arch"))
+                or _text_attr(_job_attr(job, "target_zone"))
+                or _text_attr(_job_attr(job, "target_executor"))
+                or _has_items_attr(_job_attr(job, "required_capabilities"))
+                or _int_attr(_job_attr(job, "required_cpu_cores")) > 0
+                or _int_attr(_job_attr(job, "required_memory_mb")) > 0
+                or _int_attr(_job_attr(job, "required_gpu_vram_mb")) > 0
+                or _int_attr(_job_attr(job, "required_storage_mb")) > 0
+                or _int_attr(_job_attr(job, "max_network_latency_ms")) > 0
+                or _text_attr(_job_attr(job, "data_locality_key"))
+                or _bool_attr(_job_attr(job, "prefer_cached_data"))
+                or _int_attr(_job_attr(job, "power_budget_watts")) > 0
+                or _text_attr(_job_attr(job, "thermal_sensitivity"))
+                or _bool_attr(_job_attr(job, "cloud_fallback_enabled"))
+                or _has_items_attr(_job_attr(job, "affinity_rules"))
+            ):
+                return None
+
+        eligible_nodes = [
+            node
+            for node in live_nodes
+            if (not node.accepted_kinds or base_kind in node.accepted_kinds) and (not node.worker_pools or base_worker_pool in node.worker_pools)
+        ]
+        if not eligible_nodes:
+            if metrics is not None:
+                metrics["assignments"] = 0
+                metrics["result"] = "fast_path_no_eligible_nodes"
+            return {}
+
+        remaining_cap: dict[str, int] = {}
+        total_capacity = 0
+        ordered_node_ids: list[str] = []
+        for node in eligible_nodes:
+            remaining = max(node.max_concurrency - node.active_lease_count, 0)
+            if remaining <= 0:
+                continue
+            remaining_cap[node.node_id] = remaining
+            total_capacity += remaining
+            ordered_node_ids.append(node.node_id)
+
+        if not ordered_node_ids:
+            if metrics is not None:
+                metrics["assignments"] = 0
+                metrics["result"] = "fast_path_no_capacity"
+            return {}
+
+        if total_capacity >= len(jobs):
+            jobs_ordered = jobs
+        else:
+            jobs_ordered = sorted(
+                jobs,
+                key=lambda job: (
+                    -int(getattr(job, "priority", 0) or 0),
+                    getattr(job, "created_at", now),
+                    getattr(job, "job_id", ""),
+                ),
+            )
+
+        node_index = {node.node_id: node for node in eligible_nodes}
+        ordered_node_ids.sort(
+            key=lambda node_id: (
+                remaining_cap[node_id] / max(node_index[node_id].max_concurrency, 1),
+                -float(node_index[node_id].reliability_score),
+                node_id,
+            )
+        )
+        rotating_nodes = deque(ordered_node_ids)
+        plan: dict[str, str] = {}
+        for job in jobs_ordered:
+            if not rotating_nodes:
+                break
+            node_id = rotating_nodes.popleft()
+            plan[str(getattr(job, "job_id"))] = node_id
+            remaining_cap[node_id] -= 1
+            if remaining_cap[node_id] > 0:
+                rotating_nodes.append(node_id)
+
+        if metrics is not None:
+            metrics["feasible_pairs"] = len(jobs_ordered) * len(eligible_nodes)
+            metrics["assignments"] = len(plan)
+            metrics["result"] = "fast_path_planned" if plan else "fast_path_no_assignments"
         return plan
 
     def _apply_global_adjustments(

@@ -63,6 +63,15 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
+def _reset_profile_env_and_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_tenant_db] = override_get_tenant_db
+    monkeypatch.setenv("GATEWAY_PROFILE", "gateway-kernel")
+    monkeypatch.delenv("GATEWAY_PACKS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def mock_service_readiness() -> Any:
     from backend.shared_state import service_readiness
 

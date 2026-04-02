@@ -54,6 +54,14 @@ def write_metadata(profiles: list[str]) -> None:
             "compliance": COMPLIANCE,
             "contracts": {
                 "openapi": [f"openapi/zen70-{profile}.openapi.json" for profile in profiles],
+                "triggers": [
+                    "triggers/README.md",
+                    "triggers/manual-trigger.example.json",
+                ],
+                "reservations": [
+                    "reservations/README.md",
+                    "reservations/manual-reservation.example.json",
+                ],
             },
         },
     )

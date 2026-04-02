@@ -50,12 +50,12 @@ from backend.api import user_management as user_management_router
 from backend.api import workflows as workflows_router
 from backend.api.deps import get_settings
 from backend.api.models import ErrorResponse, HealthResponse
+from backend.core.extension_sdk import bootstrap_extension_runtime
 from backend.core.gateway_profile import get_enabled_router_names as resolve_enabled_router_names
 from backend.core.gateway_profile import (
     normalize_gateway_pack_keys,
     normalize_gateway_profile,
 )
-from backend.core.extension_sdk import bootstrap_extension_runtime
 from backend.core.redis_client import RedisClient, get_logger
 from backend.core.runtime_support import connect_redis_with_retry
 from backend.core.version import get_runtime_version

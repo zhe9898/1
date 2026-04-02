@@ -57,9 +57,7 @@ def register_workflow_template(
     validate_dag(list(steps))
     unknown_kinds = sorted({str(step.get("kind", "")).strip() for step in steps if not is_job_kind_registered(str(step.get("kind", "")).strip())})
     if unknown_kinds:
-        raise ValueError(
-            f"Workflow template '{template_id}' references unregistered job kind(s): {', '.join(unknown_kinds)}"
-        )
+        raise ValueError(f"Workflow template '{template_id}' references unregistered job kind(s): {', '.join(unknown_kinds)}")
 
     _WORKFLOW_TEMPLATE_REGISTRY[template_id] = WorkflowTemplateRegistration(
         template_id=template_id,
@@ -100,8 +98,7 @@ def _validate_template_parameters(registration: WorkflowTemplateRegistration, pa
     except ValidationError as exc:
         error_details = exc.errors()
         raise ValueError(
-            f"Workflow template parameter validation failed for '{registration.template_id}': "
-            f"{len(error_details)} error(s) - {error_details[0]['msg']}"
+            f"Workflow template parameter validation failed for '{registration.template_id}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}"
         ) from exc
     return validated.model_dump(mode="python")
 

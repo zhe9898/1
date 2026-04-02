@@ -8,10 +8,6 @@
       "openapi/zen70-gateway-iot.openapi.json",
       "openapi/zen70-gateway-ops.openapi.json"
     ],
-    "extensions": [
-      "extensions/README.md",
-      "extensions/acme-photo.example.yaml"
-    ],
     "triggers": [
       "triggers/README.md",
       "triggers/manual-trigger.example.json"

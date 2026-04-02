@@ -230,6 +230,19 @@ _BACKEND_TEST_ALLOWLIST: dict[str, str] = {
 }
 
 
+_BACKEND_SOURCE_ALLOWLIST.update(
+    {
+        "api/jobs/lifecycle.py": "job lifecycle 路径共享事务与审计补偿，当前拆分会切断控制面闭环",
+        "core/extension_sdk.py": "extension SDK 启动、注册和 manifest 解析共用契约上下文，当前仍需保持单模块一致性",
+    }
+)
+_BACKEND_TEST_ALLOWLIST.update(
+    {
+        "tests/unit/test_scheduler_auto_tune.py": "scheduler auto tune 集成断言围绕同一调优引擎，拆分会削弱回归可读性",
+    }
+)
+
+
 def _count_lines(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 

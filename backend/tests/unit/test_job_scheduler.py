@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import datetime
+from unittest.mock import MagicMock
 
 from backend.core.backfill_scheduling import get_reservation_manager, reset_reservation_manager
-from backend.core.job_scheduler import build_node_snapshot, build_time_budgeted_placement_plan, select_jobs_for_node
+from backend.core.job_scheduler import PlacementSolver, build_node_snapshot, build_time_budgeted_placement_plan, select_jobs_for_node
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -454,3 +455,104 @@ def test_build_time_budgeted_placement_plan_exposes_solver_timeout(monkeypatch) 
     assert context["attempted"] is True
     assert context["timed_out"] is True
     assert context["reason"] == "time_budget_exceeded"
+
+
+def test_placement_solver_uses_fast_path_for_large_simple_batches() -> None:
+    now = _utcnow()
+    solver = PlacementSolver()
+    nodes = [
+        build_node_snapshot(
+            _node(
+                node_id=f"node-{index}",
+                capabilities=["shell.exec"],
+                worker_pools=["batch"],
+                max_concurrency=8,
+            ),
+            active_lease_count=0,
+            reliability_score=1.0,
+        )
+        for index in range(500)
+    ]
+    jobs = [
+        _job(
+            job_id=f"job-{index}",
+            priority=50 + (index % 10),
+            kind="shell.exec",
+            created_at=now - datetime.timedelta(seconds=index),
+        )
+        for index in range(500)
+    ]
+
+    metrics: dict[str, object] = {}
+    plan = solver.solve(
+        jobs,
+        nodes,
+        now=now,
+        accepted_kinds={"shell.exec"},
+        metrics=metrics,
+    )
+
+    assert len(plan) == len(jobs)
+    assert metrics["result"] == "fast_path_planned"
+
+
+def test_placement_solver_fast_path_treats_missing_mock_attrs_as_unset() -> None:
+    now = _utcnow()
+    solver = PlacementSolver()
+    nodes = [
+        build_node_snapshot(
+            _node(
+                node_id=f"node-{index}",
+                capabilities=["shell.exec"],
+                worker_pools=["batch"],
+                max_concurrency=4,
+            ),
+            active_lease_count=0,
+            reliability_score=1.0,
+        )
+        for index in range(400)
+    ]
+    jobs: list[MagicMock] = []
+    for index in range(600):
+        job = MagicMock()
+        job.job_id = f"mock-job-{index}"
+        job.kind = "shell.exec"
+        job.priority = 50
+        job.gang_id = None
+        job.tenant_id = "default"
+        job.target_os = None
+        job.target_arch = None
+        job.target_zone = None
+        job.target_executor = None
+        job.required_capabilities = []
+        job.required_cpu_cores = 0
+        job.required_memory_mb = 0
+        job.required_gpu_vram_mb = 0
+        job.required_storage_mb = 0
+        job.max_network_latency_ms = None
+        job.data_locality_key = None
+        job.prefer_cached_data = False
+        job.power_budget_watts = None
+        job.thermal_sensitivity = None
+        job.cloud_fallback_enabled = False
+        job.affinity_rules = None
+        job.sla_seconds = None
+        job.estimated_duration_s = 300
+        job.started_at = None
+        job.created_at = now - datetime.timedelta(seconds=index)
+        job.status = "pending"
+        job.deadline_at = None
+        job.parent_job_id = None
+        jobs.append(job)
+
+    metrics: dict[str, object] = {}
+    plan = solver.solve(
+        jobs,
+        nodes,
+        now=now,
+        accepted_kinds={"shell.exec"},
+        metrics=metrics,
+    )
+
+    assert len(plan) == len(jobs)
+    assert metrics["result"] == "fast_path_planned"

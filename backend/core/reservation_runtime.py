@@ -42,10 +42,7 @@ def estimate_node_next_slot_at(
     if node.active_lease_count < max(node.max_concurrency, 1):
         return now
 
-    projected_ends = sorted(
-        projected_job_completion_at(job, now=now, default_duration_s=default_duration_s)
-        for job in active_jobs_on_node
-    )
+    projected_ends = sorted(projected_job_completion_at(job, now=now, default_duration_s=default_duration_s) for job in active_jobs_on_node)
     if not projected_ends:
         return now
     return max(projected_ends[0], now)
@@ -59,11 +56,7 @@ def reservation_structural_blockers(
     accepted_kinds: set[str] | None = None,
 ) -> list[str]:
     """Blockers relevant for future reservations, excluding current saturation."""
-    return [
-        blocker
-        for blocker in node_blockers_for_job(job, node, now=now, accepted_kinds=accepted_kinds)
-        if blocker != "capacity=full"
-    ]
+    return [blocker for blocker in node_blockers_for_job(job, node, now=now, accepted_kinds=accepted_kinds) if blocker != "capacity=full"]
 
 
 def choose_reservation_slot(
