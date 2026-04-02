@@ -658,11 +658,12 @@ class PlacementSolver:
         for heterogeneous or gang workloads but unnecessarily expensive for
         large batches of equivalent jobs. This fast path is intentionally
         conservative and only activates when every job shares the same simple
-        routing contract and there is no gang or running-job locality state to
-        preserve.
+        routing contract so node eligibility can be computed once for the
+        entire batch. Large homogeneous gang workloads can also use this path
+        as long as gang placement stays atomic.
         """
         candidate_pairs = len(jobs) * len(live_nodes)
-        if candidate_pairs < 200_000:
+        if candidate_pairs < 4_096:
             return None
         if active_jobs_by_node:
             return None
@@ -672,7 +673,24 @@ class PlacementSolver:
         first_job = jobs[0]
         base_kind = str(getattr(first_job, "kind", "") or "")
         base_queue_class, base_worker_pool = resolve_job_queue_contract_from_record(first_job)
+        base_target_os = _text_attr(_job_attr(first_job, "target_os"))
+        base_target_arch = _text_attr(_job_attr(first_job, "target_arch"))
+        base_target_zone = _text_attr(_job_attr(first_job, "target_zone"))
+        base_target_executor = _text_attr(_job_attr(first_job, "target_executor"))
+        base_required_capabilities = _job_attr(first_job, "required_capabilities")
+        base_required_cpu = max(_int_attr(_job_attr(first_job, "required_cpu_cores")), 0)
+        base_required_memory = max(_int_attr(_job_attr(first_job, "required_memory_mb")), 0)
+        base_required_gpu = max(_int_attr(_job_attr(first_job, "required_gpu_vram_mb")), 0)
+        base_required_storage = max(_int_attr(_job_attr(first_job, "required_storage_mb")), 0)
+        base_max_latency = max(_int_attr(_job_attr(first_job, "max_network_latency_ms")), 0)
+        base_data_locality_key = _text_attr(_job_attr(first_job, "data_locality_key"))
+        base_prefer_cached = _bool_attr(_job_attr(first_job, "prefer_cached_data"))
+        base_power_budget = max(_int_attr(_job_attr(first_job, "power_budget_watts")), 0)
+        base_thermal_sensitivity = _text_attr(_job_attr(first_job, "thermal_sensitivity"))
+        base_cloud_fallback = _bool_attr(_job_attr(first_job, "cloud_fallback_enabled"))
         if not base_kind:
+            return None
+        if _has_items_attr(base_required_capabilities) or _has_items_attr(_job_attr(first_job, "affinity_rules")):
             return None
 
         for job in jobs:
@@ -680,34 +698,66 @@ class PlacementSolver:
             requested_queue_class = _text_attr(_job_attr(job, "queue_class"))
             requested_worker_pool = _text_attr(_job_attr(job, "worker_pool"))
             if (
-                _job_attr(job, "gang_id")
-                or job_kind != base_kind
+                job_kind != base_kind
                 or (requested_queue_class is not None and requested_queue_class.lower() != base_queue_class)
                 or (requested_worker_pool is not None and requested_worker_pool.lower() != base_worker_pool)
-                or _text_attr(_job_attr(job, "target_os"))
-                or _text_attr(_job_attr(job, "target_arch"))
-                or _text_attr(_job_attr(job, "target_zone"))
-                or _text_attr(_job_attr(job, "target_executor"))
+                or _text_attr(_job_attr(job, "target_os")) != base_target_os
+                or _text_attr(_job_attr(job, "target_arch")) != base_target_arch
+                or _text_attr(_job_attr(job, "target_zone")) != base_target_zone
+                or _text_attr(_job_attr(job, "target_executor")) != base_target_executor
                 or _has_items_attr(_job_attr(job, "required_capabilities"))
-                or _int_attr(_job_attr(job, "required_cpu_cores")) > 0
-                or _int_attr(_job_attr(job, "required_memory_mb")) > 0
-                or _int_attr(_job_attr(job, "required_gpu_vram_mb")) > 0
-                or _int_attr(_job_attr(job, "required_storage_mb")) > 0
-                or _int_attr(_job_attr(job, "max_network_latency_ms")) > 0
-                or _text_attr(_job_attr(job, "data_locality_key"))
-                or _bool_attr(_job_attr(job, "prefer_cached_data"))
-                or _int_attr(_job_attr(job, "power_budget_watts")) > 0
-                or _text_attr(_job_attr(job, "thermal_sensitivity"))
-                or _bool_attr(_job_attr(job, "cloud_fallback_enabled"))
+                or max(_int_attr(_job_attr(job, "required_cpu_cores")), 0) != base_required_cpu
+                or max(_int_attr(_job_attr(job, "required_memory_mb")), 0) != base_required_memory
+                or max(_int_attr(_job_attr(job, "required_gpu_vram_mb")), 0) != base_required_gpu
+                or max(_int_attr(_job_attr(job, "required_storage_mb")), 0) != base_required_storage
+                or max(_int_attr(_job_attr(job, "max_network_latency_ms")), 0) != base_max_latency
+                or _text_attr(_job_attr(job, "data_locality_key")) != base_data_locality_key
+                or _bool_attr(_job_attr(job, "prefer_cached_data")) != base_prefer_cached
+                or max(_int_attr(_job_attr(job, "power_budget_watts")), 0) != base_power_budget
+                or _text_attr(_job_attr(job, "thermal_sensitivity")) != base_thermal_sensitivity
+                or _bool_attr(_job_attr(job, "cloud_fallback_enabled")) != base_cloud_fallback
                 or _has_items_attr(_job_attr(job, "affinity_rules"))
             ):
                 return None
 
-        eligible_nodes = [
-            node
-            for node in live_nodes
-            if (not node.accepted_kinds or base_kind in node.accepted_kinds) and (not node.worker_pools or base_worker_pool in node.worker_pools)
-        ]
+        eligible_nodes: list[SchedulerNodeSnapshot] = []
+        for node in live_nodes:
+            if node.accepted_kinds:
+                if base_kind not in node.accepted_kinds:
+                    continue
+            elif accepted_kinds and base_kind not in accepted_kinds:
+                continue
+            if node.worker_pools and base_worker_pool not in node.worker_pools:
+                continue
+            if base_target_os and node.os != base_target_os:
+                continue
+            if base_target_arch and node.arch != base_target_arch:
+                continue
+            if base_target_zone and node.zone != base_target_zone:
+                continue
+            if base_target_executor and node.executor != base_target_executor:
+                continue
+            if base_required_cpu and node.cpu_cores < base_required_cpu:
+                continue
+            if base_required_memory and node.memory_mb < base_required_memory:
+                continue
+            if base_required_gpu and node.gpu_vram_mb < base_required_gpu:
+                continue
+            if base_required_storage and node.storage_mb < base_required_storage:
+                continue
+            if base_max_latency and node.network_latency_ms > 0 and node.network_latency_ms > base_max_latency:
+                continue
+            if base_data_locality_key and base_prefer_cached and base_data_locality_key not in node.cached_data_keys:
+                continue
+            if base_power_budget and node.power_capacity_watts > 0:
+                available_power = node.power_capacity_watts - node.current_power_watts
+                if available_power < base_power_budget:
+                    continue
+            if base_thermal_sensitivity == "high" and node.thermal_state in ("hot", "throttling"):
+                continue
+            if not base_cloud_fallback and node.cloud_connectivity == "offline":
+                continue
+            eligible_nodes.append(node)
         if not eligible_nodes:
             if metrics is not None:
                 metrics["assignments"] = 0
@@ -731,15 +781,26 @@ class PlacementSolver:
                 metrics["result"] = "fast_path_no_capacity"
             return {}
 
-        if total_capacity >= len(jobs):
-            jobs_ordered = jobs
-        else:
-            jobs_ordered = sorted(
-                jobs,
-                key=lambda job: (
-                    -int(getattr(job, "priority", 0) or 0),
-                    getattr(job, "created_at", now),
-                    getattr(job, "job_id", ""),
+        job_groups: dict[str, list[Job]] = {}
+        ordered_units: list[tuple[str | None, list[Job]]] = []
+        for job in jobs:
+            gang_id = _text_attr(_job_attr(job, "gang_id"))
+            if not gang_id:
+                ordered_units.append((None, [job]))
+                continue
+            members = job_groups.get(gang_id)
+            if members is None:
+                members = []
+                job_groups[gang_id] = members
+                ordered_units.append((gang_id, members))
+            members.append(job)
+
+        if total_capacity < len(jobs):
+            ordered_units.sort(
+                key=lambda item: (
+                    -max(int(_job_attr(job, "priority") or 0) for job in item[1]),
+                    min(getattr(job, "created_at", now) for job in item[1]),
+                    str(item[0] or _job_attr(item[1][0], "job_id") or ""),
                 ),
             )
 
@@ -753,17 +814,44 @@ class PlacementSolver:
         )
         rotating_nodes = deque(ordered_node_ids)
         plan: dict[str, str] = {}
-        for job in jobs_ordered:
+        total_remaining = total_capacity
+        for gang_id, batch_jobs in ordered_units:
+            batch_size = len(batch_jobs)
+            if batch_size <= 0:
+                continue
+            if total_remaining < batch_size:
+                if gang_id:
+                    continue
+                break
             if not rotating_nodes:
                 break
-            node_id = rotating_nodes.popleft()
-            plan[str(getattr(job, "job_id"))] = node_id
-            remaining_cap[node_id] -= 1
-            if remaining_cap[node_id] > 0:
-                rotating_nodes.append(node_id)
+
+            assigned_nodes: list[str] = []
+            for _job in batch_jobs:
+                if not rotating_nodes:
+                    break
+                node_id = rotating_nodes.popleft()
+                assigned_nodes.append(node_id)
+                remaining_cap[node_id] -= 1
+                total_remaining -= 1
+                if remaining_cap[node_id] > 0:
+                    rotating_nodes.append(node_id)
+
+            if len(assigned_nodes) != batch_size:
+                for node_id in assigned_nodes:
+                    remaining_cap[node_id] = remaining_cap.get(node_id, 0) + 1
+                    total_remaining += 1
+                    if remaining_cap[node_id] == 1:
+                        rotating_nodes.appendleft(node_id)
+                if gang_id:
+                    continue
+                break
+
+            for job, node_id in zip(batch_jobs, assigned_nodes, strict=False):
+                plan[str(_job_attr(job, "job_id") or "")] = node_id
 
         if metrics is not None:
-            metrics["feasible_pairs"] = len(jobs_ordered) * len(eligible_nodes)
+            metrics["feasible_pairs"] = len(jobs) * len(eligible_nodes)
             metrics["assignments"] = len(plan)
             metrics["result"] = "fast_path_planned" if plan else "fast_path_no_assignments"
         return plan

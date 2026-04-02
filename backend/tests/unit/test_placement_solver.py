@@ -152,6 +152,26 @@ class TestPlacementSolver:
         # n1 is underloaded → should get spread bonus
         assert candidates[0].breakdown.get("solver_spread", 0) > 0
 
+    def test_large_simple_batch_fast_path_accepts_uniform_resource_requests(self) -> None:
+        solver = PlacementSolver()
+        jobs = [_job(f"j{i}") for i in range(96)]
+        for job in jobs:
+            job.required_cpu_cores = 1
+            job.required_memory_mb = 512
+        nodes = [_node(f"n{i}", max_concurrency=2) for i in range(48)]
+        metrics: dict[str, object] = {}
+
+        plan = solver.solve(
+            jobs,
+            nodes,
+            now=_utcnow(),
+            accepted_kinds={"shell.exec"},
+            metrics=metrics,
+        )
+
+        assert len(plan) == len(jobs)
+        assert metrics.get("result") == "fast_path_planned"
+
     def test_singleton(self) -> None:
         s1 = get_placement_solver()
         s2 = get_placement_solver()
