@@ -4,8 +4,8 @@ import datetime
 import heapq
 import logging
 import time
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
