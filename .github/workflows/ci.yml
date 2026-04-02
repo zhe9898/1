@@ -118,9 +118,11 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           pip install pytest-benchmark
+          # Keep benchmark collection bounded so backend job cannot be canceled
+          # by a long-running micro-benchmark calibration loop on slower runners.
           python -m pytest tests/performance/test_scheduler_bench.py \
             -v --benchmark-only --benchmark-json=benchmark-results.json \
-            --benchmark-max-time=10 --benchmark-min-rounds=3 || true
+            --benchmark-max-time=1 --benchmark-min-rounds=1 || true
           # Run placement stress test with hard failure gate
           python tests/performance/placement_stress.py
 
