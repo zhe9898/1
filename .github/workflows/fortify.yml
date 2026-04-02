@@ -29,7 +29,7 @@ on:
 jobs:
   Fortify-AST-Scan:
     # Use the appropriate runner for building your source code. Ensure dev tools required to build your code are present and configured appropriately (MSBuild, Python, etc).
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
@@ -39,7 +39,7 @@ jobs:
     steps:
       # Check out source code
       - name: Check Out Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Perform SAST and/or SCA scan via Fortify on Demand/Fortify Hosted/ScanCentral SAST/Debricked. Based on
       # configuration, the Fortify GitHub Action can optionally set up the application version/release, generate

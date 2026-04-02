@@ -12,6 +12,7 @@ Run:
 from __future__ import annotations
 
 import datetime
+import os
 import statistics
 import sys
 import time
@@ -95,9 +96,11 @@ def _job(job_id: str, *, priority: int = 50) -> MagicMock:
 
 
 def main() -> None:
-    n_nodes = 1000
-    n_jobs = 10000
-    concurrency_per_node = 16  # total capacity = 16000 slots
+    n_nodes = int(os.getenv("PLACEMENT_STRESS_NODES", "1000"))
+    n_jobs = int(os.getenv("PLACEMENT_STRESS_JOBS", "10000"))
+    concurrency_per_node = int(os.getenv("PLACEMENT_STRESS_CONCURRENCY", "16"))
+    time_threshold_ms = float(os.getenv("PLACEMENT_STRESS_MAX_MS", "5000"))
+    memory_threshold_mb = float(os.getenv("PLACEMENT_STRESS_MAX_MEM_MB", "500"))
 
     print(f"Building {n_nodes} nodes × {n_jobs} jobs …")
     nodes = [_node(f"n{i}", max_concurrency=concurrency_per_node) for i in range(n_nodes)]
@@ -149,14 +152,14 @@ def main() -> None:
 
     # ── Gate checks ──────────────────────────────────────────────────
     ok = True
-    if elapsed_ms > 5000:
-        print(f"FAIL: solve time {elapsed_ms:.0f}ms > 5000ms threshold")
+    if elapsed_ms > time_threshold_ms:
+        print(f"FAIL: solve time {elapsed_ms:.0f}ms > {time_threshold_ms:.0f}ms threshold")
         ok = False
     else:
         print("PASS: solve time within threshold")
 
-    if mem_delta_mb > 500:
-        print(f"FAIL: memory delta {mem_delta_mb:.0f}MB > 500MB threshold")
+    if mem_delta_mb > memory_threshold_mb:
+        print(f"FAIL: memory delta {mem_delta_mb:.0f}MB > {memory_threshold_mb:.0f}MB threshold")
         ok = False
     else:
         print("PASS: memory within threshold")

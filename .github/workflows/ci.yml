@@ -116,15 +116,21 @@ jobs:
           JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
           ZEN70_ENV: ""
           PYTHONPATH: ${{ github.workspace }}
+          PLACEMENT_STRESS_NODES: "400"
+          PLACEMENT_STRESS_JOBS: "4000"
+          PLACEMENT_STRESS_CONCURRENCY: "16"
+          PLACEMENT_STRESS_MAX_MS: "5000"
+          PLACEMENT_STRESS_MAX_MEM_MB: "500"
         run: |
-          pip install pytest-benchmark
+          pip install pytest-benchmark pytest-timeout
           # Keep benchmark collection bounded so backend job cannot be canceled
           # by a long-running micro-benchmark calibration loop on slower runners.
-          python -m pytest tests/performance/test_scheduler_bench.py \
+          timeout 180s python -m pytest tests/performance/test_scheduler_bench.py \
             -v --benchmark-only --benchmark-json=benchmark-results.json \
-            --benchmark-max-time=1 --benchmark-min-rounds=1 || true
+            --benchmark-max-time=1 --benchmark-min-rounds=1 \
+            --timeout=120 --timeout-method=thread || true
           # Run placement stress test with hard failure gate
-          python tests/performance/placement_stress.py
+          timeout 180s python tests/performance/placement_stress.py
 
       - name: Upload benchmark results
         if: always()
