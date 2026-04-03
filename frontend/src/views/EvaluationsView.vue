@@ -210,7 +210,7 @@ async function submitCreate(payload: Record<string, unknown>): Promise<void> {
 }
 
 function executeAction(evaluationId: string, action: ControlAction): void {
-  if (action.enabled === false) return;
+  if (!action.enabled) return;
   pendingEvaluationId.value = evaluationId;
   pendingAction.value = action;
 }
