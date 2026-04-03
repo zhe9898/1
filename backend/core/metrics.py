@@ -8,7 +8,7 @@ ZEN70 性能监控组件 (法典 4.0 & 7.0 契约)
 """
 
 import time
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import Request, Response
 from prometheus_client import Counter, Gauge, Histogram
@@ -36,6 +36,26 @@ ACTIVE_CONNECTIONS = Gauge(
 )
 
 
+def _normalize_endpoint_label(request: Request, raw_path: str) -> str:
+    scope: Any = getattr(request, "scope", None)
+    if isinstance(scope, dict):
+        route = scope.get("route")
+        route_path = getattr(route, "path", None)
+        if isinstance(route_path, str) and route_path.strip():
+            return route_path
+    segments = [part for part in raw_path.split("/") if part]
+    normalized: list[str] = []
+    for part in segments:
+        token = part.strip()
+        if not token:
+            continue
+        if token.isdigit() or len(token) >= 16:
+            normalized.append(":id")
+            continue
+        normalized.append(token)
+    return "/" + "/".join(normalized)
+
+
 async def metrics_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """
     轻量级 FastAPI Prometheus 中间件。
@@ -47,6 +67,7 @@ async def metrics_middleware(request: Request, call_next: Callable[[Request], Aw
         return await call_next(request)
 
     method = request.method
+    endpoint_label = _normalize_endpoint_label(request, path)
 
     # 锁定活跃连接，支持防脑裂挂盘观测
     ACTIVE_CONNECTIONS.inc()
@@ -63,7 +84,7 @@ async def metrics_middleware(request: Request, call_next: Callable[[Request], Aw
         duration = time.perf_counter() - start_time
 
         # 记录指标
-        API_REQUESTS_TOTAL.labels(method=method, endpoint=path, status=status).inc()
-        API_REQUEST_DURATION.labels(method=method, endpoint=path).observe(duration)
+        API_REQUESTS_TOTAL.labels(method=method, endpoint=endpoint_label, status=status).inc()
+        API_REQUEST_DURATION.labels(method=method, endpoint=endpoint_label).observe(duration)
 
     return response

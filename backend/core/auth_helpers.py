@@ -9,6 +9,8 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
+import threading
+import time
 from typing import cast
 
 from fastapi import Request, status
@@ -233,6 +235,25 @@ def is_private_ip(ip: str) -> bool:
 WEBAUTHN_RATE_KEY = "webauthn:rate:"
 WEBAUTHN_RATE_MAX = 20
 WEBAUTHN_RATE_WINDOW = 60
+_LOCAL_WEBAUTHN_RATE_LOCK = threading.Lock()
+_LOCAL_WEBAUTHN_RATE_BUCKETS: dict[str, tuple[int, float]] = {}
+
+
+def _check_local_webauthn_rate_limit(client_ip_str: str) -> None:
+    now = time.monotonic()
+    with _LOCAL_WEBAUTHN_RATE_LOCK:
+        count, window_end = _LOCAL_WEBAUTHN_RATE_BUCKETS.get(client_ip_str, (0, now + WEBAUTHN_RATE_WINDOW))
+        if now >= window_end:
+            count = 0
+            window_end = now + WEBAUTHN_RATE_WINDOW
+        count += 1
+        _LOCAL_WEBAUTHN_RATE_BUCKETS[client_ip_str] = (count, window_end)
+        if count > WEBAUTHN_RATE_MAX:
+            raise zen(
+                CODE_TOO_MANY,
+                "Too many authentication attempts, try again later",
+                status.HTTP_429_TOO_MANY_REQUESTS,
+            )
 
 
 async def check_webauthn_rate_limit(
@@ -245,8 +266,13 @@ async def check_webauthn_rate_limit(
     Redis 不可用时放行（由极刑超时兜底），避免限流故障阻塞认证。
     """
     if redis is None:
+        _check_local_webauthn_rate_limit(client_ip_str)
         return
-    count = await redis.incr_with_expire(f"{WEBAUTHN_RATE_KEY}{client_ip_str}", WEBAUTHN_RATE_WINDOW)
+    try:
+        count = await redis.incr_with_expire(f"{WEBAUTHN_RATE_KEY}{client_ip_str}", WEBAUTHN_RATE_WINDOW)
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError):
+        _check_local_webauthn_rate_limit(client_ip_str)
+        return
     if count > WEBAUTHN_RATE_MAX:
         logger.warning(
             json.dumps(

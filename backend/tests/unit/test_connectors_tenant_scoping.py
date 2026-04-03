@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -92,13 +93,14 @@ async def test_invoke_connector_scopes_lookup_to_current_tenant() -> None:
     db.flush = AsyncMock()
     db.add = MagicMock()
 
-    response = await invoke_connector(
-        "connector-a",
-        ConnectorInvokeRequest(action="ping", payload={}),
-        current_user={"sub": "admin", "tenant_id": "tenant-a"},
-        db=db,
-        redis=None,
-    )
+    with patch("backend.api.connectors.submit_job", new=AsyncMock(return_value=SimpleNamespace(job_id="job-1"))):
+        response = await invoke_connector(
+            "connector-a",
+            ConnectorInvokeRequest(action="ping", payload={}),
+            current_user={"sub": "admin", "tenant_id": "tenant-a"},
+            db=db,
+            redis=None,
+        )
 
     stmt = db.execute.await_args.args[0]
     rendered = _render_sql(stmt)

@@ -1,7 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import datetime
-import uuid
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
@@ -9,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from backend.api.connectors_helpers import (  # noqa: F401 – re-export
+from backend.api.connectors_helpers import (  # noqa: F401 鈥?re-export
     ConnectorInvokeRequest,
     ConnectorInvokeResponse,
     ConnectorResponse,
@@ -24,14 +23,14 @@ from backend.api.connectors_helpers import (  # noqa: F401 – re-export
 )
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_user, get_redis, get_tenant_db
+from backend.api.jobs.models import JobCreateRequest
+from backend.api.jobs.submission import submit_job
 from backend.api.ui_contracts import ResourceSchemaResponse
 from backend.core.connector_kind_registry import validate_connector_config
 from backend.core.errors import zen
 from backend.core.quota import check_connector_quota
 from backend.core.redis_client import CHANNEL_CONNECTOR_EVENTS, RedisClient
 from backend.models.connector import Connector
-from backend.models.job import Job
-from backend.models.job_log import JobLog
 
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
 
@@ -147,7 +146,6 @@ async def invoke_connector(
     db: AsyncSession = Depends(get_tenant_db),
     redis: RedisClient | None = Depends(get_redis),
 ) -> ConnectorInvokeResponse:
-    actor = str(current_user.get("sub") or current_user.get("username") or "unknown")
     tenant_id = str(current_user.get("tenant_id") or "default")
     result = await db.execute(_connector_stmt_for_tenant(tenant_id).where(Connector.connector_id == id))
     connector = result.scalars().first()
@@ -168,34 +166,26 @@ async def invoke_connector(
             details={"connector_id": id, "status": connector.status},
         )
 
-    job_id = str(uuid.uuid4())
-    job = Job(
-        tenant_id=connector.tenant_id,
-        job_id=job_id,
-        kind="connector.invoke",
-        status="pending",
-        connector_id=connector.connector_id,
-        priority=60,
-        required_capabilities=["connector.invoke"],
-        source="connectors.invoke",
-        created_by=actor,
-        payload={
-            "connector_id": connector.connector_id,
-            "connector_kind": connector.kind,
-            "action": payload.action,
-            "payload": payload.payload,
-        },
-        lease_seconds=payload.lease_seconds,
+    submitted = await submit_job(
+        JobCreateRequest(
+            kind="connector.invoke",
+            connector_id=connector.connector_id,
+            priority=60,
+            required_capabilities=["connector.invoke"],
+            source="connectors.invoke",
+            payload={
+                "connector_id": connector.connector_id,
+                "connector_kind": connector.kind,
+                "action": payload.action,
+                "payload": payload.payload,
+            },
+            lease_seconds=payload.lease_seconds,
+        ),
+        current_user=current_user,
+        db=db,
+        redis=redis,
     )
-    db.add(job)
-    db.add(
-        JobLog(
-            tenant_id=connector.tenant_id,
-            job_id=job_id,
-            level="info",
-            message=f"invoke accepted for connector={connector.connector_id} action={payload.action}",
-        )
-    )
+    job_id = submitted.job_id
     connector.last_invoke_status = "pending"
     connector.last_invoke_message = "job queued"
     connector.last_invoke_job_id = job_id
@@ -284,3 +274,5 @@ async def test_connector(
         },
     )
     return response
+
+

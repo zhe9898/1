@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import hmac
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -445,7 +446,7 @@ async def receive_trigger_webhook(
         )
     if webhook_config.secret:
         provided_secret = request.headers.get(webhook_config.secret_header, "")
-        if provided_secret != webhook_config.secret:
+        if not hmac.compare_digest(str(provided_secret), str(webhook_config.secret)):
             raise zen(
                 "ZEN-TRIG-4010",
                 "Webhook secret mismatch",

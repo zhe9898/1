@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.core.dispatch_lifecycle import (
+    AdmissionStage,
     DispatchContext,
     DispatchPipeline,
     DispatchResult,
+    FilteringStage,
     apply_placement_hints,
     get_dispatch_pipeline,
 )
@@ -159,3 +161,49 @@ class TestDispatchPipelineSingleton:
         assert "business" in names
         assert "placement" in names
         assert "post_dispatch" in names
+
+
+class TestGovernanceStages:
+    @pytest.mark.asyncio
+    async def test_admission_stage_requires_db_session(self) -> None:
+        stage = AdmissionStage()
+        ctx = DispatchContext(tenant_id="t1", node_id="n1", now=_utcnow())
+        with pytest.raises(RuntimeError, match="db_session"):
+            await stage.execute(ctx)
+
+    @pytest.mark.asyncio
+    async def test_filtering_stage_executor_validation_fails_closed_without_executor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _Cand:
+            job_id = "j1"
+            kind = "connector.invoke"
+
+        ctx = DispatchContext(
+            tenant_id="t1",
+            node_id="n1",
+            now=_utcnow(),
+            candidates=[_Cand()],
+            feature_flags={"executor_validation": True},
+            executor="",
+        )
+
+        monkeypatch.setattr(
+            "backend.core.failure_control_plane.get_failure_control_plane",
+            lambda: MagicMock(
+                is_in_burst=MagicMock(return_value=False),
+                get_kind_circuit_state=AsyncMock(return_value="closed"),
+            ),
+        )
+        monkeypatch.setattr(
+            "backend.core.governance_facade.get_governance_facade",
+            lambda: MagicMock(
+                should_skip_backoff=MagicMock(return_value=False),
+                filter_by_executor_contract=MagicMock(return_value=MagicMock(compatible=True, reason=None)),
+            ),
+        )
+
+        stage = FilteringStage()
+        await stage.execute(ctx)
+        assert ctx.candidates == []

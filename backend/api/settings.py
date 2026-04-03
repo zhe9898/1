@@ -64,8 +64,10 @@ def _require_db(db: AsyncSession | None) -> AsyncSession:
     return db
 
 
-async def _ensure_defaults(db: AsyncSession | None) -> AsyncSession:
+async def _ensure_defaults(db: AsyncSession | None, *, write_defaults: bool = True) -> AsyncSession:
     session = _require_db(db)
+    if not write_defaults:
+        return session
 
     existing_flags = await session.execute(select(FeatureFlag.key))
     existing_flag_keys = {row[0] for row in existing_flags.all()}
@@ -125,12 +127,14 @@ async def list_flags(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, object]:
     require_superadmin_role(current_user)
-    session = await _ensure_defaults(db)
+    session = await _ensure_defaults(db, write_defaults=False)
     result = await session.execute(select(FeatureFlag).order_by(FeatureFlag.category, FeatureFlag.key))
     flags = result.scalars().all()
 
     data: list[dict[str, object]] = []
+    seen_keys: set[str] = set()
     for flag in flags:
+        seen_keys.add(flag.key)
         data.append(
             {
                 "key": flag.key,
@@ -140,6 +144,19 @@ async def list_flags(
                 "updated_at": flag.updated_at.isoformat() if flag.updated_at else None,
             }
         )
+    for default in DEFAULT_FLAGS:
+        if default.key in seen_keys:
+            continue
+        data.append(
+            {
+                "key": default.key,
+                "enabled": default.enabled,
+                "description": default.description,
+                "category": default.category,
+                "updated_at": None,
+            }
+        )
+    data.sort(key=lambda item: (str(item.get("category") or ""), str(item.get("key") or "")))
     return {"status": "ok", "count": len(data), "data": data}
 
 
@@ -189,12 +206,17 @@ async def list_config(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, object]:
     require_superadmin_role(current_user)
-    session = await _ensure_defaults(db)
+    session = await _ensure_defaults(db, write_defaults=False)
     result = await session.execute(select(SystemConfig))
     configs = result.scalars().all()
+    merged: dict[str, dict[str, str | None]] = {
+        config.key: {"value": config.value, "description": config.description} for config in configs
+    }
+    for default in DEFAULT_CONFIGS:
+        merged.setdefault(default.key, {"value": default.value, "description": default.description})
     return {
         "status": "ok",
-        "data": {config.key: {"value": config.value, "description": config.description} for config in configs},
+        "data": merged,
     }
 
 
@@ -239,9 +261,11 @@ async def get_settings_schema(
     current_user: dict = Depends(get_current_user),
 ) -> SettingsSchemaResponse:
     require_superadmin_role(current_user)
-    session = await _ensure_defaults(db)
+    session = await _ensure_defaults(db, write_defaults=False)
     result = await session.execute(select(SystemConfig))
     configs = {item.key: item.value for item in result.scalars().all()}
+    for default in DEFAULT_CONFIGS:
+        configs.setdefault(default.key, default.value)
     raw_profile = os.getenv("GATEWAY_PROFILE", "gateway-kernel")
     raw_packs = os.getenv("GATEWAY_PACKS", "")
     runtime_profile = normalize_gateway_profile(raw_profile)

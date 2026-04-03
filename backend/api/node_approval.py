@@ -36,13 +36,17 @@ class NodeApprovalResponse(BaseModel):
 
 
 def _to_approval_response(node: Node) -> NodeApprovalResponse:
+    meta = dict(node.metadata_json or {})
+    approved_by = meta.get("approved_by")
+    approved_at = meta.get("approved_at")
+    rejection_reason = meta.get("rejection_reason")
     return NodeApprovalResponse(
         node_id=node.node_id,
         name=node.name,
         enrollment_status=node.enrollment_status,
-        approved_by=getattr(node, "approved_by", None),
-        approved_at=getattr(node, "approved_at", None) and getattr(node, "approved_at").isoformat(),
-        rejection_reason=getattr(node, "rejection_reason", None),
+        approved_by=str(approved_by) if isinstance(approved_by, str) else None,
+        approved_at=str(approved_at) if isinstance(approved_at, str) else None,
+        rejection_reason=str(rejection_reason) if isinstance(rejection_reason, str) else None,
     )
 
 
@@ -106,16 +110,14 @@ async def approve_node(
     node.updated_at = now
 
     await db.flush()
+    response = _to_approval_response(node)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_NODE_EVENTS,
         "approved",
         {"node_id": node.node_id, "approved_by": current_user["username"]},
     )
-
-    response = _to_approval_response(node)
-    response.approved_by = current_user["username"]
-    response.approved_at = now.isoformat()
     return response
 
 
@@ -148,13 +150,12 @@ async def reject_node(
     node.updated_at = now
 
     await db.flush()
+    response = _to_approval_response(node)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_NODE_EVENTS,
         "rejected",
         {"node_id": node.node_id, "rejected_by": current_user["username"]},
     )
-
-    response = _to_approval_response(node)
-    response.rejection_reason = payload.reason
     return response

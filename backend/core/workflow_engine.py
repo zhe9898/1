@@ -21,7 +21,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.errors import zen
-from backend.models.job import Job
 from backend.models.workflow import Workflow, WorkflowStep
 
 # ── DAG Validation ────────────────────────────────────────────────────────
@@ -175,24 +174,28 @@ async def _advance_workflow(
             payload["_workflow_id"] = workflow.workflow_id
             payload["_step_id"] = step_id
             payload["_context"] = {dep: step_records[dep].result for dep in deps if step_records[dep].result}
+            from backend.api.jobs.models import JobCreateRequest
+            from backend.api.jobs.submission import submit_job
 
-            job = Job(
-                tenant_id=workflow.tenant_id,
-                job_id=uuid.uuid4().hex,
-                kind=step_def["kind"],
-                source="workflow-engine",
-                status="pending",
-                priority=step_def.get("priority", 60),
-                max_retries=step_def.get("max_retries", 1),
-                payload=payload,
-                created_at=now,
-                updated_at=now,
+            submitted = await submit_job(
+                JobCreateRequest(
+                    kind=step_def["kind"],
+                    source="workflow-engine",
+                    priority=step_def.get("priority", 60),
+                    max_retries=step_def.get("max_retries", 1),
+                    payload=payload,
+                ),
+                current_user={
+                    "tenant_id": workflow.tenant_id,
+                    "sub": workflow.created_by or "workflow-engine",
+                    "username": workflow.created_by or "workflow-engine",
+                },
+                db=db,
+                redis=None,
             )
-            db.add(job)
-            await db.flush()
 
             ws.status = "pending"
-            ws.job_id = job.job_id
+            ws.job_id = submitted.job_id
             ws.started_at = now
 
     workflow.updated_at = now

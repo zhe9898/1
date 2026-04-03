@@ -1,6 +1,4 @@
-"""
-ZEN70 Auth Invite - OOB 邀请系统（创建、WebAuthn 绑定、降级登录）
-"""
+﻿"""ZEN70 invite-based auth flows."""
 
 from __future__ import annotations
 
@@ -47,6 +45,7 @@ except (ImportError, RuntimeError):
 router = APIRouter()
 
 INVITE_TOKEN_PREFIX = "zen70:invite:"
+INVITE_TOKEN_LOCK_PREFIX = "zen70:invite-lock:"
 INVITE_FALLBACK_CONFIRM_VALUE = "degrade-login"
 
 
@@ -57,8 +56,37 @@ def _assert_invite_fallback_confirmation(confirm: str | None) -> None:
         CODE_BAD_REQUEST,
         "Invite fallback login requires explicit confirmation",
         status.HTTP_400_BAD_REQUEST,
-        recovery_hint="Resend the request with X-Invite-Fallback-Confirm: degrade-login after the operator confirms degraded access",
+        recovery_hint="Resend the request with X-Invite-Fallback-Confirm: degrade-login after operator confirmation",
     )
+
+
+async def _consume_invite_token(redis: RedisClient, token: str) -> dict[str, object]:
+    token_key = f"{INVITE_TOKEN_PREFIX}{token}"
+    lock_key = f"{INVITE_TOKEN_LOCK_PREFIX}{token}"
+    lock_acquired = await redis.acquire_lock(lock_key, ttl=10)
+    if not lock_acquired:
+        raise zen("ZEN-AUTH-4092", "Invite token is being consumed", status_code=409, recovery_hint="Retry after a moment")
+    try:
+        token_data_str = await redis.get(token_key)
+        if not token_data_str:
+            raise zen(
+                "ZEN-AUTH-4031",
+                "Invite token expired or not found",
+                status_code=status.HTTP_403_FORBIDDEN,
+                recovery_hint="Generate a new invite and retry",
+            )
+        try:
+            payload = json.loads(token_data_str)
+        except json.JSONDecodeError as exc:
+            raise zen(
+                CODE_SERVER_ERROR,
+                "Invite token payload is invalid",
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ) from exc
+        await redis.delete(token_key)
+        return payload
+    finally:
+        await redis.release_lock(lock_key)
 
 
 @router.post("/invites", response_model=InviteResponse)
@@ -68,7 +96,7 @@ async def create_invite(
     redis: RedisClient = Depends(get_redis),
     current_admin: dict[str, str] = Depends(get_current_admin),
 ) -> InviteResponse:
-    """生成一次性邀请凭证（仅管理员可用）"""
+    """Create a one-time invite token (admin only)."""
     require_db_redis(db, redis)
     from backend.api.auth_shared import bind_admin_scope
 
@@ -96,18 +124,23 @@ async def invite_webauthn_register_begin(
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
 ) -> WebAuthnRegisterBeginResponse:
-    """带外传递链接 - 开始注册 WebAuthn"""
+    """Invite link: start WebAuthn registration."""
     require_db_redis(db, redis)
     token_key = f"{INVITE_TOKEN_PREFIX}{token}"
     token_data_str = await redis.get(token_key)
     if not token_data_str:
-        raise zen("ZEN-AUTH-4031", "凭证已失效或不存在", status_code=status.HTTP_403_FORBIDDEN, recovery_hint="请重新生成邀请链接后再试")
+        raise zen(
+            "ZEN-AUTH-4031",
+            "Invite token expired or not found",
+            status_code=status.HTTP_403_FORBIDDEN,
+            recovery_hint="Generate a new invite and retry",
+        )
 
     user_id = json.loads(token_data_str)["user_id"]
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise zen("ZEN-AUTH-4041", "绑定用户不存在", status_code=404, recovery_hint="请检查邀请链接是否有效或重新发起绑定")
+        raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
     assert_user_active(user, flow="invite_webauthn_register_begin", rid="invite-register", username=user.username)
 
     user_id_bytes = str(user.id).encode("utf-8")
@@ -131,19 +164,23 @@ async def invite_webauthn_register_complete(
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
 ) -> dict[str, object]:
-    """带外传递链接 - 完成 WebAuthn 注册并销毁 Token"""
+    """Invite link: complete WebAuthn registration and consume token."""
     require_db_redis(db, redis)
-    token_key = f"{INVITE_TOKEN_PREFIX}{token}"
-    token_data_str = await redis.get(token_key)
-    if not token_data_str:
-        raise zen("ZEN-AUTH-4031", "凭证已失效或不存在", status_code=status.HTTP_403_FORBIDDEN, recovery_hint="请重新生成邀请链接后再试")
 
-    user_id = json.loads(token_data_str)["user_id"]
+    token_payload = await _consume_invite_token(redis, token)
+    user_id = token_payload.get("user_id")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise zen("ZEN-AUTH-4041", "绑定用户不存在", status_code=404, recovery_hint="请检查邀请链接是否有效或重新发起绑定")
-    assert_user_active(user, flow="invite_webauthn_register_complete", rid=request_id(request), username=user.username, client_ip_str=client_ip(request))
+        raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
+
+    assert_user_active(
+        user,
+        flow="invite_webauthn_register_complete",
+        rid=request_id(request),
+        username=user.username,
+        client_ip_str=client_ip(request),
+    )
 
     challenge_b64, _data = await consume_challenge(redis, req.credential, "register", username=user.username)
     origin = origin_from_request(request)
@@ -153,8 +190,13 @@ async def invite_webauthn_register_complete(
             expected_challenge=expected_challenge_bytes(challenge_b64),
             origin=origin,
         )
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-        raise zen("ZEN-AUTH-4002", f"WebAuthn verification failed: {e}", status_code=status.HTTP_400_BAD_REQUEST, recovery_hint="请重新发起注册流程")
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+        raise zen(
+            "ZEN-AUTH-4002",
+            f"WebAuthn verification failed: {exc}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            recovery_hint="Restart registration and retry",
+        ) from exc
 
     cred_id_b64 = bytes_to_base64url(verification.credential_id)  # type: ignore[attr-defined]
     raw_dev = req.credential.get("deviceName") or (req.credential.get("response") or {}).get("deviceName")  # type: ignore[attr-defined]
@@ -167,10 +209,15 @@ async def invite_webauthn_register_complete(
     )
     db.add(new_cred)
     await db.flush()
-    await redis.delete(token_key)
+    await db.commit()
 
     body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id)
-    return {"status": "ok", "message": "物理绑定完成，Token已销毁", "access_token": body["access_token"], "token_type": body["token_type"]}
+    return {
+        "status": "ok",
+        "message": "WebAuthn credential registered and invite consumed",
+        "access_token": body["access_token"],
+        "token_type": body["token_type"],
+    }
 
 
 @router.post("/invites/{token}/fallback/login")
@@ -181,7 +228,7 @@ async def invite_fallback_login(
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
 ) -> dict[str, object]:
-    """带外传递链接 - 大陆安卓设备降级免密直连并销毁 Token"""
+    """Invite link: fallback login with explicit operator confirmation."""
     require_db_redis(db, redis)
     rid, cip = request_id(request), client_ip(request)
     try:
@@ -190,19 +237,20 @@ async def invite_fallback_login(
         log_auth("invite_fallback_login", False, rid, client_ip_str=cip, detail="missing_explicit_confirmation")
         raise
 
-    token_key = f"{INVITE_TOKEN_PREFIX}{token}"
-    token_data_str = await redis.get(token_key)
-    if not token_data_str:
-        raise zen("ZEN-AUTH-4031", "凭证已失效或不存在", status_code=status.HTTP_403_FORBIDDEN, recovery_hint="请重新生成邀请链接后再试")
-
-    user_id = json.loads(token_data_str)["user_id"]
+    token_payload = await _consume_invite_token(redis, token)
+    user_id = token_payload.get("user_id")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise zen("ZEN-AUTH-4041", "绑定用户不存在", status_code=404, recovery_hint="请检查邀请链接是否有效或重新发起绑定")
+        raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
     assert_user_active(user, flow="invite_fallback_login", rid=rid, username=user.username, client_ip_str=cip)
 
-    await redis.delete(token_key)
     body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id)
     log_auth("invite_fallback_login", True, rid, username=user.username, client_ip_str=cip, detail="degraded_access_confirmed")
-    return {"status": "ok", "message": "免密登入成功 (降级模式)，Token已销毁", "access_token": body["access_token"], "token_type": body["token_type"]}
+    return {
+        "status": "ok",
+        "message": "Fallback login succeeded and invite consumed",
+        "access_token": body["access_token"],
+        "token_type": body["token_type"],
+    }
+

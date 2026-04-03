@@ -162,13 +162,13 @@ async def requeue_job_from_dead_letter(
     )
 
     response = _to_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
         "requeued",
         {"job": response.model_dump(mode="json"), "source": "dlq", "reason": payload.reason},
     )
-    await db.commit()
 
     return response
 

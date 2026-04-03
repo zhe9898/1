@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -160,13 +161,14 @@ async def test_invoke_connector_persists_last_invoke_result() -> None:
     db.execute.return_value = _result_first(connector)
     db.flush = AsyncMock()
 
-    response = await invoke_connector(
-        "conn-a",
-        payload=ConnectorInvokeRequest(action="ping", payload={"from": "test"}, lease_seconds=30),
-        current_user={"sub": "admin"},
-        db=db,
-        redis=None,
-    )
+    with patch("backend.api.connectors.submit_job", new=AsyncMock(return_value=SimpleNamespace(job_id="job-1"))):
+        response = await invoke_connector(
+            "conn-a",
+            payload=ConnectorInvokeRequest(action="ping", payload={"from": "test"}, lease_seconds=30),
+            current_user={"sub": "admin"},
+            db=db,
+            redis=None,
+        )
 
     assert response.accepted is True
     assert connector.last_invoke_status == "pending"

@@ -148,6 +148,8 @@ async def register_complete(
         device_name=device_name,
     )
     db.add(cred)  # type: ignore[union-attr]
+    await db.flush()  # type: ignore[union-attr]
+    await db.commit()  # type: ignore[union-attr]
     log_auth("webauthn_register_complete", True, rid, username=username, client_ip_str=cip)  # type: ignore[arg-type]
     return {"status": "ok", "message": "Credential registered"}
 

@@ -50,9 +50,9 @@ async def test_settings_list_flags_shows_disabled_flags_to_superadmin() -> None:
             current_user={"sub": "1", "role": "superadmin", "tenant_id": "default"},
         )
 
-    assert response["count"] == 1
-    assert response["data"][0]["key"] == "test.flag"
-    assert response["data"][0]["enabled"] is False
+    assert response["count"] >= 1
+    test_flag = next(item for item in response["data"] if item["key"] == "test.flag")
+    assert test_flag["enabled"] is False
 
 
 @pytest.mark.asyncio

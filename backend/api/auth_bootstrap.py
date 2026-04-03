@@ -23,6 +23,7 @@ from backend.models.user import User
 router = APIRouter()
 
 BCRYPT_ROUNDS = 12
+BOOTSTRAP_LOCK_KEY = "auth:bootstrap:lock"
 
 
 def _build_token_response_model(
@@ -62,24 +63,35 @@ async def bootstrap(
     require_db_redis(db, redis)
     from backend.api.auth_shared import first_user_or_schema_unavailable
 
-    first_user = await first_user_or_schema_unavailable(db)
-    if first_user is not None:
-        raise zen(CODE_FORBIDDEN, "System already initialized", status.HTTP_403_FORBIDDEN)
+    locked = await redis.acquire_lock(BOOTSTRAP_LOCK_KEY, ttl=15)
+    if not locked:
+        raise zen(
+            CODE_FORBIDDEN,
+            "Bootstrap already in progress",
+            status.HTTP_403_FORBIDDEN,
+        )
+    try:
+        first_user = await first_user_or_schema_unavailable(db)
+        if first_user is not None:
+            raise zen(CODE_FORBIDDEN, "System already initialized", status.HTTP_403_FORBIDDEN)
 
-    hashed_pw = bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
-    user = User(
-        username=req.username,
-        display_name=req.display_name,
-        role="admin",
-        password_hash=hashed_pw,
-        tenant_id="admin_tenant",
-    )
-    db.add(user)  # type: ignore[union-attr]
-    await db.flush()  # type: ignore[union-attr]
-    return _build_token_response_model(
-        str(user.id),
-        user.username,
-        user.role,
-        tenant_id=user.tenant_id,
-        ai_route_preference=user.ai_route_preference or "auto",
-    )
+        hashed_pw = bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
+        user = User(
+            username=req.username,
+            display_name=req.display_name,
+            role="admin",
+            password_hash=hashed_pw,
+            tenant_id="admin_tenant",
+        )
+        db.add(user)  # type: ignore[union-attr]
+        await db.flush()  # type: ignore[union-attr]
+        await db.commit()  # type: ignore[union-attr]
+        return _build_token_response_model(
+            str(user.id),
+            user.username,
+            user.role,
+            tenant_id=user.tenant_id,
+            ai_route_preference=user.ai_route_preference or "auto",
+        )
+    finally:
+        await redis.release_lock(BOOTSTRAP_LOCK_KEY)

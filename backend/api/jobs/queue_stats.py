@@ -107,6 +107,7 @@ async def update_job_priority(
         level="info",
         tenant_id=job.tenant_id,
     )
+    await db.commit()
 
     # Publish event
     await publish_control_event(
@@ -122,8 +123,6 @@ async def update_job_priority(
             "reason": payload.reason,
         },
     )
-
-    await db.commit()
 
     return JobPriorityUpdateResponse(
         job_id=job.job_id,

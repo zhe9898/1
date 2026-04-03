@@ -45,6 +45,8 @@ class DispatchContext:
     now: datetime.datetime
     accepted_kinds: set[str] = field(default_factory=set)
     limit: int = 5
+    db_session: Any | None = None
+    executor: str | None = None
 
     # Populated by admission / load stage
     feature_flags: dict[str, bool] = field(default_factory=dict)
@@ -138,9 +140,11 @@ class AdmissionStage:
     async def execute(self, ctx: DispatchContext) -> bool:
         from backend.core.governance_facade import get_governance_facade
 
+        if ctx.db_session is None:
+            raise RuntimeError("DispatchContext.db_session is required for admission checks")
         facade = get_governance_facade()
         result = await facade.pre_dispatch_admission(
-            _noop_db_stub(),
+            ctx.db_session,
             tenant_id=ctx.tenant_id,
             node_id=ctx.node_id,
             now=ctx.now,
@@ -184,8 +188,13 @@ class FilteringStage:
                 if state == "open":
                     continue
             if ctx.feature_flags.get("executor_validation") and kind:
+                executor = (ctx.executor or "").strip()
+                # Fail closed when executor context is missing so contract checks
+                # cannot be bypassed by passing an empty executor identifier.
+                if not executor:
+                    continue
                 ef = facade.filter_by_executor_contract(
-                    "",  # executor filled by dispatch.py caller
+                    executor,
                     kind,
                 )
                 if not ef.compatible:
@@ -320,24 +329,6 @@ def get_dispatch_pipeline() -> DispatchPipeline:
     if _pipeline is None:
         _pipeline = DispatchPipeline()
     return _pipeline
-
-
-# ============================================================================
-# Helpers
-# ============================================================================
-
-
-def _noop_db_stub() -> Any:
-    """Placeholder for when stage is called outside of a DB session.
-
-    Real usage in dispatch.py passes the actual AsyncSession via ctx.
-    """
-
-    class _Stub:
-        async def execute(self, *a: Any, **kw: Any) -> Any:  # noqa: ANN
-            return type("R", (), {"scalars": lambda self: type("S", (), {"first": lambda self: None, "all": lambda self: []})()})()
-
-    return _Stub()
 
 
 # ============================================================================

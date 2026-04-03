@@ -22,6 +22,12 @@ logger = logging.getLogger("zen70.search")
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
 
+def _escape_like_term(term: str) -> str:
+    escaped = term.replace("\\", "\\\\")
+    escaped = escaped.replace("%", "\\%").replace("_", "\\_")
+    return escaped
+
+
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
@@ -162,7 +168,7 @@ async def _keyword_fallback(
 ) -> SemanticSearchResponse:
     """Text-only ILIKE fallback when embedding model is unavailable."""
     hits: list[SearchHit] = []
-    pattern = f"%{body.query}%"
+    pattern = f"%{_escape_like_term(body.query)}%"
 
     if body.scope in ("memory", "all"):
         sql = text("""
@@ -170,7 +176,7 @@ async def _keyword_fallback(
             FROM memory_facts
             WHERE tenant_id = :tid AND user_sub = :uid
               AND deprecated = false
-              AND fact_text ILIKE :pat
+              AND fact_text ILIKE :pat ESCAPE '\\'
             ORDER BY created_at DESC
             LIMIT :lim
             """)
@@ -196,15 +202,15 @@ async def _asset_keyword_search(
     limit: int,
 ) -> list[SearchHit]:
     """ILIKE search across asset metadata fields."""
-    pattern = f"%{query_text}%"
+    pattern = f"%{_escape_like_term(query_text)}%"
     sql = text("""
         SELECT id::text, COALESCE(label, original_filename, file_path) AS display,
                asset_type, ai_tags
         FROM assets
         WHERE tenant_id = :tid
           AND is_deleted = false
-          AND (label ILIKE :pat OR original_filename ILIKE :pat
-               OR ai_tags::text ILIKE :pat)
+          AND (label ILIKE :pat ESCAPE '\\' OR original_filename ILIKE :pat ESCAPE '\\'
+               OR ai_tags::text ILIKE :pat ESCAPE '\\')
         ORDER BY created_at DESC
         LIMIT :lim
         """)

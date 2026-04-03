@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from threading import RLock
 from typing import Final
 
 from backend.core.scheduling_policy_types import QueueConfig
@@ -48,6 +49,8 @@ PRIORITY_LAYER_ORDER: Final[list[str]] = [
 ]
 
 LAYER_AGING_MULTIPLIER: Final[dict[str, float]] = _QC_DEFAULTS.layer_aging_multipliers
+_SCHED_CONFIG_LOCK = RLock()
+_SCHED_CONFIG_CACHE: dict[str, object] | None = None
 
 
 def get_priority_layer(priority: int) -> str:
@@ -214,27 +217,34 @@ def _load_scheduling_config() -> dict:
 
     Returns a dict with the same shape as before for backward compat.
     """
-    if hasattr(_load_scheduling_config, "_cache"):
-        return dict(_load_scheduling_config._cache)  # type: ignore[attr-defined, unused-ignore]
-    qc = _get_queue_config()
-    defaults = {
-        "aging": {
-            "enabled": True,
-            "interval_seconds": qc.aging.interval_seconds,
-            "bonus_per_interval": qc.aging.bonus_per_interval,
-            "max_bonus": qc.aging.max_bonus,
-        },
-        "default_tenant_quota": qc.default_tenant_quota,
-        "starvation_threshold_seconds": qc.starvation_threshold_seconds,
-    }
-    _load_scheduling_config._cache = defaults  # type: ignore[attr-defined]
-    return defaults
+    global _SCHED_CONFIG_CACHE
+    with _SCHED_CONFIG_LOCK:
+        if _SCHED_CONFIG_CACHE is not None:
+            _load_scheduling_config._cache = _SCHED_CONFIG_CACHE  # type: ignore[attr-defined]
+            return dict(_SCHED_CONFIG_CACHE)
+        qc = _get_queue_config()
+        defaults: dict[str, object] = {
+            "aging": {
+                "enabled": True,
+                "interval_seconds": qc.aging.interval_seconds,
+                "bonus_per_interval": qc.aging.bonus_per_interval,
+                "max_bonus": qc.aging.max_bonus,
+            },
+            "default_tenant_quota": qc.default_tenant_quota,
+            "starvation_threshold_seconds": qc.starvation_threshold_seconds,
+        }
+        _SCHED_CONFIG_CACHE = defaults
+        _load_scheduling_config._cache = defaults  # type: ignore[attr-defined]
+        return dict(defaults)
 
 
 def reset_scheduling_config_cache() -> None:
     """Force re-read of system.yaml on next access (for tests / hot-reload)."""
-    if hasattr(_load_scheduling_config, "_cache"):
-        del _load_scheduling_config._cache  # type: ignore[attr-defined, unused-ignore]
+    global _SCHED_CONFIG_CACHE
+    with _SCHED_CONFIG_LOCK:
+        _SCHED_CONFIG_CACHE = None
+        if hasattr(_load_scheduling_config, "_cache"):
+            delattr(_load_scheduling_config, "_cache")
 
 
 def get_aging_config() -> dict:
