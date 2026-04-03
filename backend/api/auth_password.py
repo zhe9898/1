@@ -89,12 +89,18 @@ async def password_login(
     await redis.delete(lock_key)
 
     log_auth("password_login", True, rid, username=username, client_ip_str=cip)
+
+    # Load user scopes from permissions table for JWT
+    from backend.core.permissions import get_user_scopes
+    user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
+
     resp = build_token_response_model(
         str(user.id),
         user.username,
         user.role,
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference,
+        scopes=user_scopes,
     )
     await register_login_session(
         db,

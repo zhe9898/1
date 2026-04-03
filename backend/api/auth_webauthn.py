@@ -171,12 +171,14 @@ async def login_begin(
     user = result.scalar_one_or_none()
     if not user:
         log_auth("webauthn_login_begin", False, rid, username=req.username, detail="user_not_found")
-        raise zen(CODE_NOT_FOUND, "User not found", status.HTTP_404_NOT_FOUND)
+        raise zen(CODE_BAD_REQUEST, "Authentication failed", status.HTTP_400_BAD_REQUEST,
+                  recovery_hint="Verify username and try again")
     assert_user_active(user, flow="webauthn_login_begin", rid=rid, username=req.username, client_ip_str=cip)
     creds = list(user.credentials)
     if not creds:
         log_auth("webauthn_login_begin", False, rid, username=req.username, detail="no_credentials")
-        raise zen(CODE_NOT_FOUND, "No credentials found for user", status.HTTP_404_NOT_FOUND)
+        raise zen(CODE_BAD_REQUEST, "Authentication failed", status.HTTP_400_BAD_REQUEST,
+                  recovery_hint="Verify username and try again")
 
     allow_credentials: list[dict[str, object]] = [{"id": c.credential_id, "type": "public-key", "transports": ["internal", "usb", "nfc"]} for c in creds]
     _, challenge_b64, options_json_str = _auth_mod().generate_authentication_challenge(allow_credentials=allow_credentials)
@@ -244,12 +246,18 @@ async def login_complete(
     assert_user_active(login_user, flow="webauthn_login_complete", rid=rid, username=req.username, client_ip_str=cip)
 
     log_auth("webauthn_login_complete", True, rid, username=req.username, client_ip_str=cip)
+
+    # Load user scopes from permissions table for JWT
+    from backend.core.permissions import get_user_scopes
+    user_scopes = await get_user_scopes(db, tenant_id=login_user.tenant_id, user_id=str(cred.user_id))
+
     resp = build_token_response_model(
         sub=str(cred.user_id),
         username=req.username,
         role=login_user.role,
         tenant_id=login_user.tenant_id,
         ai_route_preference=login_user.ai_route_preference,
+        scopes=user_scopes,
     )
     await register_login_session(
         db,

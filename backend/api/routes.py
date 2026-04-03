@@ -224,6 +224,7 @@ async def sse_events(
     request: Request,
     redis: RedisClient | None = Depends(get_redis),
     client_token: str | None = Query(None, description="前端生成的连接 UUID，用于 Ping 关联"),
+    current_user: dict = Depends(get_current_user),
 ) -> StreamingResponse:
     """
     订阅硬件状态变更与软开关事件，以 Server-Sent Events 推送。

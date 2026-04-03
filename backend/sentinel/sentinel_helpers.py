@@ -68,7 +68,14 @@ def setup_logging(request_id: str | None = None) -> logging.LoggerAdapter:
 
 
 # -------------------- Docker Engine HTTP API --------------------
-_docker_host_raw: str = os.getenv("DOCKER_HOST", "tcp://docker-proxy:2375")
+_docker_host_raw: str = os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+if _docker_host_raw == "tcp://docker-proxy:2375":
+    _sentinel_init_logger = logging.getLogger("topology-sentinel")
+    _sentinel_init_logger.warning(
+        "DOCKER_HOST is set to unauthenticated TCP endpoint %s. "
+        "Consider using unix:///var/run/docker.sock or TLS-protected endpoint.",
+        _docker_host_raw,
+    )
 _parsed = urlparse(_docker_host_raw)
 DOCKER_API_HOST: str = _parsed.hostname or "docker-proxy"
 DOCKER_API_PORT: int = _parsed.port or 2375

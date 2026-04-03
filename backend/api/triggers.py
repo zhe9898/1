@@ -373,7 +373,7 @@ async def pause_trigger(
 async def fire_trigger_endpoint(
     trigger_id: str,
     payload: TriggerFireRequest,
-    current_user: dict[str, str] = Depends(get_current_user),
+    current_user: dict[str, str] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
     redis: RedisClient | None = Depends(get_redis),
 ) -> TriggerDeliveryResponse:

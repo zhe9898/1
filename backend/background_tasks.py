@@ -95,6 +95,9 @@ def _scan_and_hash_file(filepath: Path, db_path: Path) -> str | None:
     整个函数在 to_thread 中执行，绝不阻塞事件循环。
     """
     try:
+        # Reject symlinks to prevent path traversal
+        if filepath.is_symlink():
+            return None
         sha256_hash = hashlib.sha256()
         with filepath.open("rb") as f:
             for byte_block in iter(lambda: f.read(4096), b""):
@@ -145,7 +148,7 @@ async def bitrot_worker() -> None:
                     if not dir_path.exists():
                         continue
                     for filepath in dir_path.rglob("*"):
-                        if not filepath.is_file():
+                        if not filepath.is_file() or filepath.is_symlink():
                             continue
 
                         result = await asyncio.to_thread(_scan_and_hash_file, filepath, BITROT_DB_PATH)

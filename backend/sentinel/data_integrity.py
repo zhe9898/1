@@ -124,7 +124,7 @@ def check_system_load_safe() -> bool:
 
 def _verify_single_file(filepath: Path, cursor: sqlite3.Cursor, corrupted_files: list[Path]) -> None:
     """对单个文件执行哈希检查逻辑"""
-    if not filepath.is_file() or filepath.name.startswith("."):
+    if not filepath.is_file() or filepath.is_symlink() or filepath.name.startswith("."):
         return
 
     try:
