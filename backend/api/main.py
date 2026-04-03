@@ -28,11 +28,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from backend.api import alerts as alerts_router
-from backend.api import evaluations as evaluations_router
 from backend.api import audit_logs as audit_logs_router
 from backend.api import auth as auth_router
 from backend.api import connectors as connectors_router
 from backend.api import console as console_router
+from backend.api import evaluations as evaluations_router
 from backend.api import extensions as extensions_router
 from backend.api import jobs as jobs_router
 from backend.api import kernel as kernel_router

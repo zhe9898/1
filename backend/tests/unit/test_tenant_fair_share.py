@@ -91,8 +91,7 @@ class TestGlobalFairScheduler:
 
     def test_load_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Quotas load correctly from system.yaml scheduling section."""
-        yaml_content = textwrap.dedent(
-            """\
+        yaml_content = textwrap.dedent("""\
             scheduling:
               default_service_class: economy
               tenant_quotas:
@@ -101,8 +100,7 @@ class TestGlobalFairScheduler:
                 tenant-beta:
                   service_class: economy
                   max_jobs_per_round: 8
-        """
-        )
+        """)
         yaml_file = tmp_path / "system.yaml"
         yaml_file.write_text(yaml_content, encoding="utf-8")
 

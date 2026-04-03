@@ -47,11 +47,7 @@ async def create_evaluation(
     tenant_id = str(current_user.get("tenant_id") or "default")
     evaluator = str(current_user.get("sub") or current_user.get("username") or "unknown")
 
-    existing = await db.execute(
-        _eval_stmt_for_tenant(tenant_id).where(
-            SoftwareEvaluation.evaluation_id == payload.evaluation_id
-        )
-    )
+    existing = await db.execute(_eval_stmt_for_tenant(tenant_id).where(SoftwareEvaluation.evaluation_id == payload.evaluation_id))
     if existing.scalars().first() is not None:
         raise zen(
             "ZEN-EVAL-4090",
@@ -108,11 +104,7 @@ async def get_evaluation(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> EvaluationResponse:
     tenant_id = str(current_user.get("tenant_id") or "default")
-    result = await db.execute(
-        _eval_stmt_for_tenant(tenant_id).where(
-            SoftwareEvaluation.evaluation_id == evaluation_id
-        )
-    )
+    result = await db.execute(_eval_stmt_for_tenant(tenant_id).where(SoftwareEvaluation.evaluation_id == evaluation_id))
     evaluation = result.scalars().first()
     if evaluation is None:
         raise zen(
@@ -132,11 +124,7 @@ async def delete_evaluation(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> None:
     tenant_id = str(current_user.get("tenant_id") or "default")
-    result = await db.execute(
-        _eval_stmt_for_tenant(tenant_id).where(
-            SoftwareEvaluation.evaluation_id == evaluation_id
-        )
-    )
+    result = await db.execute(_eval_stmt_for_tenant(tenant_id).where(SoftwareEvaluation.evaluation_id == evaluation_id))
     evaluation = result.scalars().first()
     if evaluation is None:
         raise zen(
