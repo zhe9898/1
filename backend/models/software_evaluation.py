@@ -12,11 +12,7 @@ class SoftwareEvaluation(Base):
     """Software evaluation records for all branches and all software components."""
 
     __tablename__ = "software_evaluations"
-    __table_args__ = (
-        UniqueConstraint(
-            "tenant_id", "evaluation_id", name="ux_software_evaluations_tenant_eval_id"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", "evaluation_id", name="ux_software_evaluations_tenant_eval_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, default="default", index=True)

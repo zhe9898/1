@@ -95,8 +95,7 @@ async def semantic_search(
     vec_literal = "[" + ",".join(str(v) for v in vec) + "]"
 
     if body.scope in ("memory", "all"):
-        sql = text(
-            """
+        sql = text("""
             SELECT id::text, fact_text, 1 - (text_embedding <=> :vec ::vector(384)) AS score
             FROM memory_facts
             WHERE tenant_id = :tid
@@ -105,8 +104,7 @@ async def semantic_search(
               AND text_embedding IS NOT NULL
             ORDER BY text_embedding <=> :vec ::vector(384)
             LIMIT :lim
-            """
-        )
+            """)
         rows = (
             await db.execute(
                 sql,
@@ -167,8 +165,7 @@ async def _keyword_fallback(
     pattern = f"%{body.query}%"
 
     if body.scope in ("memory", "all"):
-        sql = text(
-            """
+        sql = text("""
             SELECT id::text, fact_text
             FROM memory_facts
             WHERE tenant_id = :tid AND user_sub = :uid
@@ -176,8 +173,7 @@ async def _keyword_fallback(
               AND fact_text ILIKE :pat
             ORDER BY created_at DESC
             LIMIT :lim
-            """
-        )
+            """)
         rows = (await db.execute(sql, {"tid": user.tenant_id, "uid": user.sub, "pat": pattern, "lim": body.limit})).all()
         for row in rows:
             hits.append(SearchHit(id=row[0], source="memory", text=row[1], score=0.5))
@@ -201,8 +197,7 @@ async def _asset_keyword_search(
 ) -> list[SearchHit]:
     """ILIKE search across asset metadata fields."""
     pattern = f"%{query_text}%"
-    sql = text(
-        """
+    sql = text("""
         SELECT id::text, COALESCE(label, original_filename, file_path) AS display,
                asset_type, ai_tags
         FROM assets
@@ -212,8 +207,7 @@ async def _asset_keyword_search(
                OR ai_tags::text ILIKE :pat)
         ORDER BY created_at DESC
         LIMIT :lim
-        """
-    )
+        """)
     rows = (await db.execute(sql, {"tid": user.tenant_id, "pat": pattern, "lim": limit})).all()
     hits: list[SearchHit] = []
     for row in rows:

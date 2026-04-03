@@ -63,13 +63,11 @@ def upgrade() -> None:
 
     # ── 3. 为 tenant_id 补 "default" 租户行（使 FK 参照完整性就绪）──────────────
     # 注意：不强制 FK 约束（保留异步扩展灵活性），仅确保 default 租户存在
-    op.execute(
-        """
+    op.execute("""
         INSERT INTO tenants (tenant_id, display_name, plan, is_active, created_at)
         VALUES ('default', 'Default Home', 'home', true, NOW())
         ON CONFLICT (tenant_id) DO NOTHING
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
