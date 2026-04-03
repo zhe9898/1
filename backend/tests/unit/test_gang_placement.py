@@ -296,4 +296,3 @@ class TestGangSchedulingGateTimeout:
         ok, reason = gate.evaluate(job, ctx)
         # Result depends on readiness logic, but should not be a timeout error
         assert "gang_timeout" not in reason
-
