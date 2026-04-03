@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import and_, func, literal, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.core.errors import zen
@@ -41,21 +41,14 @@ async def check_concurrent_limits(
     else:
         source_filter = ~Job.source.in_(list(SCHEDULED_JOB_SOURCES))
 
-    connector_count_expr = (
-        func.count().filter(and_(Job.tenant_id == tenant_id, Job.connector_id == connector_id))
-        if connector_id
-        else literal(0)
-    )
-    counts_stmt = (
-        select(
-            func.public.zen70_global_leased_jobs_count(job_type).label("global_count"),
-            func.count().filter(Job.tenant_id == tenant_id).label("tenant_count"),
-            connector_count_expr.label("connector_count"),
-        )
-        .where(
-            Job.status == "leased",
-            source_filter,
-        )
+    connector_count_expr = func.count().filter(and_(Job.tenant_id == tenant_id, Job.connector_id == connector_id)) if connector_id else literal(0)
+    counts_stmt = select(
+        func.public.zen70_global_leased_jobs_count(job_type).label("global_count"),
+        func.count().filter(Job.tenant_id == tenant_id).label("tenant_count"),
+        connector_count_expr.label("connector_count"),
+    ).where(
+        Job.status == "leased",
+        source_filter,
     )
     try:
         counts_row = (await db.execute(counts_stmt)).one()

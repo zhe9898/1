@@ -209,9 +209,7 @@ async def list_config(
     session = await _ensure_defaults(db, write_defaults=False)
     result = await session.execute(select(SystemConfig))
     configs = result.scalars().all()
-    merged: dict[str, dict[str, str | None]] = {
-        config.key: {"value": config.value, "description": config.description} for config in configs
-    }
+    merged: dict[str, dict[str, str | None]] = {config.key: {"value": config.value, "description": config.description} for config in configs}
     for default in DEFAULT_CONFIGS:
         merged.setdefault(default.key, {"value": default.value, "description": default.description})
     return {

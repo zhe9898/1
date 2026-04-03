@@ -171,14 +171,12 @@ async def login_begin(
     user = result.scalar_one_or_none()
     if not user:
         log_auth("webauthn_login_begin", False, rid, username=req.username, detail="user_not_found")
-        raise zen(CODE_BAD_REQUEST, "Authentication failed", status.HTTP_400_BAD_REQUEST,
-                  recovery_hint="Verify username and try again")
+        raise zen(CODE_BAD_REQUEST, "Authentication failed", status.HTTP_400_BAD_REQUEST, recovery_hint="Verify username and try again")
     assert_user_active(user, flow="webauthn_login_begin", rid=rid, username=req.username, client_ip_str=cip)
     creds = list(user.credentials)
     if not creds:
         log_auth("webauthn_login_begin", False, rid, username=req.username, detail="no_credentials")
-        raise zen(CODE_BAD_REQUEST, "Authentication failed", status.HTTP_400_BAD_REQUEST,
-                  recovery_hint="Verify username and try again")
+        raise zen(CODE_BAD_REQUEST, "Authentication failed", status.HTTP_400_BAD_REQUEST, recovery_hint="Verify username and try again")
 
     allow_credentials: list[dict[str, object]] = [{"id": c.credential_id, "type": "public-key", "transports": ["internal", "usb", "nfc"]} for c in creds]
     _, challenge_b64, options_json_str = _auth_mod().generate_authentication_challenge(allow_credentials=allow_credentials)
@@ -249,6 +247,7 @@ async def login_complete(
 
     # Load user scopes from permissions table for JWT
     from backend.core.permissions import get_user_scopes
+
     user_scopes = await get_user_scopes(db, tenant_id=login_user.tenant_id, user_id=str(cred.user_id))
 
     resp = build_token_response_model(

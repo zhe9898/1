@@ -64,6 +64,7 @@ def _rows_result(values: list[tuple[object, object]]) -> MagicMock:
     result.all.return_value = values
     return result
 
+
 def _control_plane_migration_text() -> str:
     path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "9f2c7a1d4e61_control_plane_schema_hardening.py"
     return path.read_text(encoding="utf-8")

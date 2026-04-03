@@ -55,6 +55,7 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
     db = AsyncMock()
     db.flush = AsyncMock()
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+
     def add_side_effect(job: object) -> None:
         job.attempt = 0
         job.created_at = now

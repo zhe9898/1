@@ -962,10 +962,7 @@ class PlacementSolver:
             heap.append((-best_score, "gang", gang_id, gang_id))
         heapq.heapify(heap)
 
-        solo_by_key = {
-            (candidate.job.job_id, candidate.node.node_id): candidate
-            for candidate in solo_candidates
-        }
+        solo_by_key = {(candidate.job.job_id, candidate.node.node_id): candidate for candidate in solo_candidates}
 
         while heap:
             if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
@@ -1045,6 +1042,7 @@ class PlacementSolver:
         remaining_cap.clear()
         remaining_cap.update(local_remaining)
         return assignments
+
 
 # Module-level solver singleton
 _solver: PlacementSolver | None = None

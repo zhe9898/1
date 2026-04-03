@@ -302,4 +302,3 @@ async def report_step_failed(
     )
     await on_step_job_failed(db, workflow_id, step_id, payload.error)
     return {"status": "ok"}
-

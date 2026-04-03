@@ -307,4 +307,3 @@ def _provision_token(node: Node) -> tuple[str, int]:
     node.auth_token_hash = hash_node_token(token)
     node.auth_token_version = next_version
     return token, next_version
-
