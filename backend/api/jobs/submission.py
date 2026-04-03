@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.api.control_events import publish_control_event
 from backend.core.errors import zen
@@ -40,11 +41,18 @@ async def check_concurrent_limits(
     else:
         source_filter = ~Job.source.in_(list(SCHEDULED_JOB_SOURCES))
 
-    global_count_stmt = select(func.count()).where(
-        Job.status == "leased",
-        source_filter,
-    )
-    global_count = (await db.execute(global_count_stmt)).scalar() or 0
+    try:
+        global_count_stmt = text("SELECT public.zen70_global_leased_jobs_count(:job_type)")
+        global_count = (await db.execute(global_count_stmt, {"job_type": job_type})).scalar() or 0
+    except (SQLAlchemyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise zen(
+            "ZEN-JOB-5032",
+            "Global concurrent limit function is unavailable",
+            status_code=503,
+            recovery_hint="Apply the latest Alembic migrations before accepting job submissions",
+            details={"job_type": job_type, "migration_required": True},
+        ) from exc
+
     global_limit = get_max_concurrent_limit(job_type, "global")
     if global_count >= global_limit:
         raise zen(

@@ -181,3 +181,25 @@ def test_connectors_list_has_envelope() -> None:
     response = client.get("/api/v1/connectors")
     data = _assert_success_envelope(response)
     assert isinstance(data["data"], list)
+
+
+def test_create_evaluation_rejects_invalid_category_with_422() -> None:
+    response = client.post(
+        "/api/v1/evaluations",
+        json={
+            "evaluation_id": "eval-invalid-category",
+            "software_id": "svc-a",
+            "branch": "main",
+            "rating": 5,
+            "category": "invalid",
+            "comment": "test",
+        },
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["code"] == "ZEN-VAL-422"
+    errors = payload.get("details", {}).get("errors", [])
+    messages = [str(err.get("msg", "")) for err in errors]
+    assert any("category must be one of:" in message for message in messages)
+    assert any("general, performance, reliability, security, usability" in message for message in messages)

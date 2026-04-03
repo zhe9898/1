@@ -58,6 +58,8 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
 
     def execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
         rendered = str(statement)
+        if "zen70_global_leased_jobs_count" in rendered.lower():
+            return _scalar_result(0)
         # count() queries for concurrent limits → return 0
         if "count(*)" in rendered.lower():
             return _scalar_result(0)

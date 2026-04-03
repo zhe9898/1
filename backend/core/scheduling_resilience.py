@@ -24,7 +24,9 @@ import datetime
 import logging
 import time
 from collections import Counter, deque
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
@@ -56,9 +58,10 @@ class TopologySpreadPolicy:
     name = "topology_spread"
     order = 15  # after resource_reservation (10), before thermal_cap (20)
 
-    _zone_load: dict[str, int] = {}
-    _avg_zone_load: float = 0.0
-    _zone_count: int = 0
+    _zone_context: ContextVar[tuple[dict[str, int], float, int] | None] = ContextVar(
+        "topology_spread_zone_context",
+        default=None,
+    )
 
     def __init__(
         self,
@@ -77,10 +80,18 @@ class TopologySpreadPolicy:
     @classmethod
     def configure_zone_context(cls, zone_load: dict[str, int]) -> None:
         """Set current zone-level lease distribution (call before scoring)."""
-        cls._zone_load = dict(zone_load)
+        _zone_load = dict(zone_load)
         total = sum(zone_load.values())
-        cls._zone_count = max(len(zone_load), 1)
-        cls._avg_zone_load = total / cls._zone_count
+        _zone_count = max(len(zone_load), 1)
+        _avg_zone_load = total / _zone_count
+        cls._zone_context.set((_zone_load, _avg_zone_load, _zone_count))
+
+    @classmethod
+    def get_zone_context_snapshot(cls) -> tuple[dict[str, int], float, int]:
+        ctx = cls._zone_context.get()
+        if ctx is None:
+            return {}, 0.0, 0
+        return ctx
 
     def adjust_score(
         self,
@@ -89,12 +100,14 @@ class TopologySpreadPolicy:
         current_score: int,
         breakdown: dict[str, int],
     ) -> tuple[int, dict[str, int]]:
+        del job
+        zone_load, avg_zone_load, zone_count = self.get_zone_context_snapshot()
         zone = node.zone or ""
-        if not zone or not self._zone_load or self._zone_count <= 1:
+        if not zone or not zone_load or zone_count <= 1:
             return current_score, breakdown
 
-        my_load = self._zone_load.get(zone, 0)
-        skew = my_load - self._avg_zone_load
+        my_load = zone_load.get(zone, 0)
+        skew = my_load - avg_zone_load
         if skew > self.max_skew:
             penalty = min(
                 int((skew - self.max_skew) * self.penalty_per_skew),
@@ -142,6 +155,7 @@ class PreemptionBudgetPolicy:
     _recent_preemptions: deque[datetime.datetime] = deque(maxlen=500)  # overridden by _init_buffer
     max_preemptions_per_window: int | None = None
     window_seconds: int | None = None
+    _lock = RLock()
 
     @classmethod
     def _resolve_limits(cls) -> tuple[int, int]:
@@ -155,32 +169,37 @@ class PreemptionBudgetPolicy:
 
     @classmethod
     def configure(cls, *, max_per_window: int = 5, window_s: int = 300) -> None:
-        cls.max_preemptions_per_window = max_per_window
-        cls.window_seconds = window_s
+        with cls._lock:
+            cls.max_preemptions_per_window = max_per_window
+            cls.window_seconds = window_s
 
     @classmethod
     def can_preempt(cls, now: datetime.datetime) -> tuple[bool, str]:
         """Check whether preemption budget has capacity."""
-        max_pw, window_s = cls._resolve_limits()
-        cutoff = now - datetime.timedelta(seconds=window_s)
-        recent = sum(1 for t in cls._recent_preemptions if t > cutoff)
+        with cls._lock:
+            max_pw, window_s = cls._resolve_limits()
+            cutoff = now - datetime.timedelta(seconds=window_s)
+            recent = sum(1 for t in cls._recent_preemptions if t > cutoff)
         if recent >= max_pw:
             return False, (f"preemption_budget_exhausted: " f"{recent}/{max_pw} in {window_s}s")
         return True, ""
 
     @classmethod
     def record_preemption(cls, now: datetime.datetime) -> None:
-        cls._recent_preemptions.append(now)
+        with cls._lock:
+            cls._recent_preemptions.append(now)
 
     @classmethod
     def recent_count(cls, now: datetime.datetime) -> int:
-        _, window_s = cls._resolve_limits()
-        cutoff = now - datetime.timedelta(seconds=window_s)
-        return sum(1 for t in cls._recent_preemptions if t > cutoff)
+        with cls._lock:
+            _, window_s = cls._resolve_limits()
+            cutoff = now - datetime.timedelta(seconds=window_s)
+            return sum(1 for t in cls._recent_preemptions if t > cutoff)
 
     @classmethod
     def reset(cls) -> None:
-        cls._recent_preemptions.clear()
+        with cls._lock:
+            cls._recent_preemptions.clear()
 
 
 # =====================================================================
@@ -213,6 +232,7 @@ class SchedulingBackoff:
 
     _entries: dict[str, _BackoffEntry] = {}
     _call_counter: int = 0
+    _lock = RLock()
 
     @classmethod
     def _resolve(cls) -> tuple[float, float, int]:
@@ -229,58 +249,64 @@ class SchedulingBackoff:
     @classmethod
     def should_skip(cls, job_id: str, now: datetime.datetime) -> bool:
         """Return True if the job is still in its backoff window."""
-        entry = cls._entries.get(job_id)
-        if entry is None:
-            return False
-        return now < entry.next_try
+        with cls._lock:
+            entry = cls._entries.get(job_id)
+            if entry is None:
+                return False
+            return now < entry.next_try
 
     @classmethod
     def record_failure(cls, job_id: str, now: datetime.datetime) -> None:
         """Record an unschedulable attempt and compute next retry time."""
-        base_delay, max_delay, _max_attempts = cls._resolve()
-        entry = cls._entries.get(job_id)
-        if entry is None:
-            entry = _BackoffEntry()
-            cls._entries[job_id] = entry
-        entry.attempts += 1
-        from backend.core.scheduling_policy_store import get_policy_store
+        with cls._lock:
+            base_delay, max_delay, _max_attempts = cls._resolve()
+            entry = cls._entries.get(job_id)
+            if entry is None:
+                entry = _BackoffEntry()
+                cls._entries[job_id] = entry
+            entry.attempts += 1
+            from backend.core.scheduling_policy_store import get_policy_store
 
-        _max_exp = get_policy_store().active.backoff.max_exponent
-        exp = min(entry.attempts - 1, _max_exp)  # cap exponent to avoid overflow
-        delay = min(base_delay * (2**exp), max_delay)
-        entry.next_try = now + datetime.timedelta(seconds=delay)
+            _max_exp = get_policy_store().active.backoff.max_exponent
+            exp = min(entry.attempts - 1, _max_exp)  # cap exponent to avoid overflow
+            delay = min(base_delay * (2**exp), max_delay)
+            entry.next_try = now + datetime.timedelta(seconds=delay)
 
-        # Periodic cleanup of stale entries
-        cls._call_counter += 1
-        if cls._call_counter % cls._CLEANUP_INTERVAL == 0:
-            cls._cleanup(now)
+            # Periodic cleanup of stale entries
+            cls._call_counter += 1
+            if cls._call_counter % cls._CLEANUP_INTERVAL == 0:
+                cls._cleanup(now)
 
     @classmethod
     def record_success(cls, job_id: str) -> None:
         """Clear backoff state on successful scheduling."""
-        cls._entries.pop(job_id, None)
+        with cls._lock:
+            cls._entries.pop(job_id, None)
 
     @classmethod
     def get_info(cls, job_id: str) -> tuple[int, datetime.datetime | None]:
         """Return (attempts, next_try) for diagnostics."""
-        entry = cls._entries.get(job_id)
-        if entry is None:
-            return 0, None
-        return entry.attempts, entry.next_try
+        with cls._lock:
+            entry = cls._entries.get(job_id)
+            if entry is None:
+                return 0, None
+            return entry.attempts, entry.next_try
 
     @classmethod
     def _cleanup(cls, now: datetime.datetime) -> None:
         """Remove entries whose backoff has long expired (>2× max_delay)."""
-        _, max_delay, _ = cls._resolve()
-        threshold = now - datetime.timedelta(seconds=max_delay * 2)
-        stale = [k for k, v in cls._entries.items() if v.next_try < threshold]
-        for k in stale:
-            del cls._entries[k]
+        with cls._lock:
+            _, max_delay, _ = cls._resolve()
+            threshold = now - datetime.timedelta(seconds=max_delay * 2)
+            stale = [k for k, v in cls._entries.items() if v.next_try < threshold]
+            for k in stale:
+                del cls._entries[k]
 
     @classmethod
     def reset(cls) -> None:
-        cls._entries.clear()
-        cls._call_counter = 0
+        with cls._lock:
+            cls._entries.clear()
+            cls._call_counter = 0
 
 
 # =====================================================================

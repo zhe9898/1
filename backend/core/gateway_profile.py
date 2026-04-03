@@ -45,6 +45,7 @@ CORE_ROUTER_NAMES: Final[tuple[str, ...]] = (
     "connectors",
     "triggers",
     "reservations",
+    "evaluations",
 )
 
 OPTIONAL_ROUTER_NAMES: Final[tuple[str, ...]] = ("cluster",)

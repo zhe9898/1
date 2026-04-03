@@ -95,6 +95,18 @@ _KERNEL_CONTROL_PLANE_SURFACES: tuple[ControlPlaneSurface, ...] = (
         requires_admin=False,
     ),
     ControlPlaneSurface(
+        capability_key="gateway.evaluations",
+        route_name="evaluations",
+        route_path="/evaluations",
+        label="Evaluations",
+        description="Submit and review software evaluations across branches and components",
+        endpoint="/v1/evaluations",
+        backend_router="evaluations",
+        frontend_view="EvaluationsView",
+        profiles=("gateway-kernel",),
+        requires_admin=False,
+    ),
+    ControlPlaneSurface(
         capability_key="gateway.settings",
         route_name="settings",
         route_path="/settings",

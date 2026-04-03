@@ -56,16 +56,18 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
   const schema = ref<ResourceSchema | null>(null);
   const loading = ref(false);
   const submitting = ref(false);
-  const error = ref<string | null>(null);
+  const schemaError = ref<string | null>(null);
+  const listError = ref<string | null>(null);
   const lastUpdatedAt = ref(0);
 
   async function fetchSchema(): Promise<ResourceSchema | null> {
+    schemaError.value = null;
     try {
       const { data } = await http.get<ResourceSchema>(EVALUATIONS.schema);
       schema.value = data;
       return data;
     } catch (err: unknown) {
-      error.value =
+      schemaError.value =
         err instanceof Error ? err.message : "Failed to load evaluation schema";
       return null;
     }
@@ -75,7 +77,7 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
     query: Record<string, unknown> = {}
   ): Promise<void> {
     loading.value = true;
-    error.value = null;
+    listError.value = null;
     try {
       const params = Object.fromEntries(
         Object.entries(query)
@@ -91,7 +93,7 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
       items.value = data.map((item) => normalizeEvaluation(item));
       lastUpdatedAt.value = Date.now();
     } catch (err: unknown) {
-      error.value =
+      listError.value =
         err instanceof Error ? err.message : "Failed to load evaluations";
     } finally {
       loading.value = false;
@@ -102,7 +104,7 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
     payload: CreateEvaluationPayload
   ): Promise<EvaluationItem | null> {
     submitting.value = true;
-    error.value = null;
+    listError.value = null;
     try {
       const { data } = await http.post<EvaluationItem>(
         EVALUATIONS.create,
@@ -113,7 +115,7 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
       lastUpdatedAt.value = Date.now();
       return normalized;
     } catch (err: unknown) {
-      error.value =
+      listError.value =
         err instanceof Error ? err.message : "Failed to create evaluation";
       throw err;
     } finally {
@@ -123,7 +125,7 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
 
   async function deleteEvaluation(evaluationId: string): Promise<void> {
     submitting.value = true;
-    error.value = null;
+    listError.value = null;
     try {
       await http.delete(EVALUATIONS.delete(evaluationId));
       items.value = items.value.filter(
@@ -131,7 +133,7 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
       );
       lastUpdatedAt.value = Date.now();
     } catch (err: unknown) {
-      error.value =
+      listError.value =
         err instanceof Error ? err.message : "Failed to delete evaluation";
       throw err;
     } finally {
@@ -144,7 +146,8 @@ export const useEvaluationsStore = defineStore("evaluations", () => {
     schema,
     loading,
     submitting,
-    error,
+    schemaError,
+    listError,
     lastUpdatedAt,
     fetchSchema,
     fetchEvaluations,

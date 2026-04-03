@@ -10,7 +10,9 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import datetime
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -101,9 +103,7 @@ def _make_job(**overrides):
 
 class TestTopologySpreadPolicy:
     def setup_method(self):
-        TopologySpreadPolicy._zone_load = {}
-        TopologySpreadPolicy._avg_zone_load = 0.0
-        TopologySpreadPolicy._zone_count = 0
+        TopologySpreadPolicy._zone_context.set(None)
 
     def test_no_penalty_when_no_zone_context(self):
         policy = TopologySpreadPolicy(max_skew=2)
@@ -175,8 +175,26 @@ class TestTopologySpreadPolicy:
 
     def test_configure_zone_context_updates_class_state(self):
         TopologySpreadPolicy.configure_zone_context({"zone-a": 3, "zone-b": 7})
-        assert TopologySpreadPolicy._zone_count == 2
-        assert TopologySpreadPolicy._avg_zone_load == 5.0
+        _zone_load, _avg_zone_load, _zone_count = TopologySpreadPolicy.get_zone_context_snapshot()
+        assert _zone_count == 2
+        assert _avg_zone_load == 5.0
+        assert _zone_load == {"zone-a": 3, "zone-b": 7}
+
+    @pytest.mark.asyncio
+    async def test_context_isolation_across_concurrent_tasks(self):
+        async def _score(zone_load: dict[str, int]) -> int:
+            TopologySpreadPolicy.configure_zone_context(zone_load)
+            await asyncio.sleep(0)
+            policy = TopologySpreadPolicy(max_skew=0, penalty_per_skew=10, max_penalty=100)
+            node = _make_node_snapshot(zone="zone-a")
+            score, _ = policy.adjust_score(_make_job(), node, 100, {})
+            return score
+
+        score_overloaded, score_underloaded = await asyncio.gather(
+            _score({"zone-a": 10, "zone-b": 0}),
+            _score({"zone-a": 0, "zone-b": 10}),
+        )
+        assert score_overloaded < score_underloaded
 
 
 # =====================================================================
@@ -244,6 +262,20 @@ class TestPreemptionBudgetPolicy:
         PreemptionBudgetPolicy.record_preemption(now)
         ok, _ = PreemptionBudgetPolicy.can_preempt(now)
         assert ok is False
+
+    def test_thread_safe_recording_under_concurrency(self):
+        now = _utcnow()
+
+        def _record_many(n: int) -> None:
+            for _ in range(n):
+                PreemptionBudgetPolicy.record_preemption(now)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_record_many, 20) for _ in range(4)]
+            for future in futures:
+                future.result()
+
+        assert PreemptionBudgetPolicy.recent_count(now) == 80
 
 
 # =====================================================================
@@ -336,6 +368,24 @@ class TestSchedulingBackoff:
         # job-a cleared, job-b still in backoff
         assert SchedulingBackoff.should_skip("job-a", now) is False
         assert SchedulingBackoff.should_skip("job-b", now + datetime.timedelta(seconds=2)) is True
+
+    def test_thread_safe_backoff_updates(self):
+        now = _utcnow()
+        job_ids = [f"job-{idx}" for idx in range(40)]
+
+        def _record_all() -> None:
+            for job_id in job_ids:
+                SchedulingBackoff.record_failure(job_id, now)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_record_all) for _ in range(4)]
+            for future in futures:
+                future.result()
+
+        for job_id in job_ids:
+            attempts, next_try = SchedulingBackoff.get_info(job_id)
+            assert attempts == 4
+            assert next_try is not None
 
 
 # =====================================================================
@@ -536,9 +586,7 @@ class TestTopologySpreadPolicyProtocol:
     """Verify TopologySpreadPolicy integrates with CompositePlacementPolicy."""
 
     def setup_method(self):
-        TopologySpreadPolicy._zone_load = {}
-        TopologySpreadPolicy._avg_zone_load = 0.0
-        TopologySpreadPolicy._zone_count = 0
+        TopologySpreadPolicy._zone_context.set(None)
 
     def test_registered_in_builtin_policies(self):
         from backend.core.placement_policy import _BUILTIN_POLICIES

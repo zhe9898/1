@@ -319,7 +319,7 @@ async def test_retry_job_now_requeues_terminal_job() -> None:
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
-    job = _job(status="failed", node_id="node-a", completed_at=_utcnow(), error_message="boom", retry_count=1)
+    job = _job(status="failed", node_id="node-a", completed_at=_utcnow(), error_message="boom", retry_count=1, attempt=3)
     db.execute.return_value = _result_first(job)
 
     response = await retry_job_now(
@@ -332,6 +332,7 @@ async def test_retry_job_now_requeues_terminal_job() -> None:
 
     assert response.status == "pending"
     assert response.retry_count == 0
+    assert response.attempt == 0
     assert response.node_id is None
     assert response.actions[0].enabled is True
 

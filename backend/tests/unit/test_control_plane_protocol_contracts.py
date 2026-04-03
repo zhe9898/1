@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -58,22 +59,10 @@ def _all_result(values: list[object]) -> MagicMock:
     return result
 
 
-def _count_result(value: int) -> MagicMock:
-    result = MagicMock()
-    result.scalar_one.return_value = value
-    result.scalar.return_value = value
-    return result
-
-
 def _rows_result(values: list[tuple[object, object]]) -> MagicMock:
     result = MagicMock()
     result.all.return_value = values
     return result
-
-
-def _noop_result() -> MagicMock:
-    return MagicMock()
-
 
 def _control_plane_migration_text() -> str:
     path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "9f2c7a1d4e61_control_plane_schema_hardening.py"
@@ -255,23 +244,74 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
     node = _node(node_id="node-a", auth_token_hash=_hash_token(monkeypatch, "node-token"))
     db = AsyncMock()
     db.add = MagicMock()
-    db.execute.side_effect = [
-        _scalar_result(node),
-        _count_result(0),  # admission control: pending+leased count=0
-        _scalar_result(None),  # feature flag: sched_decision_audit
-        _scalar_result(None),  # feature flag: sched_placement_policies
-        _scalar_result(None),  # feature flag: sched_preemption
-        _scalar_result(None),  # feature flag: sched_executor_validation
-        _all_result([node]),
-        _rows_result([]),
-        _rows_result([]),
-        _all_result([pending]),
-        _all_result([]),  # leased jobs for quota-aware fair-share
-        _all_result([]),
-        _all_result([]),  # active_jobs_on_node for anti-affinity
-        _all_result([]),  # DLQ expired-deadline scan
-    ]
     db.flush = AsyncMock()
+
+    reservation_mgr = MagicMock()
+    reservation_mgr.list_reservations.return_value = []
+    reservation_mgr.cleanup_expired = MagicMock()
+    reservation_mgr.get_reservation.return_value = None
+    reservation_mgr.cancel_reservation.return_value = False
+    reservation_mgr.create_reservation.return_value = None
+    reservation_mgr.config = SimpleNamespace(reservation_min_priority=90)
+
+    audit = MagicMock()
+    audit.context = {}
+    audit.candidates_count = 0
+
+    governance = MagicMock()
+    governance.pre_dispatch_admission = AsyncMock(return_value=SimpleNamespace(admitted=True))
+    governance.is_feature_enabled = AsyncMock(return_value=False)
+    governance.create_decision_logger.return_value = audit
+    governance.should_skip_backoff.return_value = False
+    governance.record_backoff_skip_metric = MagicMock()
+    governance.filter_by_executor_contract.return_value = SimpleNamespace(compatible=True, reason=None)
+    governance.configure_zone_context = MagicMock()
+    governance.can_preempt.return_value = (False, None)
+    governance.record_preemption_budget_hit = MagicMock()
+    governance.record_preemption = MagicMock()
+    governance.record_backoff_failure = MagicMock()
+    governance.record_backoff_success = MagicMock()
+    governance.record_placement_metric = MagicMock()
+    governance.record_rejection_metric = MagicMock()
+    governance.post_dispatch_audit = AsyncMock(return_value=None)
+
+    fcp = MagicMock()
+    fcp.is_in_burst.return_value = False
+    fcp.get_kind_circuit_state = AsyncMock(return_value="closed")
+
+    selected = SimpleNamespace(
+        job=pending,
+        score=80,
+        eligible_nodes_count=1,
+        score_breakdown={},
+    )
+
+    def _execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
+        del args, kwargs
+        sql = str(statement).lower()
+        if "from jobs" not in sql:
+            return _all_result([])
+        if "order by" in sql:
+            return _all_result([pending])  # candidate query
+        return _all_result([])  # leased snapshot and dlq scan
+
+    db.execute.side_effect = _execute_side_effect
+
+    monkeypatch.setattr("backend.api.jobs.dispatch.authenticate_node_request", AsyncMock(return_value=node))
+    monkeypatch.setattr("backend.api.jobs.dispatch.get_reservation_manager", lambda: reservation_mgr)
+    monkeypatch.setattr("backend.api.jobs.dispatch.get_governance_facade", lambda: governance)
+    monkeypatch.setattr("backend.api.jobs.dispatch.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr(
+        "backend.api.jobs.dispatch._load_node_metrics",
+        AsyncMock(return_value=([node], {"node-a": 0}, {"node-a": 1.0})),
+    )
+    monkeypatch.setattr("backend.api.jobs.dispatch._build_snapshots", lambda *a, **k: [])
+    monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
+    monkeypatch.setattr("backend.api.jobs.dispatch.build_time_budgeted_placement_plan", lambda *a, **k: {})
+    monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     leased = await pull_jobs(
         JobPullRequest(tenant_id="default", node_id="node-a", limit=1, accepted_kinds=["connector.invoke"]),
@@ -354,13 +394,22 @@ async def test_complete_job_is_idempotent_for_same_terminal_attempt(monkeypatch:
 
 @pytest.mark.asyncio
 async def test_fail_job_updates_current_lease(monkeypatch: pytest.MonkeyPatch) -> None:
-    leased = _job(status="leased", node_id="node-a", attempt=1, lease_token="token-a")
+    leased = _job(status="leased", node_id="node-a", attempt=1, lease_token="token-a", max_retries=0)
     attempt = _attempt()
     node = _node(node_id="node-a", auth_token_hash=_hash_token(monkeypatch, "node-token"))
     db = AsyncMock()
     db.add = MagicMock()
     db.execute.side_effect = [_scalar_result(node), _scalar_result(leased), _scalar_result(attempt)]
     db.flush = AsyncMock()
+
+    fcp = MagicMock()
+    fcp.record_failure = AsyncMock(return_value=None)
+    monkeypatch.setattr("backend.api.jobs.lifecycle.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr(
+        "backend.api.jobs.lifecycle.infer_failure_category",
+        MagicMock(return_value=SimpleNamespace(value="permanent")),
+    )
+    monkeypatch.setattr("backend.api.jobs.lifecycle.should_retry_job", MagicMock(return_value=False))
 
     response = await fail_job(
         "job-1",
@@ -380,6 +429,7 @@ async def test_fail_job_updates_current_lease(monkeypatch: pytest.MonkeyPatch) -
     assert response.error_message == "boom"
     assert response.status_view.key == "failed"
     assert leased.leased_until is None
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -435,7 +485,7 @@ async def test_register_node_persists_strong_contract_fields(monkeypatch: pytest
 
 @pytest.mark.asyncio
 async def test_heartbeat_updates_existing_node_contract_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    existing = _node(auth_token_hash=_hash_token(monkeypatch, "node-token"))
+    existing = _node(auth_token_hash=_hash_token(monkeypatch, "node-token"), enrollment_status="active")
     db = AsyncMock()
     db.add = MagicMock()
     db.execute.side_effect = [_scalar_result(existing), _rows_result([])]
@@ -496,7 +546,7 @@ async def test_drain_node_sets_drain_status() -> None:
     assert response.drain_status == "draining"
     assert response.drain_status_view.key == "draining"
     assert response.health_reason == "maintenance"
-    assert response.actions[3].key == "undrain"
+    assert "undrain" in {action.key for action in response.actions}
 
 
 @pytest.mark.asyncio

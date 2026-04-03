@@ -25,10 +25,17 @@
     </header>
 
     <div
-      v-if="store.error"
+      v-if="store.schemaError"
       class="alert alert-error"
     >
-      <span>{{ store.error }}</span>
+      <span>{{ store.schemaError }}</span>
+    </div>
+
+    <div
+      v-if="store.listError"
+      class="alert alert-error"
+    >
+      <span>{{ store.listError }}</span>
     </div>
 
     <BackendForm
@@ -193,7 +200,7 @@ function refreshNow(): void {
 }
 
 function handleFormError(message: string): void {
-  store.error = message;
+  store.listError = message;
 }
 
 async function submitCreate(payload: Record<string, unknown>): Promise<void> {

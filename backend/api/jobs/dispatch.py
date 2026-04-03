@@ -1,5 +1,5 @@
-"""
-ZEN70 Jobs API – Dispatch endpoints (pull_jobs, explain_job).
+﻿"""
+ZEN70 Jobs API 鈥?Dispatch endpoints (pull_jobs, explain_job).
 
 Split from routes.py for maintainability. Contains the scheduling-heavy
 pull and explain endpoints that orchestrate queue stratification,
@@ -130,7 +130,7 @@ async def pull_jobs(  # noqa: C901
             await _publish_reservation_event(redis, "expired", reservation, reason="window_elapsed")
     _governance = get_governance_facade()
 
-    # ── Governance pre-dispatch admission ────────────────────────────
+    # 鈹€鈹€ Governance pre-dispatch admission 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     _admission = await _governance.pre_dispatch_admission(
         db,
         tenant_id=payload.tenant_id,
@@ -140,20 +140,20 @@ async def pull_jobs(  # noqa: C901
     if not _admission.admitted:
         return []
 
-    # ── Feature flag snapshot (governance facade) ──────────────────
+    # 鈹€鈹€ Feature flag snapshot (governance facade) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     _ff_audit = await _governance.is_feature_enabled(db, SCHED_FLAG_DECISION_AUDIT)
     _ff_placement = await _governance.is_feature_enabled(db, SCHED_FLAG_PLACEMENT_POLICIES)
     _ff_preemption = await _governance.is_feature_enabled(db, SCHED_FLAG_PREEMPTION)
     _ff_executor_val = await _governance.is_feature_enabled(db, SCHED_FLAG_EXECUTOR_VALIDATION)
 
-    # ── Decision audit logger (governance facade) ────────────────────
+    # 鈹€鈹€ Decision audit logger (governance facade) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     _audit: SchedulingDecisionLogger = _governance.create_decision_logger(  # type: ignore[assignment]
         tenant_id=payload.tenant_id,
         node_id=payload.node_id,
         now=now,
     )
 
-    # ── Quarantine gate (also checked by facade above, kept for fcp ref) ─
+    # 鈹€鈹€ Quarantine gate (also checked by facade above, kept for fcp ref) 鈹€
     _fcp = get_failure_control_plane()
 
     active_nodes, active_lease_counts, reliability_map = await _load_node_metrics(
@@ -177,7 +177,7 @@ async def pull_jobs(  # noqa: C901
     _dc = _get_dispatch_config()
     candidate_limit = min(max(payload.limit * _dc.candidate_multiplier, _dc.candidate_min), _dc.candidate_max)
 
-    # ── Burst throttle ───────────────────────────────────────────────
+    # 鈹€鈹€ Burst throttle 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     # When the failure control plane detects a burst of failures, halve
     # the candidate window so fewer jobs are dispatched per pull cycle.
     # This reduces the blast radius while nodes/connectors stabilise.
@@ -202,10 +202,10 @@ async def pull_jobs(  # noqa: C901
         or_(Job.deadline_at.is_(None), Job.deadline_at > now),
     ]
 
-    # ── SQL-level effective priority with aging ──────────────────────
+    # 鈹€鈹€ SQL-level effective priority with aging 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     # Compute age-adjusted priority *inside* the query so the ORDER BY
     # naturally promotes old low-priority jobs. This makes aging truly
-    # global — the DB window already respects wait-time, so there is no
+    # global 鈥?the DB window already respects wait-time, so there is no
     # second-pass "anti-starvation sweep" needed.
     #
     # Formula: effective_priority = priority + min(sqrt(age_s / interval) * layer_mul, cap)
@@ -249,7 +249,7 @@ async def pull_jobs(  # noqa: C901
     result = await db.execute(query)
     candidates = list(result.scalars().all())
 
-    # ── Scheduling backoff filter (skip unschedulable jobs in backoff) ─
+    # 鈹€鈹€ Scheduling backoff filter (skip unschedulable jobs in backoff) 鈹€
     _pre_backoff = len(candidates)
     candidates = [c for c in candidates if not _governance.should_skip_backoff(c.job_id, now)]
     _backoff_skipped = _pre_backoff - len(candidates)
@@ -262,7 +262,7 @@ async def pull_jobs(  # noqa: C901
 
     candidates = cast(list[Job], sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True))
 
-    # ── Connector cooling & kind circuit breaker gate ────────────────
+    # 鈹€鈹€ Connector cooling & kind circuit breaker gate 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     # Beyond node quarantine (checked above), also honour kind-level
     # circuit breakers so jobs whose kind is failing system-wide are
     # not dispatched until the circuit transitions to half-open/closed.
@@ -273,7 +273,7 @@ async def pull_jobs(  # noqa: C901
             circuit_state = await _fcp.get_kind_circuit_state(kind, now=now)
             if circuit_state == "open":
                 _audit.record_rejection(c.job_id, f"kind_circuit_open:{kind}")
-                continue  # kind circuit open → skip until half-open
+                continue  # kind circuit open 鈫?skip until half-open
         # Executor contract kind-compat pre-check (governance facade)
         if _ff_executor_val and kind:
             _ef = _governance.filter_by_executor_contract(
@@ -286,7 +286,7 @@ async def pull_jobs(  # noqa: C901
         _filtered_candidates.append(c)
     candidates = _filtered_candidates
 
-    # ── Phase 2: Business scheduling filters (single entry point) ────
+    # 鈹€鈹€ Phase 2: Business scheduling filters (single entry point) 鈹€鈹€鈹€鈹€
     from backend.core.business_scheduling import apply_business_filters
 
     # Pre-fetch dependency and parent data needed by the filter
@@ -314,7 +314,7 @@ async def pull_jobs(  # noqa: C901
 
     available_slots = max(node_snapshot.max_concurrency - node_snapshot.active_lease_count, 0)
 
-    # ── Quota-aware fair-share data (injected into constraint context) ─
+    # 鈹€鈹€ Quota-aware fair-share data (injected into constraint context) 鈹€
     _extra_ctx: dict[str, object] = {}
     _leased_result = await db.execute(
         select(Job).where(
@@ -352,7 +352,7 @@ async def pull_jobs(  # noqa: C901
         )
         _extra_ctx["_fair_share_ratios"] = _fair_ratios
     except Exception:
-        pass  # quota_aware_scheduling not available — skip gracefully
+        pass  # quota_aware_scheduling not available 鈥?skip gracefully
 
     candidates = apply_business_filters(
         candidates,
@@ -362,9 +362,9 @@ async def pull_jobs(  # noqa: C901
         now=now,
         extra_context=_extra_ctx,
     )
-    # ── End Phase 2 ──────────────────────────────────────────────────
+    # 鈹€鈹€ End Phase 2 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-    # ── Phase 3: Score, select, lease ────────────────────────────────
+    # 鈹€鈹€ Phase 3: Score, select, lease 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     recent_failed_job_ids = await _load_recent_failed_job_ids(
         db,
         tenant_id=payload.tenant_id,
@@ -378,7 +378,7 @@ async def pull_jobs(  # noqa: C901
 
     _audit.candidates_count = len(candidates)
 
-    # ── Topology spread zone context (governance facade) ────────────
+    # 鈹€鈹€ Topology spread zone context (governance facade) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     _zone_load: dict[str, int] = defaultdict(int)
     for _snap in active_node_snapshots:
         if _snap.zone:
@@ -415,11 +415,11 @@ async def pull_jobs(  # noqa: C901
         placement_plan=placement_plan,
     )
 
-    # ── Phase 4: Preemption enforcement ──────────────────────────────
+    # 鈹€鈹€ Phase 4: Preemption enforcement 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     # When the node is at capacity (no slots) AND there are high-priority
     # candidates that were eligible but couldn't be placed, evaluate
     # preemption of currently-running low-priority jobs.
-    # Gated by feature flag — allows disabling preemption globally.
+    # Gated by feature flag 鈥?allows disabling preemption globally.
     if _ff_preemption and not selected and available_slots <= 0 and candidates and active_jobs_on_node:
         from backend.core.business_scheduling import find_preemption_candidates
 
@@ -433,7 +433,7 @@ async def pull_jobs(  # noqa: C901
                 now=now,
             )
             for urgent_job, victim_job, reason in preemption_pairs:
-                # Release the victim's lease → returns to pending
+                # Release the victim's lease 鈫?returns to pending
                 victim_job.status = "pending"
                 victim_job.node_id = None
                 victim_job.lease_token = None
@@ -469,14 +469,14 @@ async def pull_jobs(  # noqa: C901
                 )
                 break  # one preemption per pull cycle
 
-    # ── Scheduling backoff feedback ──────────────────────────────────
+    # 鈹€鈹€ Scheduling backoff feedback 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     _selected_ids = {s.job.job_id for s in selected}
     for c in candidates:
         if c.job_id not in _selected_ids:
             _governance.record_backoff_failure(c.job_id, now)
-    # ── End Phase 4 ──────────────────────────────────────────────────
+    # 鈹€鈹€ End Phase 4 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-    # ── Phase 5: DLQ expired-deadline candidates ─────────────────────
+    # 鈹€鈹€ Phase 5: DLQ expired-deadline candidates 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     # Since the main query now filters out expired deadlines at SQL level,
     # run a separate lightweight scan to DLQ any pending jobs past deadline.
     dlq_query = (
@@ -505,130 +505,132 @@ async def pull_jobs(  # noqa: C901
             f"deadline expired: moved to DLQ ({c.deadline_at.isoformat()})",
             tenant_id=c.tenant_id,
         )
-    # ── End Phase 5 ──────────────────────────────────────────────────
+    # 鈹€鈹€ End Phase 5 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     leased_jobs: list[Job] = []
     _acquired_locks: list[str] = []
-    for scored in selected:
-        job = scored.job
-        # ── Redis distributed lock prevents duplicate leases in multi-gateway ──
-        _lock_name = f"job_dispatch:{payload.tenant_id}:{job.job_id}"
-        if redis is not None:
-            _lock_ok = await redis.acquire_lock(_lock_name, ttl=10)
-            if not _lock_ok:
-                continue  # Another gateway instance is leasing this job
-            _acquired_locks.append(_lock_name)
-        await _expire_previous_attempt_if_needed(db, job, now=now)
-        job.status = "leased"
-        job.node_id = payload.node_id
-        job.attempt = int(job.attempt or 0) + 1
-        job.attempt_count = int(getattr(job, "attempt_count", 0) or 0) + 1
-        job.lease_token = _new_lease_token()
-        job.result = None
-        job.error_message = None
-        job.completed_at = None
-        job.started_at = now
-        job.leased_until = now + datetime.timedelta(seconds=job.lease_seconds)
-        job.updated_at = now
-        await db.flush()
-        await _create_attempt(db, job=job, node_id=payload.node_id, score=scored.score, now=now)
-        await _append_log(
-            db,
-            job.job_id,
-            f"job leased by {payload.node_id} attempt={job.attempt} score={scored.score} eligible_nodes={scored.eligible_nodes_count}",
-            tenant_id=job.tenant_id,
-        )
-        existing_reservation = _reservation_mgr.get_reservation(job.job_id)
-        if existing_reservation is not None and _reservation_mgr.cancel_reservation(job.job_id):
+    try:
+        for scored in selected:
+            job = scored.job
+            # 鈹€鈹€ Redis distributed lock prevents duplicate leases in multi-gateway 鈹€鈹€
+            _lock_name = f"job_dispatch:{payload.tenant_id}:{job.job_id}"
+            if redis is not None:
+                _lock_ok = await redis.acquire_lock(_lock_name, ttl=10)
+                if not _lock_ok:
+                    continue  # Another gateway instance is leasing this job
+                _acquired_locks.append(_lock_name)
+            await _expire_previous_attempt_if_needed(db, job, now=now)
+            job.status = "leased"
+            job.node_id = payload.node_id
+            job.attempt = int(job.attempt or 0) + 1
+            job.attempt_count = int(getattr(job, "attempt_count", 0) or 0) + 1
+            job.lease_token = _new_lease_token()
+            job.result = None
+            job.error_message = None
+            job.completed_at = None
+            job.started_at = now
+            job.leased_until = now + datetime.timedelta(seconds=job.lease_seconds)
+            job.updated_at = now
+            await db.flush()
+            await _create_attempt(db, job=job, node_id=payload.node_id, score=scored.score, now=now)
+            await _append_log(
+                db,
+                job.job_id,
+                f"job leased by {payload.node_id} attempt={job.attempt} score={scored.score} eligible_nodes={scored.eligible_nodes_count}",
+                tenant_id=job.tenant_id,
+            )
+            existing_reservation = _reservation_mgr.get_reservation(job.job_id)
+            if existing_reservation is not None and _reservation_mgr.cancel_reservation(job.job_id):
+                await _publish_reservation_event(
+                    redis,
+                    "canceled",
+                    existing_reservation,
+                    reason="leased",
+                )
+            leased_jobs.append(job)
+            _active_jobs_by_node.setdefault(payload.node_id, []).append(job)
+            _governance.record_backoff_success(job.job_id)
+
+            # Record placement in decision audit
+            _audit.record_placement(
+                job_id=job.job_id,
+                score=scored.score,
+                breakdown=scored.score_breakdown,
+                eligible_nodes=scored.eligible_nodes_count,
+            )
+
+        _leased_job_ids = {job.job_id for job in leased_jobs}
+        for candidate in sorted(
+            candidates,
+            key=lambda item: (-int(item.priority or 0), item.created_at, item.job_id),
+        ):
+            if candidate.job_id in _leased_job_ids:
+                continue
+            if _reservation_mgr.get_reservation(candidate.job_id) is not None:
+                continue
+            if int(candidate.priority or 0) < _reservation_mgr.config.reservation_min_priority:
+                continue
+            slot = choose_reservation_slot(
+                candidate,
+                active_node_snapshots,
+                _active_jobs_by_node,
+                now=now,
+                accepted_kinds=None,
+                reservation_mgr=_reservation_mgr,
+            )
+            if slot is None:
+                continue
+            reservation_node, reservation_start_at, _reservation_end_at = slot
+            created_reservation = _reservation_mgr.create_reservation(
+                candidate,
+                reservation_node,
+                start_at=reservation_start_at,
+            )
+            if created_reservation is None:
+                continue
+            await _append_log(
+                db,
+                candidate.job_id,
+                (
+                    f"reservation created on {reservation_node.node_id} "
+                    f"start={created_reservation.start_at.isoformat()} end={created_reservation.end_at.isoformat()}"
+                ),
+                tenant_id=candidate.tenant_id,
+            )
             await _publish_reservation_event(
                 redis,
-                "canceled",
-                existing_reservation,
-                reason="leased",
+                "created",
+                created_reservation,
+                reason="dispatch_backfill_plan",
             )
-        leased_jobs.append(job)
-        _active_jobs_by_node.setdefault(payload.node_id, []).append(job)
-        _governance.record_backoff_success(job.job_id)
 
-        # Record placement in decision audit
-        _audit.record_placement(
-            job_id=job.job_id,
-            score=scored.score,
-            breakdown=scored.score_breakdown,
-            eligible_nodes=scored.eligible_nodes_count,
-        )
+        # 鈹€鈹€ Scheduling metrics 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        _dispatch_ms = (time.monotonic() - _dispatch_start) * 1000
+        for _ in leased_jobs:
+            _governance.record_placement_metric(_dispatch_ms)
+        if candidates and not leased_jobs:
+            _governance.record_rejection_metric("no_eligible_slot")
 
-    _leased_job_ids = {job.job_id for job in leased_jobs}
-    for candidate in sorted(
-        candidates,
-        key=lambda item: (-int(item.priority or 0), item.created_at, item.job_id),
-    ):
-        if candidate.job_id in _leased_job_ids:
-            continue
-        if _reservation_mgr.get_reservation(candidate.job_id) is not None:
-            continue
-        if int(candidate.priority or 0) < _reservation_mgr.config.reservation_min_priority:
-            continue
-        slot = choose_reservation_slot(
-            candidate,
-            active_node_snapshots,
-            _active_jobs_by_node,
-            now=now,
-            accepted_kinds=None,
-            reservation_mgr=_reservation_mgr,
-        )
-        if slot is None:
-            continue
-        reservation_node, reservation_start_at, _reservation_end_at = slot
-        created_reservation = _reservation_mgr.create_reservation(
-            candidate,
-            reservation_node,
-            start_at=reservation_start_at,
-        )
-        if created_reservation is None:
-            continue
-        await _append_log(
-            db,
-            candidate.job_id,
-            (
-                f"reservation created on {reservation_node.node_id} "
-                f"start={created_reservation.start_at.isoformat()} end={created_reservation.end_at.isoformat()}"
-            ),
-            tenant_id=candidate.tenant_id,
-        )
-        await _publish_reservation_event(
-            redis,
-            "created",
-            created_reservation,
-            reason="dispatch_backfill_plan",
-        )
+        # 鈹€鈹€ Flush decision audit (governance facade) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        await _governance.post_dispatch_audit(db, _audit, enabled=_ff_audit)
 
-    # ── Scheduling metrics ────────────────────────────────────────────
-    _dispatch_ms = (time.monotonic() - _dispatch_start) * 1000
-    for _ in leased_jobs:
-        _governance.record_placement_metric(_dispatch_ms)
-    if candidates and not leased_jobs:
-        _governance.record_rejection_metric("no_eligible_slot")
-
-    # ── Flush decision audit (governance facade) ────────────────────
-    await _governance.post_dispatch_audit(db, _audit, enabled=_ff_audit)
-
-    responses = [_to_lease_response(job, now=now) for job in leased_jobs]
-    if responses:
-        await publish_control_event(
-            redis,
-            CHANNEL_JOB_EVENTS,
-            "leased",
-            {
-                "node_id": payload.node_id,
-                "jobs": [_to_response(job, now=now).model_dump(mode="json") for job in leased_jobs],
-            },
-        )
-    # ── Release dispatch locks (lease committed, safe to unlock) ─────
-    if redis is not None:
-        for _lk in _acquired_locks:
-            await redis.release_lock(_lk)
-    return responses
+        responses = [_to_lease_response(job, now=now) for job in leased_jobs]
+        await db.commit()
+        if responses:
+            await publish_control_event(
+                redis,
+                CHANNEL_JOB_EVENTS,
+                "leased",
+                {
+                    "node_id": payload.node_id,
+                    "jobs": [_to_response(job, now=now).model_dump(mode="json") for job in leased_jobs],
+                },
+            )
+        return responses
+    finally:
+        if redis is not None:
+            for _lk in _acquired_locks:
+                await redis.release_lock(_lk)
 
 
 @router.get("/{id}/explain", response_model=JobExplainResponse)
@@ -718,7 +720,7 @@ async def explain_job(
         )
     decisions.sort(key=lambda item: (not item.eligible, -(item.score or -10_000), item.node_id))
 
-    # ── Governance context for explain trace ─────────────────────────
+    # 鈹€鈹€ Governance context for explain trace 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     from backend.core.queue_stratification import (
         get_aging_config,
         get_fair_scheduler,
@@ -767,3 +769,4 @@ async def explain_job(
         decisions=decisions,
         governance=governance,
     )
+

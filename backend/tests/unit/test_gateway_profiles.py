@@ -19,6 +19,7 @@ def test_gateway_core_profile_alias_only_enables_control_plane(monkeypatch) -> N
         "connectors",
         "triggers",
         "reservations",
+        "evaluations",
     )
 
 

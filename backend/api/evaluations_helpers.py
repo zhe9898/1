@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import (
@@ -35,6 +36,18 @@ class EvaluationCreateRequest(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     category: str = Field(default="general", min_length=1, max_length=64)
     comment: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("category")
+    @classmethod
+    def _validate_category(cls, value: str) -> str:
+        if value not in VALID_CATEGORIES:
+            allowed = ", ".join(sorted(VALID_CATEGORIES))
+            raise PydanticCustomError(
+                "category_invalid",
+                "category must be one of: {allowed}",
+                {"allowed": allowed},
+            )
+        return value
 
 
 class EvaluationResponse(BaseModel):

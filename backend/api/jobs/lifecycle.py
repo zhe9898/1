@@ -165,6 +165,7 @@ async def complete_job(
         tenant_id=job.tenant_id,
     )
     response = _to_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
@@ -285,13 +286,13 @@ async def fail_job(
             tenant_id=job.tenant_id,
         )
         response = _to_response(job, now=now)
+        await db.commit()
         await publish_control_event(
             redis,
             CHANNEL_JOB_EVENTS,
             "requeued",
             {"job": response.model_dump(mode="json"), "failure_category": failure_category_str},
         )
-        await db.commit()
         return response
 
     job.status = "failed"
@@ -317,13 +318,13 @@ async def fail_job(
     _record_tuner_outcome(job, node_id=payload.node_id, success=False, now=now)
 
     response = _to_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
         "failed",
         {"job": response.model_dump(mode="json"), "failure_category": failure_category_str, "will_retry": False},
     )
-    await db.commit()
     return response
 
 
@@ -363,6 +364,7 @@ async def report_job_progress(
         tenant_id=job.tenant_id,
     )
     response = _to_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
@@ -410,6 +412,7 @@ async def renew_job_lease(
         tenant_id=job.tenant_id,
     )
     response = _to_lease_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
@@ -464,6 +467,7 @@ async def cancel_job(
         tenant_id=job.tenant_id,
     )
     response = _to_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
@@ -506,6 +510,7 @@ async def retry_job_now(
     job.completed_at = None
     job.retry_count = 0
     job.attempt_count = 0
+    job.attempt = 0
     job.updated_at = now
     await db.flush()
     await _cancel_job_reservation(redis, job.job_id, reason="manual_retry")
@@ -517,6 +522,7 @@ async def retry_job_now(
         tenant_id=job.tenant_id,
     )
     response = _to_response(job, now=now)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_JOB_EVENTS,
