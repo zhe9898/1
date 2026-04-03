@@ -29,6 +29,9 @@ _IS_PROD = os.getenv("ZEN70_ENV", "").lower() == "production"
 _CURRENT = os.getenv("JWT_SECRET_CURRENT") or os.getenv("JWT_SECRET") or ("" if _IS_PROD else DEFAULT_INSECURE_SECRET)
 _PREVIOUS = os.getenv("JWT_SECRET_PREVIOUS") or None
 _EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+_INITIAL_CURRENT = _CURRENT
+_INITIAL_PREVIOUS = _PREVIOUS
+_INITIAL_EXPIRE_MINUTES = _EXPIRE_MINUTES
 
 # When True, token revocation check fails CLOSED (deny) if Redis is unavailable.
 # In production, set REDIS_REQUIRED_FOR_TOKEN_REVOCATION=1 to enforce strict revocation.
@@ -47,7 +50,29 @@ class RedisBlacklistStore(Protocol):
 
 def _resolved_current_secret() -> str:
     is_prod = os.getenv("ZEN70_ENV", "").lower() == "production"
+    # Preserve test/runtime overrides when module-level constants are monkeypatched.
+    if _CURRENT != _INITIAL_CURRENT:
+        return _CURRENT
     return os.getenv("JWT_SECRET_CURRENT") or os.getenv("JWT_SECRET") or ("" if is_prod else DEFAULT_INSECURE_SECRET)
+
+
+def _resolved_previous_secret() -> str | None:
+    if _PREVIOUS != _INITIAL_PREVIOUS:
+        return _PREVIOUS
+    return os.getenv("JWT_SECRET_PREVIOUS") or None
+
+
+def _resolved_expire_minutes() -> int:
+    if _EXPIRE_MINUTES != _INITIAL_EXPIRE_MINUTES:
+        return _EXPIRE_MINUTES
+    raw = os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    if raw is None:
+        return _EXPIRE_MINUTES
+    try:
+        minutes = int(raw)
+    except (TypeError, ValueError):
+        return _EXPIRE_MINUTES
+    return minutes if minutes > 0 else _EXPIRE_MINUTES
 
 
 def assert_jwt_runtime_ready() -> None:
@@ -71,11 +96,13 @@ def create_access_token(
     use_current_secret: bool = True,
 ) -> str:
     to_encode = data.copy()
-    expire = _now() + (expires_delta if expires_delta is not None else timedelta(minutes=_EXPIRE_MINUTES))
+    expire = _now() + (expires_delta if expires_delta is not None else timedelta(minutes=_resolved_expire_minutes()))
     to_encode["exp"] = expire
     to_encode["iat"] = _now()
     to_encode["jti"] = uuid.uuid4().hex
-    secret = _CURRENT if use_current_secret else _PREVIOUS or _CURRENT
+    current_secret = _resolved_current_secret()
+    previous_secret = _resolved_previous_secret()
+    secret = current_secret if use_current_secret else (previous_secret or current_secret)
     return jwt.encode(to_encode, secret, algorithm=ALGORITHM)
 
 
@@ -85,8 +112,11 @@ async def decode_token(token: str, *, redis_conn: RedisBlacklistStore | None = N
         exc.headers = {"WWW-Authenticate": "Bearer"}
         raise exc
 
+    current_secret = _resolved_current_secret()
+    previous_secret = _resolved_previous_secret()
+
     try:
-        payload = jwt.decode(token, _CURRENT, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, current_secret, algorithms=[ALGORITHM])
         exp = payload.get("exp")
         iat = payload.get("iat")
         if exp and iat:
@@ -103,9 +133,9 @@ async def decode_token(token: str, *, redis_conn: RedisBlacklistStore | None = N
     except jwt.InvalidTokenError:
         pass
 
-    if _PREVIOUS:
+    if previous_secret:
         try:
-            payload = jwt.decode(token, _PREVIOUS, algorithms=[ALGORITHM])
+            payload = jwt.decode(token, previous_secret, algorithms=[ALGORITHM])
             new_token = create_access_token(
                 {key: value for key, value in payload.items() if key not in ("exp", "iat", "nbf", "jti")},
                 use_current_secret=True,
@@ -161,4 +191,4 @@ async def is_jti_blacklisted(redis_conn: RedisBlacklistStore | None, jti: object
 
 
 def get_access_token_expire_seconds() -> int:
-    return _EXPIRE_MINUTES * 60
+    return _resolved_expire_minutes() * 60

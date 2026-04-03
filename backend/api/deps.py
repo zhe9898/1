@@ -68,7 +68,7 @@ async def get_current_user(
     request: Request,
     response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> dict[str, str]:
+) -> dict[str, object]:
     if not credentials or not credentials.credentials:
         raise zen("ZEN-AUTH-401", "Missing or invalid token", status_code=401)
 
@@ -84,32 +84,50 @@ async def get_current_user(
 
 
 async def get_tenant_db(
-    current_user: dict[str, str] = Depends(get_current_user),
+    current_user: dict[str, object] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AsyncSession:
     return await _bind_tenant_db(db, str(current_user.get("tenant_id") or "default"))
+
+
+def _extract_machine_tenant_id(request: Request) -> str | None:
+    from_state = getattr(request.state, "machine_tenant_id", None)
+    if isinstance(from_state, str) and from_state.strip():
+        return from_state.strip()
+
+    from_header: object = None
+    try:
+        from_header = request.headers.get("X-Tenant-ID")
+    except Exception:
+        from_header = None
+    if isinstance(from_header, str) and from_header.strip():
+        return from_header.strip()
+
+    return None
 
 
 async def get_machine_tenant_db(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> AsyncSession:
-    try:
-        payload = await request.json()
-    except (json.JSONDecodeError, RuntimeError, ValueError):
-        payload = {}
+    tenant_id = _extract_machine_tenant_id(request)
+    if not tenant_id:
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, RuntimeError, ValueError):
+            payload = {}
+        body_tenant_id = payload.get("tenant_id") if isinstance(payload, dict) else None
+        tenant_id = body_tenant_id.strip() if isinstance(body_tenant_id, str) else ""
 
-    tenant_id = payload.get("tenant_id") if isinstance(payload, dict) else None
-    if not isinstance(tenant_id, str) or not tenant_id.strip():
+    if not tenant_id:
         raise zen(
             "ZEN-TENANT-4001",
             "Machine request is missing tenant_id",
             status_code=400,
             recovery_hint="Attach tenant_id in the machine request payload before authenticating node traffic",
         )
-
-    request.state.machine_tenant_id = tenant_id.strip()
-    return await _bind_tenant_db(db, tenant_id.strip())
+    request.state.machine_tenant_id = tenant_id
+    return await _bind_tenant_db(db, tenant_id)
 
 
 def has_admin_role(current_user: Mapping[str, object] | None) -> bool:
@@ -122,7 +140,7 @@ def is_superadmin_role(current_user: Mapping[str, object] | None) -> bool:
     return role == SUPERADMIN_ROLE
 
 
-def require_admin_role(current_user: dict[str, str]) -> dict[str, str]:
+def require_admin_role(current_user: dict[str, object]) -> dict[str, object]:
     if not has_admin_role(current_user):
         raise zen(
             "ZEN-AUTH-403",
@@ -133,7 +151,7 @@ def require_admin_role(current_user: dict[str, str]) -> dict[str, str]:
     return current_user
 
 
-def require_superadmin_role(current_user: dict[str, str]) -> dict[str, str]:
+def require_superadmin_role(current_user: dict[str, object]) -> dict[str, object]:
     if not is_superadmin_role(current_user):
         raise zen(
             "ZEN-AUTH-403",
@@ -145,8 +163,8 @@ def require_superadmin_role(current_user: dict[str, str]) -> dict[str, str]:
 
 
 async def get_current_admin(
-    current_user: dict[str, str] = Depends(get_current_user),
-) -> dict[str, str]:
+    current_user: dict[str, object] = Depends(get_current_user),
+) -> dict[str, object]:
     return require_admin_role(current_user)
 
 
@@ -204,8 +222,8 @@ def require_scope(required_scope: str) -> object:
     """
 
     async def _check_scope(
-        current_user: dict[str, str] = Depends(get_current_user),
-    ) -> dict[str, str]:
+        current_user: dict[str, object] = Depends(get_current_user),
+    ) -> dict[str, object]:
         scopes: object = current_user.get("scopes", [])
         if not isinstance(scopes, list):
             scopes = []

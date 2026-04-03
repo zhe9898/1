@@ -232,3 +232,26 @@ class TestTenantBoundDb:
         set_tenant_context_mock.assert_awaited_once_with(db, "tenant-machine")
         assert_rls_ready_mock.assert_awaited_once_with(db)
         assert request.state.machine_tenant_id == "tenant-machine"
+
+    @pytest.mark.anyio
+    async def test_get_machine_tenant_db_prefers_header_without_parsing_body(self) -> None:
+        from backend.api.deps import get_machine_tenant_db
+
+        request = MagicMock()
+        request.state = MagicMock()
+        request.headers = {"X-Tenant-ID": "tenant-from-header"}
+        request.json = AsyncMock(side_effect=AssertionError("request.json should not be called"))
+        db = MagicMock()
+
+        with (
+            patch("backend.api.deps.set_tenant_context") as set_tenant_context_mock,
+            patch("backend.api.deps.assert_rls_ready") as assert_rls_ready_mock,
+        ):
+            set_tenant_context_mock.return_value = None
+            assert_rls_ready_mock.return_value = None
+            result = await get_machine_tenant_db(request, db)
+
+        assert result is db
+        set_tenant_context_mock.assert_awaited_once_with(db, "tenant-from-header")
+        assert_rls_ready_mock.assert_awaited_once_with(db)
+        assert request.state.machine_tenant_id == "tenant-from-header"
