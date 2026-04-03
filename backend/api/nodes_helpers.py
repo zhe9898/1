@@ -15,13 +15,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.action_contracts import ControlAction, optional_reason_field
-from backend.api.nodes_schema import (
-    _bootstrap_notes,
-    _bootstrap_token_value,
-    _build_bootstrap_commands,
-    _build_bootstrap_receipts,
-    _resource_schema,
-)
 from backend.api.ui_contracts import StatusView
 from backend.core.control_plane_state import (
     node_attention_reason,

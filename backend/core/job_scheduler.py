@@ -67,7 +67,7 @@ def _required_capability_set(job: Job) -> frozenset[str]:
     return frozenset()
 
 
-def _candidate_nodes_for_job(
+def _candidate_nodes_for_job(  # noqa: C901
     job: Job,
     live_nodes: list[SchedulerNodeSnapshot],
     *,
