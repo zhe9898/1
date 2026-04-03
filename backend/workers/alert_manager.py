@@ -84,6 +84,9 @@ async def trigger_alert_endpoint(
         channels += 1
 
     if tasks:
-        asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("alert channel dispatch failed: %s", result, exc_info=True)
 
     return {"status": "alert_dispatched", "channels": channels}

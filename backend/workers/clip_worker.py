@@ -44,11 +44,25 @@ class CLIPInferenceEngine:
 engine = CLIPInferenceEngine()
 
 
-async def process_pending_assets() -> None:
+def _resolve_worker_tenant_id(explicit_tenant_id: str | None = None) -> str | None:
+    if explicit_tenant_id and explicit_tenant_id.strip():
+        return explicit_tenant_id.strip()
+    env_tenant = os.getenv("WORKER_TENANT_ID", "").strip() or os.getenv("TENANT_ID", "").strip()
+    return env_tenant or None
+
+
+async def process_pending_assets(tenant_id: str | None = None) -> None:
     from backend.models.asset import Asset
 
+    scoped_tenant_id = _resolve_worker_tenant_id(tenant_id)
+    if not scoped_tenant_id:
+        logger.error("clip worker skipped: tenant scope is required (set WORKER_TENANT_ID or pass tenant_id)")
+        return
+
     async with _async_session_factory() as session:  # type: ignore[misc]
-        result = await session.execute(select(Asset).where(Asset.embedding_status == "pending").limit(50))
+        result = await session.execute(
+            select(Asset).where(Asset.tenant_id == scoped_tenant_id, Asset.embedding_status == "pending").limit(50)
+        )
         assets = result.scalars().all()
 
         for asset in assets:

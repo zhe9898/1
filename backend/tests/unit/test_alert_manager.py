@@ -130,11 +130,22 @@ async def test_alert_manager_critical_dispatch(mock_db_session, mock_settings, m
     assert res["channels"] == 2  # type: ignore[index]
 
     mock_db_session.add.assert_called_once()
-
-    # We yield control slightly to allow the fire-and-forget task to spin
-    import asyncio
-
-    await asyncio.sleep(0.01)
-
     mock_bark.assert_called_once_with("http://bark.dev/key", "POWER LOSS", "UPS dying", "critical", icon_url="")
     mock_sc.assert_called_once_with("https://sctapi.ftqq.com", "SCT_xxx", "POWER LOSS", "UPS dying")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_alert_manager_channel_failure_is_isolated(mock_db_session, mock_settings, mock_user, mocker, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    payload = AlertPayloadFactory.build(level="critical", title="POWER LOSS", message="UPS dying")
+    monkeypatch.setenv("BARK_URL", "http://bark.dev/key")
+    monkeypatch.setenv("SERVER_CHAN_KEY", "SCT_xxx")
+
+    mocker.patch("backend.workers.alert_manager.push_to_bark", side_effect=RuntimeError("bark down"))
+    mock_sc = mocker.patch("backend.workers.alert_manager.push_to_serverchan", return_value=None)
+
+    res = await trigger_alert_endpoint(payload, mock_settings, mock_db_session, mock_user)  # type: ignore[func-returns-value]
+
+    assert res["status"] == "alert_dispatched"  # type: ignore[index]
+    assert res["channels"] == 2  # type: ignore[index]
+    mock_sc.assert_called_once()

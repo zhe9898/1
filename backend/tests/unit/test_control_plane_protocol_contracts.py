@@ -580,7 +580,7 @@ async def test_provision_node_issues_one_time_token(monkeypatch: pytest.MonkeyPa
     assert response.node.worker_pools == ["interactive"]
     assert response.node.status_view.key == "offline"
     assert response.node.enrollment_status_view.key == "pending"
-    assert response.node_token.startswith("zkn_")
+    assert response.node_token == "<paste-one-time-node-token-here>"
     assert response.auth_token_version == 1
     assert response.bootstrap_commands["powershell"].startswith('$env:RUNNER_NODE_ID="node-new"')
     assert 'export RUNNER_TENANT_ID="tenant-alpha"' in response.bootstrap_commands["unix"]
@@ -605,7 +605,7 @@ async def test_rotate_node_token_increments_version(monkeypatch: pytest.MonkeyPa
     assert response.node.enrollment_status == "pending"
     assert response.node.status == "offline"
     assert response.node.status_view.key == "offline"
-    assert response.node_token.startswith("zkn_")
+    assert response.node_token == "<paste-one-time-node-token-here>"
     assert "https://gateway.example.invalid" in response.bootstrap_commands["powershell"]
 
 

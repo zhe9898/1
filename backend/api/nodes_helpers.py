@@ -1,5 +1,5 @@
-"""
-ZEN70 Nodes API – Helper functions.
+﻿"""
+ZEN70 Nodes API 鈥?Helper functions.
 
 Split from nodes.py for maintainability.  Contains response builders,
 contract application, filtering, and database helpers.
@@ -15,8 +15,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.action_contracts import ControlAction, optional_reason_field
-from backend.api.nodes_schema import (  # noqa: F401 – re-export
+from backend.api.nodes_schema import (
     _bootstrap_notes,
+    _bootstrap_token_value,
     _build_bootstrap_commands,
     _build_bootstrap_receipts,
     _resource_schema,
@@ -306,3 +307,4 @@ def _provision_token(node: Node) -> tuple[str, int]:
     node.auth_token_hash = hash_node_token(token)
     node.auth_token_version = next_version
     return token, next_version
+

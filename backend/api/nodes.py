@@ -1,9 +1,9 @@
-"""
-ZEN70 Nodes API – Route handlers only.
+﻿"""
+ZEN70 Nodes API 鈥?Route handlers only.
 
 Models live in nodes_models.py; helpers live in nodes_helpers.py.
 This module wires them together behind FastAPI route definitions and
-re-exports all public names so existing ``from backend.api.nodes import …``
+re-exports all public names so existing ``from backend.api.nodes import 鈥`
 statements keep working.
 """
 
@@ -22,9 +22,10 @@ from backend.api.deps import (
     get_redis,
     get_tenant_db,
 )
-from backend.api.nodes_helpers import (  # noqa: F401 – re-exported for consumers
+from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consumers
     _apply_contract,
     _bootstrap_notes,
+    _bootstrap_token_value,
     _build_bootstrap_commands,
     _build_bootstrap_receipts,
     _build_node_actions,
@@ -36,8 +37,8 @@ from backend.api.nodes_helpers import (  # noqa: F401 – re-exported for consum
     _to_response,
 )
 
-# ── Re-exports (backward-compat) ────────────────────────────────────────────
-from backend.api.nodes_models import (  # noqa: F401 – re-exported for consumers
+# 鈹€鈹€ Re-exports (backward-compat) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consumers
     BootstrapReceipt,
     NodeContractPayload,
     NodeDrainRequest,
@@ -102,7 +103,7 @@ async def provision_node(
     await db.flush()
     return NodeProvisionResponse(
         node=_to_response(node, now=now),
-        node_token=token,
+        node_token=_bootstrap_token_value(token),
         auth_token_version=version,
         bootstrap_commands=_build_bootstrap_commands(node, token),
         bootstrap_notes=_bootstrap_notes(),
@@ -126,7 +127,7 @@ async def rotate_node_token(
     await db.flush()
     return NodeProvisionResponse(
         node=_to_response(node, now=now),
-        node_token=token,
+        node_token=_bootstrap_token_value(token),
         auth_token_version=version,
         bootstrap_commands=_build_bootstrap_commands(node, token),
         bootstrap_notes=_bootstrap_notes(),
@@ -218,7 +219,7 @@ async def register_node(
     now = _utcnow()
     _apply_contract(node, payload, "online", now)
 
-    # ── Executor contract validation (non-blocking) ──────────────────
+    # 鈹€鈹€ Executor contract validation (non-blocking) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     from backend.core.executor_registry import get_executor_registry
 
     _exec_warnings = get_executor_registry().validate_node_executor(
@@ -269,10 +270,9 @@ async def heartbeat_node(
         tenant_id=payload.tenant_id,
     )
 
-    # ── ADR-0047 WP-P0: 节点状态机封闭 ──────────────────────────────────────
-    # heartbeat 绝不能成为绕过审批流的旁路。
-    # pending → active 的唯一合法路径是 POST /api/v1/nodes/{node_id}/approve 管理员操作。
-    # revoked 节点已吊销凭证，必须重新 provision + register。
+    # ADR-0047 WP-P0: heartbeat must not bypass enrollment approval.
+    # pending -> active must only happen through admin approval endpoint.
+    # revoked nodes must be reprovisioned and registered with a new token.
     if node.enrollment_status == "pending":
         raise zen(
             "ZEN-NODE-4031",
@@ -289,7 +289,7 @@ async def heartbeat_node(
             recovery_hint="Provision a new node token and re-register before sending heartbeats",
             details={"node_id": node.node_id, "enrollment_status": node.enrollment_status},
         )
-    # ── 仅 active 节点可续活，enrollment_status 保持不变 ─────────────────────
+    # 鈹€鈹€ 浠?active 鑺傜偣鍙画娲伙紝enrollment_status 淇濇寔涓嶅彉 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     now = _utcnow()
     _apply_contract(node, payload, payload.status, now)
@@ -372,3 +372,4 @@ async def get_node(
     now = _utcnow()
     counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id], now=now)
     return _to_response(node, active_lease_count=counts.get(node.node_id, 0), now=now)
+

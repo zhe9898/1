@@ -5,6 +5,7 @@ ZEN70 AI Worker - 资产嵌入向量处理。
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -39,11 +40,25 @@ except ImportError:
     Image = None
 
 
-async def process_pending_assets() -> int:
+def _resolve_worker_tenant_id(explicit_tenant_id: str | None = None) -> str | None:
+    if explicit_tenant_id and explicit_tenant_id.strip():
+        return explicit_tenant_id.strip()
+    env_tenant = os.getenv("WORKER_TENANT_ID", "").strip() or os.getenv("TENANT_ID", "").strip()
+    return env_tenant or None
+
+
+async def process_pending_assets(tenant_id: str | None = None) -> int:
     from backend.models.asset import Asset
 
+    scoped_tenant_id = _resolve_worker_tenant_id(tenant_id)
+    if not scoped_tenant_id:
+        logger.error("ai worker skipped: tenant scope is required (set WORKER_TENANT_ID or pass tenant_id)")
+        return 0
+
     async with AsyncSessionLocal() as session:  # type: ignore[misc]
-        result = await session.execute(select(Asset).where(Asset.embedding_status == "pending").limit(50))
+        result = await session.execute(
+            select(Asset).where(Asset.tenant_id == scoped_tenant_id, Asset.embedding_status == "pending").limit(50)
+        )
         assets = result.scalars().all()
 
         if not assets:

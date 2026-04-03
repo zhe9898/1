@@ -50,7 +50,7 @@ async def test_process_pending_assets_no_tasks(
     mock_result.scalars.return_value.all.return_value = []
     mock_session.execute.return_value = mock_result
 
-    count = await process_pending_assets()
+    count = await process_pending_assets(tenant_id="tenant-a")
     assert count == 0
 
 
@@ -80,7 +80,9 @@ async def test_process_pending_assets_success(
     mocker.patch("backend.workers.ai_worker.Path.exists", return_value=True)
     mocker.patch("backend.workers.ai_worker.Image.open")
 
-    count = await process_pending_assets()
+    count = await process_pending_assets(tenant_id="tenant-a")
+    rendered = str(mock_session.execute.await_args.args[0])
+    assert "assets.tenant_id" in rendered
     assert count == 1
     assert mock_asset.embedding_status == "done"
 
@@ -107,6 +109,20 @@ async def test_process_pending_assets_no_model(
     mocker.patch("backend.workers.ai_worker.get_model", return_value=None)
     ai_worker.HAS_MODEL = False
 
-    count = await process_pending_assets()
+    count = await process_pending_assets(tenant_id="tenant-a")
     assert count == 0
     assert mock_asset.embedding_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_process_pending_assets_requires_tenant_scope(mocker: MockerFixture, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    mock_session = AsyncMock()
+    mocker.patch("backend.workers.ai_worker.AsyncSessionLocal", return_value=mock_session)
+    mock_session.__aenter__.return_value = mock_session
+    monkeypatch.delenv("WORKER_TENANT_ID", raising=False)
+    monkeypatch.delenv("TENANT_ID", raising=False)
+
+    count = await process_pending_assets()
+
+    assert count == 0
+    mock_session.execute.assert_not_awaited()

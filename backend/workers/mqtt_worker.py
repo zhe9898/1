@@ -8,6 +8,7 @@ import base64
 import logging
 import os
 from pathlib import Path
+import re
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -16,6 +17,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db import _async_session_factory
 
 logger = logging.getLogger("zen70.mqtt_worker")
+_SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _sanitize_segment(raw: object, *, default: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return default
+    cleaned = _SAFE_SEGMENT.sub("_", value)
+    cleaned = cleaned.strip("._")
+    return cleaned or default
+
+
+def _safe_join_under_root(root: Path, segment: str) -> Path:
+    candidate = (root / segment).resolve(strict=False)
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("path escapes media root") from exc
+    return candidate
 
 
 async def get_media_path(session: AsyncSession) -> str:
@@ -38,24 +58,33 @@ async def process_event(event: dict[str, Any]) -> None:
     async with _async_session_factory() as session:  # type: ignore[misc]
         media_path = await get_media_path(session)
 
-        event_id = after.get("id", "unknown")
+        event_id = _sanitize_segment(after.get("id", "unknown"), default="unknown")
         label = after.get("label", "unknown")
-        camera = after.get("camera", "unknown")
+        camera = _sanitize_segment(after.get("camera", "unknown"), default="unknown")
+        tenant_id = str(after.get("tenant_id") or event.get("tenant_id") or "default")
 
         snapshot_b64 = after.get("snapshot", "")
         if not snapshot_b64:
             return
 
-        snapshot_bytes = base64.b64decode(snapshot_b64)
-        output_dir = Path(media_path) / camera
-        Path.mkdir(output_dir, parents=True, exist_ok=True)
+        try:
+            snapshot_bytes = base64.b64decode(snapshot_b64, validate=True)
+        except (ValueError, TypeError):
+            logger.warning("discarding invalid snapshot payload for event_id=%s", event_id)
+            return
 
-        output_path = output_dir / f"{event_id}.jpg"
-        Path.open(output_path, "wb").write(snapshot_bytes)
+        media_root = Path(media_path).resolve(strict=False)
+        output_dir = _safe_join_under_root(media_root, camera)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_path = _safe_join_under_root(output_dir, f"{event_id}.jpg")
+        with output_path.open("wb") as handle:
+            handle.write(snapshot_bytes)
 
         from backend.models.asset import Asset
 
         asset = Asset(
+            tenant_id=tenant_id,
             file_path=str(output_path),
             label=label,
             camera=camera,
