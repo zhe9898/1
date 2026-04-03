@@ -1,22 +1,22 @@
-"""Unit tests for backend.core.data_retention — 数据保留清理。"""
+"""Unit tests for backend.core.data_retention."""
 
 from __future__ import annotations
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.core.data_retention import (
     TERMINAL_STATUSES,
     _cutoff,
+    _list_active_tenant_ids,
     purge_old_audit_logs,
     purge_old_jobs,
     purge_old_scheduling_decisions,
     run_retention_cycle,
 )
-
-# -------------------- helpers --------------------
 
 
 def _mock_session(scalars_result: list | None = None, rowcount: int = 0) -> AsyncMock:
@@ -30,9 +30,6 @@ def _mock_session(scalars_result: list | None = None, rowcount: int = 0) -> Asyn
     return session
 
 
-# -------------------- _cutoff --------------------
-
-
 class TestCutoff:
     def test_cutoff_returns_past_datetime(self) -> None:
         now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
@@ -42,128 +39,97 @@ class TestCutoff:
         assert 29 <= diff.days <= 31
 
 
-# -------------------- purge_old_jobs --------------------
-
-
 class TestPurgeOldJobs:
     @pytest.mark.asyncio
     async def test_no_jobs_to_purge(self) -> None:
         session = _mock_session(scalars_result=[])
-        count = await purge_old_jobs(session)
+        count = await purge_old_jobs(session, "tenant-a")
         assert count == 0
         session.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_purges_terminal_jobs(self) -> None:
-        job_ids = ["job-001", "job-002", "job-003"]
-        session = _mock_session(scalars_result=job_ids)
-        count = await purge_old_jobs(session)
+        session = _mock_session(scalars_result=["job-001", "job-002", "job-003"])
+        count = await purge_old_jobs(session, "tenant-a")
         assert count == 3
         session.commit.assert_awaited_once()
-        # 3 execute calls: select IDs, delete attempts, delete jobs
-        assert session.execute.await_count == 3
-
-
-# -------------------- purge_old_scheduling_decisions --------------------
+        # set tenant context + select + delete attempts + delete jobs
+        assert session.execute.await_count == 4
 
 
 class TestPurgeOldSchedulingDecisions:
     @pytest.mark.asyncio
     async def test_no_decisions_to_purge(self) -> None:
         session = _mock_session(rowcount=0)
-        count = await purge_old_scheduling_decisions(session)
+        count = await purge_old_scheduling_decisions(session, "tenant-a")
         assert count == 0
 
     @pytest.mark.asyncio
     async def test_purges_old_decisions(self) -> None:
         session = _mock_session(rowcount=42)
-        count = await purge_old_scheduling_decisions(session)
+        count = await purge_old_scheduling_decisions(session, "tenant-a")
         assert count == 42
         session.commit.assert_awaited_once()
-
-
-# -------------------- purge_old_audit_logs --------------------
 
 
 class TestPurgeOldAuditLogs:
     @pytest.mark.asyncio
     async def test_no_audit_logs_to_purge(self) -> None:
         session = _mock_session(rowcount=0)
-        count = await purge_old_audit_logs(session)
+        count = await purge_old_audit_logs(session, "tenant-a")
         assert count == 0
 
     @pytest.mark.asyncio
     async def test_purges_old_audit_logs(self) -> None:
         session = _mock_session(rowcount=99)
-        count = await purge_old_audit_logs(session)
+        count = await purge_old_audit_logs(session, "tenant-a")
         assert count == 99
         session.commit.assert_awaited_once()
 
 
-# -------------------- run_retention_cycle --------------------
-
-
 class TestRunRetentionCycle:
     @pytest.mark.asyncio
-    async def test_full_cycle_returns_summary(self) -> None:
-        # First call: purge_old_jobs select → returns 2 job_ids
-        # Second call: purge_old_jobs delete attempts
-        # Third call: purge_old_jobs delete jobs
-        # Fourth call: purge_old_scheduling_decisions → rowcount=5
-        # Fifth call: purge_old_audit_logs → rowcount=10
-        _call_count = 0  # noqa: F841
-        results: list[MagicMock] = []
-
-        # jobs select result
-        r_select = MagicMock()
-        r_select.scalars.return_value.all.return_value = ["j1", "j2"]
-        results.append(r_select)
-
-        # jobs delete attempts result
-        r_del_attempts = MagicMock()
-        r_del_attempts.rowcount = 4
-        results.append(r_del_attempts)
-
-        # jobs delete jobs result
-        r_del_jobs = MagicMock()
-        r_del_jobs.rowcount = 2
-        results.append(r_del_jobs)
-
-        # scheduling_decisions delete result
-        r_sched = MagicMock()
-        r_sched.rowcount = 5
-        results.append(r_sched)
-
-        # audit_logs delete result
-        r_audit = MagicMock()
-        r_audit.rowcount = 10
-        results.append(r_audit)
-
+    async def test_full_cycle_returns_aggregated_summary(self) -> None:
         session = AsyncMock()
-        session.commit = AsyncMock()
-        session.execute = AsyncMock(side_effect=results)
+        with (
+            patch("backend.core.data_retention._list_active_tenant_ids", new=AsyncMock(return_value=["tenant-a", "tenant-b"])),
+            patch(
+                "backend.core.data_retention._run_retention_cycle_for_tenant",
+                new=AsyncMock(
+                    side_effect=[
+                        {"jobs": 2, "scheduling_decisions": 5, "audit_logs": 10},
+                        {"jobs": 1, "scheduling_decisions": 0, "audit_logs": 4},
+                    ]
+                ),
+            ) as run_one,
+        ):
+            summary = await run_retention_cycle(session)
 
-        summary = await run_retention_cycle(session)
-        assert summary["jobs"] == 2
-        assert summary["scheduling_decisions"] == 5
-        assert summary["audit_logs"] == 10
+        assert summary == {"jobs": 3, "scheduling_decisions": 5, "audit_logs": 14}
+        assert run_one.await_count == 2
 
     @pytest.mark.asyncio
     async def test_empty_cycle(self) -> None:
-        # All queries return nothing
-        r_empty = MagicMock()
-        r_empty.scalars.return_value.all.return_value = []
-        r_empty.rowcount = 0
-
         session = AsyncMock()
-        session.commit = AsyncMock()
-        session.execute = AsyncMock(return_value=r_empty)
+        with (
+            patch("backend.core.data_retention._list_active_tenant_ids", new=AsyncMock(return_value=["tenant-a"])),
+            patch(
+                "backend.core.data_retention._run_retention_cycle_for_tenant",
+                new=AsyncMock(return_value={"jobs": 0, "scheduling_decisions": 0, "audit_logs": 0}),
+            ),
+        ):
+            summary = await run_retention_cycle(session)
 
-        summary = await run_retention_cycle(session)
         assert summary == {"jobs": 0, "scheduling_decisions": 0, "audit_logs": 0}
 
 
-# -------------------- constants --------------------
+class TestListActiveTenantIds:
+    @pytest.mark.asyncio
+    async def test_returns_default_when_query_fails(self) -> None:
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=SQLAlchemyError("db boom"))
+        tenant_ids = await _list_active_tenant_ids(session)
+        assert tenant_ids == ["default"]
 
 
 class TestConstants:

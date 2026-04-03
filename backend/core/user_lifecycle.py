@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.errors import zen
+from backend.core.sessions import revoke_all_user_sessions
 from backend.models.user import User
 
 if TYPE_CHECKING:
@@ -62,8 +63,13 @@ async def suspend_user(
 
     await db.flush()
 
-    # TODO: Revoke all user's tokens via Redis
-    # This requires tracking user_id -> jti mapping
+    await revoke_all_user_sessions(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        revoked_by=f"admin:suspend:{suspended_by}",
+        redis=redis,
+    )
 
     return cast("User", user)
 
@@ -141,6 +147,12 @@ async def delete_user(
 
     await db.flush()
 
-    # TODO: Revoke all user's tokens via Redis
+    await revoke_all_user_sessions(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        revoked_by="admin:delete_user",
+        redis=redis,
+    )
 
     return cast("User", user)
