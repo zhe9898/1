@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
 
 MEDIA_PATH: str | None = os.environ.get("MEDIA_PATH", None)
+# Maximum upload size: 50 MB (configurable via env)
+MAX_UPLOAD_SIZE: int = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", str(50 * 1024 * 1024)))
 
 _ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
     {
@@ -97,17 +99,37 @@ async def upload_asset(
     dest = Path(MEDIA_PATH) / safe_name
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    content = await file.read()
-    dest.write_bytes(content)
+    # Chunked write with size limit to prevent memory exhaustion DoS
+    total_size = 0
+    chunk_size = 64 * 1024  # 64 KB chunks
+    with dest.open("wb") as out_file:
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > MAX_UPLOAD_SIZE:
+                # Clean up partial file
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "code": "ZEN-ASSET-4130",
+                        "message": f"File exceeds maximum upload size of {MAX_UPLOAD_SIZE} bytes",
+                        "recovery_hint": f"Maximum allowed file size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB",
+                    },
+                )
+            out_file.write(chunk)
 
-    return {"filename": safe_name, "size": len(content)}
+    return {"filename": safe_name, "size": total_size}
 
 
 async def delete_asset(
     asset_id: str,
     db: AsyncSession,
+    tenant_id: str = "default",
 ) -> dict[str, Any]:
-    """Delete an asset by UUID."""
+    """Delete an asset by UUID with tenant isolation."""
     try:
         uuid.UUID(asset_id)
     except ValueError:
@@ -122,7 +144,7 @@ async def delete_asset(
 
     from backend.models.asset import Asset
 
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    result = await db.execute(select(Asset).where(Asset.id == asset_id, Asset.tenant_id == tenant_id))
     asset = result.scalars().first()
     if asset is None:
         raise HTTPException(

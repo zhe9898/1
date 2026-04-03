@@ -89,6 +89,27 @@ async def _consume_invite_token(redis: RedisClient, token: str) -> dict[str, obj
         await redis.release_lock(lock_key)
 
 
+async def _validate_invite_token(redis: RedisClient, token: str) -> dict[str, object]:
+    """Validate invite token without consuming it. Returns payload if valid."""
+    token_key = f"{INVITE_TOKEN_PREFIX}{token}"
+    token_data_str = await redis.get(token_key)
+    if not token_data_str:
+        raise zen(
+            "ZEN-AUTH-4031",
+            "Invite token expired or not found",
+            status_code=status.HTTP_403_FORBIDDEN,
+            recovery_hint="Generate a new invite and retry",
+        )
+    try:
+        return json.loads(token_data_str)
+    except json.JSONDecodeError as exc:
+        raise zen(
+            CODE_SERVER_ERROR,
+            "Invite token payload is invalid",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ) from exc
+
+
 @router.post("/invites", response_model=InviteResponse)
 async def create_invite(
     req: InviteCreateRequest,
@@ -167,7 +188,8 @@ async def invite_webauthn_register_complete(
     """Invite link: complete WebAuthn registration and consume token."""
     require_db_redis(db, redis)
 
-    token_payload = await _consume_invite_token(redis, token)
+    # Step 1: Validate token without consuming — prevents DoS via invalid requests burning invites
+    token_payload = await _validate_invite_token(redis, token)
     user_id = token_payload.get("user_id")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -198,6 +220,9 @@ async def invite_webauthn_register_complete(
             recovery_hint="Restart registration and retry",
         ) from exc
 
+    # Step 2: Consume token only after successful WebAuthn verification
+    await _consume_invite_token(redis, token)
+
     cred_id_b64 = bytes_to_base64url(verification.credential_id)  # type: ignore[attr-defined]
     raw_dev = req.credential.get("deviceName") or (req.credential.get("response") or {}).get("deviceName")  # type: ignore[attr-defined]
     new_cred = WebAuthnCredential(
@@ -211,7 +236,10 @@ async def invite_webauthn_register_complete(
     await db.flush()
     await db.commit()
 
-    body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id)
+    from backend.core.permissions import get_user_scopes
+    user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
+
+    body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
     return {
         "status": "ok",
         "message": "WebAuthn credential registered and invite consumed",
@@ -227,8 +255,12 @@ async def invite_fallback_login(
     confirm: str | None = Header(default=None, alias="X-Invite-Fallback-Confirm"),
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
+    current_admin: dict[str, str] = Depends(get_current_admin),
 ) -> dict[str, object]:
-    """Invite link: fallback login with explicit operator confirmation."""
+    """Invite link: fallback login with admin confirmation required.
+
+    Security: requires admin authentication to prevent invite link leak → account takeover.
+    """
     require_db_redis(db, redis)
     rid, cip = request_id(request), client_ip(request)
     try:
@@ -245,7 +277,10 @@ async def invite_fallback_login(
         raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
     assert_user_active(user, flow="invite_fallback_login", rid=rid, username=user.username, client_ip_str=cip)
 
-    body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id)
+    from backend.core.permissions import get_user_scopes
+    user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
+
+    body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
     log_auth("invite_fallback_login", True, rid, username=user.username, client_ip_str=cip, detail="degraded_access_confirmed")
     return {
         "status": "ok",

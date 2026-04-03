@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_db, get_redis
+from backend.api.deps import get_current_admin, get_current_user, get_db, get_redis
 from backend.core.redis_client import RedisClient
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
@@ -63,7 +63,7 @@ async def agent_act(
     redis: RedisClient | None = Depends(get_redis),
     db: AsyncSession | None = Depends(get_db),
     x_idempotency_key: str | None = Header(None),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_admin),
 ) -> AgentActResponse:
     if not _agent_enabled():
         return AgentActResponse(results=[AgentActionResult(switch=a.switch, ok=False, message="agent disabled") for a in body.actions])
