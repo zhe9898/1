@@ -40,7 +40,7 @@ def _to_response(cap: KernelCapability) -> CapabilityDetail:
 
 @router.get("/capabilities", response_model=list[CapabilityDetail])
 async def list_kernel_capabilities(
-    stable_only: bool = False,
+    stable_only: bool = True,
 ) -> list[CapabilityDetail]:
     """List all kernel capability contracts.
 

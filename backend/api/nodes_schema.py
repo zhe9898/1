@@ -199,6 +199,16 @@ def _build_bootstrap_gateway_base_url() -> str:
     return gateway_base_url or "<gateway-base-url>"
 
 
+def _should_embed_bootstrap_token() -> bool:
+    return os.getenv("NODE_BOOTSTRAP_EMBED_TOKEN", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bootstrap_token_value(node_token: str) -> str:
+    if _should_embed_bootstrap_token():
+        return node_token
+    return "<paste-one-time-node-token-here>"
+
+
 def _bootstrap_requires_insecure_http_opt_in(gateway_base_url: str) -> bool:
     parsed = urlparse(gateway_base_url)
     return parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
@@ -206,17 +216,18 @@ def _bootstrap_requires_insecure_http_opt_in(gateway_base_url: str) -> bool:
 
 def _build_bootstrap_commands(node: Node, node_token: str) -> dict[str, str]:
     gateway_base_url = _build_bootstrap_gateway_base_url()
+    token_value = _bootstrap_token_value(node_token)
     powershell_lines = [
         f'$env:RUNNER_NODE_ID="{node.node_id}"',
         f'$env:RUNNER_TENANT_ID="{node.tenant_id}"',
-        f'$env:NODE_TOKEN="{node_token}"',
+        f'$env:NODE_TOKEN="{token_value}"',
         f'$env:GATEWAY_BASE_URL="{gateway_base_url}"',
         f'$env:RUNNER_EXECUTOR="{node.executor}"',
     ]
     unix_lines = [
         f'export RUNNER_NODE_ID="{node.node_id}"',
         f'export RUNNER_TENANT_ID="{node.tenant_id}"',
-        f'export NODE_TOKEN="{node_token}"',
+        f'export NODE_TOKEN="{token_value}"',
         f'export GATEWAY_BASE_URL="{gateway_base_url}"',
         f'export RUNNER_EXECUTOR="{node.executor}"',
     ]
@@ -271,7 +282,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
     native_common = {
         "node_id": node.node_id,
         "tenant_id": node.tenant_id,
-        "node_token": node_token,
+        "node_token": _bootstrap_token_value(node_token),
         "gateway_base_url": gateway_base_url,
         "executor": node.executor,
         "zone": node.zone or "mobile",

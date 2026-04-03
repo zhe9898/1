@@ -150,6 +150,7 @@ async def test_create_get_and_cancel_manual_reservation() -> None:
     db.execute.side_effect = [
         _scalar_result(_job(job_id="job-manual")),
         _scalar_result(_node(node_id="node-manual")),
+        _all_result([]),
     ]
 
     created = await create_reservation(
@@ -247,3 +248,44 @@ async def test_cancel_rejects_cross_tenant_access() -> None:
         )
 
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_reservation_uses_current_active_leases(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.api import reservations as reservations_api
+
+    captured: dict[str, int] = {}
+    original_builder = reservations_api.build_node_snapshot
+
+    def _capture_build_node_snapshot(node: Node, active_lease_count: int, reliability_score: float):  # type: ignore[no-untyped-def]
+        captured["active_lease_count"] = active_lease_count
+        return original_builder(node, active_lease_count=active_lease_count, reliability_score=reliability_score)
+
+    monkeypatch.setattr(reservations_api, "build_node_snapshot", _capture_build_node_snapshot)
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _scalar_result(_job(job_id="job-active-check")),
+        _scalar_result(_node(node_id="node-active-check")),
+        _all_result(
+            [
+                _job(job_id="lease-1", node_id="node-active-check", status="leased"),
+                _job(job_id="lease-2", node_id="node-active-check", status="leased"),
+            ]
+        ),
+    ]
+
+    await create_reservation(
+        ReservationCreateRequest(
+            job_id="job-active-check",
+            node_id="node-active-check",
+            start_at=_utcnow() + datetime.timedelta(minutes=5),
+            estimated_duration_s=300,
+            reason="active lease check",
+        ),
+        current_user={"role": "admin", "tenant_id": "default"},
+        db=db,
+        redis=None,
+    )
+
+    assert captured["active_lease_count"] == 2

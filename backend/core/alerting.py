@@ -37,13 +37,33 @@ async def _fire_alert(
     rule: AlertRule,
     message: str,
     details: dict,
-) -> Alert:
+    *,
+    dedup_window_s: int,
+) -> Alert | None:
     """Persist Alert and dispatch execution Job.
 
     The gateway stores the alert fact and enqueues a Job.
     The runner-agent executes the actual notification (webhook, etc.).
     """
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    dedup_cutoff = now - datetime.timedelta(seconds=max(dedup_window_s, 0))
+    recent_result = await db.execute(
+        select(Alert.id).where(
+            Alert.tenant_id == rule.tenant_id,
+            Alert.rule_id == rule.id,
+            Alert.message == message,
+            Alert.triggered_at >= dedup_cutoff,
+        )
+    )
+    if recent_result.first() is not None:
+        logger.debug(
+            "Suppress duplicate alert within dedup window: tenant=%s rule=%s window=%ss",
+            rule.tenant_id,
+            rule.id,
+            dedup_window_s,
+        )
+        return None
+
     alert = Alert(
         tenant_id=rule.tenant_id,
         rule_id=rule.id,
@@ -147,6 +167,7 @@ async def evaluate_node_offline_rules(db: AsyncSession, tenant_id: str) -> list[
 
     for rule in rules:
         threshold_s = int(rule.condition.get("threshold_seconds", 120))
+        dedup_window_s = int(rule.condition.get("dedup_window_seconds", 300))
         cutoff = now - datetime.timedelta(seconds=threshold_s)
 
         nodes_result = await db.execute(
@@ -164,8 +185,10 @@ async def evaluate_node_offline_rules(db: AsyncSession, tenant_id: str) -> list[
                 rule,
                 f"Node '{node.name}' ({node.node_id}) missed heartbeat for {lag}s",
                 {"node_id": node.node_id, "last_seen_at": node.last_seen_at.isoformat(), "lag_seconds": lag},
+                dedup_window_s=dedup_window_s,
             )
-            fired.append(alert)
+            if alert is not None:
+                fired.append(alert)
 
     return fired
 
@@ -190,6 +213,7 @@ async def evaluate_job_failure_rules(db: AsyncSession, tenant_id: str) -> list[A
     for rule in rules:
         window_m = int(rule.condition.get("window_minutes", 60))
         threshold_pct = float(rule.condition.get("threshold_pct", 20))
+        dedup_window_s = int(rule.condition.get("dedup_window_seconds", 300))
         since = now - datetime.timedelta(minutes=window_m)
 
         total = (
@@ -222,8 +246,10 @@ async def evaluate_job_failure_rules(db: AsyncSession, tenant_id: str) -> list[A
                 rule,
                 f"Job failure rate {pct:.1f}% exceeds {threshold_pct}% (window={window_m}m)",
                 {"failed": failed, "total": total, "pct": round(pct, 1), "window_minutes": window_m},
+                dedup_window_s=dedup_window_s,
             )
-            fired.append(alert)
+            if alert is not None:
+                fired.append(alert)
 
     return fired
 

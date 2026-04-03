@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime
+import ipaddress
+import os
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +71,28 @@ async def log_audit(
     return log
 
 
+def _is_trusted_proxy(source_ip: str | None) -> bool:
+    if not source_ip:
+        return False
+    trusted = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
+    if not trusted:
+        return False
+    try:
+        source = ipaddress.ip_address(source_ip)
+    except ValueError:
+        return False
+    for raw in trusted.split(","):
+        cidr = raw.strip()
+        if not cidr:
+            continue
+        try:
+            if source in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def extract_client_info(request: Request) -> tuple[str | None, str | None]:
     """Extract client IP and user agent from request.
 
@@ -79,11 +103,16 @@ def extract_client_info(request: Request) -> tuple[str | None, str | None]:
         Tuple of (ip_address, user_agent)
     """
     # Try to get real IP from X-Forwarded-For header
+    client_host = request.client.host if request.client else ""
     forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        ip_address = forwarded_for.split(",")[0].strip()
+    if forwarded_for and _is_trusted_proxy(client_host):
+        candidate = forwarded_for.split(",")[0].strip()
+        try:
+            ip_address = str(ipaddress.ip_address(candidate))
+        except ValueError:
+            ip_address = client_host
     else:
-        ip_address = request.client.host if request.client else ""
+        ip_address = client_host
 
     user_agent = request.headers.get("User-Agent")
 

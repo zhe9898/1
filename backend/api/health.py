@@ -1,18 +1,10 @@
-"""
-ZEN70 Health Pack – Ingestion API.
-
-Provides data ingestion and query endpoints for health measurements
-submitted by native iOS/Android clients via HealthKit / Health Connect.
-
-Architecture boundary:
-  - Health data collection happens on the native client (Swift/Kotlin)
-  - This router receives pre-processed measurements via HTTPS
-  - No HealthKit/Health Connect SDK dependency in the Python runtime
-"""
+﻿"""Health ingestion and query APIs."""
 
 from __future__ import annotations
 
 import datetime
+import hashlib
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -20,12 +12,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user, get_tenant_db
+from backend.api.deps import get_current_user, get_redis, get_tenant_db
+from backend.core.redis_client import RedisClient
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
-
-
-# ── Request / Response Models ────────────────────────────────────────
 
 VALID_METRIC_TYPES = frozenset(
     {
@@ -57,6 +47,12 @@ class HealthMeasurement(BaseModel):
 class HealthIngestRequest(BaseModel):
     measurements: list[HealthMeasurement] = Field(..., min_length=1, max_length=500)
     node_id: str | None = Field(None, description="Source device node ID (optional)")
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        description="Optional client key for deduplicating retried ingest requests",
+    )
 
 
 class HealthRecordResponse(BaseModel):
@@ -85,7 +81,34 @@ class HealthSummaryItem(BaseModel):
     latest_at: str
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
+def _normalized_iso(value: datetime.datetime) -> str:
+    normalized = value.astimezone(datetime.UTC) if value.tzinfo else value
+    return normalized.replace(tzinfo=None).isoformat()
+
+
+def _measurement_fingerprint(measurement: HealthMeasurement) -> str:
+    return "|".join(
+        [
+            measurement.metric_type,
+            f"{measurement.value}",
+            measurement.unit,
+            _normalized_iso(measurement.recorded_at),
+            measurement.source_platform or "",
+            measurement.source_app or "",
+            json.dumps(measurement.meta_info or {}, sort_keys=True, separators=(",", ":")),
+        ]
+    )
+
+
+def _ingest_fingerprint(tenant_id: str, user_id: str, payload: HealthIngestRequest) -> str:
+    canonical = {
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "node_id": payload.node_id or "",
+        "measurements": [_measurement_fingerprint(m) for m in payload.measurements],
+    }
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 @router.post("/ingest", response_model=HealthIngestResponse)
@@ -93,13 +116,9 @@ async def ingest_health_data(
     payload: HealthIngestRequest,
     current_user: dict[str, str] = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
 ) -> HealthIngestResponse:
-    """Ingest health measurements from native clients.
-
-    Accepts a batch of measurements and stores them in the
-    health_records table. Invalid metric types are rejected
-    but do not fail the entire batch.
-    """
+    """Ingest health measurements from native clients."""
     from backend.models.health_record import HealthRecord
 
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
@@ -109,24 +128,40 @@ async def ingest_health_data(
     rejected = 0
     errors: list[str] = []
 
-    for m in payload.measurements:
-        if m.metric_type not in VALID_METRIC_TYPES:
+    dedupe_key = payload.idempotency_key or _ingest_fingerprint(tenant_id, user_id, payload)
+    if redis is not None:
+        cache_key = f"health:ingest:{tenant_id}:{user_id}:{dedupe_key}"
+        accepted = await redis.set(cache_key, now.isoformat(), nx=True, ex=3600)
+        if not accepted:
+            return HealthIngestResponse(ingested=0, rejected=0, errors=["Duplicate ingest batch ignored"])
+
+    seen: set[str] = set()
+
+    for measurement in payload.measurements:
+        if measurement.metric_type not in VALID_METRIC_TYPES:
             rejected += 1
-            errors.append(f"Unknown metric_type: {m.metric_type}")
+            errors.append(f"Unknown metric_type: {measurement.metric_type}")
             continue
+
+        fingerprint = _measurement_fingerprint(measurement)
+        if fingerprint in seen:
+            rejected += 1
+            errors.append(f"Duplicate measurement in batch: {measurement.metric_type}@{_normalized_iso(measurement.recorded_at)}")
+            continue
+        seen.add(fingerprint)
 
         record = HealthRecord(
             tenant_id=tenant_id,
             user_id=user_id,
             node_id=payload.node_id,
-            metric_type=m.metric_type,
-            value=m.value,
-            unit=m.unit,
-            recorded_at=m.recorded_at.replace(tzinfo=None) if m.recorded_at.tzinfo else m.recorded_at,
+            metric_type=measurement.metric_type,
+            value=measurement.value,
+            unit=measurement.unit,
+            recorded_at=measurement.recorded_at.replace(tzinfo=None) if measurement.recorded_at.tzinfo else measurement.recorded_at,
             ingested_at=now,
-            source_platform=m.source_platform,
-            source_app=m.source_app,
-            meta_info=m.meta_info,
+            source_platform=measurement.source_platform,
+            source_app=measurement.source_app,
+            meta_info=measurement.meta_info,
         )
         db.add(record)
         ingested += 1
@@ -173,16 +208,16 @@ async def list_health_records(
 
     return [
         HealthRecordResponse(
-            id=r.id,
-            metric_type=r.metric_type,
-            value=r.value,
-            unit=r.unit,
-            recorded_at=r.recorded_at.isoformat(),
-            ingested_at=r.ingested_at.isoformat(),
-            source_platform=r.source_platform,
-            source_app=r.source_app,
+            id=record.id,
+            metric_type=record.metric_type,
+            value=record.value,
+            unit=record.unit,
+            recorded_at=record.recorded_at.isoformat(),
+            ingested_at=record.ingested_at.isoformat(),
+            source_platform=record.source_platform,
+            source_app=record.source_app,
         )
-        for r in records
+        for record in records
     ]
 
 

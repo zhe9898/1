@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from backend.api.deps import get_current_user_optional
+from backend.api.deps import get_current_user_optional, has_admin_role
 from backend.api.ui_contracts import StatusView
 from backend.core.control_plane import get_control_plane_capability_keys, get_control_plane_route_names
 from backend.core.gateway_profile import (
@@ -97,7 +97,7 @@ async def get_profile(
     runtime_profile = normalize_gateway_profile(raw_profile)
     requested_pack_keys = normalize_gateway_pack_keys(raw_packs, profile=raw_profile)
     resolved_pack_keys = resolve_runtime_pack_keys(profile=raw_profile, raw_packs=raw_packs)
-    is_admin = bool(current_user and current_user.get("role") == "admin")
+    is_admin = has_admin_role(current_user)
     return GatewayProfileResponse(
         product=DEFAULT_PRODUCT_NAME,
         profile=to_public_profile(runtime_profile),

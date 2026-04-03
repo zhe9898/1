@@ -6,6 +6,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+# Contracts only: route handlers are not mounted in this module.
+MODULE_STATUS = "contracts-only"
+
 
 class SceneAction(BaseModel):
     switch: str

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 from fastapi import APIRouter, Depends, status
@@ -14,6 +15,7 @@ from backend.core.errors import zen
 from backend.models.user import PushSubscription
 
 router = APIRouter()
+logger = logging.getLogger("zen70.push")
 
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY")
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY")
@@ -163,6 +165,11 @@ async def test_trigger_push(
             fail_count += 1
             if exc.response and exc.response.status_code in [404, 410]:
                 await session.delete(sub)
+        except Exception:
+            # Isolate per-subscription failures so a single bad endpoint
+            # does not abort the entire batch dispatch.
+            fail_count += 1
+            logger.exception("push dispatch failed for endpoint=%s", sub.endpoint)
 
     await session.flush()
     return {"status": "ok", "dispatched": success_count, "failed": fail_count}

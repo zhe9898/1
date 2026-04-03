@@ -177,3 +177,17 @@ def test_console_menu_shows_settings_for_admin_override() -> None:
         }
     finally:
         app.dependency_overrides.pop(get_current_user_optional, None)
+
+
+def test_console_menu_shows_settings_for_superadmin_override() -> None:
+    async def _superadmin_user() -> dict[str, str]:
+        return {"sub": "superadmin", "role": "superadmin"}
+
+    app.dependency_overrides[get_current_user_optional] = _superadmin_user
+    try:
+        client = TestClient(app)
+        profile_data = client.get("/api/v1/profile").json()["data"]
+        assert "settings" in profile_data["console_route_names"]
+        assert "gateway.settings" in profile_data["capability_keys"]
+    finally:
+        app.dependency_overrides.pop(get_current_user_optional, None)

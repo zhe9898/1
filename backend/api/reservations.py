@@ -240,9 +240,17 @@ async def create_reservation(
             details={"job_id": job.job_id, "status": job.status},
         )
     manager = get_reservation_manager()
+    leased_result = await db.execute(
+        select(Job).where(
+            Job.tenant_id == tenant_id,
+            Job.node_id == payload.node_id,
+            Job.status == "leased",
+        )
+    )
+    active_leases = list(leased_result.scalars().all())
     reservation = manager.create_reservation(
         job,
-        build_node_snapshot(node, active_lease_count=0, reliability_score=1.0),
+        build_node_snapshot(node, active_lease_count=len(active_leases), reliability_score=1.0),
         start_at=_normalize_utc(payload.start_at),
         estimated_duration_s=payload.estimated_duration_s,
     )

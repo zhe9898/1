@@ -8,6 +8,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+# Contracts only: route handlers are not mounted in this module.
+MODULE_STATUS = "contracts-only"
+
 
 class BoardMessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)

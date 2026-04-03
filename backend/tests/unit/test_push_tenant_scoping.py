@@ -79,3 +79,30 @@ async def test_test_trigger_push_reads_subscriptions_for_current_tenant_only(mon
     assert "push_subscriptions.user_id" in rendered
     assert response["dispatched"] == 1
     assert response["failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_test_trigger_push_isolates_non_webpush_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("backend.api.push.VAPID_PRIVATE_KEY", "test-private-key")
+    monkeypatch.setattr("backend.api.push.asyncio.to_thread", AsyncMock(side_effect=RuntimeError("network down")))
+
+    tenant_scoped_sub = PushSubscription(
+        tenant_id="tenant-a",
+        user_id=7,
+        endpoint="https://push.example/subscription-1",
+        p256dh="tenant-a-p256dh",
+        auth="tenant-a-auth",
+        user_agent="tenant-a-agent",
+    )
+    session = AsyncMock()
+    session.flush = AsyncMock()
+    session.execute.return_value = _scalars_all_result([tenant_scoped_sub])
+
+    response = await trigger_push_notification(
+        payload=PushPayload(title="Ping", body="Test"),
+        current_user={"sub": "7", "tenant_id": "tenant-a"},
+        session=session,
+    )
+
+    assert response["dispatched"] == 0
+    assert response["failed"] == 1
