@@ -62,8 +62,8 @@ from .database import (
     _expire_previous_attempt_if_needed,
     _load_node_metrics,
     _load_recent_failed_job_ids,
-    move_to_dead_letter_queue,
 )
+from .deadline_maintenance import maybe_schedule_deadline_dlq_sweep
 from .helpers import (
     _new_lease_token,
     _to_lease_response,
@@ -139,6 +139,7 @@ async def pull_jobs(  # noqa: C901
     )
     if not _admission.admitted:
         return []
+    maybe_schedule_deadline_dlq_sweep(payload.tenant_id, redis)
 
     # 鈹€鈹€ Feature flag snapshot (governance facade) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     _ff_audit = await _governance.is_feature_enabled(db, SCHED_FLAG_DECISION_AUDIT)
@@ -475,37 +476,6 @@ async def pull_jobs(  # noqa: C901
         if c.job_id not in _selected_ids:
             _governance.record_backoff_failure(c.job_id, now)
     # 鈹€鈹€ End Phase 4 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-
-    # 鈹€鈹€ Phase 5: DLQ expired-deadline candidates 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    # Since the main query now filters out expired deadlines at SQL level,
-    # run a separate lightweight scan to DLQ any pending jobs past deadline.
-    dlq_query = (
-        select(Job)
-        .where(
-            Job.tenant_id == payload.tenant_id,
-            Job.status == "pending",
-            Job.deadline_at.is_not(None),
-            Job.deadline_at <= now,
-        )
-        .with_for_update(skip_locked=True)
-        .limit(_get_dispatch_config().dlq_scan_limit)
-    )
-    dlq_result = await db.execute(dlq_query)
-    for c in dlq_result.scalars().all():
-        assert c.deadline_at is not None
-        c.status = "failed"
-        c.error_message = f"deadline expired at {c.deadline_at.isoformat()}"
-        c.failure_category = "deadline_expired"
-        c.updated_at = now
-        await db.flush()
-        await move_to_dead_letter_queue(redis, db, c)
-        await _append_log(
-            db,
-            c.job_id,
-            f"deadline expired: moved to DLQ ({c.deadline_at.isoformat()})",
-            tenant_id=c.tenant_id,
-        )
-    # 鈹€鈹€ End Phase 5 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     leased_jobs: list[Job] = []
     _acquired_locks: list[str] = []
