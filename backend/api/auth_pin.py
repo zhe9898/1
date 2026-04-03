@@ -100,7 +100,7 @@ async def pin_login(
         ai_route_preference=user.ai_route_preference or "auto",
     )
     await register_login_session(
-        db,  # type: ignore[arg-type]
+        db,
         tenant_id=user.tenant_id,
         user_id=str(user.id),
         username=user.username,

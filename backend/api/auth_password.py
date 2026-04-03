@@ -63,7 +63,7 @@ async def password_login(
 
     from backend.api.auth_shared import first_user_or_schema_unavailable
 
-    await first_user_or_schema_unavailable(db)  # type: ignore[arg-type]
+    await first_user_or_schema_unavailable(db)
     result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == username))  # type: ignore[union-attr]
     user = result.scalar_one_or_none()
 
@@ -97,7 +97,7 @@ async def password_login(
         ai_route_preference=user.ai_route_preference,
     )
     await register_login_session(
-        db,  # type: ignore[arg-type]
+        db,
         tenant_id=user.tenant_id,
         user_id=str(user.id),
         username=user.username,

@@ -76,7 +76,7 @@ class MemorySummarizerWorker:
     ) -> list[str]:
         result = await session.execute(
             # Placeholder query - real impl uses pgvector cosine distance
-            ...  # type: ignore[call-overload]
+            ...
         )
         rows = result.all()
         candidates = []
@@ -101,7 +101,7 @@ class MemorySummarizerWorker:
             for old_id in supersede_ids:
                 old_fact = await session.get(MemoryFact, old_id)
                 if old_fact:
-                    old_fact.deprecated = True  # type: ignore[assignment]
+                    old_fact.deprecated = True
 
             new_fact = MemoryFact(
                 tenant_id=tenant_id,

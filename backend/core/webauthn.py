@@ -94,7 +94,7 @@ def generate_authentication_challenge(
         descriptors.append(
             PublicKeyCredentialDescriptor(
                 id=cred_id_b,
-                transports=ac.get("transports"),  # type: ignore[arg-type]
+                transports=ac.get("transports"),
             )
         )
     options = generate_authentication_options(

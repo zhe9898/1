@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
@@ -203,7 +203,7 @@ async def _get_trigger_for_tenant(db: AsyncSession, tenant_id: str, trigger_id: 
             recovery_hint="Refresh the trigger list and retry",
             details={"trigger_id": trigger_id},
         )
-    return trigger
+    return cast("Trigger", trigger)
 
 
 @router.get("/kinds", response_model=list[TriggerKindResponse])

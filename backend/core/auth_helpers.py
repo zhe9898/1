@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
+from typing import cast
 
 from fastapi import Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,7 +169,7 @@ def credential_id_to_base64url(credential: dict[str, object]) -> str | None:
     if isinstance(raw, str):
         return raw
     if isinstance(raw, bytes):
-        return bytes_to_base64url(raw)
+        return cast(str, bytes_to_base64url(raw))
     return None
 
 
@@ -218,7 +219,7 @@ async def consume_challenge(
 
 def expected_challenge_bytes(challenge_b64: str) -> bytes:
     """base64url 挑战转 bytes（供 webauthn 校验）。"""
-    return base64url_to_bytes(challenge_b64)
+    return cast(bytes, base64url_to_bytes(challenge_b64))
 
 
 def is_private_ip(ip: str) -> bool:

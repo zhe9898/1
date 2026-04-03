@@ -7,7 +7,7 @@ with automatic token revocation.
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,7 +65,7 @@ async def suspend_user(
     # TODO: Revoke all user's tokens via Redis
     # This requires tracking user_id -> jti mapping
 
-    return user
+    return cast("User", user)
 
 
 async def activate_user(
@@ -104,7 +104,7 @@ async def activate_user(
 
     await db.flush()
 
-    return user
+    return cast("User", user)
 
 
 async def delete_user(
@@ -143,4 +143,4 @@ async def delete_user(
 
     # TODO: Revoke all user's tokens via Redis
 
-    return user
+    return cast("User", user)

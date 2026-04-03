@@ -242,7 +242,7 @@ app = FastAPI(
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings["cors_origins"],  # type: ignore[arg-type]
+    allow_origins=settings["cors_origins"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key"],
@@ -256,13 +256,13 @@ app.add_middleware(
 @app.middleware("http")
 async def _readonly_lock(request: Request, call_next: object) -> Response:
     """Read-only guard for UPS and critical disk pressure states."""
-    return await global_readonly_lock(request, call_next)  # type: ignore[arg-type]
+    return await global_readonly_lock(request, call_next)
 
 
 @app.middleware("http")
 async def _limit_body(request: Request, call_next: object) -> Response:
     """Reject oversized request bodies using configured max_request_size."""
-    return await limit_request_body(request, call_next)  # type: ignore[arg-type]
+    return await limit_request_body(request, call_next)
 
 
 @app.middleware("http")
@@ -296,8 +296,8 @@ async def add_request_id_and_log(request: Request, call_next) -> object:  # type
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Convert HTTPException to unified error response."""
     request_id = getattr(request.state, "request_id", "unknown")
-    if isinstance(exc.detail, dict) and "code" in exc.detail:  # type: ignore[unreachable]
-        return JSONResponse(status_code=exc.status_code, content=exc.detail)  # type: ignore[unreachable]
+    if isinstance(exc.detail, dict) and "code" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
@@ -461,12 +461,12 @@ async def success_envelope(request: Request, call_next: object) -> Response:
     # Only wrap successful JSON responses. Leave health/docs/metrics and
     # non-JSON payloads untouched.
     if request.url.path in _ENVELOPE_SKIP_PATHS:
-        return response  # type: ignore[no-any-return]
+        return response
     ct = response.headers.get("content-type", "")
     if response.status_code < 200 or response.status_code >= 300:
-        return response  # type: ignore[no-any-return]
+        return response
     if "application/json" not in ct:
-        return response  # type: ignore[no-any-return]
+        return response
 
     body_chunks: list[bytes] = []
     body_size = 0
