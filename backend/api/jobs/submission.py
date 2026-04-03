@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -41,9 +41,27 @@ async def check_concurrent_limits(
     else:
         source_filter = ~Job.source.in_(list(SCHEDULED_JOB_SOURCES))
 
+    connector_count_expr = (
+        func.count().filter(and_(Job.tenant_id == tenant_id, Job.connector_id == connector_id))
+        if connector_id
+        else literal(0)
+    )
+    counts_stmt = (
+        select(
+            func.public.zen70_global_leased_jobs_count(job_type).label("global_count"),
+            func.count().filter(Job.tenant_id == tenant_id).label("tenant_count"),
+            connector_count_expr.label("connector_count"),
+        )
+        .where(
+            Job.status == "leased",
+            source_filter,
+        )
+    )
     try:
-        global_count_stmt = text("SELECT public.zen70_global_leased_jobs_count(:job_type)")
-        global_count = (await db.execute(global_count_stmt, {"job_type": job_type})).scalar() or 0
+        counts_row = (await db.execute(counts_stmt)).one()
+        global_count = int(counts_row.global_count or 0)
+        tenant_count = int(counts_row.tenant_count or 0)
+        connector_count = int(counts_row.connector_count or 0)
     except (SQLAlchemyError, OSError, RuntimeError, TypeError, ValueError) as exc:
         raise zen(
             "ZEN-JOB-5032",
@@ -63,12 +81,6 @@ async def check_concurrent_limits(
             details={"job_type": job_type, "current": global_count, "limit": global_limit},
         )
 
-    tenant_count_stmt = select(func.count()).where(
-        Job.tenant_id == tenant_id,
-        Job.status == "leased",
-        source_filter,
-    )
-    tenant_count = (await db.execute(tenant_count_stmt)).scalar() or 0
     tenant_limit = get_max_concurrent_limit(job_type, "per_tenant")
     if tenant_count >= tenant_limit:
         raise zen(
@@ -80,13 +92,6 @@ async def check_concurrent_limits(
         )
 
     if connector_id:
-        connector_count_stmt = select(func.count()).where(
-            Job.tenant_id == tenant_id,
-            Job.connector_id == connector_id,
-            Job.status == "leased",
-            source_filter,
-        )
-        connector_count = (await db.execute(connector_count_stmt)).scalar() or 0
         connector_limit = get_max_concurrent_limit(job_type, "per_connector")
         if connector_count >= connector_limit:
             raise zen(

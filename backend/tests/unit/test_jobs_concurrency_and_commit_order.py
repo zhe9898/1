@@ -37,6 +37,16 @@ def _all_result(values: list[object]) -> MagicMock:
     return result
 
 
+def _row_result(*, global_count: int = 0, tenant_count: int = 0, connector_count: int = 0) -> MagicMock:
+    result = MagicMock()
+    result.one.return_value = SimpleNamespace(
+        global_count=global_count,
+        tenant_count=tenant_count,
+        connector_count=connector_count,
+    )
+    return result
+
+
 def _job(**overrides: object) -> Job:
     now = _utcnow()
     job = Job(
@@ -135,10 +145,8 @@ async def test_check_concurrent_limits_uses_global_function() -> None:
     def _execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
         del args, kwargs
         rendered = str(statement).lower()
-        if "zen70_global_leased_jobs_count" in rendered:
-            return _scalar_result(0)
-        if "count(*)" in rendered:
-            return _scalar_result(0)
+        if "zen70_global_leased_jobs_count" in rendered and "tenant_count" in rendered:
+            return _row_result()
         return _scalar_result(None)
 
     db.execute.side_effect = _execute_side_effect
@@ -147,6 +155,7 @@ async def test_check_concurrent_limits_uses_global_function() -> None:
 
     rendered_calls = [str(call.args[0]).lower() for call in db.execute.await_args_list]
     assert any("zen70_global_leased_jobs_count" in sql for sql in rendered_calls)
+    assert len(rendered_calls) == 1
 
 
 @pytest.mark.asyncio

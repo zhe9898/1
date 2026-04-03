@@ -4,7 +4,7 @@ import datetime
 import heapq
 import logging
 import time
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -58,6 +58,80 @@ def _job_attr(job: Job, name: str) -> object:
     if isinstance(raw_state, dict):
         return raw_state.get(name)
     return getattr(job, name, None)
+
+
+def _required_capability_set(job: Job) -> frozenset[str]:
+    raw = _job_attr(job, "required_capabilities")
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        return frozenset(str(item) for item in raw if isinstance(item, str) and item.strip())
+    return frozenset()
+
+
+def _candidate_nodes_for_job(
+    job: Job,
+    live_nodes: list[SchedulerNodeSnapshot],
+    *,
+    accepted_kinds: set[str] | None = None,
+) -> list[SchedulerNodeSnapshot]:
+    required_capabilities = _required_capability_set(job)
+    required_executor = _text_attr(_job_attr(job, "target_executor"))
+    required_os = _text_attr(_job_attr(job, "target_os"))
+    required_arch = _text_attr(_job_attr(job, "target_arch"))
+    required_zone = _text_attr(_job_attr(job, "target_zone"))
+    required_cpu = max(_int_attr(_job_attr(job, "required_cpu_cores")), 0)
+    required_memory = max(_int_attr(_job_attr(job, "required_memory_mb")), 0)
+    required_gpu = max(_int_attr(_job_attr(job, "required_gpu_vram_mb")), 0)
+    required_storage = max(_int_attr(_job_attr(job, "required_storage_mb")), 0)
+    required_latency = max(_int_attr(_job_attr(job, "max_network_latency_ms")), 0)
+    data_locality_key = _text_attr(_job_attr(job, "data_locality_key"))
+    prefer_cached = _bool_attr(_job_attr(job, "prefer_cached_data"))
+    power_budget = max(_int_attr(_job_attr(job, "power_budget_watts")), 0)
+    thermal_sensitivity = _text_attr(_job_attr(job, "thermal_sensitivity"))
+    cloud_fallback = _bool_attr(_job_attr(job, "cloud_fallback_enabled"))
+    _queue_class, worker_pool = resolve_job_queue_contract_from_record(job)
+
+    candidate_nodes: list[SchedulerNodeSnapshot] = []
+    for node in live_nodes:
+        if node.accepted_kinds:
+            if job.kind not in node.accepted_kinds:
+                continue
+        elif accepted_kinds and job.kind not in accepted_kinds:
+            continue
+        if node.worker_pools and worker_pool not in node.worker_pools:
+            continue
+        if required_os and node.os != required_os:
+            continue
+        if required_arch and node.arch != required_arch:
+            continue
+        if required_executor and node.executor != required_executor:
+            continue
+        if required_zone and node.zone != required_zone:
+            continue
+        if required_capabilities and not required_capabilities.issubset(node.capabilities):
+            continue
+        if required_cpu and node.cpu_cores < required_cpu:
+            continue
+        if required_memory and node.memory_mb < required_memory:
+            continue
+        if required_gpu and node.gpu_vram_mb < required_gpu:
+            continue
+        if required_storage and node.storage_mb < required_storage:
+            continue
+        if required_latency and node.network_latency_ms > 0 and node.network_latency_ms > required_latency:
+            continue
+        if data_locality_key and prefer_cached and data_locality_key not in node.cached_data_keys:
+            continue
+        if power_budget and node.power_capacity_watts > 0:
+            available_power = node.power_capacity_watts - node.current_power_watts
+            if available_power < power_budget:
+                continue
+        if thermal_sensitivity == "high" and node.thermal_state in ("hot", "throttling"):
+            continue
+        if not cloud_fallback and node.cloud_connectivity == "offline":
+            continue
+        candidate_nodes.append(node)
+
+    return candidate_nodes
 
 
 @dataclass(slots=True)
@@ -274,15 +348,9 @@ def count_eligible_nodes_for_job(
     Uses node contract accepted_kinds if available, otherwise falls back to
     accepted_kinds parameter (from pull request).
     """
+    live_nodes = [node for node in active_nodes if is_node_eligible(node, now)]
     count = 0
-    for node in active_nodes:
-        # Use node contract accepted_kinds if available
-        if node.accepted_kinds:
-            if job.kind not in node.accepted_kinds:
-                continue
-        elif accepted_kinds and job.kind not in accepted_kinds:
-            continue
-
+    for node in _candidate_nodes_for_job(job, live_nodes, accepted_kinds=accepted_kinds):
         if job_matches_node(job, node, now=now, accepted_kinds=None):
             count += 1
 
@@ -308,16 +376,7 @@ def batch_eligible_counts(
     counts: dict[str, int] = {}
     for job in jobs:
         count = 0
-        for node in live_nodes:
-            # Cheap attribute gate before expensive blocker check
-            if node.accepted_kinds and job.kind not in node.accepted_kinds:
-                continue
-            if accepted_kinds and job.kind not in accepted_kinds:
-                continue
-            if job.target_os and job.target_os != node.os:
-                continue
-            if job.target_arch and job.target_arch != node.arch:
-                continue
+        for node in _candidate_nodes_for_job(job, live_nodes, accepted_kinds=accepted_kinds):
             if not node_blockers_for_job(job, node, now=now, accepted_kinds=accepted_kinds):
                 count += 1
         counts[job.job_id] = count
@@ -580,6 +639,7 @@ class PlacementSolver:
 
         # ── Phase 1: Build feasible candidates ───────────────────────
         candidates: list[PlacementCandidate] = []
+        sparse_pairs = 0
         for job in jobs:
             if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
                 if metrics is not None:
@@ -587,13 +647,16 @@ class PlacementSolver:
                     metrics["assignments"] = 0
                     metrics["result"] = "time_budget_exceeded"
                 return {}
-            for node in live_nodes:
-                if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
+            candidate_nodes = _candidate_nodes_for_job(job, live_nodes, accepted_kinds=accepted_kinds)
+            sparse_pairs += len(candidate_nodes)
+            for node in candidate_nodes:
+                if not job_matches_node(job, node, now=now, accepted_kinds=None):
                     continue
                 candidates.append(PlacementCandidate(job=job, node=node))
 
         if metrics is not None:
             metrics["feasible_pairs"] = len(candidates)
+            metrics["candidate_pairs_sparse"] = sparse_pairs
         if not candidates:
             if metrics is not None:
                 metrics["assignments"] = 0
@@ -677,7 +740,7 @@ class PlacementSolver:
         base_target_arch = _text_attr(_job_attr(first_job, "target_arch"))
         base_target_zone = _text_attr(_job_attr(first_job, "target_zone"))
         base_target_executor = _text_attr(_job_attr(first_job, "target_executor"))
-        base_required_capabilities = _job_attr(first_job, "required_capabilities")
+        base_required_capabilities = _required_capability_set(first_job)
         base_required_cpu = max(_int_attr(_job_attr(first_job, "required_cpu_cores")), 0)
         base_required_memory = max(_int_attr(_job_attr(first_job, "required_memory_mb")), 0)
         base_required_gpu = max(_int_attr(_job_attr(first_job, "required_gpu_vram_mb")), 0)
@@ -690,7 +753,7 @@ class PlacementSolver:
         base_cloud_fallback = _bool_attr(_job_attr(first_job, "cloud_fallback_enabled"))
         if not base_kind:
             return None
-        if _has_items_attr(base_required_capabilities) or _has_items_attr(_job_attr(first_job, "affinity_rules")):
+        if _has_items_attr(_job_attr(first_job, "affinity_rules")):
             return None
 
         for job in jobs:
@@ -705,7 +768,7 @@ class PlacementSolver:
                 or _text_attr(_job_attr(job, "target_arch")) != base_target_arch
                 or _text_attr(_job_attr(job, "target_zone")) != base_target_zone
                 or _text_attr(_job_attr(job, "target_executor")) != base_target_executor
-                or _has_items_attr(_job_attr(job, "required_capabilities"))
+                or _required_capability_set(job) != base_required_capabilities
                 or max(_int_attr(_job_attr(job, "required_cpu_cores")), 0) != base_required_cpu
                 or max(_int_attr(_job_attr(job, "required_memory_mb")), 0) != base_required_memory
                 or max(_int_attr(_job_attr(job, "required_gpu_vram_mb")), 0) != base_required_gpu
@@ -720,44 +783,7 @@ class PlacementSolver:
             ):
                 return None
 
-        eligible_nodes: list[SchedulerNodeSnapshot] = []
-        for node in live_nodes:
-            if node.accepted_kinds:
-                if base_kind not in node.accepted_kinds:
-                    continue
-            elif accepted_kinds and base_kind not in accepted_kinds:
-                continue
-            if node.worker_pools and base_worker_pool not in node.worker_pools:
-                continue
-            if base_target_os and node.os != base_target_os:
-                continue
-            if base_target_arch and node.arch != base_target_arch:
-                continue
-            if base_target_zone and node.zone != base_target_zone:
-                continue
-            if base_target_executor and node.executor != base_target_executor:
-                continue
-            if base_required_cpu and node.cpu_cores < base_required_cpu:
-                continue
-            if base_required_memory and node.memory_mb < base_required_memory:
-                continue
-            if base_required_gpu and node.gpu_vram_mb < base_required_gpu:
-                continue
-            if base_required_storage and node.storage_mb < base_required_storage:
-                continue
-            if base_max_latency and node.network_latency_ms > 0 and node.network_latency_ms > base_max_latency:
-                continue
-            if base_data_locality_key and base_prefer_cached and base_data_locality_key not in node.cached_data_keys:
-                continue
-            if base_power_budget and node.power_capacity_watts > 0:
-                available_power = node.power_capacity_watts - node.current_power_watts
-                if available_power < base_power_budget:
-                    continue
-            if base_thermal_sensitivity == "high" and node.thermal_state in ("hot", "throttling"):
-                continue
-            if not base_cloud_fallback and node.cloud_connectivity == "offline":
-                continue
-            eligible_nodes.append(node)
+        eligible_nodes = _candidate_nodes_for_job(first_job, live_nodes, accepted_kinds=accepted_kinds)
         if not eligible_nodes:
             if metrics is not None:
                 metrics["assignments"] = 0
@@ -909,32 +935,37 @@ class PlacementSolver:
     ) -> dict[str, str]:
         """Greedy descending-score assignment with capacity deduction.
 
-        Gang-aware: jobs sharing a ``gang_id`` are placed atomically —
-        either every member gets assigned or the entire gang is skipped.
-        Uses tentative assignment with rollback to guarantee all-or-nothing.
+        Gang-aware: jobs sharing a ``gang_id`` are placed atomically. Gang
+        candidates are pre-grouped and solved as a unit so the global heap
+        only tracks one entry per gang instead of one entry per member.
         """
         remaining_cap: dict[str, int] = {n.node_id: max(n.max_concurrency - n.active_lease_count, 0) for n in live_nodes}
-
-        # ── Pre-group gang jobs ──────────────────────────────────────
-        gang_members: dict[str, set[str]] = {}  # gang_id → {job_ids}
-        job_gang: dict[str, str] = {}  # job_id → gang_id
-        for c in candidates:
-            gid = getattr(c.job, "gang_id", None)
-            if gid:
-                gang_members.setdefault(gid, set()).add(c.job.job_id)
-                job_gang[c.job.job_id] = gid
-
-        # Use a max-heap (negate scores for Python's min-heap)
-        heap = [(-c.score, c.job.job_id, c.node.node_id) for c in candidates]
-        heapq.heapify(heap)
 
         plan: dict[str, str] = {}
         assigned_jobs: set[str] = set()
         failed_gangs: set[str] = set()
 
-        # Tentative gang placements: gang_id → {job_id: node_id}
-        gang_tentative: dict[str, dict[str, str]] = {}
-        gang_cap_deltas: dict[str, dict[str, int]] = {}  # gang_id → {node_id: slots_used}
+        solo_candidates: list[PlacementCandidate] = []
+        gang_candidates: dict[str, list[PlacementCandidate]] = defaultdict(list)
+        for candidate in candidates:
+            gang_id = _text_attr(_job_attr(candidate.job, "gang_id"))
+            if gang_id:
+                gang_candidates[gang_id].append(candidate)
+            else:
+                solo_candidates.append(candidate)
+
+        heap: list[tuple[int, str, str, str]] = []
+        for candidate in solo_candidates:
+            heap.append((-candidate.score, "job", candidate.job.job_id, candidate.node.node_id))
+        for gang_id, grouped_candidates in gang_candidates.items():
+            best_score = max(candidate.score for candidate in grouped_candidates)
+            heap.append((-best_score, "gang", gang_id, gang_id))
+        heapq.heapify(heap)
+
+        solo_by_key = {
+            (candidate.job.job_id, candidate.node.node_id): candidate
+            for candidate in solo_candidates
+        }
 
         while heap:
             if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
@@ -943,70 +974,77 @@ class PlacementSolver:
                     metrics["assignments"] = 0
                     metrics["result"] = "time_budget_exceeded"
                 return {}
-            neg_score, job_id, node_id = heapq.heappop(heap)
-            if job_id in assigned_jobs:
-                continue
-
-            gid = job_gang.get(job_id)
-
-            # Skip jobs whose gang already failed placement
-            if gid and gid in failed_gangs:
-                continue
-
-            if remaining_cap.get(node_id, 0) <= 0:
-                # No capacity on this specific node.  For gang members the
-                # heap may still contain candidates for the same job on a
-                # different node, so just skip this candidate.  The
-                # end-of-heap cleanup will catch gangs that truly cannot
-                # be placed anywhere.
-                continue
-
-            if gid:
-                # ── Gang member: tentative assignment ────────────
-                tent = gang_tentative.setdefault(gid, {})
-                deltas = gang_cap_deltas.setdefault(gid, {})
-
-                if job_id not in tent:
-                    tent[job_id] = node_id
-                    remaining_cap[node_id] -= 1
-                    deltas[node_id] = deltas.get(node_id, 0) + 1
-
-                # Check if entire gang is now tentatively placed
-                if tent.keys() == gang_members[gid]:
-                    # Commit: move all tentative → final plan
-                    for gjid, gnid in tent.items():
-                        plan[gjid] = gnid
-                        assigned_jobs.add(gjid)
-                    del gang_tentative[gid]
-                    del gang_cap_deltas[gid]
-                    logger.debug("gang_placement_committed: gang=%s members=%d", gid, len(tent))
-            else:
-                # ── Non-gang job: assign immediately ─────────────
+            _neg_score, unit_type, primary_key, secondary_key = heapq.heappop(heap)
+            if unit_type == "job":
+                job_id = primary_key
+                node_id = secondary_key
+                if job_id in assigned_jobs or remaining_cap.get(node_id, 0) <= 0:
+                    continue
+                if (job_id, node_id) not in solo_by_key:
+                    continue
                 plan[job_id] = node_id
                 assigned_jobs.add(job_id)
                 remaining_cap[node_id] -= 1
+                continue
 
-        # Rollback any incomplete gangs (heap exhausted before all members placed)
-        for gid in list(gang_tentative):
-            self._rollback_gang(gid, gang_tentative, gang_cap_deltas, remaining_cap)
-            failed_gangs.add(gid)
-            logger.debug("gang_placement_incomplete: gang=%s placed=%d/%d", gid, len(gang_tentative.get(gid, {})), len(gang_members.get(gid, set())))
+            gang_id = primary_key
+            if gang_id in failed_gangs:
+                continue
+            grouped_candidates = gang_candidates.get(gang_id, [])
+            if not grouped_candidates:
+                continue
+            assignments = self._assign_gang_group(grouped_candidates, remaining_cap)
+            if assignments is None:
+                failed_gangs.add(gang_id)
+                continue
+            for job_id, node_id in assignments.items():
+                plan[job_id] = node_id
+                assigned_jobs.add(job_id)
+            logger.debug("gang_placement_committed: gang=%s members=%d", gang_id, len(assignments))
 
         return plan
 
     @staticmethod
-    def _rollback_gang(
-        gang_id: str,
-        gang_tentative: dict[str, dict[str, str]],
-        gang_cap_deltas: dict[str, dict[str, int]],
+    def _assign_gang_group(
+        candidates: list[PlacementCandidate],
         remaining_cap: dict[str, int],
-    ) -> None:
-        """Rollback tentative gang assignments, restoring node capacity."""
-        deltas = gang_cap_deltas.pop(gang_id, {})
-        for nid, count in deltas.items():
-            remaining_cap[nid] = remaining_cap.get(nid, 0) + count
-        gang_tentative.pop(gang_id, None)
+    ) -> dict[str, str] | None:
+        """Assign a gang as a unit using per-job candidate lists."""
+        by_job: dict[str, list[PlacementCandidate]] = defaultdict(list)
+        for candidate in candidates:
+            by_job[candidate.job.job_id].append(candidate)
 
+        ordered_jobs = sorted(
+            by_job.items(),
+            key=lambda item: (
+                len(item[1]),
+                -max(candidate.score for candidate in item[1]),
+                item[0],
+            ),
+        )
+        local_remaining = dict(remaining_cap)
+        assignments: dict[str, str] = {}
+
+        for job_id, job_candidates in ordered_jobs:
+            ranked_candidates = sorted(
+                job_candidates,
+                key=lambda candidate: (-candidate.score, candidate.node.node_id),
+            )
+            selected_node_id: str | None = None
+            for candidate in ranked_candidates:
+                node_id = candidate.node.node_id
+                if local_remaining.get(node_id, 0) <= 0:
+                    continue
+                local_remaining[node_id] -= 1
+                selected_node_id = node_id
+                break
+            if selected_node_id is None:
+                return None
+            assignments[job_id] = selected_node_id
+
+        remaining_cap.clear()
+        remaining_cap.update(local_remaining)
+        return assignments
 
 # Module-level solver singleton
 _solver: PlacementSolver | None = None

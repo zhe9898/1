@@ -18,6 +18,16 @@ def _scalar_result(value: object | None) -> MagicMock:
     return result
 
 
+def _row_result(*, global_count: int = 0, tenant_count: int = 0, connector_count: int = 0) -> MagicMock:
+    result = MagicMock()
+    result.one.return_value = MagicMock(
+        global_count=global_count,
+        tenant_count=tenant_count,
+        connector_count=connector_count,
+    )
+    return result
+
+
 def _render_sql(statement: object) -> str:
     return str(statement)
 
@@ -45,7 +55,6 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
     db = AsyncMock()
     db.flush = AsyncMock()
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-
     def add_side_effect(job: object) -> None:
         job.attempt = 0
         job.created_at = now
@@ -58,11 +67,8 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
 
     def execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
         rendered = str(statement)
-        if "zen70_global_leased_jobs_count" in rendered.lower():
-            return _scalar_result(0)
-        # count() queries for concurrent limits → return 0
-        if "count(*)" in rendered.lower():
-            return _scalar_result(0)
+        if "zen70_global_leased_jobs_count" in rendered.lower() and "tenant_count" in rendered.lower():
+            return _row_result()
         compiled = statement.compile()
         params = compiled.params
         if params.get("tenant_id_1") == "tenant-alpha" and params.get("idempotency_key_1") == "invoke-1":
@@ -70,19 +76,26 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
         return _scalar_result(existing_other_tenant)
 
     db.execute.side_effect = execute_side_effect
+    import backend.core.scheduling_resilience as scheduling_resilience
 
-    response = await create_job(
-        JobCreateRequest(
-            kind="connector.invoke",
-            connector_id="connector-1",
-            payload={"hello": "world"},
-            lease_seconds=30,
-            idempotency_key="invoke-1",
-        ),
-        current_user={"sub": "tester", "tenant_id": "tenant-alpha"},
-        db=db,
-        redis=None,
-    )
+    original_check_admission = scheduling_resilience.AdmissionController.check_admission
+    scheduling_resilience.AdmissionController.check_admission = AsyncMock(return_value=(True, "", {}))
+
+    try:
+        response = await create_job(
+            JobCreateRequest(
+                kind="connector.invoke",
+                connector_id="connector-1",
+                payload={"hello": "world"},
+                lease_seconds=30,
+                idempotency_key="invoke-1",
+            ),
+            current_user={"sub": "tester", "tenant_id": "tenant-alpha"},
+            db=db,
+            redis=None,
+        )
+    finally:
+        scheduling_resilience.AdmissionController.check_admission = original_check_admission
 
     assert response.job_id
     assert response.idempotency_key == "invoke-1"

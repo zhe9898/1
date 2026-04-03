@@ -65,6 +65,8 @@ def _job(
     kind: str = "shell.exec",
     priority: int = 50,
     tenant_id: str = "default",
+    required_capabilities: list[str] | None = None,
+    gang_id: str | None = None,
 ) -> MagicMock:
     j = MagicMock()
     j.job_id = job_id
@@ -75,7 +77,7 @@ def _job(
     j.target_arch = None
     j.target_zone = None
     j.target_executor = None
-    j.required_capabilities = []
+    j.required_capabilities = required_capabilities or []
     j.required_cpu_cores = 0
     j.required_memory_mb = 0
     j.required_gpu_vram_mb = 0
@@ -92,6 +94,7 @@ def _job(
     j.started_at = None
     j.created_at = _utcnow() - datetime.timedelta(minutes=5)
     j.status = "pending"
+    j.gang_id = gang_id
     return j
 
 
@@ -171,6 +174,48 @@ class TestPlacementSolver:
 
         assert len(plan) == len(jobs)
         assert metrics.get("result") == "fast_path_planned"
+
+    def test_sparse_capability_prefilter_reduces_candidate_matrix(self) -> None:
+        solver = PlacementSolver()
+        metrics: dict[str, object] = {}
+        jobs = [_job("gpu-job", required_capabilities=["gpu"])]
+        nodes = [
+            _node("gpu-node", capabilities=frozenset({"gpu"})),
+            _node("cpu-node", capabilities=frozenset({"cpu"})),
+        ]
+
+        plan = solver.solve(
+            jobs,
+            nodes,
+            now=_utcnow(),
+            accepted_kinds={"shell.exec"},
+            metrics=metrics,
+        )
+
+        assert plan == {"gpu-job": "gpu-node"}
+        assert metrics.get("candidate_pairs_sparse") == 1
+        assert metrics.get("feasible_pairs") == 1
+
+    def test_grouped_gang_assignment_remains_atomic(self) -> None:
+        solver = PlacementSolver()
+        jobs = [
+            _job("g1", priority=100, gang_id="gang-a"),
+            _job("g2", priority=95, gang_id="gang-a"),
+        ]
+        nodes = [
+            _node("n1", max_concurrency=1),
+            _node("n2", max_concurrency=1),
+        ]
+
+        plan = solver.solve(
+            jobs,
+            nodes,
+            now=_utcnow(),
+            accepted_kinds={"shell.exec"},
+        )
+
+        assert set(plan) == {"g1", "g2"}
+        assert len(set(plan.values())) == 2
 
     def test_singleton(self) -> None:
         s1 = get_placement_solver()
