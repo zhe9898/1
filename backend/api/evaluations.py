@@ -134,5 +134,17 @@ async def delete_evaluation(
             recovery_hint="Verify the evaluation_id and try again",
             details={"evaluation_id": evaluation_id},
         )
+    if evaluation.status not in {"submitted", "rejected"}:
+        raise zen(
+            "ZEN-EVAL-4090",
+            f"Evaluation '{evaluation_id}' cannot be deleted while status is '{evaluation.status}'",
+            status_code=409,
+            recovery_hint="Only evaluations in 'submitted' or 'rejected' status can be deleted",
+            details={
+                "evaluation_id": evaluation_id,
+                "status": evaluation.status,
+                "allowed_statuses": ["submitted", "rejected"],
+            },
+        )
     await db.delete(evaluation)
     await db.commit()
