@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Final
 
-from sqlalchemy import text
+from sqlalchemy import func, select, table, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -143,7 +143,7 @@ async def assert_rls_ready(session: AsyncSession) -> None:
     if probe_table:
         try:
             await session.execute(text("SET LOCAL zen70.current_tenant = '__rls_probe_tenant__'"))
-            result = await session.execute(text(f"SELECT COUNT(*) FROM {probe_table}"))  # noqa: S608
+            result = await session.execute(select(func.count()).select_from(table(probe_table)))
             count = result.scalar() or 0
             if count != 0:
                 raise RuntimeError(

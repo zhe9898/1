@@ -7,6 +7,7 @@ Uses SQLAlchemy 2.x with asyncpg. A plain ``postgresql://`` DSN is rewritten to
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncGenerator
 
@@ -14,6 +15,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.models import Base
+
+logger = logging.getLogger(__name__)
 
 _DSN = os.getenv("POSTGRES_DSN") or ""
 _ASYNC_DSN = _DSN.replace("postgresql://", "postgresql+asyncpg://", 1) if _DSN else ""
@@ -71,7 +74,10 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             yield session
             await session.commit()
         except Exception:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                logger.exception("database rollback failed while handling session error")
             raise
         finally:
             await session.close()

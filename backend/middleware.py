@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextvars
 import logging
 import os
+import re
 import uuid
 from typing import Any
 
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 # API 边缘层注射 X-Request-ID（使用 contextvars 避免并发污染）
 _request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="NO-REQUEST-ID")
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 old_factory = logging.getLogRecordFactory()
 
@@ -52,10 +54,19 @@ def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
 logging.setLogRecordFactory(record_factory)
 
 
+def _normalize_request_id(raw_request_id: str | None) -> str:
+    request_id = (raw_request_id or "").strip()
+    if _REQUEST_ID_PATTERN.fullmatch(request_id):
+        return request_id
+    return uuid.uuid4().hex
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # 如果上游已传则复用；否则生成新 UUID4
-        request_id = (request.headers.get("X-Request-ID") or request.headers.get("X-Trace-Id") or uuid.uuid4().hex).strip()
+        request_id = _normalize_request_id(
+            request.headers.get("X-Request-ID") or request.headers.get("X-Trace-Id"),
+        )
         request.state.request_id = request_id
 
         # 桥接 OTEL：将 trace_id 注入响应头，与 X-Request-ID 共存

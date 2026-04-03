@@ -431,7 +431,7 @@ async def cancel_job(
     redis: RedisClient | None = Depends(get_redis),
 ) -> JobResponse:
     tenant_id = str(current_user.get("tenant_id") or "default")
-    job = await _get_job_by_id(db, tenant_id, id)
+    job = await _get_job_by_id_for_update(db, tenant_id, id)
     if job.status == "canceled":
         return _to_response(job)
     if job.status not in {"pending", "leased"}:
@@ -486,7 +486,7 @@ async def retry_job_now(
     redis: RedisClient | None = Depends(get_redis),
 ) -> JobResponse:
     tenant_id = str(current_user.get("tenant_id") or "default")
-    job = await _get_job_by_id(db, tenant_id, id)
+    job = await _get_job_by_id_for_update(db, tenant_id, id)
     if job.status == "pending":
         return _to_response(job)
     if job.status not in {"failed", "completed", "canceled"}:

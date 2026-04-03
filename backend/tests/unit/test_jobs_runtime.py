@@ -312,6 +312,7 @@ async def test_cancel_job_marks_job_canceled() -> None:
     assert response.status == "canceled"
     assert attempt.status == "canceled"
     assert response.attention_reason == "job canceled by operator"
+    assert "for update" in str(db.execute.await_args_list[0].args[0]).lower()
 
 
 @pytest.mark.asyncio
@@ -335,6 +336,7 @@ async def test_retry_job_now_requeues_terminal_job() -> None:
     assert response.attempt == 0
     assert response.node_id is None
     assert response.actions[0].enabled is True
+    assert "for update" in str(db.execute.await_args_list[0].args[0]).lower()
 
 
 @pytest.mark.asyncio

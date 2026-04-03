@@ -238,8 +238,17 @@ async def submit_job(
     except Exception:
         if not idempotency_key:
             raise
-        await db.rollback()
-        await set_tenant_context(db, tenant_id)
+        try:
+            await db.rollback()
+            await set_tenant_context(db, tenant_id)
+        except Exception as recovery_exc:
+            raise zen(
+                "ZEN-JOB-5033",
+                "Failed to recover transaction state after idempotency conflict",
+                status_code=503,
+                recovery_hint="Retry the request after database connectivity is restored",
+                details={"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+            ) from recovery_exc
         existing = await _get_job_by_idempotency_key(db, tenant_id, idempotency_key)
         if existing is None or not _job_definition_matches(existing, payload):
             raise zen(

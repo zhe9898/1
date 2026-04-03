@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.api.jobs import JobPullRequest, JobResultRequest, complete_job, pull_jobs
-from backend.api.jobs.submission import check_concurrent_limits
+from backend.api.jobs import JobCreateRequest, JobPullRequest, JobResultRequest, complete_job, pull_jobs
+from backend.api.jobs.submission import check_concurrent_limits, submit_job
 from backend.core.node_auth import hash_node_token
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
@@ -157,6 +157,37 @@ async def test_check_concurrent_limits_returns_503_when_global_function_unavaila
 
     with pytest.raises(HTTPException) as exc:
         await check_concurrent_limits(db, "tenant-alpha", "scheduled")
+
+    assert exc.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_submit_job_returns_503_when_transaction_recovery_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock(side_effect=RuntimeError("flush failed"))
+    db.rollback = AsyncMock(side_effect=RuntimeError("rollback failed"))
+    db.execute.return_value = _scalar_result(None)
+
+    monkeypatch.setattr(
+        "backend.core.scheduling_resilience.AdmissionController.check_admission",
+        AsyncMock(return_value=(True, "", {})),
+    )
+    monkeypatch.setattr("backend.api.jobs.submission.validate_job_payload", lambda *_: {"ok": True})
+    monkeypatch.setattr("backend.api.jobs.submission.resolve_job_queue_contract", lambda **_: ("interactive", "default"))
+    monkeypatch.setattr("backend.api.jobs.submission.check_concurrent_limits", AsyncMock(return_value=None))
+
+    with pytest.raises(HTTPException) as exc:
+        await submit_job(
+            JobCreateRequest(
+                kind="connector.invoke",
+                payload={"ok": True},
+                idempotency_key="idem-1",
+            ),
+            current_user={"sub": "u1", "tenant_id": "default"},
+            db=db,
+            redis=None,
+        )
 
     assert exc.value.status_code == 503
 
