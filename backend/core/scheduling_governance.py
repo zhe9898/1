@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +39,7 @@ async def get_tenant_policy(
             TenantSchedulingPolicy.tenant_id == tenant_id,
         )
     )
-    return result.scalars().first()
+    return cast("TenantSchedulingPolicy | None", result.scalars().first())
 
 
 async def upsert_tenant_policy(

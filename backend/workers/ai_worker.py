@@ -36,7 +36,7 @@ def get_model() -> Any:
 try:
     from PIL import Image
 except ImportError:
-    Image = None  # type: ignore[assignment]
+    Image = None
 
 
 async def process_pending_assets() -> int:

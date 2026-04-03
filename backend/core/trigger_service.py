@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -93,7 +93,7 @@ def validate_trigger_target_contract(target: dict[str, Any]) -> dict[str, Any]:
     if isinstance(parsed, WorkflowTemplateTriggerTarget):
         bootstrap_extension_runtime()
         get_published_workflow_template(parsed.template_id)
-    return parsed.model_dump(mode="json")
+    return cast(dict[str, Any], parsed.model_dump(mode="json"))
 
 
 def _delivery_event_payload(trigger: Trigger, delivery: TriggerDelivery) -> dict[str, Any]:
@@ -134,7 +134,7 @@ async def get_delivery_by_idempotency_key(
             TriggerDelivery.idempotency_key == idempotency_key,
         )
     )
-    return result.scalars().first()
+    return cast("TriggerDelivery | None", result.scalars().first())
 
 
 def delivery_definition_matches(

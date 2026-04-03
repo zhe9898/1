@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import Integer, case, func, literal, or_, select
@@ -260,7 +260,7 @@ async def pull_jobs(  # noqa: C901
     # effective priority) for deterministic ordering with tiebreakers.
     from backend.core.queue_stratification import sort_jobs_by_stratified_priority
 
-    candidates = sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True)  # type: ignore[assignment, arg-type]
+    candidates = cast(list[Job], sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True))
 
     # ── Connector cooling & kind circuit breaker gate ────────────────
     # Beyond node quarantine (checked above), also honour kind-level

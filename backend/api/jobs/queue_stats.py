@@ -42,13 +42,13 @@ async def get_queue_stats(
     jobs = list(result.scalars().all())
 
     # Calculate stats
-    layer_stats = get_priority_layer_stats(jobs)  # type: ignore[arg-type]
+    layer_stats = get_priority_layer_stats(jobs)
 
     # Convert to response format
     by_priority = {
         layer: QueueLayerStats(
-            count=stats["count"],  # type: ignore[arg-type]
-            oldest=stats["oldest"],  # type: ignore[arg-type]
+            count=stats["count"],
+            oldest=stats["oldest"],
         )
         for layer, stats in layer_stats.items()
     }

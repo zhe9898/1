@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from typing import cast
 
 import bcrypt
 from sqlalchemy import select
@@ -79,4 +80,4 @@ async def authenticate_node_request(
             details={"node_id": node_id, "enrollment_status": node.enrollment_status},
         )
 
-    return node
+    return cast("Node", node)

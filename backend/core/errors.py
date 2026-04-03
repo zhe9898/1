@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import Enum
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -116,10 +116,13 @@ def ok(
     extra_details: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Build canonical success envelope for API responses."""
-    return ZenSuccessResponse(
-        code=code,
-        message=message,
-        recovery_hint=recovery_hint,
-        details=_merge_details(details, extra=extra_details),
-        data=data,
-    ).model_dump(mode="json")
+    return cast(
+        dict[str, object],
+        ZenSuccessResponse(
+            code=code,
+            message=message,
+            recovery_hint=recovery_hint,
+            details=_merge_details(details, extra=extra_details),
+            data=data,
+        ).model_dump(mode="json"),
+    )

@@ -9,7 +9,7 @@ import json
 try:
     from webauthn.helpers import bytes_to_base64url
 except ImportError:
-    bytes_to_base64url = None  # type: ignore[assignment]
+    bytes_to_base64url = None
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select

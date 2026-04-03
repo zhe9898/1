@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -100,7 +100,7 @@ def _validate_template_parameters(registration: WorkflowTemplateRegistration, pa
         raise ValueError(
             f"Workflow template parameter validation failed for '{registration.template_id}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}"
         ) from exc
-    return validated.model_dump(mode="python")
+    return cast(dict[str, Any], validated.model_dump(mode="python"))
 
 
 def _render_value(value: Any, parameters: dict[str, Any]) -> Any:

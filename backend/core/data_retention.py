@@ -74,7 +74,7 @@ async def purge_old_scheduling_decisions(session: AsyncSession) -> int:
     cutoff = _cutoff(RETENTION_SCHEDULING_DAYS)
     stmt = delete(SchedulingDecision).where(SchedulingDecision.created_at < cutoff)
     result = await session.execute(stmt)
-    count = result.rowcount  # type: ignore[attr-defined]
+    count = result.rowcount
     if count:
         await session.commit()
         logger.info("data_retention: purged %d scheduling_decisions (cutoff=%s)", count, cutoff.isoformat())
@@ -86,7 +86,7 @@ async def purge_old_audit_logs(session: AsyncSession) -> int:
     cutoff = _cutoff(RETENTION_AUDIT_DAYS)
     stmt = delete(AuditLog).where(AuditLog.created_at < cutoff)
     result = await session.execute(stmt)
-    count = result.rowcount  # type: ignore[attr-defined]
+    count = result.rowcount
     if count:
         await session.commit()
         logger.info("data_retention: purged %d audit_logs (cutoff=%s)", count, cutoff.isoformat())

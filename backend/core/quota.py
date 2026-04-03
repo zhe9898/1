@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +25,7 @@ async def _get_limit(db: AsyncSession, tenant_id: str, resource_type: str) -> in
     quota = result.scalars().first()
     if quota is None:
         return DEFAULT_QUOTAS.get(resource_type, -1)
-    return quota.limit
+    return cast(int, quota.limit)
 
 
 async def check_node_quota(db: AsyncSession, tenant_id: str) -> None:
@@ -184,4 +186,4 @@ async def set_quota(
         quota.limit = limit
         quota.updated_by = updated_by
     await db.flush()
-    return quota
+    return cast("Quota", quota)

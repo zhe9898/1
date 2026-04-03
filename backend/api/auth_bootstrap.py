@@ -62,7 +62,7 @@ async def bootstrap(
     require_db_redis(db, redis)
     from backend.api.auth_shared import first_user_or_schema_unavailable
 
-    first_user = await first_user_or_schema_unavailable(db)  # type: ignore[arg-type]
+    first_user = await first_user_or_schema_unavailable(db)
     if first_user is not None:
         raise zen(CODE_FORBIDDEN, "System already initialized", status.HTTP_403_FORBIDDEN)
 
