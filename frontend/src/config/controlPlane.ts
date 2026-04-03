@@ -24,6 +24,7 @@ const VIEW_LOADERS = {
   jobs: () => import("@/views/JobsView.vue"),
   connectors: () => import("@/views/ConnectorsView.vue"),
   settings: () => import("@/views/SystemSettings.vue"),
+  evaluations: () => import("@/views/EvaluationsView.vue"),
 } as const satisfies Record<string, ControlPlaneViewLoader>;
 
 export const ADMIN_ONLY_ROUTE_NAMES = new Set(

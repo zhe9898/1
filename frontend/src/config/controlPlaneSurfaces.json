@@ -58,5 +58,17 @@
     "frontend_view": "SystemSettings",
     "profiles": ["gateway-kernel"],
     "requires_admin": true
+  },
+  {
+    "capability_key": "gateway.evaluations",
+    "route_name": "evaluations",
+    "route_path": "/evaluations",
+    "label": "Evaluations",
+    "description": "Submit and review software evaluations across all branches and components.",
+    "endpoint": "/v1/evaluations",
+    "backend_router": "evaluations",
+    "frontend_view": "EvaluationsView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
   }
 ]

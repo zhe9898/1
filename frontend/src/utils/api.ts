@@ -92,6 +92,17 @@ export const CONNECTORS = {
   test: (id: string) => `/v1/connectors/${id}/test`,
 } as const;
 
+// ---------------------------------------------------------------------------
+// Evaluations 域
+// ---------------------------------------------------------------------------
+export const EVALUATIONS = {
+  list: "/v1/evaluations",
+  schema: "/v1/evaluations/schema",
+  create: "/v1/evaluations",
+  detail: (id: string) => `/v1/evaluations/${id}`,
+  delete: (id: string) => `/v1/evaluations/${id}`,
+} as const;
+
 export const PROFILE = {
   current: "/v1/profile",
 } as const;
