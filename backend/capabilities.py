@@ -107,7 +107,7 @@ async def fetch_topology(r: Any) -> dict[str, str]:
     Default kernel does not expose topology-based capabilities.
     """
     try:
-        keys = await r.keys(f"{TOPOLOGY_KEY_PREFIX}*")
+        keys = [key async for key in r.scan_iter(f"{TOPOLOGY_KEY_PREFIX}*", count=100)]
         if not keys:
             return {}
         pipe = r.pipeline()
