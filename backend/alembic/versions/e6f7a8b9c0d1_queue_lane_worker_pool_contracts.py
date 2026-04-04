@@ -58,7 +58,9 @@ def _drop_index_if_exists(table_name: str, index_name: str) -> None:
 
 
 def _backfill_job_queue_contracts() -> None:
-    op.execute(sa.text("""
+    op.execute(
+        sa.text(
+            """
             UPDATE jobs
             SET queue_class = CASE
                 WHEN COALESCE(required_gpu_vram_mb, 0) > 0 THEN 'gpu-heavy'
@@ -80,7 +82,9 @@ def _backfill_job_queue_contracts() -> None:
                 ELSE 'batch'
             END
             WHERE queue_class IS NULL
-            """))
+            """
+        )
+    )
     op.execute(sa.text("UPDATE jobs SET worker_pool = queue_class WHERE worker_pool IS NULL"))
 
 

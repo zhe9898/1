@@ -237,6 +237,7 @@ async def invite_webauthn_register_complete(
     await db.commit()
 
     from backend.core.permissions import get_user_scopes
+
     user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
 
     body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
@@ -278,6 +279,7 @@ async def invite_fallback_login(
     assert_user_active(user, flow="invite_fallback_login", rid=rid, username=user.username, client_ip_str=cip)
 
     from backend.core.permissions import get_user_scopes
+
     user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
 
     body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
@@ -288,4 +290,3 @@ async def invite_fallback_login(
         "access_token": body["access_token"],
         "token_type": body["token_type"],
     }
-
