@@ -325,4 +325,3 @@ async def test_create_invite_scopes_user_lookup_to_admin_tenant() -> None:
     rendered = _render_sql(stmt)
     assert "users.tenant_id" in rendered
     assert exc.value.status_code == 404
-
