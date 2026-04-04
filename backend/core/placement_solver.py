@@ -430,8 +430,9 @@ class PlacementSolver:
                 c.score += bonus
                 c.breakdown["solver_spread"] = bonus
 
-            # Binpack bonus: if job requests many resources, prefer nodes
-            # that already have some load (consolidation).
+            # Binpack bonus: if the job has no CPU requirement (tiny job), prefer
+            # nodes that already have some load to consolidate small jobs and keep
+            # other nodes free for resource-heavy work.
             req_cpu = max(int(getattr(c.job, "required_cpu_cores", 0) or 0), 0)
             if req_cpu == 0 and load > 0.3:
                 bonus = int(_sol.binpack_bonus * load)

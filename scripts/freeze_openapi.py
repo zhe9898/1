@@ -105,6 +105,12 @@ _EXCLUDE_EXACT: frozenset[str] = frozenset(
 # Surface type: maps each path to its sorted list of HTTP methods.
 _SurfaceMap = dict[str, list[str]]
 
+# Locked snapshot type: same as _SurfaceMap except legacy entries (loaded from
+# old snapshots that had no method info) are mapped to ``None`` as an explicit
+# sentinel meaning "method check not available for this path".  Callers must
+# test ``is None`` before accessing the method list.
+_LockedMap = dict[str, "list[str] | None"]
+
 
 def _collect_surface() -> _SurfaceMap:
     """Import the FastAPI app and collect the API path+method surface.
@@ -150,16 +156,16 @@ def _collect_surface() -> _SurfaceMap:
     return surface
 
 
-def _load_locked() -> _SurfaceMap | None:
+def _load_locked() -> _LockedMap | None:
     """Load the committed path+method surface snapshot.
 
     Returns ``None`` if the snapshot file is missing.
 
     Backward compatibility: snapshots produced by earlier versions contain
     only a ``"paths"`` list without method information.  In that case each
-    path is mapped to ``None`` as a sentinel meaning "method check not
-    available for this path" — the caller should skip method comparison for
-    those entries.
+    path is mapped to ``None`` as an explicit sentinel meaning "method check
+    not available for this path" — callers must test ``is None`` before
+    comparing method lists, and must skip method comparison for those entries.
     """
     if not LOCKED_SNAPSHOT.exists():
         return None
@@ -167,8 +173,9 @@ def _load_locked() -> _SurfaceMap | None:
     if "path_methods" in data:
         # New format: full method checking.
         return {path: sorted(methods) for path, methods in data["path_methods"].items()}
-    # Old format (paths list only): return sentinel so callers skip method check.
-    return {path: [] for path in data.get("paths", [])}
+    # Old format (paths list only): use None sentinel so callers unambiguously
+    # distinguish "no method info" from "empty method list".
+    return {path: None for path in data.get("paths", [])}
 
 
 def _build_snapshot_dict(surface: _SurfaceMap) -> dict:
@@ -256,12 +263,12 @@ def cmd_check(*, quiet: bool = False, export_dist: bool = False) -> int:
     removed_paths = locked_paths - actual_paths
 
     # ── Method drift (only for paths present in both snapshots) ──────────────
-    # Paths where the locked snapshot has an empty list were stored by an older
-    # version of the tool that did not capture methods — skip method check there.
+    # Paths where the locked snapshot has None were stored by an older version
+    # of the tool that did not capture methods — skip method check there.
     method_drift: dict[str, tuple[list[str], list[str]]] = {}
     for path in locked_paths & actual_paths:
         locked_methods = locked[path]
-        if not locked_methods:
+        if locked_methods is None:
             # Old snapshot format (no method info) → skip to preserve CI stability
             # until --init is re-run to upgrade the snapshot.
             continue
@@ -271,7 +278,7 @@ def cmd_check(*, quiet: bool = False, export_dist: bool = False) -> int:
 
     if not added_paths and not removed_paths and not method_drift:
         if not quiet:
-            method_note = "path+method" if any(locked.values()) else "path-only (re-run --init to enable method checking)"
+            method_note = "path+method" if any(v is not None for v in locked.values()) else "path-only (re-run --init to enable method checking)"
             print(f"[freeze_openapi] Surface unchanged " f"({len(actual)} paths match locked contract; frozen: {method_note})")
         return 0
 
