@@ -15,6 +15,64 @@ if TYPE_CHECKING:
     pass
 
 
+# Canonical scope allow-list for JWT claims and grant APIs.
+ALLOWED_SCOPES: frozenset[str] = frozenset(
+    {
+        "read:jobs",
+        "write:jobs",
+        "admin:jobs",
+        "read:nodes",
+        "write:nodes",
+        "admin:nodes",
+        "read:connectors",
+        "write:connectors",
+        "admin:connectors",
+        "read:users",
+        "write:users",
+        "admin:users",
+        "admin:quotas",
+        "admin:alerts",
+        "admin:audit",
+    }
+)
+
+
+def normalize_scope(scope: str) -> str:
+    return scope.strip().lower()
+
+
+def is_valid_scope(scope: str) -> bool:
+    return normalize_scope(scope) in ALLOWED_SCOPES
+
+
+def filter_valid_scopes(scopes: list[str] | tuple[str, ...] | set[str] | None) -> list[str]:
+    if not scopes:
+        return []
+    normalized = {normalize_scope(scope) for scope in scopes if isinstance(scope, str) and scope.strip()}
+    return sorted(scope for scope in normalized if scope in ALLOWED_SCOPES)
+
+
+def hydrate_scopes_for_role(scopes: list[str] | tuple[str, ...] | set[str] | None, role: str | None) -> list[str]:
+    normalized_role = (role or "").strip().lower()
+    effective_scopes = set(filter_valid_scopes(scopes))
+    if normalized_role in {"admin", "superadmin"}:
+        effective_scopes.update(ALLOWED_SCOPES)
+    return sorted(effective_scopes)
+
+
+def assert_valid_scope(scope: str) -> str:
+    normalized = normalize_scope(scope)
+    if normalized not in ALLOWED_SCOPES:
+        raise zen(
+            "ZEN-PERM-4001",
+            "Invalid permission scope",
+            status_code=400,
+            recovery_hint="Use one of the supported permission scopes",
+            details={"scope": scope, "allowed_scopes": sorted(ALLOWED_SCOPES)},
+        )
+    return normalized
+
+
 async def grant_permission(
     db: AsyncSession,
     *,
@@ -41,13 +99,15 @@ async def grant_permission(
     Returns:
         Created permission object
     """
+    validated_scope = assert_valid_scope(scope)
+
     # Check if permission already exists
     result = await db.execute(
         select(Permission).where(
             and_(
                 Permission.tenant_id == tenant_id,
                 Permission.user_id == user_id,
-                Permission.scope == scope,
+                Permission.scope == validated_scope,
                 Permission.resource_type == resource_type,
                 Permission.resource_id == resource_id,
             )
@@ -61,7 +121,7 @@ async def grant_permission(
     permission = Permission(
         tenant_id=tenant_id,
         user_id=user_id,
-        scope=scope,
+        scope=validated_scope,
         resource_type=resource_type,
         resource_id=resource_id,
         granted_by=granted_by,
@@ -120,13 +180,14 @@ async def check_permission(
     Returns:
         True if user has permission, False otherwise
     """
+    validated_scope = assert_valid_scope(scope)
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
     # Build query conditions
     conditions = [
         Permission.tenant_id == tenant_id,
         Permission.user_id == user_id,
-        Permission.scope == scope,
+        Permission.scope == validated_scope,
         or_(Permission.expires_at.is_(None), Permission.expires_at > now),
     ]
 
@@ -218,11 +279,5 @@ async def get_user_scopes(
         List of scope strings
     """
     permissions = await list_user_permissions(db, tenant_id=tenant_id, user_id=user_id)
-    scopes: set[str] = set()
-    for permission in permissions:
-        scope = getattr(permission, "scope", None)
-        if isinstance(scope, str):
-            normalized = scope.strip()
-            if normalized:
-                scopes.add(normalized)
-    return list(scopes)
+    scopes = [getattr(permission, "scope", "") for permission in permissions if isinstance(getattr(permission, "scope", None), str)]
+    return filter_valid_scopes(scopes)

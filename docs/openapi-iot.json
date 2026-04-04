@@ -7192,15 +7192,14 @@
           "preference": {
             "type": "string",
             "title": "Preference",
-            "description": "'local', 'cloud', 'auto'"
+            "description": "'local', 'cloud', or 'auto'"
           }
         },
         "type": "object",
         "required": [
           "preference"
         ],
-        "title": "AiRoutePreferenceRequest",
-        "description": "用户 AI 算力偏好切换。"
+        "title": "AiRoutePreferenceRequest"
       },
       "AlertResponse": {
         "properties": {
@@ -7619,19 +7618,19 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Username",
-            "description": "管理员用户名"
+            "description": "Admin username"
           },
           "password": {
             "type": "string",
             "minLength": 8,
             "title": "Password",
-            "description": "管理员强密码（至少8位）"
+            "description": "Admin password, at least 8 chars"
           },
           "display_name": {
             "type": "string",
             "maxLength": 128,
             "title": "Display Name",
-            "description": "显示名称",
+            "description": "Display name",
             "default": "ZEN70 Admin"
           }
         },
@@ -7640,8 +7639,7 @@
           "username",
           "password"
         ],
-        "title": "BootstrapRequest",
-        "description": "系统接管初始化请求。"
+        "title": "BootstrapRequest"
       },
       "CapabilityDetail": {
         "properties": {
@@ -9153,19 +9151,19 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Username",
-            "description": "用户名"
+            "description": "Username"
           },
           "password": {
             "type": "string",
             "minLength": 8,
             "title": "Password",
-            "description": "初始密码（与 bootstrap 对齐，至少8位）"
+            "description": "Initial password"
           },
           "display_name": {
             "type": "string",
             "maxLength": 128,
             "title": "Display Name",
-            "description": "显示名称",
+            "description": "Display name",
             "default": ""
           },
           "role": {
@@ -9179,7 +9177,7 @@
               "guest"
             ],
             "title": "Role",
-            "description": "角色(admin/family/geek/child/elder/guest)",
+            "description": "Role",
             "default": "family"
           },
           "tenant_id": {
@@ -9187,7 +9185,7 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "数据隔离域(多租户ID)"
+            "description": "Tenant ID"
           }
         },
         "type": "object",
@@ -9196,8 +9194,7 @@
           "password",
           "tenant_id"
         ],
-        "title": "CreateUserRequest",
-        "description": "管理员新建账号请求。"
+        "title": "CreateUserRequest"
       },
       "DeadLetterQueueResponse": {
         "properties": {
@@ -9930,14 +9927,14 @@
           "user_id": {
             "type": "integer",
             "title": "User Id",
-            "description": "目标用户ID"
+            "description": "Target user ID"
           },
           "expires_in_minutes": {
             "type": "integer",
             "maximum": 1440.0,
             "minimum": 1.0,
             "title": "Expires In Minutes",
-            "description": "有效时长(分钟)，1~1440(24小时)",
+            "description": "Expiration in minutes",
             "default": 15
           }
         },
@@ -9945,20 +9942,19 @@
         "required": [
           "user_id"
         ],
-        "title": "InviteCreateRequest",
-        "description": "管理员生成一次性邀请链接请求。"
+        "title": "InviteCreateRequest"
       },
       "InviteResponse": {
         "properties": {
           "token": {
             "type": "string",
             "title": "Token",
-            "description": "物理防腐的一次性 Token"
+            "description": "One-time invite token"
           },
           "expires_at": {
             "type": "integer",
             "title": "Expires At",
-            "description": "过期时间戳"
+            "description": "Unix expiration timestamp"
           }
         },
         "type": "object",
@@ -9966,8 +9962,7 @@
           "token",
           "expires_at"
         ],
-        "title": "InviteResponse",
-        "description": "一次性邀请链接响应。"
+        "title": "InviteResponse"
       },
       "JobActionRequest": {
         "properties": {
@@ -13497,7 +13492,7 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "租户 ID",
+            "description": "Tenant ID",
             "default": "default"
           },
           "username": {
@@ -13505,13 +13500,13 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Username",
-            "description": "用户名"
+            "description": "Username"
           },
           "password": {
             "type": "string",
             "minLength": 1,
             "title": "Password",
-            "description": "密码"
+            "description": "Password"
           }
         },
         "type": "object",
@@ -13519,8 +13514,7 @@
           "username",
           "password"
         ],
-        "title": "PasswordLoginRequest",
-        "description": "账号密码直连登录请求。"
+        "title": "PasswordLoginRequest"
       },
       "PermissionGrantRequest": {
         "properties": {
@@ -13657,17 +13651,18 @@
         "properties": {
           "pin": {
             "type": "string",
-            "maxLength": 6,
-            "minLength": 6,
+            "maxLength": 8,
+            "minLength": 8,
+            "pattern": "^\\d+$",
             "title": "Pin",
-            "description": "6 位 PIN"
+            "description": "8-digit PIN"
           },
           "tenant_id": {
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "租户 ID",
+            "description": "Tenant ID",
             "default": "default"
           },
           "username": {
@@ -13680,7 +13675,7 @@
               }
             ],
             "title": "Username",
-            "description": "用户名，默认 family",
+            "description": "Username, default family",
             "default": "family"
           }
         },
@@ -13688,39 +13683,39 @@
         "required": [
           "pin"
         ],
-        "title": "PinLoginRequest",
-        "description": "PIN 码登录请求（内网降级）。"
+        "title": "PinLoginRequest"
       },
       "PinSetRequest": {
         "properties": {
           "pin_new": {
             "type": "string",
-            "maxLength": 6,
-            "minLength": 6,
+            "maxLength": 8,
+            "minLength": 8,
+            "pattern": "^\\d+$",
             "title": "Pin New",
-            "description": "新 6 位 PIN"
+            "description": "New 8-digit PIN"
           },
           "pin_old": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 6,
-                "minLength": 6
+                "maxLength": 8,
+                "minLength": 8,
+                "pattern": "^\\d+$"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Pin Old",
-            "description": "旧 PIN，若账户已有 PIN 则必填"
+            "description": "Old 8-digit PIN, required when changing existing PIN"
           }
         },
         "type": "object",
         "required": [
           "pin_new"
         ],
-        "title": "PinSetRequest",
-        "description": "设置/重置 PIN（需已登录；若有旧 PIN 则必填 pin_old）。"
+        "title": "PinSetRequest"
       },
       "PlacementPolicyInfoResponse": {
         "properties": {
@@ -14820,7 +14815,7 @@
           "expires_in": {
             "type": "integer",
             "title": "Expires In",
-            "description": "过期秒数"
+            "description": "Token TTL in seconds"
           }
         },
         "type": "object",
@@ -14828,8 +14823,7 @@
           "access_token",
           "expires_in"
         ],
-        "title": "TokenResponse",
-        "description": "令牌响应。"
+        "title": "TokenResponse"
       },
       "TriggerDeliveryResponse": {
         "properties": {
@@ -15558,8 +15552,7 @@
         "required": [
           "username"
         ],
-        "title": "WebAuthnLoginBeginRequest",
-        "description": "WebAuthn 登录开始请求。"
+        "title": "WebAuthnLoginBeginRequest"
       },
       "WebAuthnLoginBeginResponse": {
         "properties": {
@@ -15567,15 +15560,14 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Options",
-            "description": "JSON 格式的 PublicKeyCredentialRequestOptions"
+            "description": "JSON PublicKeyCredentialRequestOptions"
           }
         },
         "type": "object",
         "required": [
           "options"
         ],
-        "title": "WebAuthnLoginBeginResponse",
-        "description": "WebAuthn 登录开始响应。"
+        "title": "WebAuthnLoginBeginResponse"
       },
       "WebAuthnLoginCompleteRequest": {
         "properties": {
@@ -15596,7 +15588,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Credential",
-            "description": "navigator.credentials.get() 的返回值"
+            "description": "Credential object from navigator.credentials.get()"
           }
         },
         "type": "object",
@@ -15604,8 +15596,7 @@
           "username",
           "credential"
         ],
-        "title": "WebAuthnLoginCompleteRequest",
-        "description": "WebAuthn 登录完成请求。"
+        "title": "WebAuthnLoginCompleteRequest"
       },
       "WebAuthnRegisterBeginRequest": {
         "properties": {
@@ -15633,8 +15624,7 @@
         "required": [
           "username"
         ],
-        "title": "WebAuthnRegisterBeginRequest",
-        "description": "WebAuthn 注册开始请求。"
+        "title": "WebAuthnRegisterBeginRequest"
       },
       "WebAuthnRegisterBeginResponse": {
         "properties": {
@@ -15642,15 +15632,14 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Options",
-            "description": "JSON 格式的 PublicKeyCredentialCreationOptions"
+            "description": "JSON PublicKeyCredentialCreationOptions"
           }
         },
         "type": "object",
         "required": [
           "options"
         ],
-        "title": "WebAuthnRegisterBeginResponse",
-        "description": "WebAuthn 注册开始响应：options 可直接传给 navigator.credentials.create()。"
+        "title": "WebAuthnRegisterBeginResponse"
       },
       "WebAuthnRegisterCompleteRequest": {
         "properties": {
@@ -15658,15 +15647,14 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Credential",
-            "description": "navigator.credentials.create() 的返回值"
+            "description": "Credential object from navigator.credentials.create()"
           }
         },
         "type": "object",
         "required": [
           "credential"
         ],
-        "title": "WebAuthnRegisterCompleteRequest",
-        "description": "WebAuthn 注册完成请求：前端传来的 credential 对象。"
+        "title": "WebAuthnRegisterCompleteRequest"
       },
       "WorkflowCreateRequest": {
         "properties": {

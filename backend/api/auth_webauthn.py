@@ -1,6 +1,5 @@
 """
-ZEN70 Auth WebAuthn - WebAuthn 注册与登录
-"""
+ZEN70 Auth WebAuthn - WebAuthn 娉ㄥ唽涓庣櫥褰?"""
 
 from __future__ import annotations
 
@@ -237,6 +236,15 @@ async def login_complete(
         log_auth("webauthn_login_complete", False, rid, username=req.username, detail=str(e))
         raise zen(CODE_BAD_REQUEST, "Authentication verification failed", status.HTTP_400_BAD_REQUEST)
 
+    # Clone detection: for authenticators with non-zero counters, sign_count must strictly increase.
+    if cred.sign_count > 0 and verification.new_sign_count <= cred.sign_count:
+        log_auth("webauthn_login_complete", False, rid, username=req.username, detail="clone_counter_regression")
+        raise zen(
+            "ZEN-AUTH-4015",
+            "Authenticator counter regression detected",
+            status.HTTP_401_UNAUTHORIZED,
+            recovery_hint="Re-register the authenticator and investigate credential cloning risk",
+        )
     cred.sign_count = verification.new_sign_count
     assert db is not None
     user_result = await db.execute(select(User).where(User.id == cred.user_id, User.tenant_id == challenge_tenant_id))
@@ -249,9 +257,12 @@ async def login_complete(
     log_auth("webauthn_login_complete", True, rid, username=req.username, client_ip_str=cip)
 
     # Load user scopes from permissions table for JWT
-    from backend.core.permissions import get_user_scopes
+    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
 
-    user_scopes = await get_user_scopes(db, tenant_id=login_user.tenant_id, user_id=str(cred.user_id))
+    user_scopes = hydrate_scopes_for_role(
+        await get_user_scopes(db, tenant_id=login_user.tenant_id, user_id=str(cred.user_id)),
+        login_user.role,
+    )
 
     resp = build_token_response_model(
         sub=str(cred.user_id),

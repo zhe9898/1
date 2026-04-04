@@ -80,7 +80,15 @@ class TestPurgeOldAuditLogs:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_purges_old_audit_logs(self) -> None:
+    async def test_purge_disabled_by_default(self) -> None:
+        session = _mock_session(scalars_result=list(range(99)))
+        count = await purge_old_audit_logs(session, "tenant-a")
+        assert count == 0
+        session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_purges_old_audit_logs_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("RETENTION_ALLOW_AUDIT_PURGE", "1")
         session = _mock_session(scalars_result=list(range(99)))
         count = await purge_old_audit_logs(session, "tenant-a")
         assert count == 99

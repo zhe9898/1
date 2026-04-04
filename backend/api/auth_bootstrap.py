@@ -33,8 +33,9 @@ def _build_token_response_model(
     *,
     tenant_id: str = "default",
     ai_route_preference: str = "auto",
+    scopes: list[str] | None = None,
 ) -> TokenResponse:
-    body = token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference)
+    body = token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference, scopes=scopes)
     return TokenResponse(
         access_token=str(body["access_token"]),
         token_type=str(body["token_type"]),
@@ -87,12 +88,15 @@ async def bootstrap(
         db.add(user)
         await db.flush()
         await db.commit()
+        from backend.core.permissions import hydrate_scopes_for_role
+
         return _build_token_response_model(
             str(user.id),
             user.username,
             user.role,
             tenant_id=user.tenant_id,
             ai_route_preference=user.ai_route_preference or "auto",
+            scopes=hydrate_scopes_for_role([], user.role),
         )
     finally:
         await redis.release_lock(BOOTSTRAP_LOCK_KEY)

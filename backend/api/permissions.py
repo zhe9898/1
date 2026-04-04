@@ -5,11 +5,11 @@ from __future__ import annotations
 import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_tenant_db
-from backend.core.permissions import grant_permission, list_user_permissions, revoke_permission
+from backend.core.permissions import ALLOWED_SCOPES, grant_permission, is_valid_scope, list_user_permissions, normalize_scope, revoke_permission
 from backend.models.permission import Permission
 
 router = APIRouter(prefix="/api/v1/permissions", tags=["permissions"])
@@ -21,6 +21,14 @@ class PermissionGrantRequest(BaseModel):
     resource_type: str | None = Field(default=None, max_length=64)
     resource_id: str | None = Field(default=None, max_length=128)
     expires_at: str | None = Field(default=None)
+
+    @field_validator("scope")
+    @classmethod
+    def _validate_scope(cls, value: str) -> str:
+        normalized = normalize_scope(value)
+        if not is_valid_scope(normalized):
+            raise ValueError(f"Invalid scope. Allowed scopes: {', '.join(sorted(ALLOWED_SCOPES))}")
+        return normalized
 
 
 class PermissionResponse(BaseModel):

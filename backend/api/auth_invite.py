@@ -1,4 +1,4 @@
-﻿"""ZEN70 invite-based auth flows."""
+"""ZEN70 invite-based auth flows."""
 
 from __future__ import annotations
 
@@ -252,9 +252,12 @@ async def invite_webauthn_register_complete(
     await db.flush()
     await db.commit()
 
-    from backend.core.permissions import get_user_scopes
+    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
 
-    user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
+    user_scopes = hydrate_scopes_for_role(
+        await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
+        user.role,
+    )
 
     body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
     return {
@@ -294,9 +297,12 @@ async def invite_fallback_login(
         raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
     assert_user_active(user, flow="invite_fallback_login", rid=rid, username=user.username, client_ip_str=cip)
 
-    from backend.core.permissions import get_user_scopes
+    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
 
-    user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
+    user_scopes = hydrate_scopes_for_role(
+        await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
+        user.role,
+    )
 
     body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
     log_auth("invite_fallback_login", True, rid, username=user.username, client_ip_str=cip, detail="degraded_access_confirmed")

@@ -54,6 +54,12 @@ async def update_ai_preference(
     user.ai_route_preference = req.preference
     await db.flush()
     log_auth("ai_preference_update", True, request_id(request), username=username, detail=f"changed_to_{req.preference}")
+    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+
+    user_scopes = hydrate_scopes_for_role(
+        await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
+        user.role,
+    )
 
     return build_token_response_model(
         sub=str(user.id),
@@ -61,6 +67,7 @@ async def update_ai_preference(
         role=user.role,
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference,
+        scopes=user_scopes,
     )
 
 

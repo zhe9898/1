@@ -1,7 +1,7 @@
-"""Data retention — automatic cleanup of aged-out records.
+"""Data retention 鈥?automatic cleanup of aged-out records.
 
 Tables and default retention periods:
-- jobs (terminal states only): 30 days  → cascades to job_logs via FK
+- jobs (terminal states only): 30 days  鈫?cascades to job_logs via FK
 - job_attempts (matching cleaned jobs): 30 days
 - scheduling_decisions: 90 days
 - audit_logs: 180 days
@@ -42,6 +42,10 @@ RETENTION_JOBS_DAYS = int(os.getenv("RETENTION_JOBS_DAYS", "30"))
 RETENTION_SCHEDULING_DAYS = int(os.getenv("RETENTION_SCHEDULING_DAYS", "90"))
 RETENTION_AUDIT_DAYS = int(os.getenv("RETENTION_AUDIT_DAYS", "180"))
 RETENTION_BATCH_SIZE = int(os.getenv("RETENTION_BATCH_SIZE", "500"))
+
+
+def _audit_purge_enabled() -> bool:
+    return os.getenv("RETENTION_ALLOW_AUDIT_PURGE", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _cutoff(days: int) -> datetime.datetime:
@@ -119,6 +123,9 @@ async def purge_old_scheduling_decisions(session: AsyncSession, tenant_id: str) 
 
 async def purge_old_audit_logs(session: AsyncSession, tenant_id: str) -> int:
     """Delete audit_logs older than RETENTION_AUDIT_DAYS for one tenant."""
+    if not _audit_purge_enabled():
+        logger.info("data_retention: audit log purge disabled by RETENTION_ALLOW_AUDIT_PURGE=0")
+        return 0
     await set_tenant_context(session, tenant_id)
     cutoff = _cutoff(RETENTION_AUDIT_DAYS)
     id_query = (

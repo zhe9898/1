@@ -15,6 +15,7 @@ from backend.api.models.auth import (
     PinLoginRequest,
     WebAuthnLoginBeginRequest,
 )
+from backend.core.permissions import ALLOWED_SCOPES
 from backend.models.user import User
 
 
@@ -56,7 +57,7 @@ async def test_pin_login_propagates_real_role_and_tenant() -> None:
     user.role = "admin"
     user.tenant_id = "tenant-alpha"
     user.ai_route_preference = "cloud"
-    user.pin_hash = bcrypt.hashpw(b"123456", bcrypt.gensalt(rounds=4)).decode("utf-8")
+    user.pin_hash = bcrypt.hashpw(b"12345678", bcrypt.gensalt(rounds=4)).decode("utf-8")
     user.is_active = True
 
     db = _mock_db(user)
@@ -65,7 +66,7 @@ async def test_pin_login_propagates_real_role_and_tenant() -> None:
         "backend.api.auth.token_response",
         return_value={"access_token": "tok", "token_type": "bearer", "expires_in": 900},
     ) as token_response_mock:
-        await pin_login(PinLoginRequest(username="family", pin="123456", tenant_id="tenant-alpha"), request, db=db, redis=redis)
+        await pin_login(PinLoginRequest(username="family", pin="12345678", tenant_id="tenant-alpha"), request, db=db, redis=redis)
 
     token_response_mock.assert_called_once_with(
         "42",
@@ -73,6 +74,7 @@ async def test_pin_login_propagates_real_role_and_tenant() -> None:
         "admin",
         tenant_id="tenant-alpha",
         ai_route_preference="cloud",
+        scopes=sorted(ALLOWED_SCOPES),
     )
 
 
@@ -122,7 +124,7 @@ async def test_pin_login_scopes_user_lookup_by_tenant() -> None:
     user.role = "admin"
     user.tenant_id = "tenant-alpha"
     user.ai_route_preference = "cloud"
-    user.pin_hash = bcrypt.hashpw(b"123456", bcrypt.gensalt(rounds=4)).decode("utf-8")
+    user.pin_hash = bcrypt.hashpw(b"12345678", bcrypt.gensalt(rounds=4)).decode("utf-8")
     user.is_active = True
 
     db = _mock_db(user)
@@ -131,9 +133,9 @@ async def test_pin_login_scopes_user_lookup_by_tenant() -> None:
         "backend.api.auth.token_response",
         return_value={"access_token": "tok", "token_type": "bearer", "expires_in": 900},
     ):
-        await pin_login(PinLoginRequest(username="family", pin="123456", tenant_id="tenant-alpha"), request, db=db, redis=redis)
+        await pin_login(PinLoginRequest(username="family", pin="12345678", tenant_id="tenant-alpha"), request, db=db, redis=redis)
 
-    stmt = db.execute.await_args.args[0]
+    stmt = db.execute.await_args_list[0].args[0]
     rendered = _render_sql(stmt)
     assert "users.tenant_id" in rendered
     assert "users.username" in rendered
@@ -323,3 +325,4 @@ async def test_create_invite_scopes_user_lookup_to_admin_tenant() -> None:
     rendered = _render_sql(stmt)
     assert "users.tenant_id" in rendered
     assert exc.value.status_code == 404
+

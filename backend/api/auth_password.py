@@ -92,9 +92,12 @@ async def password_login(
     log_auth("password_login", True, rid, username=username, client_ip_str=cip)
 
     # Load user scopes from permissions table for JWT
-    from backend.core.permissions import get_user_scopes
+    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
 
-    user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
+    user_scopes = hydrate_scopes_for_role(
+        await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
+        user.role,
+    )
 
     resp = build_token_response_model(
         str(user.id),

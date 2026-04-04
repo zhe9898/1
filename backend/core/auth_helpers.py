@@ -18,6 +18,7 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 
 from backend.core.errors import ZenErrorCode, zen
 from backend.core.jwt import create_access_token, get_access_token_expire_seconds
+from backend.core.permissions import filter_valid_scopes
 from backend.core.redis_client import RedisClient, get_logger
 
 logger = get_logger("auth")
@@ -92,13 +93,14 @@ def token_response(
     **kwargs: object,
 ) -> dict[str, str | int]:
     """统一构造 TokenResponse 体。包含 AI 路由偏好和多租户标识法典隔离。"""
+    sanitized_scopes = filter_valid_scopes(scopes)
     data: dict[str, object] = {
         "sub": str(sub),
         "username": username,
         "role": role,
         "tenant_id": tenant_id,
         "ai_route_preference": ai_route_preference,
-        "scopes": scopes or [],
+        "scopes": sanitized_scopes,
     }
     # 忽略未知 kwargs，防止调用传错参数导致崩溃
     access_token = create_access_token(data=data)

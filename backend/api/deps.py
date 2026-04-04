@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.errors import zen
@@ -15,6 +16,7 @@ from backend.core.jwt import decode_token, is_jti_blacklisted
 from backend.core.redis_client import RedisClient
 from backend.core.rls import assert_rls_ready, set_tenant_context
 from backend.db import get_db_session
+from backend.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,14 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def get_db_optional() -> AsyncIterator[AsyncSession | None]:
+    if not os.getenv("POSTGRES_DSN"):
+        yield None
+        return
+    async for session in get_db_session():
+        yield session
+
+
 async def _bind_tenant_db(db: AsyncSession, tenant_id: str) -> AsyncSession:
     normalized_tenant_id = (tenant_id or "").strip() or "default"
     await set_tenant_context(db, normalized_tenant_id)
@@ -67,6 +77,7 @@ async def get_current_user(
     request: Request,
     response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession | None = Depends(get_db_optional),
 ) -> dict[str, object]:
     if not credentials or not credentials.credentials:
         raise zen("ZEN-AUTH-401", "Missing or invalid token", status_code=401)
@@ -77,6 +88,9 @@ async def get_current_user(
     jti = payload.get("jti")
     if jti and await is_jti_blacklisted(redis_conn, jti):
         raise zen("ZEN-AUTH-401", "Token has been revoked", status_code=401)
+    if db is None:
+        raise zen("ZEN-BUS-5030", "Database unavailable for token subject validation", status_code=503)
+    await _assert_token_subject_active(db, payload)
     if new_token:
         response.headers["X-New-Token"] = new_token
     return payload
@@ -226,20 +240,45 @@ def require_scope(required_scope: str) -> object:
         scopes: object = current_user.get("scopes", [])
         if not isinstance(scopes, list):
             scopes = []
+        normalized_scopes = {str(scope).strip().lower() for scope in scopes if isinstance(scope, str) and scope.strip()}
+        required_scope_normalized = required_scope.strip().lower()
 
         # Check if user has the required scope
-        if required_scope not in scopes:
-            # Check if user has admin role (bypass scope check)
-            role = current_user.get("role", "")
-            if role not in ("admin", "superadmin"):
+        if required_scope_normalized not in normalized_scopes:
+            role = str(current_user.get("role", "")).strip().lower()
+            if role != SUPERADMIN_ROLE:
                 raise zen(
                     "ZEN-AUTH-403",
                     f"Missing required permission: {required_scope}",
                     status_code=403,
                     recovery_hint=f"Request {required_scope} permission from an administrator",
-                    details={"required_scope": required_scope, "user_scopes": scopes},
+                    details={"required_scope": required_scope, "user_scopes": sorted(normalized_scopes)},
                 )
 
         return current_user
 
     return _check_scope
+
+
+async def _assert_token_subject_active(db: AsyncSession, payload: Mapping[str, object]) -> None:
+    subject = str(payload.get("sub") or "").strip()
+    tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
+    if not subject:
+        raise zen("ZEN-AUTH-401", "Invalid token subject", status_code=401)
+
+    await set_tenant_context(db, tenant_id)
+    query = select(User).where(User.tenant_id == tenant_id)
+    if subject.isdigit():
+        query = query.where(User.id == int(subject))
+    else:
+        query = query.where(User.username == subject)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise zen("ZEN-AUTH-401", "Token subject no longer exists", status_code=401)
+
+    is_active = bool(getattr(user, "is_active", False))
+    raw_status = getattr(user, "status", None)
+    status_value = raw_status.lower() if isinstance(raw_status, str) and raw_status else "active"
+    if not is_active or status_value != "active":
+        raise zen("ZEN-AUTH-401", "Account is disabled", status_code=401, recovery_hint="Re-authenticate after account reactivation")

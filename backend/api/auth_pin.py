@@ -93,12 +93,19 @@ async def pin_login(
     await redis.delete(freeze_key)
 
     log_auth("pin_login", True, rid, username=req.username, client_ip_str=cip)
+    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+
+    user_scopes = hydrate_scopes_for_role(
+        await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
+        user.role,
+    )
     resp = build_token_response_model(
         str(user.id),
         user.username,
         user.role,
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference or "auto",
+        scopes=user_scopes,
     )
     await register_login_session(
         db,
