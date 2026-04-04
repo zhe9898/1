@@ -8,6 +8,7 @@ transition endpoints: complete, fail, progress, renew, cancel, retry.
 from __future__ import annotations
 
 import datetime
+import logging
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +54,8 @@ from .models import (
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
+logger = logging.getLogger(__name__)
+
 
 # ── Self-learning outcome feedback helper ────────────────────────────
 
@@ -69,7 +72,8 @@ def _record_tuner_outcome(
 ) -> None:
     """Build an OutcomeSignal and feed it to the scheduler auto-tuner.
 
-    Best-effort: never raises — scheduling must not block on learning.
+    Errors are logged but never propagated — tuner learning must not
+    block or break the job lifecycle endpoints.
     """
     try:
         from backend.core.scheduler_auto_tune import OutcomeSignal, get_scheduler_tuner
@@ -91,14 +95,15 @@ def _record_tuner_outcome(
             timestamp=now,
         )
         get_scheduler_tuner().record_outcome(signal)
-    except Exception:  # noqa: BLE001 — best-effort, never crash lifecycle
-        pass
+    except Exception:
+        logger.warning("Failed to record tuner outcome for job %s", getattr(job, "job_id", "?"), exc_info=True)
 
 
 async def _maybe_persist_tuner(db: AsyncSession) -> None:
     """Persist tuner weights every N signals (amortised write).
 
-    Best-effort: never raises so a DB hiccup cannot break lifecycle endpoints.
+    Errors are logged but never propagated — a DB hiccup must not break
+    the job lifecycle endpoints.
     """
     try:
         from backend.core.scheduler_auto_tune import get_scheduler_tuner
@@ -108,8 +113,9 @@ async def _maybe_persist_tuner(db: AsyncSession) -> None:
             from backend.core.governance_facade import get_governance_facade
 
             await get_governance_facade().save_tuner_state(db)
-    except Exception:  # noqa: BLE001 — best-effort
-        pass
+            logger.debug("Tuner weights persisted at signal %d", tuner._total_signals)
+    except Exception:
+        logger.warning("Failed to persist tuner weights to DB", exc_info=True)
 
 
 async def _cancel_job_reservation(
