@@ -126,6 +126,55 @@ def _docker_api_post(path: str, timeout: int = 15) -> tuple[int, str]:
             conn.close()
 
 
+# -------------------- 宿主机 systemd 管理 --------------------
+
+
+def systemctl_action(action: str, unit: str, timeout: int = 30) -> tuple[bool, str]:
+    """对宿主机 systemd 单元执行指定操作（start/stop/enable/disable/status 等）。
+
+    需要运行在宿主机网络命名空间，且具有足够权限（root 或 sudo）。
+    失败时返回 (False, stderr)，成功返回 (True, stdout)。
+
+    Args:
+        action: systemctl 动作，如 "start"、"enable"、"status"。
+        unit: systemd unit 名称，如 "myapp.service"。
+        timeout: 命令超时秒数。
+
+    Returns:
+        (success, output) 二元组。
+    """
+    if not shutil.which("systemctl"):
+        msg = "systemctl 不可用，跳过 host 服务管理"
+        if logger:
+            logger.warning("%s", msg)
+        return False, msg
+    try:
+        r = subprocess.run(
+            ["systemctl", action, unit],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = (r.stdout or r.stderr or "").strip()
+        if r.returncode == 0:
+            if logger:
+                logger.debug("systemctl %s %s: OK", action, unit)
+            return True, output
+        if logger:
+            logger.warning("systemctl %s %s 失败 (rc=%d): %s", action, unit, r.returncode, output)
+        return False, output
+    except subprocess.TimeoutExpired:
+        msg = f"systemctl {action} {unit} 超时 ({timeout}s)"
+        if logger:
+            logger.warning("%s", msg)
+        return False, msg
+    except (OSError, FileNotFoundError) as exc:
+        msg = f"systemctl 调起失败: {exc}"
+        if logger:
+            logger.warning("%s", msg)
+        return False, msg
+
+
 # -------------------- 挂载点配置 --------------------
 
 

@@ -21,6 +21,7 @@ from pathlib import Path
 from deploy_utils import project_root as _root
 from deploy_utils import resolve_name_conflict as _resolve_name_conflict
 from deploy_utils import scripts_dir as _scripts_dir
+from deploy_utils import start_host_services as _start_host_services
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,10 @@ def main() -> None:
     # 法典 §1.2: IaC 唯一事实来源 —— 强制 project name，严禁 setdefault
     env["COMPOSE_PROJECT_NAME"] = "zen70"
     _compose_up_graceful(root, compose_file, env, label="部署")
+
+    # host 服务 systemctl 管理
+    _start_host_services(config_path, output_dir / "systemd")
+
     logger.info("部署完成")
 
 

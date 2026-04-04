@@ -25,6 +25,7 @@ import yaml
 from deploy_utils import project_root as _root
 from deploy_utils import resolve_name_conflict as _resolve_name_conflict
 from deploy_utils import scripts_dir as _scripts_dir
+from deploy_utils import start_host_services
 
 # Docker SDK：用于 daemon 检查、版本检查与更精确的异常类型（文档 1.1 建议）
 try:
@@ -1271,6 +1272,8 @@ def main() -> None:
         manifest_path = config_path.parent / "images.manifest"
         verify_pulled_image_digests(manifest_path, root, compose_file)
         compose_up(root, compose_file)
+        # host 服务 systemctl 管理（runtime: host 服务不走 Docker）
+        start_host_services(config_path, output_dir)
         _phase_log(PHASE_DEPLOY, "done")
         # 6. 自动化基座验真（平级导入，避免 ModuleNotFoundError）
         # 当由 installer 调用时（--skip-pull），跳过验真以避免重复

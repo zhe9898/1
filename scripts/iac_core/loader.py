@@ -118,12 +118,15 @@ def prepare_services(config: dict[str, Any]) -> list[dict[str, Any]]:
     将 system.yaml 的 services 预处理为模板可用的列表。
 
     每个元素为扁平 dict，含 name、image、及预格式化的 YAML 块字符串。
+    runtime: host 的服务跳过（由 prepare_host_services 处理）。
     """
     profile = _resolve_profile(config)
     selected_packs = _resolve_packs(config)
     result: list[dict[str, Any]] = []
 
     for name, svc in _iter_active_services(config):
+        if svc.get("runtime") == "host":
+            continue
         svc_for_render = deepcopy(svc)
         if name == "gateway":
             build_cfg = svc_for_render.get("build")
@@ -135,6 +138,55 @@ def prepare_services(config: dict[str, Any]) -> list[dict[str, Any]]:
         result.append(entry)
 
     return result
+
+
+def prepare_host_services(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    返回所有 runtime: host 服务的预处理列表，用于生成 systemd unit 文件。
+
+    每个元素含 name, exec, args, user, group, working_dir, environment,
+    port, caddy_path, description, after, restart, restart_sec。
+
+    注：host 服务不受 profile 过滤约束（用户自定义进程，不属于功能 pack）。
+    """
+    result: list[dict[str, Any]] = []
+    for name, svc in (config.get("services") or {}).items():
+        if not isinstance(svc, dict):
+            continue
+        if svc.get("enabled") is False:
+            continue
+        if svc.get("runtime") != "host":
+            continue
+        result.append(_build_host_service_entry(name, svc))
+    return result
+
+
+def _build_host_service_entry(name: str, svc: dict[str, Any]) -> dict[str, Any]:
+    """构建单个宿主机进程服务的描述字典（用于 systemd unit 渲染）。"""
+    exec_start = svc.get("exec", "")
+    if not exec_start:
+        logger.warning("host service '%s' missing required 'exec' field", name)
+
+    environment: dict[str, str] = {}
+    for k, v in (svc.get("environment") or {}).items():
+        environment[str(k)] = str(v)
+
+    return {
+        "name": name,
+        "runtime": "host",
+        "description": svc.get("description") or f"{name} (ZEN70 host process)",
+        "exec": exec_start,
+        "args": svc.get("args") or "",
+        "user": svc.get("user") or "",
+        "group": svc.get("group") or "",
+        "working_dir": svc.get("working_dir") or "",
+        "environment": environment,
+        "port": int(svc["port"]) if svc.get("port") is not None else None,
+        "caddy_path": svc.get("caddy_path") or "",
+        "after": svc.get("after") or "network.target",
+        "restart": svc.get("restart") or "on-failure",
+        "restart_sec": int(svc.get("restart_sec", 5)),
+    }
 
 
 def _resolve_profile(config: dict[str, Any]) -> str:
@@ -464,6 +516,8 @@ def extract_networks(config: dict[str, Any]) -> list[dict[str, Any]]:
     # Fallback: 从 services.*.networks 推导
     seen: set[str] = set()
     for _n, svc in _iter_active_services(config):
+        if svc.get("runtime") == "host":
+            continue
         for n in svc.get("networks") or []:
             seen.add(str(n).strip())
 
@@ -472,9 +526,11 @@ def extract_networks(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def extract_named_volumes(config: dict[str, Any]) -> list[str]:
-    """从 services.*.volumes 提取命名卷（非 / 或 . 开头的 name:path 格式）。"""
+    """从 services.*.volumes 提取命名卷（非 / 或 . 开头的 name:path 格式）。runtime: host 服务跳过。"""
     seen: set[str] = set()
     for _name, svc in _iter_active_services(config):
+        if svc.get("runtime") == "host":
+            continue
         for v in svc.get("volumes") or []:
             s = str(v).strip()
             if ":" in s:

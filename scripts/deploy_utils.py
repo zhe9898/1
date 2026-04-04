@@ -11,9 +11,14 @@ any deployment entry-point.
 from __future__ import annotations
 
 import logging
+import os
+import platform
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -120,3 +125,68 @@ def _force_remove(root: Path, container_name: str) -> None:
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         logger.warning("[冲突修复] rm -f 失败: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# host runtime 服务管理（systemctl）
+# ---------------------------------------------------------------------------
+
+
+def start_host_services(config_path: Path, output_dir: Path) -> None:
+    """为 system.yaml 中 runtime: host 的服务执行 systemctl daemon-reload + enable --now。
+
+    仅在 Linux 系统上执行；unit 文件需已由 compiler.py 写入 output_dir/systemd/。
+
+    Args:
+        config_path: system.yaml 文件路径。
+        output_dir: IaC 编译输出目录（含 systemd/ 子目录）。
+    """
+    if platform.system() != "Linux":
+        logger.debug("非 Linux 环境，跳过 host 服务 systemctl 管理")
+        return
+    if not shutil.which("systemctl"):
+        logger.warning("systemctl 不可用，跳过 host 服务启动")
+        return
+    if not config_path.exists():
+        return
+
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("无法解析 system.yaml 以启动 host 服务: %s", exc)
+        return
+
+    host_names: list[str] = []
+    for name, svc in (data.get("services") or {}).items():
+        if isinstance(svc, dict) and svc.get("runtime") == "host" and svc.get("enabled") is not False:
+            host_names.append(name)
+
+    if not host_names:
+        return
+
+    systemd_dir = output_dir / "systemd"
+    if systemd_dir.exists():
+        for unit_file in systemd_dir.glob("*.service"):
+            dest = Path("/etc/systemd/system") / unit_file.name
+            try:
+                shutil.copy2(unit_file, dest)
+                os.chmod(dest, 0o644)
+                logger.info("[host] 已安装 unit 文件: %s", dest)
+            except OSError as exc:
+                logger.warning("[host] 安装 unit 文件失败 %s: %s", dest, exc)
+
+    try:
+        subprocess.run(["systemctl", "daemon-reload"], check=True, timeout=15)
+        logger.info("[host] systemctl daemon-reload 完成")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.warning("[host] daemon-reload 失败: %s", exc)
+
+    for name in host_names:
+        unit = f"{name}.service"
+        try:
+            subprocess.run(["systemctl", "enable", "--now", unit], check=True, timeout=30)
+            logger.info("[host] %s 已启动并设置开机自启", unit)
+        except subprocess.CalledProcessError as exc:
+            logger.warning("[host] enable --now %s 失败 (rc=%d)", unit, exc.returncode)
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning("[host] enable --now %s 异常: %s", unit, exc)
