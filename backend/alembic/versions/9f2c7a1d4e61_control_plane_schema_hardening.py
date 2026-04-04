@@ -80,7 +80,12 @@ def _create_unique_constraint_if_missing(
         op.create_unique_constraint(constraint_name, table_name, columns)
 
 
+_BACKFILL_ALLOWED_TABLES = frozenset({"jobs", "nodes", "connectors", "job_logs", "job_attempts"})
+
+
 def _backfill_default_tenant(table_name: str) -> None:
+    if table_name not in _BACKFILL_ALLOWED_TABLES:
+        raise ValueError(f"table {table_name!r} not in backfill whitelist")
     if _has_table(table_name) and _has_column(table_name, "tenant_id"):
         op.execute(sa.text(f"UPDATE {table_name} SET tenant_id = 'default' WHERE tenant_id IS NULL"))
 
