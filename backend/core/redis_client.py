@@ -369,17 +369,25 @@ class RedisClient:
             return None
 
     async def get_all_nodes(self) -> dict[str, NodeInfo]:
-        """获取所有节点。"""
+        """获取所有节点。使用 SCAN 代替 KEYS 避免全局阻塞；HGETALL 通过 pipeline 批量执行。"""
         if not self._redis:
             return {}
         try:
-            keys = await self._redis.keys(f"{KEY_NODE_PREFIX}*")
-            result: dict[str, NodeInfo] = {}
+            keys = [key async for key in self._redis.scan_iter(f"{KEY_NODE_PREFIX}*", count=100)]
+            if not keys:
+                return {}
+            nids = [key[len(KEY_NODE_PREFIX) :] for key in keys]  # noqa: E203
+            pipe = self._redis.pipeline()
             for key in keys:
-                nid = key[len(KEY_NODE_PREFIX) :] if key.startswith(KEY_NODE_PREFIX) else key.split(":")[-1]  # noqa: E203
-                node = await self.get_node(nid)
-                if node:
-                    result[nid] = node
+                pipe.hgetall(key)
+            results = await pipe.execute()
+            result: dict[str, NodeInfo] = {}
+            for nid, data in zip(nids, results):
+                if data:
+                    try:
+                        result[nid] = _redis_to_node(data)
+                    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+                        self.logger.warning("Failed to parse node %s: %s", nid, e)
             return result
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to get all nodes: %s", e, exc_info=True)
@@ -426,11 +434,11 @@ class RedisClient:
         return await self._retry_once(_get, None, f"get_switch({name})")
 
     async def get_all_switches(self) -> dict[str, SwitchState]:
-        """获取所有软开关状态。"""
+        """获取所有软开关状态。使用 SCAN 代替 KEYS 避免全局阻塞。"""
         if not self._redis:
             return {}
         try:
-            keys = await self._redis.keys(f"{KEY_SWITCH_PREFIX}*")
+            keys = [key async for key in self._redis.scan_iter(f"{KEY_SWITCH_PREFIX}*", count=100)]
             if not keys:
                 return {}
 
