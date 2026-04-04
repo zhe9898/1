@@ -591,6 +591,7 @@ def build_time_budgeted_placement_plan(
 ) -> dict[str, str]:
     """Run the global solver only when it fits a strict dispatch latency budget."""
     import datetime as _dt
+
     from backend.core import job_scheduler as _job_scheduler
 
     _now: _dt.datetime = now  # type: ignore[assignment]
