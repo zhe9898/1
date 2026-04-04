@@ -47,6 +47,7 @@ from scripts.iac_core.loader import (  # noqa: E402
     extract_named_volumes,
     extract_networks,
     prepare_env,
+    prepare_host_services,
     prepare_services,
 )
 from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
@@ -179,7 +180,59 @@ def _render_caddyfile(env: jinja2.Environment, templates_dir: Path, dynamic_rout
     return ""
 
 
-def _replace_text_artifact(tmp_path: Path, target_path: Path) -> None:
+def _render_systemd_units(
+    env: jinja2.Environment,
+    templates_dir: Path,
+    host_services: list[dict],
+    output_dir: Path,
+) -> list[Path]:
+    """为每个 runtime: host 服务渲染 systemd unit 文件，写入 output_dir/systemd/。
+
+    返回已写入的文件路径列表。
+    """
+    if not host_services:
+        return []
+    tpl_path = templates_dir / "systemd.j2"
+    if not tpl_path.exists():
+        logger.warning("[IaC-Host] systemd.j2 模板不存在，跳过 host 服务渲染")
+        return []
+    try:
+        tpl = env.get_template("systemd.j2")
+    except jinja2.TemplateError as exc:
+        logger.error("systemd.j2 模板加载失败: %s", exc)
+        sys.exit(1)
+
+    systemd_dir = output_dir / "systemd"
+    systemd_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for svc in host_services:
+        try:
+            content = tpl.render(svc=svc)
+        except jinja2.TemplateError as exc:
+            logger.error("systemd 渲染失败 [%s]: %s", svc.get("name"), exc)
+            sys.exit(1)
+        dest = systemd_dir / f"{svc['name']}.service"
+        dest.write_text(content, encoding="utf-8")
+        logger.info("[OK] 已生成 %s", dest)
+        written.append(dest)
+    return written
+
+
+def _host_services_caddy_routes(host_services: list[dict]) -> list[dict]:
+    """将 runtime: host 服务转换为 Caddyfile dynamic_routes 条目。
+
+    服务需同时设置 caddy_path 和 port 字段才生成路由。
+    """
+    routes: list[dict] = []
+    for svc in host_services:
+        caddy_path = svc.get("caddy_path")
+        port = svc.get("port")
+        if caddy_path and port:
+            routes.append({"path": str(caddy_path), "target": f"127.0.0.1:{port}"})
+    return routes
+
+
+
     """Replace a rendered text artifact atomically, with fsync for durability."""
     try:
         tmp_path.replace(target_path)
@@ -355,6 +408,7 @@ def main() -> None:
 
     # 2. 逻辑聚合 (iac_core.loader)
     services_list = prepare_services(config)
+    host_services_list = prepare_host_services(config)
     env_vars = prepare_env(config)
     # 幂等：用配置 mtime 作为时间戳，确保连续编译输出完全一致
     try:
@@ -369,6 +423,8 @@ def main() -> None:
     # 2.5 防腐凭证中心 (iac_core.secrets)
     dynamic_routes_file = _resolve_dynamic_routes_file(root, args.dynamic_routes_file)
     dynamic_routes = _load_dynamic_routes(dynamic_routes_file) if args.render_target == "caddy" else []
+    # Merge host-service routes (127.0.0.1:port) into caddy dynamic_routes
+    dynamic_routes = list(dynamic_routes) + _host_services_caddy_routes(host_services_list)
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
 
@@ -389,8 +445,8 @@ def main() -> None:
     volumes_list = extract_named_volumes(config)
     networks_list = extract_networks(config)
 
-    # 3.5 动态路由加载 (供 Routing-Operator 使用)
-    dynamic_routes: list[dict] = []
+    # 3.5 动态路由加载 (供 Routing-Operator 使用) + host 服务路由合并
+    host_routes = _host_services_caddy_routes(host_services_list)
 
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
@@ -417,12 +473,15 @@ def main() -> None:
     try:
         if (templates_dir / "Caddyfile.j2").exists():
             caddy_tpl = env.get_template("Caddyfile.j2")
-            caddy_out = caddy_tpl.render(dynamic_routes=dynamic_routes)
+            caddy_out = caddy_tpl.render(dynamic_routes=host_routes)
         else:
             caddy_out = ""
     except jinja2.TemplateError as e:
         logger.error("Caddyfile 模板渲染失败: %s", e)
         sys.exit(1)
+
+    # 3.6 host 服务 systemd unit 文件渲染
+    _render_systemd_units(env, templates_dir, host_services_list, output_dir)
 
     # 3.9 Redis 零信任 ACL 结界 (Phase 9)
     readonly_password = _load_existing_acl_password(users_acl_path, "readonly")
@@ -531,7 +590,7 @@ def main() -> None:
         gateway_image_target=gateway_image_target,
         policy_version=int(policy_version),
         policy_file=policy_source,
-        services_list=services_list,
+        services_list=services_list + host_services_list,
         policy_violations=policy_violations,
         tier3_warnings=lint_result.warnings,
     )
