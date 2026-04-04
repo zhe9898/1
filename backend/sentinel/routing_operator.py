@@ -164,7 +164,7 @@ class RoutingOperator:
                     try:
                         await r.aclose()  # type: ignore[attr-defined]
                     except (OSError, ValueError, RuntimeError):
-                        pass
+                        logger.debug("Redis close failed in meltdown listener cleanup")
             await asyncio.sleep(5)
 
     async def spin_loop(self) -> None:
@@ -212,7 +212,7 @@ class RoutingOperator:
                     try:
                         await r.aclose()  # type: ignore[attr-defined]
                     except (OSError, ValueError, RuntimeError):
-                        pass
+                        logger.debug("Redis close failed in operator loop cleanup")
 
             await asyncio.sleep(5)  # 避坑：死循环非常吃 CPU，严格防卫 5 秒间隔
 

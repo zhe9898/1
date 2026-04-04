@@ -676,7 +676,8 @@ class TopologySentinel:
             try:
                 self._check_gpu()
             except (OSError, ValueError, KeyError, RuntimeError, TypeError):
-                pass
+                if logger:
+                    logger.debug("GPU check failed in zombie mode (non-critical)")
 
     def run_once(self) -> None:
         """执行一次检测周期与强一致性调谐。"""
@@ -884,7 +885,8 @@ def main() -> None:
             try:
                 sentinel._redis.close()
             except Exception:
-                pass
+                if logger:
+                    logger.debug("Redis close failed during shutdown", exc_info=True)
 
 
 if __name__ == "__main__":

@@ -82,7 +82,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
                 if ctx and ctx.trace_id:
                     trace_id_hex = format(ctx.trace_id, "032x")
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("OTEL trace-id extraction failed", exc_info=True)
 
         token = _request_id_ctx.set(request_id)
         try:
@@ -215,7 +215,7 @@ async def limit_request_body(request: Request, call_next: RequestResponseEndpoin
                     ).model_dump(mode="json"),
                 )
         except ValueError:
-            pass
+            logger.debug("Non-integer Content-Length header: %s", cl)
     return await call_next(request)
 
 
