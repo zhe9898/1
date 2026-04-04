@@ -151,6 +151,9 @@ services:
     - /etc/redis/users.acl
     volumes:
     - redis_data:/data
+    # IMPORTANT: REDIS_ACL_FILE must point to a valid file path. If unset or the
+    # file does not exist, Redis will fail to start. The bootstrap script
+    # (scripts/bootstrap.py) generates this file automatically.
     - ${REDIS_ACL_FILE}:/etc/redis/users.acl:ro
     ulimits:
       nofile:
