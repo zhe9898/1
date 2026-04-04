@@ -446,7 +446,8 @@ def main() -> None:
     networks_list = extract_networks(config)
 
     # 3.5 动态路由加载 (供 Routing-Operator 使用) + host 服务路由合并
-    host_routes = _host_services_caddy_routes(host_services_list)
+    # 注：全量渲染路径不从文件加载动态路由（仅 caddy-only 路径加载），此处仅含 host 服务路由。
+    dynamic_routes = _host_services_caddy_routes(host_services_list)
 
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
@@ -473,7 +474,7 @@ def main() -> None:
     try:
         if (templates_dir / "Caddyfile.j2").exists():
             caddy_tpl = env.get_template("Caddyfile.j2")
-            caddy_out = caddy_tpl.render(dynamic_routes=host_routes)
+            caddy_out = caddy_tpl.render(dynamic_routes=dynamic_routes)
         else:
             caddy_out = ""
     except jinja2.TemplateError as e:

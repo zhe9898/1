@@ -25,6 +25,7 @@ import yaml
 from deploy_utils import project_root as _root
 from deploy_utils import resolve_name_conflict as _resolve_name_conflict
 from deploy_utils import scripts_dir as _scripts_dir
+from deploy_utils import start_host_services
 
 # Docker SDK：用于 daemon 检查、版本检查与更精确的异常类型（文档 1.1 建议）
 try:
@@ -696,72 +697,6 @@ def run_compiler(root: Path, config_path: Path, output_dir: Path | None = None) 
     subprocess.run(cmd, cwd=str(root), check=True, timeout=120)
     if logger:
         logger.info("编译器执行完成")
-
-
-def start_host_services(config_path: Path, output_dir: Path) -> None:
-    """为 system.yaml 中 runtime: host 的服务执行 systemctl daemon-reload + enable --now。
-
-    仅在 Linux 系统上执行；unit 文件需已由 compiler.py 写入 output_dir/systemd/。
-    """
-    if platform.system() != "Linux":
-        if logger:
-            logger.debug("非 Linux 环境，跳过 host 服务 systemctl 管理")
-        return
-    if not shutil.which("systemctl"):
-        if logger:
-            logger.warning("systemctl 不可用，跳过 host 服务启动")
-        return
-    if not config_path.exists():
-        return
-
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError) as exc:
-        if logger:
-            logger.warning("无法解析 system.yaml 以启动 host 服务: %s", exc)
-        return
-
-    host_names: list[str] = []
-    for name, svc in (data.get("services") or {}).items():
-        if isinstance(svc, dict) and svc.get("runtime") == "host" and svc.get("enabled") is not False:
-            host_names.append(name)
-
-    if not host_names:
-        return
-
-    systemd_dir = output_dir / "systemd"
-    if systemd_dir.exists():
-        for unit_file in systemd_dir.glob("*.service"):
-            dest = Path("/etc/systemd/system") / unit_file.name
-            try:
-                shutil.copy2(unit_file, dest)
-                os.chmod(dest, 0o644)
-                if logger:
-                    logger.info("[host] 已安装 unit 文件: %s", dest)
-            except OSError as exc:
-                if logger:
-                    logger.warning("[host] 安装 unit 文件失败 %s: %s", dest, exc)
-
-    try:
-        subprocess.run(["systemctl", "daemon-reload"], check=True, timeout=15)
-        if logger:
-            logger.info("[host] systemctl daemon-reload 完成")
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-        if logger:
-            logger.warning("[host] daemon-reload 失败: %s", exc)
-
-    for name in host_names:
-        unit = f"{name}.service"
-        try:
-            subprocess.run(["systemctl", "enable", "--now", unit], check=True, timeout=30)
-            if logger:
-                logger.info("[host] %s 已启动并设置开机自启", unit)
-        except subprocess.CalledProcessError as exc:
-            if logger:
-                logger.warning("[host] enable --now %s 失败 (rc=%d)", unit, exc.returncode)
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            if logger:
-                logger.warning("[host] enable --now %s 异常: %s", unit, exc)
 
 
 # ---------------------------------------------------------------------------
