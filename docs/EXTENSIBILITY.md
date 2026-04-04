@@ -64,8 +64,19 @@
 
 - **路由**：在 FastAPI 下挂 `/api/v1/...`，统一依赖 `get_current_user_optional` 或 `get_current_user`；返回 Pydantic 模型，错误用 `ErrorResponse` 与 ZEN-xxx 错误码。
 - **模型**：在对应 `backend/api/*.py` 或 `backend/api/models/` 中定义 Pydantic v2 模型；与消费端 `types/*.ts`（或 OpenAPI）保持字段一致（可参考 OpenAPI 生成或手写）。
+- **调度策略**（ADR 0049）：所有调度配置通过 `get_policy_store()` 消费。新增调度模块时，从 PolicyStore 的只读 property（如 `tenant_quotas_config`、`executor_contracts_config`）读取配置，禁止直接解析 system.yaml。策略变更通过 `apply()` / `rollback()` 管理，支持冻结（`freeze()`）和审计日志。
 - **Redis/Postgres**：新状态写 Redis 时键名带业务前缀（如 `switch_expected:*`）；新表用 Alembic 迁移，**禁止**业务容器并发执行 migration，须抢 `DB_MIGRATION_LOCK`。
 - **事件**：若需新 SSE 事件类型，在网关订阅新 channel 并注入到 SSE 流；当前控制面事件建议沿用 `node:events`、`job:events`、`connector:events` 这类按领域分流的模式。探针或 worker 发布时使用 `backend/core/events_schema.py` 或对应 router 的 schema，保证消费端解析一致。
+
+### 3.1 扩展 Runner 任务类型 (Job Kind)
+
+Runner Agent 的 executor 已支持 8 种任务类型（ADR 0050）。新增 kind 的扩展步骤：
+
+1. **Go 处理器**：在 `runner-agent/internal/exec/executor_extended.go` 中实现 `run<KindName>(ctx, payload) (Result, error)` 处理函数。
+2. **Kind 路由**：在 `executor.go` 的 `Run()` 方法中增加 kind → 处理函数映射。
+3. **错误分类**：返回 `ExecError{Category: "...", Details: map[string]any{...}}`，Category 必须是已定义的分类之一（timeout / resource_exhausted / invalid_payload / canceled / transient / execution_error / not_found），以便控制面做出正确的重试/隔离决策。
+4. **节点声明**：在部署环境中通过 `RUNNER_ACCEPTED_KINDS` 环境变量声明节点支持的 kind（逗号分隔）。
+5. **测试**：在 `runner-agent/internal/exec/` 下增加对应测试。
 
 ---
 
@@ -73,7 +84,9 @@
 
 - **唯一事实来源**：`system.yaml`；新增能力或服务时在 YAML 中增加节点（如 `capabilities.新模块`、`sentinel.新配置`），**禁止**在代码里写死路径/密钥。
 - **编译器**：在 `scripts/compiler.py` 中解析新节点，输出到 `.env` 或生成的 compose/配置片段；密码/Token 仅用 `${ENV_VAR}` 占位，由点火或安装器注入。
+- **三层字段解析**（ADR 0051）：`loader.py` 中 `_build_service_entry()` 对 `ulimits`、`oom_score_adj`、`networks` 等字段采用三层解析——**system.yaml 声明优先 → 服务级内置默认 → 全局兜底**。扩展新字段时需遵循同样的三层优先级模式（`svc.get("field")` → 服务名匹配默认 → 安全兜底）。
 - **编排**：新服务在 compiler 生成的 compose 中声明；**必须**在 bootstrap/deployer 中使用 `docker compose up -d --remove-orphans`，避免孤儿容器。
+- **调度配置消费**（ADR 0049）：所有调度相关配置通过 `get_policy_store()` 单例消费，禁止在非测试代码中直接 `yaml.safe_load(Path("system.yaml"))`。新增调度配置段时需在 `PolicyStore.load_from_yaml()` 中缓存并提供只读 property。
 - **Profile**：默认 profile 应保持为 `gateway-kernel`（运行时兼容别名 `gateway` / `gateway-core`），`full` 只在显式扩展场景启用；任何把重业务重新塞回默认 profile 的变更，都应先补 ADR。
 
 ---

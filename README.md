@@ -107,10 +107,12 @@ python scripts/compiler.py --dry-run
 ## 架构原则
 
 - **IaC 唯一事实源**：所有配置收束于根目录 `system.yaml`
+- **调度策略唯一入口**：所有调度配置通过 `PolicyStore` 单例消费（ADR 0049）
 - **后端驱动控制台**：前端无独立业务逻辑
 - **协议闭环**：能力通过 `/api/v1/capabilities` 暴露
-- **硬件解耦**：通过能力标签而非型号调度
+- **硬件解耦**：通过能力标签和 `AcceptedKinds` 调度，而非硬件型号
 - **Pack 分层**：业务能力不回流默认 Kernel
+- **三层字段解析**：IaC 编译器对每个字段采用 system.yaml 优先 → 内置默认 → 全局兜底（ADR 0051）
 
 ---
 

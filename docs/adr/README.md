@@ -49,6 +49,9 @@
 - [0046](0046-kernel-only-runtime-surface-and-compatibility-retirement.md) Kernel 唯一运行时 Surface 与兼容层退场
 - [0047](0047-control-plane-ui-and-runner-regression-density.md) 控制台与 Runner 直接回归密度补齐
 - [0048](0048-health-pack-mvp-skeleton-and-pack-maturity-contract.md) Health Pack MVP Skeleton 与 Pack 成熟度合同
+- [0049](0049-scheduling-policy-store-single-source-of-truth.md) 调度策略存储 (PolicyStore) 作为唯一配置消费入口
+- [0050](0050-runner-extended-job-kinds-and-accepted-kinds-dispatch.md) Runner 扩展任务类型与 AcceptedKinds 调度
+- [0051](0051-iac-three-layer-field-resolution.md) IaC 三层字段解析 — system.yaml 优先、内置默认、全局兜底
 
 ## 待定
 

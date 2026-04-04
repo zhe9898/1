@@ -1,7 +1,7 @@
 # ZEN70 全链路打通实现文档
 
-**日期**: 2026-03-30
-**范围**: Runner-Agent Go 重写 + 控制面故障治理 + 调度器业务维度补全
+**日期**: 2026-04-04
+**范围**: Runner-Agent Go 重写 + 控制面故障治理 + 调度器业务维度补全 + 扩展执行器 + PolicyStore
 
 ---
 
@@ -74,6 +74,49 @@ type Config struct {
 - `classifyError()`: `DeadlineExceeded → "timeout"`, `Canceled → "canceled"`, `ExecError` 透传 Category
 - 输出截断到 `MaxOutputBytes` 防止 OOM
 
+### 2.3.1 扩展执行器 `internal/exec/executor_extended.go`（v3.42 新增）
+
+在基础执行器之上，新增 6 种原生任务类型（ADR 0050）：
+
+| Kind | 处理器 | 用途 | 关键参数 |
+|------|--------|------|----------|
+| `healthcheck` | `runHealthcheck()` | HTTP/TCP 健康探测 | `target`, `check_type`, `timeout_ms`(默认 5000), `expected_status`, `headers` |
+| `file.transfer` | `runFileTransfer()` | 文件传输 + SHA-256 校验 | `source`, `destination`, `expected_sha256` |
+| `container.run` | `runContainer()` | Docker 容器创建与执行 | `image`, `command`, `env`, `volumes` |
+| `cron.tick` | `runCronTick()` | 定时触发器与动作分派 | `action`, `schedule`, `payload` |
+| `data.sync` | `runDataSync()` | 边缘↔云端 rsync 同步 | `source`, `destination`, `direction` |
+| `wasm.run` | `runWasm()` | WASM 模块执行（预留） | `module_path`, `function`, `args` |
+
+**常量**:
+- `DefaultProbeTimeoutMs = 5000` — healthcheck 默认超时
+- `DiagnosticsSnippetBytes = 512` — 诊断信息截断长度
+
+**错误分类**: 每个 kind 返回结构化 `ExecError`，Category 值为：
+
+| Category | 含义 | 控制面响应 |
+|----------|------|-----------|
+| `timeout` | 执行超时 | 可重试（延长超时） |
+| `resource_exhausted` | 资源不足 | 标记节点容量不足 |
+| `invalid_payload` | 参数缺失/非法 | 不重试 |
+| `canceled` | 被取消 | 不重试 |
+| `transient` | 瞬时网络/IO 错误 | 可重试 |
+| `execution_error` | 业务逻辑失败 | 视场景重试 |
+| `not_found` | 资源不存在 | 不重试 |
+
+### 2.3.2 AcceptedKinds 节点声明（v3.42 新增）
+
+Runner 通过 `RUNNER_ACCEPTED_KINDS` 环境变量声明支持的任务类型：
+
+```
+RUNNER_ACCEPTED_KINDS=healthcheck,file.transfer,container.run
+```
+
+`config.go` 中的 `EffectiveAcceptedKinds()` 方法实现向后兼容：
+- 若 `AcceptedKinds` 非空 → 返回 `AcceptedKinds`
+- 否则 → 回退到旧的 `Capabilities` 字段
+
+注册和心跳请求中携带 `AcceptedKinds`，控制面据此过滤可分派的任务类型。
+
 ### 2.4 轮询器拆分 `internal/jobs/poller.go`
 
 原 160 行单函数拆为 6 个:
@@ -81,10 +124,16 @@ type Config struct {
 |------|------|
 | `Loop()` | 主循环: pull → executeAndReport → sleep |
 | `executeAndReport()` | 调度执行 + 结果汇报 |
-| `startLeaseRenewal()` | 后台 goroutine 续租 |
+| `startLeaseRenewal()` | 后台 goroutine 续租（指数退避，3 次上限） |
 | `reportProgress()` | 进度汇报 |
 | `reportFailure()` | 提取 ExecError.Category → 发送 FailureCategory |
 | `reportResult()` | 正常结果汇报 |
+
+**Lease 续约策略**（v3.42 增强）:
+- 续约间隔 = `max(5s, lease/2)`
+- 失败时指数退避（1x → 2x → 4x 间隔）
+- 最多 3 次连续失败后放弃续约
+- 并发控制通过 `chan struct{}` 信号量（`cfg.MaxConcurrency`）实现
 
 ### 2.5 服务层重写 `internal/service/service.go`
 
@@ -112,6 +161,24 @@ type Config struct {
 - `pull_jobs()`: 开头检查 `is_node_quarantined()`
 - `fail_job()`: 分类后调用 `record_failure()`
 - `complete_job()`: 成功时调用 `record_success()` 重置连续失败计数
+
+### 3.1.1 调度策略存储 `backend/core/scheduling_policy_store.py`（v3.42 新增）
+
+PolicyStore 单例取代了四个模块分别解析 system.yaml 的做法（ADR 0049）：
+
+**生命周期**:
+1. `get_policy_store()` 首次调用 → 创建单例 → `load_from_yaml()` 缓存 5 个 scheduling 配置段
+2. 运行时 `apply(new_policy, operator, reason)` → 验证 + 版本递增 + 审计记录
+3. 紧急时 `freeze(reason)` → 阻断所有变更
+4. 回滚时 `rollback(target_version, operator, reason)` → 从历史 deque（最多 200 条）恢复
+
+**消费方映射**:
+| 模块 | 消费的配置 |
+|------|-----------|
+| `executor_registry.py` | `executor_contracts_config` |
+| `placement_policy.py` | `placement_policies_config` |
+| `queue_stratification.py` | `tenant_quotas_config` + `default_service_class_override` |
+| `quota_aware_scheduling.py` | `resource_quotas_config` |
 
 ### 3.2 评分器 15 维度 `backend/core/job_scheduler.py`
 
@@ -186,6 +253,11 @@ Runner                          Gateway (FastAPI)
 | `ZEN70_NETWORK_LATENCY_MS` | `50` | 默认网络延迟（探针失败时回退） |
 | `ZEN70_CURRENT_POWER_WATTS` | `100` | 默认功率（探针失败时回退） |
 | `ZEN70_THERMAL_STATE` | `normal` | 默认温度状态 |
+| `RUNNER_ACCEPTED_KINDS` | (空) | 接受的任务类型（逗号分隔），空则回退 Capabilities |
+| `RUNNER_BANDWIDTH_MBPS` | `0` | 网络带宽 (Mbps) |
+| `RUNNER_CACHED_DATA_KEYS` | (空) | 已缓存数据集 ID（逗号分隔） |
+| `RUNNER_POWER_CAPACITY_WATTS` | `0` | 总电力容量 (W) |
+| `RUNNER_CLOUD_CONNECTIVITY` | `online` | 云连接状态 (online/degraded/offline) |
 
 ### 控制面环境变量
 
