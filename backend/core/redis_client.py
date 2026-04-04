@@ -376,7 +376,7 @@ class RedisClient:
             keys = [key async for key in self._redis.scan_iter(f"{KEY_NODE_PREFIX}*", count=100)]
             if not keys:
                 return {}
-            nids = [key[len(KEY_NODE_PREFIX) :] if key.startswith(KEY_NODE_PREFIX) else key.split(":")[-1] for key in keys]  # noqa: E203
+            nids = [key[len(KEY_NODE_PREFIX) :] for key in keys]  # noqa: E203
             pipe = self._redis.pipeline()
             for key in keys:
                 pipe.hgetall(key)
@@ -384,7 +384,10 @@ class RedisClient:
             result: dict[str, NodeInfo] = {}
             for nid, data in zip(nids, results):
                 if data:
-                    result[nid] = _redis_to_node(data)
+                    try:
+                        result[nid] = _redis_to_node(data)
+                    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+                        self.logger.warning("Failed to parse node %s: %s", nid, e)
             return result
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to get all nodes: %s", e, exc_info=True)
