@@ -23,6 +23,21 @@ import (
 	"time"
 )
 
+// ── Executor defaults ────────────────────────────────────────────────
+
+const (
+	// DefaultJobTimeoutSeconds is the fallback job timeout when the lease
+	// doesn't specify one (5 minutes).
+	DefaultJobTimeoutSeconds = 300
+
+	// DefaultMaxOutputBytes is the output truncation limit (1 MB).
+	DefaultMaxOutputBytes = 1 << 20
+
+	// DefaultHTTPClientTimeout is the timeout for HTTP requests made by
+	// connector.invoke and http.request kinds.
+	DefaultHTTPClientTimeout = 30 * time.Second
+)
+
 // ── Error types ─────────────────────────────────────────────────────
 
 // ExecError carries structured failure classification that maps to the
@@ -83,13 +98,13 @@ type Executor struct {
 // pass nil to use a default client with 30s timeout.
 func New(cfg Config, httpClient *http.Client) *Executor {
 	if cfg.DefaultTimeoutSeconds <= 0 {
-		cfg.DefaultTimeoutSeconds = 300
+		cfg.DefaultTimeoutSeconds = DefaultJobTimeoutSeconds
 	}
 	if cfg.MaxOutputBytes <= 0 {
-		cfg.MaxOutputBytes = 1 << 20 // 1 MB
+		cfg.MaxOutputBytes = DefaultMaxOutputBytes
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = &http.Client{Timeout: DefaultHTTPClientTimeout}
 	}
 	return &Executor{
 		cfg:        cfg,

@@ -262,23 +262,30 @@ def _build_service_entry(
             cmd = safe_cmd
         command_block = dict_to_yaml_block({"command": cmd})
 
-    # --- networks (法典 1.2: postgres/redis 仅 backend_net) ---
+    # --- networks (法典 1.2) ---
+    # 三层原则: system.yaml → 内置默认 → backend_net
     nets = svc.get("networks")
     if not nets:
         if name == "cloudflared":
             nets = ["frontend_net", "backend_net"]
         else:
             nets = ["backend_net"]
-    if name in ("postgres", "redis"):
-        nets = [n for n in nets if n == "backend_net"] or ["backend_net"]
     networks_block = dict_to_yaml_block({"networks": nets})
 
     # --- ulimits / oom_score_adj (法典 3.3) ---
+    # 三层原则: system.yaml → 内置默认 → 空
     ulimits_block = ""
-    oom_score_adj_block = ""
-    if name in ("gateway", "redis"):
+    ulimits_cfg = svc.get("ulimits")
+    if isinstance(ulimits_cfg, dict) and ulimits_cfg:
+        ulimits_block = dict_to_yaml_block({"ulimits": ulimits_cfg})
+    elif name in ("gateway", "redis"):
         ulimits_block = dict_to_yaml_block({"ulimits": {"nofile": {"soft": 65536, "hard": 65536}}})
-    if name in ("gateway", "redis", "sentinel", "watchdog", "docker-proxy"):
+
+    oom_score_adj_block = ""
+    oom_cfg = svc.get("oom_score_adj")
+    if oom_cfg is not None:
+        oom_score_adj_block = dict_to_yaml_block({"oom_score_adj": oom_cfg})
+    elif name in ("gateway", "redis", "sentinel", "watchdog", "docker-proxy"):
         oom_score_adj_block = dict_to_yaml_block({"oom_score_adj": -999})
 
     # --- healthcheck (法典 3.4) ---
@@ -362,7 +369,12 @@ def _build_service_entry(
 
 
 def _build_healthcheck_block(name: str, svc: dict[str, Any]) -> str:
-    """构建服务的 healthcheck YAML 块。"""
+    """构建服务的 healthcheck YAML 块。
+
+    Single source of truth: if ``svc["healthcheck"]`` is defined in system.yaml
+    it always takes precedence.  Built-in defaults only apply when the service
+    has no explicit healthcheck configuration.
+    """
     _default_start_period: dict[str, str] = {
         "postgres": "30s",
         "gateway": "30s",
@@ -377,32 +389,7 @@ def _build_healthcheck_block(name: str, svc: dict[str, Any]) -> str:
 
     hc = svc.get("healthcheck")
 
-    if name == "gateway":
-        return dict_to_yaml_block(
-            {
-                "healthcheck": {
-                    "test": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\" || exit 1"],
-                    "interval": "30s",
-                    "timeout": "10s",
-                    "retries": 3,
-                    "start_period": _default_start_period.get(name, "10s"),
-                }
-            }
-        )
-
-    if name == "redis":
-        return dict_to_yaml_block(
-            {
-                "healthcheck": {
-                    "test": ["CMD", "redis-cli", "ping"],
-                    "interval": "30s",
-                    "timeout": "10s",
-                    "retries": 3,
-                    "start_period": _default_start_period.get(name, "10s"),
-                }
-            }
-        )
-
+    # ── system.yaml explicit healthcheck — single source of truth ────
     if isinstance(hc, dict) and hc.get("test"):
         return dict_to_yaml_block(
             {
@@ -416,8 +403,10 @@ def _build_healthcheck_block(name: str, svc: dict[str, Any]) -> str:
             }
         )
 
-    # 默认探针（loki/promtail scratch 镜像无 shell，不注入）
+    # ── Built-in fallback defaults (when system.yaml omits healthcheck) ──
     _default_healthchecks: dict[str, dict[str, Any]] = {
+        "gateway": {"test": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\" || exit 1"]},
+        "redis": {"test": ["CMD", "redis-cli", "ping"]},
         "postgres": {"test": ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zen70} || exit 1"]},
         "caddy": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:2019/config/ || exit 1"]},
         "pgbouncer": {"test": ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || exit 1"]},

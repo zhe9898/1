@@ -318,20 +318,17 @@ _BUILTIN_POLICIES: dict[str, type] = {
 
 
 def load_placement_policies() -> CompositePlacementPolicy:
-    """Load placement policies from system.yaml → scheduling.placement_policies.
+    """Load placement policies from policy store (sourced from system.yaml at boot).
 
     Falls back to a sensible default set if config is absent.
     """
     policies_config: list[dict] = []
     try:
-        from pathlib import Path
+        from backend.core.scheduling_policy_store import get_policy_store
 
-        import yaml  # type: ignore[import-untyped, unused-ignore]
-
-        config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
-        policies_config = (config.get("scheduling", {}) or {}).get("placement_policies", []) or []
+        policies_config = get_policy_store().placement_policies_config
     except Exception:
-        logger.warning("Failed to load placement policies from system.yaml, falling back to defaults", exc_info=True)
+        logger.warning("Failed to load placement policies from policy store, falling back to defaults", exc_info=True)
 
     policies: list[PlacementPolicy] = []
     if policies_config:
@@ -381,7 +378,7 @@ def set_placement_enabled(enabled: bool) -> None:
 
 
 def reload_placement_policies() -> CompositePlacementPolicy:
-    """Force re-read of system.yaml and rebuild the placement policy chain."""
+    """Force re-read from policy store and rebuild the placement policy chain."""
     global _placement_policy
     _placement_policy = load_placement_policies()
     return _placement_policy

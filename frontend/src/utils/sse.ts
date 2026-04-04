@@ -98,7 +98,7 @@ export function createSSE(
         pingFailures = 0;
       }).catch((err: unknown) => {
         pingFailures += 1;
-        logWarn(`[ZEN70 SSE] Ping failed (${pingFailures}/${MAX_PING_FAILURES})`, err);
+        logWarn(`[ZEN70 SSE] Ping failed (${String(pingFailures)}/${String(MAX_PING_FAILURES)})`, err);
         if (pingFailures >= MAX_PING_FAILURES) {
           logWarn("[ZEN70 SSE] Ping suspended after consecutive failures");
           stopPing();

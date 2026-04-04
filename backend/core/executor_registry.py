@@ -160,14 +160,11 @@ class ExecutorRegistry:
             return
         # Start with defaults
         self._contracts = dict(_DEFAULT_CONTRACTS)
-        # Overlay from system.yaml
+        # Overlay from policy store (caches scheduling.executor_contracts from system.yaml)
         try:
-            from pathlib import Path
+            from backend.core.scheduling_policy_store import get_policy_store
 
-            import yaml  # type: ignore[import-untyped, unused-ignore]
-
-            config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
-            raw = (config.get("scheduling", {}) or {}).get("executor_contracts", {}) or {}
+            raw = get_policy_store().executor_contracts_config
             for name, cfg in raw.items():
                 if not isinstance(cfg, dict):
                     continue
@@ -183,7 +180,7 @@ class ExecutorRegistry:
                     stability_tier=str(cfg.get("stability_tier", "ga")),
                 )
         except Exception:
-            logger.debug("No executor_contracts in system.yaml, using defaults", exc_info=True)
+            logger.debug("No executor_contracts in policy store, using defaults", exc_info=True)
         self._loaded = True
 
     def get(self, executor_name: str) -> ExecutorContract | None:

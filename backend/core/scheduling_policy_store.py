@@ -80,6 +80,12 @@ class PolicyStore:
         self._frozen: bool = False
         self._freeze_reason: str = ""
         self._audit_log: deque[dict[str, Any]] = deque(maxlen=200)
+        # Scheduling-level config that lives outside ``scheduling.policy``
+        self._tenant_quotas_raw: dict[str, Any] = {}
+        self._placement_policies_raw: list[dict[str, Any]] = []
+        self._default_service_class_yaml: str = "standard"
+        self._resource_quotas_raw: dict[str, Any] = {}
+        self._executor_contracts_raw: dict[str, Any] = {}
 
         # Record initial version
         self._history.append(
@@ -110,6 +116,31 @@ class PolicyStore:
     @property
     def freeze_reason(self) -> str:
         return self._freeze_reason
+
+    @property
+    def tenant_quotas_config(self) -> dict[str, Any]:
+        """Raw ``scheduling.tenant_quotas`` from system.yaml."""
+        return dict(self._tenant_quotas_raw)
+
+    @property
+    def placement_policies_config(self) -> list[dict[str, Any]]:
+        """Raw ``scheduling.placement_policies`` from system.yaml."""
+        return list(self._placement_policies_raw)
+
+    @property
+    def default_service_class_override(self) -> str:
+        """Top-level ``scheduling.default_service_class`` from system.yaml."""
+        return self._default_service_class_yaml
+
+    @property
+    def resource_quotas_config(self) -> dict[str, Any]:
+        """Raw ``scheduling.resource_quotas`` from system.yaml."""
+        return dict(self._resource_quotas_raw)
+
+    @property
+    def executor_contracts_config(self) -> dict[str, Any]:
+        """Raw ``scheduling.executor_contracts`` from system.yaml."""
+        return dict(self._executor_contracts_raw)
 
     # ── Write (guarded) ──────────────────────────────────────────────
 
@@ -231,6 +262,11 @@ class PolicyStore:
     def load_from_yaml(self, path: str = "system.yaml") -> None:
         """Bootstrap policy from system.yaml scheduling section.
 
+        Also caches ``scheduling.tenant_quotas``, ``scheduling.placement_policies``,
+        and ``scheduling.default_service_class`` so that downstream modules
+        (queue_stratification, placement_policy) read from the store instead
+        of parsing system.yaml themselves.
+
         Safe: falls back to defaults on any parse/IO error.
         """
         try:
@@ -240,6 +276,14 @@ class PolicyStore:
 
             raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
             sched = raw.get("scheduling", {}) or {}
+
+            # Cache scheduling-level config outside ``policy`` subsection
+            self._tenant_quotas_raw = sched.get("tenant_quotas", {}) or {}
+            self._placement_policies_raw = sched.get("placement_policies", []) or []
+            self._default_service_class_yaml = str(sched.get("default_service_class", "standard"))
+            self._resource_quotas_raw = sched.get("resource_quotas", {}) or {}
+            self._executor_contracts_raw = sched.get("executor_contracts", {}) or {}
+
             policy_raw = sched.get("policy", {}) or {}
             if not policy_raw:
                 return  # no policy section — keep defaults

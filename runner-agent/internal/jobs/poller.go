@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	"zen70/runner-agent/internal/api"
@@ -12,27 +13,44 @@ import (
 )
 
 // Loop pulls and executes jobs until ctx is cancelled.
+// Jobs are executed concurrently up to cfg.MaxConcurrency using a worker pool.
 func Loop(ctx context.Context, cfg config.Config, client *api.Client, executor *runnerexec.Executor) error {
 	ticker := time.NewTicker(cfg.PullInterval)
 	defer ticker.Stop()
+
+	concurrency := max(1, cfg.MaxConcurrency)
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
 
 	for {
 		jobs, err := client.PullJobs(ctx, api.PullRequest{
 			TenantID:      cfg.TenantID,
 			NodeID:        cfg.NodeID,
-			Limit:         1,
-			AcceptedKinds: cfg.Capabilities,
+			Limit:         concurrency,
+			AcceptedKinds: cfg.EffectiveAcceptedKinds(),
 		})
 		if err != nil {
 			log.Printf("job pull failed: %v", err)
 		}
 
 		for _, job := range jobs {
-			executeAndReport(ctx, cfg, client, executor, job)
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				wg.Wait()
+				return ctx.Err()
+			}
+			wg.Add(1)
+			go func(j api.Job) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				executeAndReport(ctx, cfg, client, executor, j)
+			}(job)
 		}
 
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return ctx.Err()
 		case <-ticker.C:
 		}

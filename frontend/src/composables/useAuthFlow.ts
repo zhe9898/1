@@ -89,7 +89,7 @@ export function useAuthFlow() {
       const elapsed = now - lastAttemptTime;
       if (elapsed < LOGIN_COOLDOWN_MS) {
         const remaining = Math.ceil((LOGIN_COOLDOWN_MS - elapsed) / 1000);
-        errorMsg.value = `登录尝试过于频繁，请 ${remaining} 秒后重试`;
+        errorMsg.value = `登录尝试过于频繁，请 ${String(remaining)} 秒后重试`;
         return;
       }
       loginAttemptCount = 0;
