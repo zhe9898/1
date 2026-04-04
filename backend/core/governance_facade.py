@@ -16,6 +16,15 @@ The dispatch.py ``pull_jobs`` function calls:
 - ``facade.is_sealed`` → checked by ``set_scheduling_feature()`` to block mutations
 
 All strategy selection also flows through ``facade.resolve_strategy(...)``.
+
+**Module boundary**
+This module is a *Facade* (Gang of Four): it routes calls to the real
+implementations in ``scheduling_governance.py`` (DB-backed tenant policy,
+feature flags, audit logger), ``queue_stratification.py`` (fair-share
+quotas), ``failure_control_plane.py`` (circuit breakers, node quarantine),
+``scheduler_auto_tune.py`` (EMA weight tuner), and
+``scheduling_policy_store.py`` (policy CRUD).  Business logic must **not**
+be added here; add it to the appropriate implementation module instead.
 """
 
 from __future__ import annotations

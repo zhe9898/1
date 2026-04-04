@@ -3,6 +3,22 @@
 Upgrades GlobalFairScheduler to read from DB (with YAML seed/fallback),
 provides feature-flag guards for scheduling capabilities, and houses
 the ``SchedulingDecisionLogger`` for dispatch audit trail.
+
+**Module boundary**
+This module contains the *implementations* that ``governance_facade.py``
+delegates to:
+
+- ``get_tenant_policy`` / ``upsert_tenant_policy`` — CRUD for per-tenant
+  scheduling policies stored in ``TenantSchedulingPolicy``.
+- ``SchedulingDecisionLogger`` — accumulates placed/rejected/preempted job
+  records during a dispatch cycle and flushes them to ``SchedulingDecision``.
+- ``is_scheduling_feature_enabled`` / ``set_scheduling_feature`` — DB-backed
+  feature flags that gate capabilities such as placement policies, gang
+  scheduling, and priority inheritance.
+
+Do **not** call these functions directly from dispatch paths; use
+``GovernanceFacade`` from ``governance_facade.py`` so that admission
+control and sealing are always enforced.
 """
 
 from __future__ import annotations

@@ -20,6 +20,14 @@ References:
 - Nomad job spec: type (service | batch | system | sysbatch), resources
 - K8s: QoS classes (Guaranteed | Burstable | BestEffort)
 - Slurm: job types + QOS + TRES (Trackable Resources)
+
+**Module boundary**
+This module owns *read-only job kind metadata*: static descriptors,
+resource profiles, QoS classes, lifecycle hook names, and the kind
+registry.  It does **not** own scheduling decision logic.  Decisions
+that *use* this metadata (priority boosting, preemption, SLA risk)
+belong in ``business_scheduling.py``.  Constraint classes belong in
+``scheduling_constraints.py``.
 """
 
 from __future__ import annotations

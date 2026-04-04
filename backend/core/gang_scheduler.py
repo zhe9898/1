@@ -9,12 +9,19 @@ scheduling requires cross-node coordination:
 
 This module provides:
 
+- ``calculate_gang_scheduling_readiness`` — stateless per-cycle slot check
+  used by ``GangSchedulingGate`` in the constraint pipeline.
 - ``GangCoordinator`` — stateful coordinator that collects gang member
   readiness across the dispatch cycle and enforces all-or-nothing.
 - ``GangPermitPlugin`` — a ``PermitPlugin`` for the scheduling framework
   that holds gang members until all are ready.
 - ``GangPlacementSolver`` — extends ``PlacementSolver`` to handle gang
   groups atomically during global placement.
+
+**Module boundary**
+All gang scheduling logic lives here.  The constraint pipeline
+(``scheduling_constraints.py``) imports ``calculate_gang_scheduling_readiness``
+from this module.  Do **not** put gang logic in ``business_scheduling.py``.
 
 References:
 - Slurm: ``--ntasks`` + ``--nodes`` gang semantics
@@ -156,6 +163,46 @@ class GangCoordinator:
         if not group:
             return set()
         return {m.job_id for m in group.members}
+
+
+# =====================================================================
+# Gang readiness check (used by GangSchedulingGate)
+# =====================================================================
+
+
+def calculate_gang_scheduling_readiness(
+    job: Job,
+    gang_jobs: list[Job],
+    available_slots: int,
+) -> tuple[bool, str]:
+    """Check if gang scheduling requirements are met for *job*.
+
+    All members of the same gang must be present in *gang_jobs* and the
+    node must have enough free slots to accommodate the entire gang at
+    once.  This function is intentionally stateless – it does **not**
+    coordinate across nodes.  For true cross-node gang coordination use
+    ``GangCoordinator``.
+
+    Returns ``(ready, reason)``.
+    """
+    gang_id = getattr(job, "gang_id", None)
+    if not gang_id:
+        return True, ""
+
+    gang_members = [j for j in gang_jobs if getattr(j, "gang_id", None) == gang_id]
+    gang_size = len(gang_members)
+
+    if gang_size == 0:
+        return True, ""
+
+    if available_slots < gang_size:
+        return False, f"gang-scheduling:need-{gang_size}-slots:have-{available_slots}"
+
+    for member in gang_members:
+        if member.status not in ("pending", "leased"):
+            return False, f"gang-scheduling:member-{member.job_id}:status-{member.status}"
+
+    return True, ""
 
 
 # =====================================================================
