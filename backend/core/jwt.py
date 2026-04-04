@@ -59,6 +59,8 @@ def _resolved_current_secret() -> str:
         return _CURRENT
     raw = os.getenv("JWT_SECRET_CURRENT") or os.getenv("JWT_SECRET") or ""
     secret = raw.strip()
+    if raw and raw != secret:
+        logging.getLogger("zen70.jwt").warning("JWT secret env var had leading/trailing whitespace (stripped)")
     if secret:
         return secret
     return "" if is_prod else DEFAULT_INSECURE_SECRET
