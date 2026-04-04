@@ -84,6 +84,8 @@ class PolicyStore:
         self._tenant_quotas_raw: dict[str, Any] = {}
         self._placement_policies_raw: list[dict[str, Any]] = []
         self._default_service_class_yaml: str = "standard"
+        self._resource_quotas_raw: dict[str, Any] = {}
+        self._executor_contracts_raw: dict[str, Any] = {}
 
         # Record initial version
         self._history.append(
@@ -129,6 +131,16 @@ class PolicyStore:
     def default_service_class_override(self) -> str:
         """Top-level ``scheduling.default_service_class`` from system.yaml."""
         return self._default_service_class_yaml
+
+    @property
+    def resource_quotas_config(self) -> dict[str, Any]:
+        """Raw ``scheduling.resource_quotas`` from system.yaml."""
+        return dict(self._resource_quotas_raw)
+
+    @property
+    def executor_contracts_config(self) -> dict[str, Any]:
+        """Raw ``scheduling.executor_contracts`` from system.yaml."""
+        return dict(self._executor_contracts_raw)
 
     # ── Write (guarded) ──────────────────────────────────────────────
 
@@ -269,6 +281,8 @@ class PolicyStore:
             self._tenant_quotas_raw = sched.get("tenant_quotas", {}) or {}
             self._placement_policies_raw = sched.get("placement_policies", []) or []
             self._default_service_class_yaml = str(sched.get("default_service_class", "standard"))
+            self._resource_quotas_raw = sched.get("resource_quotas", {}) or {}
+            self._executor_contracts_raw = sched.get("executor_contracts", {}) or {}
 
             policy_raw = sched.get("policy", {}) or {}
             if not policy_raw:

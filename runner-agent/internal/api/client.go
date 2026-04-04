@@ -18,6 +18,9 @@ import (
 	"zen70/runner-agent/internal/config"
 )
 
+// DefaultAPIClientTimeout is the timeout for all API HTTP requests to the gateway.
+const DefaultAPIClientTimeout = 30 * time.Second
+
 type Client struct {
 	baseURL    string
 	nodeToken  string
@@ -188,7 +191,7 @@ func buildHTTPClient(cfg config.Config) *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   DefaultAPIClientTimeout,
 		Transport: transport,
 	}
 }

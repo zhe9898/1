@@ -274,7 +274,10 @@ _DEFAULT_RESOURCE_QUOTAS: dict[str, ResourceQuotaLimit] = {}
 
 
 def load_resource_quotas() -> dict[str, ResourceQuotaLimit]:
-    """Load per-tenant resource quota limits from system.yaml.
+    """Load per-tenant resource quota limits from the policy store.
+
+    The policy store caches ``scheduling.resource_quotas`` from system.yaml
+    at startup; this function reads from there — never from the file directly.
 
     Config example::
 
@@ -290,13 +293,9 @@ def load_resource_quotas() -> dict[str, ResourceQuotaLimit]:
               max_concurrent_jobs: 50
     """
     try:
-        from pathlib import Path
+        from backend.core.scheduling_policy_store import get_policy_store
 
-        import yaml
-
-        config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
-        sched = config.get("scheduling", {}) or {}
-        raw = sched.get("resource_quotas", {}) or {}
+        raw = get_policy_store().resource_quotas_config
         quotas: dict[str, ResourceQuotaLimit] = {}
         for tenant_id, cfg in raw.items():
             if isinstance(cfg, dict):

@@ -28,6 +28,16 @@ import (
 	"time"
 )
 
+// ── Extended executor defaults ──────────────────────────────────────
+
+const (
+	// DefaultProbeTimeoutMs is the default health-probe timeout in milliseconds.
+	DefaultProbeTimeoutMs = 5000.0
+
+	// DiagnosticsSnippetBytes is the max response body bytes read for diagnostics.
+	DiagnosticsSnippetBytes = 512
+)
+
 // ── healthcheck kind ────────────────────────────────────────────────
 
 // runHealthcheck performs HTTP or TCP health probes.
@@ -79,7 +89,7 @@ func (e *Executor) healthcheckHTTP(ctx context.Context, target string, payload m
 		method = http.MethodGet
 	}
 
-	timeoutMs := 5000.0
+	timeoutMs := DefaultProbeTimeoutMs
 	if t, ok := payload["timeout_ms"].(float64); ok && t > 0 {
 		timeoutMs = t
 	}
@@ -134,7 +144,7 @@ func (e *Executor) healthcheckHTTP(ctx context.Context, target string, payload m
 	}
 	defer resp.Body.Close()
 	// Read a small amount of body for diagnostics
-	bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, DiagnosticsSnippetBytes))
 
 	healthy := resp.StatusCode == expectedStatus
 
@@ -169,7 +179,7 @@ func (e *Executor) healthcheckHTTP(ctx context.Context, target string, payload m
 
 // healthcheckTCP performs a TCP connect health probe.
 func healthcheckTCP(ctx context.Context, target string, payload map[string]any) (Result, error) {
-	timeoutMs := 5000.0
+	timeoutMs := DefaultProbeTimeoutMs
 	if t, ok := payload["timeout_ms"].(float64); ok && t > 0 {
 		timeoutMs = t
 	}
