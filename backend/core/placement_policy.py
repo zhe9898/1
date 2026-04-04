@@ -331,7 +331,7 @@ def load_placement_policies() -> CompositePlacementPolicy:
         config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
         policies_config = (config.get("scheduling", {}) or {}).get("placement_policies", []) or []
     except Exception:
-        pass
+        logger.warning("Failed to load placement policies from system.yaml, falling back to defaults", exc_info=True)
 
     policies: list[PlacementPolicy] = []
     if policies_config:

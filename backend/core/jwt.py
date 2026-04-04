@@ -156,7 +156,7 @@ async def decode_token(token: str, *, redis_conn: RedisBlacklistStore | None = N
                 return payload, new_token
         return payload, None
     except jwt.InvalidTokenError:
-        pass
+        logging.getLogger("zen70.jwt").debug("Token validation failed with current secret, trying previous")
 
     if previous_secret:
         try:
@@ -169,7 +169,7 @@ async def decode_token(token: str, *, redis_conn: RedisBlacklistStore | None = N
             await _blacklist_jti(redis_conn, payload.get("jti"), int(max(exp - _now().timestamp(), 60)))
             return payload, new_token
         except jwt.InvalidTokenError:
-            pass
+            logging.getLogger("zen70.jwt").debug("Token validation also failed with previous secret")
 
     exc = zen("ZEN-AUTH-401", "Invalid or expired token", status_code=status.HTTP_401_UNAUTHORIZED)
     exc.headers = {"WWW-Authenticate": "Bearer"}

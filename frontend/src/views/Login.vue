@@ -68,244 +68,25 @@
         </div>
 
         <!-- 初始化 -->
-        <template v-else-if="viewState === 'bootstrap'">
-          <div class="zen-card-header">
-            <div class="zen-badge">
-              首次运行
-            </div>
-            <h2>创建管理员</h2>
-            <p>系统检测到首次启动，请创建控制台管理员账号</p>
-          </div>
-          <form
-            class="zen-form"
-            @submit.prevent="handleBootstrap"
-          >
-            <div class="zen-field">
-              <label>管理员账号</label>
-              <div class="zen-input-wrap">
-                <svg
-                  class="zen-input-icon"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                ><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" /></svg>
-                <input
-                  v-model="bootForm.username"
-                  type="text"
-                  placeholder="admin"
-                  required
-                  autocomplete="username"
-                >
-              </div>
-            </div>
-            <div class="zen-field">
-              <label>显示名称</label>
-              <div class="zen-input-wrap">
-                <svg
-                  class="zen-input-icon"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                ><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path
-                  fill-rule="evenodd"
-                  d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-                  clip-rule="evenodd"
-                /></svg>
-                <input
-                  v-model="bootForm.displayName"
-                  type="text"
-                  placeholder="主理人"
-                  autocomplete="name"
-                >
-              </div>
-            </div>
-            <div class="zen-field">
-              <label>安全密码</label>
-              <div class="zen-input-wrap">
-                <svg
-                  class="zen-input-icon"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                ><path
-                  fill-rule="evenodd"
-                  d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                  clip-rule="evenodd"
-                /></svg>
-                <input
-                  v-model="bootForm.password"
-                  type="password"
-                  placeholder="至少 8 位"
-                  required
-                  minlength="8"
-                  autocomplete="new-password"
-                >
-              </div>
-            </div>
-            <div
-              v-if="errorMsg"
-              class="zen-error"
-            >
-              <svg
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              ><path
-                fill-rule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                clip-rule="evenodd"
-              /></svg>
-              {{ errorMsg }}
-            </div>
-            <button
-              type="submit"
-              class="zen-btn-primary"
-              :disabled="submitting"
-            >
-              <span
-                v-if="submitting"
-                class="zen-btn-spinner"
-              />
-              <svg
-                v-else
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                class="zen-btn-icon"
-              ><path
-                fill-rule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
-                clip-rule="evenodd"
-              /></svg>
-              接管系统
-            </button>
-          </form>
-        </template>
+        <BootstrapForm
+          v-else-if="viewState === 'bootstrap'"
+          :form="bootForm"
+          :error-msg="errorMsg"
+          :submitting="submitting"
+          @submit="handleBootstrap"
+          @update:form="bootForm = $event"
+        />
 
         <!-- 登录 -->
-        <template v-else-if="viewState === 'login'">
-          <div class="zen-card-header">
-            <h2>欢迎回来</h2>
-            <p>登录您的控制面板</p>
-          </div>
-          <form
-            class="zen-form"
-            @submit.prevent="handleLogin"
-          >
-            <div class="zen-field">
-              <label>Tenant</label>
-              <div class="zen-input-wrap">
-                <svg
-                  class="zen-input-icon"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                ><path
-                  fill-rule="evenodd"
-                  d="M10 2a1 1 0 01.707.293l6 6A1 1 0 0117 9v8a1 1 0 01-1 1h-3a1 1 0 01-1-1v-4H8v4a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 01.293-.707l6-6A1 1 0 0110 2z"
-                  clip-rule="evenodd"
-                /></svg>
-                <input
-                  v-model="loginForm.tenantId"
-                  type="text"
-                  placeholder="default"
-                  required
-                  autocomplete="organization"
-                >
-              </div>
-            </div>
-            <div class="zen-field">
-              <label>账号</label>
-              <div class="zen-input-wrap">
-                <svg
-                  class="zen-input-icon"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                ><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" /></svg>
-                <input
-                  v-model="loginForm.username"
-                  type="text"
-                  placeholder="admin / family"
-                  required
-                  autocomplete="username"
-                >
-              </div>
-            </div>
-            <div class="zen-field">
-              <label>密码</label>
-              <div class="zen-input-wrap">
-                <svg
-                  class="zen-input-icon"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                ><path
-                  fill-rule="evenodd"
-                  d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                  clip-rule="evenodd"
-                /></svg>
-                <input
-                  v-model="loginForm.password"
-                  type="password"
-                  placeholder="••••••••"
-                  required
-                  autocomplete="current-password"
-                >
-              </div>
-            </div>
-            <div
-              v-if="errorMsg"
-              class="zen-error"
-            >
-              <svg
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              ><path
-                fill-rule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                clip-rule="evenodd"
-              /></svg>
-              {{ errorMsg }}
-            </div>
-            <button
-              type="submit"
-              class="zen-btn-primary"
-              :disabled="submitting"
-            >
-              <span
-                v-if="submitting"
-                class="zen-btn-spinner"
-              />
-              <svg
-                v-else
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                class="zen-btn-icon"
-              ><path
-                fill-rule="evenodd"
-                d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                clip-rule="evenodd"
-              /></svg>
-              安全登录
-            </button>
-            <div class="zen-divider">
-              <span>或</span>
-            </div>
-            <button
-              type="button"
-              class="zen-btn-outline"
-              @click="handleWebAuthn"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                class="zen-btn-icon"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75M19.5 10.5h.008v.008H19.5V10.5z"
-                />
-              </svg>
-              通行密钥验证
-            </button>
-          </form>
-        </template>
+        <LoginForm
+          v-else-if="viewState === 'login'"
+          :form="loginForm"
+          :error-msg="errorMsg"
+          :submitting="submitting"
+          @submit="handleLogin"
+          @update:form="loginForm = $event"
+          @webauthn="handleWebAuthn"
+        />
       </div>
 
       <!-- 底部 -->
@@ -317,174 +98,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { useAuthStore } from "@/stores/auth";
-import {
-  startAuthentication,
-  type PublicKeyCredentialRequestOptionsJSON,
-} from "@simplewebauthn/browser";
+import BootstrapForm from "@/components/BootstrapForm.vue";
+import LoginForm from "@/components/LoginForm.vue";
+import { useAuthFlow } from "@/composables/useAuthFlow";
 
 defineOptions({ name: "LoginView" });
 
-const router = useRouter();
-const auth = useAuthStore();
-
-const loading = ref(true);
-const submitting = ref(false);
-const viewState = ref<"bootstrap" | "login">("login");
-const errorMsg = ref("");
-
-const bootForm = ref({ username: "", password: "", displayName: "" });
-const loginForm = ref({ tenantId: "default", username: "", password: "" });
-
-// ADR 0015: 全部走 Axios http 实例，禁止裸 fetch()。
-// ADR 0010: success envelope 由 http.ts 响应拦截器自动解包，调用点直接读业务 data。
-import { http } from "@/utils/http";
-import { AUTH } from "@/utils/api";
-import type { AxiosError } from "axios";
-
-/** 从 Axios 错误中提取人类可读信息 */
-function extractAxiosError(err: unknown): string {
-  if (err instanceof Error && "isAxiosError" in err) {
-    const ae = err as AxiosError<{ message?: string; detail?: string | { message?: string } }>;
-    const body = ae.response?.data;
-    if (body) {
-      if (typeof body.detail === "string") return body.detail;
-      if (typeof body.detail === "object") {
-        const detail = body.detail as { message?: string };
-        if (typeof detail.message === "string") return detail.message;
-      }
-      if (body.message) return body.message;
-    }
-    if (ae.status === 429) return "请求过于频繁，请稍后再试";
-    if (ae.status === 403) return "系统已初始化，请直接登录";
-  }
-  return err instanceof Error ? err.message : String(err);
-}
-
-onMounted(async () => {
-  try {
-    // http 拦截器自动解包 envelope → data 即 {initialized: bool}
-    const { data } = await http.get<{ initialized?: boolean; is_empty?: boolean }>(
-      AUTH.sysStatus
-    );
-    if (data.initialized === false || data.is_empty === true) {
-      viewState.value = "bootstrap";
-    } else {
-      viewState.value = "login";
-    }
-  } catch {
-    errorMsg.value = "无法连接至网关探针";
-  } finally {
-    loading.value = false;
-  }
-});
-
-async function handleBootstrap() {
-  submitting.value = true;
-  errorMsg.value = "";
-  try {
-    const { data } = await http.post<{ access_token: string }>(AUTH.bootstrap, {
-      username: bootForm.value.username,
-      password: bootForm.value.password,
-      display_name: bootForm.value.displayName || "Admin",
-    });
-    auth.setToken(data.access_token);
-    void router.push("/");
-  } catch (err: unknown) {
-    errorMsg.value = extractAxiosError(err);
-  } finally {
-    submitting.value = false;
-  }
-}
-
-async function handleLogin() {
-  submitting.value = true;
-  errorMsg.value = "";
-  try {
-    const username = loginForm.value.username.trim();
-    const tenantId = loginForm.value.tenantId.trim() || "default";
-    const { data } = await http.post<{ access_token: string }>(AUTH.passwordLogin, {
-      ...loginForm.value,
-      tenant_id: tenantId,
-      username,
-    });
-    auth.setToken(data.access_token);
-    void router.push("/");
-  } catch (err: unknown) {
-    errorMsg.value = extractAxiosError(err);
-  } finally {
-    submitting.value = false;
-  }
-}
-
-async function handleWebAuthn(): Promise<void> {
-  errorMsg.value = "";
-  submitting.value = true;
-
-  try {
-    if (typeof window.PublicKeyCredential === "undefined") {
-      errorMsg.value =
-        "当前浏览器不支持通行密钥。请使用 Chrome/Edge/Safari 或升级版本。";
-      return;
-    }
-
-    const hasPlatform =
-      await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-    if (!hasPlatform) {
-      errorMsg.value =
-        "未检测到平台认证器（指纹/Face ID）。请先在系统设置中启用生物识别，或使用密码登录。";
-      return;
-    }
-
-    const username = loginForm.value.username.trim();
-    const tenantId = loginForm.value.tenantId.trim() || "default";
-    if (!username) {
-      errorMsg.value = "请先输入账号，再进行通行密钥验证";
-      return;
-    }
-
-    let beginData: { options?: PublicKeyCredentialRequestOptionsJSON };
-    try {
-      const { data } = await http.post<{ options?: PublicKeyCredentialRequestOptionsJSON }>(
-        AUTH.webauthnLoginBegin,
-        { tenant_id: tenantId, username }
-      );
-      beginData = data;
-    } catch (err: unknown) {
-      const ae = err as AxiosError;
-      if (ae.response?.status === 404) {
-        errorMsg.value =
-          "通行密钥服务尚未部署。当前版本请使用密码登录，未来版本将自动启用。";
-        return;
-      }
-      throw new Error("获取验证挑战失败");
-    }
-
-    if (!beginData.options) {
-      throw new Error("服务端未返回 WebAuthn 登录参数");
-    }
-
-    const credential = await startAuthentication({
-      optionsJSON: beginData.options,
-    });
-
-    const { data: verifyData } = await http.post<{ access_token: string }>(
-      AUTH.webauthnLoginComplete,
-      { tenant_id: tenantId, username, credential }
-    );
-
-    auth.setToken(verifyData.access_token);
-    void router.push("/");
-  } catch (err: unknown) {
-    if (!errorMsg.value) {
-      errorMsg.value = extractAxiosError(err);
-    }
-  } finally {
-    submitting.value = false;
-  }
-}
+const {
+  loading,
+  submitting,
+  viewState,
+  errorMsg,
+  bootForm,
+  loginForm,
+  handleBootstrap,
+  handleLogin,
+  handleWebAuthn,
+} = useAuthFlow();
 </script>
 
 <style scoped>

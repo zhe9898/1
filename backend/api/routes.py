@@ -135,7 +135,7 @@ async def _process_sse_ping_timeout(redis: RedisClient, ping_key: str, conn_id_i
                 )
                 return True
     except (OSError, ConnectionError, ValueError, KeyError, RuntimeError, TypeError, asyncio.TimeoutError):
-        pass
+        logger.debug("SSE ping timeout check failed for connection %s", conn_id_inner)
     return False
 
 
@@ -199,7 +199,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
         try:
             await redis.delete(ping_key)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError):
-            pass
+            logger.debug("Failed to delete SSE ping key during cleanup")
         try:
             await pubsub.unsubscribe(
                 CHANNEL_NODE_EVENTS,
@@ -209,11 +209,11 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
                 CHANNEL_TRIGGER_EVENTS,
             )
         except (ConnectionError, asyncio.CancelledError):
-            pass
+            logger.debug("PubSub unsubscribe failed during SSE cleanup")
         try:
             await pubsub.aclose()
         except (ConnectionError, asyncio.CancelledError):
-            pass
+            logger.debug("PubSub close failed during SSE cleanup")
 
 
 @router.get(

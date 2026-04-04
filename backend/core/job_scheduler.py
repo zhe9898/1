@@ -32,6 +32,28 @@ from backend.models.node import Node
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    # Core types
+    "SchedulerNodeSnapshot",
+    "ScoredJob",
+    # Node operations
+    "build_node_snapshot",
+    "is_node_eligible",
+    "node_blockers_for_job",
+    "job_matches_node",
+    "select_jobs_for_node",
+    # Re-exports from job_scoring
+    "score_job_for_node",
+    # Re-exports from placement_solver
+    "PlacementCandidate",
+    "PlacementSolver",
+    "build_time_budgeted_placement_plan",
+    "get_placement_solver",
+    # Re-exports from scheduling_candidates
+    "batch_eligible_counts",
+    "count_eligible_nodes_for_job",
+]
+
 
 def _node_stale_seconds() -> int:
     from backend.core.scheduling_policy_store import get_policy_store

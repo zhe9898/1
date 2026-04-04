@@ -9,6 +9,7 @@ business scheduling filters, and the scoring pipeline.
 from __future__ import annotations
 
 import datetime
+import logging
 import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, cast
@@ -79,6 +80,8 @@ from .models import (
 )
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from backend.core.scheduling_policy_types import DispatchConfig
@@ -353,7 +356,7 @@ async def pull_jobs(  # noqa: C901
         )
         _extra_ctx["_fair_share_ratios"] = _fair_ratios
     except Exception:
-        pass  # quota_aware_scheduling not available 鈥?skip gracefully
+        logger.debug("Fair-share calculation skipped (quota_aware_scheduling not available)", exc_info=True)
 
     candidates = apply_business_filters(
         candidates,
@@ -715,7 +718,7 @@ async def explain_job(
         _pp = get_placement_policy()
         _placement_policy_name = getattr(_pp, "name", "composite") or "composite"
     except Exception:
-        pass
+        logger.warning("Failed to resolve placement policy name, defaulting to '%s'", _placement_policy_name, exc_info=True)
 
     governance = JobExplainGovernanceContext(
         feature_flags=_ff_flags,
