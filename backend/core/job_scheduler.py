@@ -4,18 +4,18 @@ import datetime
 import logging
 from dataclasses import dataclass, field
 
-from backend.core.job_scoring import (  # noqa: F401 – re-export
+from backend.core.job_scoring import (  # noqa: F401 鈥?re-export
     _stable_tiebreak,
     score_job_for_node,
 )
-from backend.core.placement_solver import (  # noqa: F401 – re-export
+from backend.core.placement_solver import (  # noqa: F401 鈥?re-export
     PlacementCandidate,
     PlacementSolver,
     _get_solver_config,
     build_time_budgeted_placement_plan,
     get_placement_solver,
 )
-from backend.core.scheduling_candidates import (  # noqa: F401 – re-export
+from backend.core.scheduling_candidates import (  # noqa: F401 鈥?re-export
     _bool_attr,
     _candidate_nodes_for_job,
     _has_items_attr,
