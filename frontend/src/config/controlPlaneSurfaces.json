@@ -1,6 +1,6 @@
 [
   {
-    "capability_key": "gateway.dashboard",
+    "capability_key": "gateway.capabilities",
     "route_name": "dashboard",
     "route_path": "/",
     "label": "Dashboard",
@@ -48,16 +48,28 @@
     "requires_admin": false
   },
   {
-    "capability_key": "gateway.settings",
-    "route_name": "settings",
-    "route_path": "/settings",
-    "label": "Settings",
-    "description": "Schema-driven kernel settings for profile, network, connectors, and security.",
-    "endpoint": "/v1/settings/schema",
-    "backend_router": "settings",
-    "frontend_view": "SystemSettings",
+    "capability_key": "gateway.triggers",
+    "route_name": "triggers",
+    "route_path": "/triggers",
+    "label": "Triggers",
+    "description": "Unified trigger registry, webhook ingress, and delivery history.",
+    "endpoint": "/v1/triggers",
+    "backend_router": "triggers",
+    "frontend_view": "TriggersView",
     "profiles": ["gateway-kernel"],
-    "requires_admin": true
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.reservations",
+    "route_name": "reservations",
+    "route_path": "/reservations",
+    "label": "Reservations",
+    "description": "Time-dimension reservations, backfill windows, and planning diagnostics.",
+    "endpoint": "/v1/reservations",
+    "backend_router": "reservations",
+    "frontend_view": "ReservationsView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
   },
   {
     "capability_key": "gateway.evaluations",
@@ -70,5 +82,17 @@
     "frontend_view": "EvaluationsView",
     "profiles": ["gateway-kernel"],
     "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.settings",
+    "route_name": "settings",
+    "route_path": "/settings",
+    "label": "Settings",
+    "description": "Schema-driven kernel settings for profile, network, connectors, and security.",
+    "endpoint": "/v1/settings/schema",
+    "backend_router": "settings",
+    "frontend_view": "SystemSettings",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": true
   }
 ]

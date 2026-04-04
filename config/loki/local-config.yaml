@@ -1,4 +1,8 @@
-auth_enabled: false
+# auth_enabled: true enforces X-Scope-OrgID header on all Loki HTTP endpoints,
+# preventing any container in backend_net from reading logs across org boundaries.
+# In single-tenant deployments, set X-Scope-OrgID: zen70 in all clients
+# (Promtail and Grafana datasource). See config/promtail/promtail-config.yaml.
+auth_enabled: true
 
 server:
   http_listen_port: 3100
