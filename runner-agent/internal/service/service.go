@@ -84,8 +84,9 @@ func (s *Service) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		// Signal the backend that this node is draining so the scheduler stops
-		// dispatching new jobs.  Use a fresh context because the parent is done.
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), drainCallTimeout)
+		// dispatching new jobs.  WithoutCancel preserves trace/values from the
+		// parent while being independent of its cancellation.
+		drainCtx, drainCancel := context.WithTimeout(context.WithoutCancel(ctx), drainCallTimeout)
 		defer drainCancel()
 		if err := s.client.DrainSelf(drainCtx, api.SelfDrainRequest{
 			TenantID: s.cfg.TenantID,

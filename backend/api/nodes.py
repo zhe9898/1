@@ -9,6 +9,7 @@ statements keep working.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 from typing import Annotated
@@ -280,11 +281,19 @@ async def register_node(
     # activated immediately and tagged with cloud=true for scheduler awareness.
     if node.enrollment_status not in ("active",):
         _node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
-        if _CLOUD_AUTO_APPROVE_TOKEN and _node_cloud_token and secrets.compare_digest(_CLOUD_AUTO_APPROVE_TOKEN, _node_cloud_token):
+        # Hash both tokens to ensure same-length constant-time comparison,
+        # guarding against timing side-channels due to length differences.
+        _expected_hash = hashlib.sha256(_CLOUD_AUTO_APPROVE_TOKEN.encode()).hexdigest()
+        _actual_hash = hashlib.sha256(_node_cloud_token.encode()).hexdigest()
+        if _CLOUD_AUTO_APPROVE_TOKEN and _node_cloud_token and secrets.compare_digest(_expected_hash, _actual_hash):
             node.enrollment_status = "active"
             node.metadata_json = {**(node.metadata_json or {}), "cloud": True}
         else:
             node.enrollment_status = "pending"
+    # Remove the cloud_token credential from persisted metadata so it is not
+    # stored in the database or returned in API responses.
+    if node.metadata_json:
+        node.metadata_json = {k: v for k, v in node.metadata_json.items() if k != "cloud_token"}
     node.drain_status = "active"
     node.health_reason = None
 
