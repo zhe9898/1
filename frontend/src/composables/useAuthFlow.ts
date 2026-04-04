@@ -15,6 +15,7 @@ import {
 import { http } from "@/utils/http";
 import { AUTH } from "@/utils/api";
 import { extractAxiosError } from "@/utils/errorMessage";
+import { logWarn } from "@/utils/logger";
 import type { AxiosError } from "axios";
 
 export type ViewState = "bootstrap" | "login";
@@ -31,6 +32,12 @@ export function useAuthFlow() {
   const bootForm = ref({ username: "", password: "", displayName: "" });
   const loginForm = ref({ tenantId: "default", username: "", password: "" });
 
+  // Client-side login rate limiter: max 5 attempts, 30s cooldown after threshold.
+  const MAX_LOGIN_ATTEMPTS = 5;
+  const LOGIN_COOLDOWN_MS = 30_000;
+  let loginAttemptCount = 0;
+  let lastAttemptTime = 0;
+
   // ------------------------------------------------------------------
   // Init: probe system status
   // ------------------------------------------------------------------
@@ -45,7 +52,8 @@ export function useAuthFlow() {
       } else {
         viewState.value = "login";
       }
-    } catch {
+    } catch (err: unknown) {
+      logWarn("[ZEN70 Auth] 网关探针不可达", err);
       errorMsg.value = "无法连接至网关探针";
     } finally {
       loading.value = false;
@@ -75,6 +83,20 @@ export function useAuthFlow() {
   }
 
   async function handleLogin() {
+    // Rate limit: cooldown after too many failed attempts.
+    const now = Date.now();
+    if (loginAttemptCount >= MAX_LOGIN_ATTEMPTS) {
+      const elapsed = now - lastAttemptTime;
+      if (elapsed < LOGIN_COOLDOWN_MS) {
+        const remaining = Math.ceil((LOGIN_COOLDOWN_MS - elapsed) / 1000);
+        errorMsg.value = `登录尝试过于频繁，请 ${remaining} 秒后重试`;
+        return;
+      }
+      loginAttemptCount = 0;
+    }
+    loginAttemptCount += 1;
+    lastAttemptTime = now;
+
     submitting.value = true;
     errorMsg.value = "";
     try {
@@ -86,6 +108,7 @@ export function useAuthFlow() {
         username,
       });
       auth.setToken(data.access_token);
+      loginAttemptCount = 0;
       void router.push("/");
     } catch (err: unknown) {
       errorMsg.value = extractAxiosError(err, "登录失败");

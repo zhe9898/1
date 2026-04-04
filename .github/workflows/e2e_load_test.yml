@@ -52,6 +52,7 @@ jobs:
       - name: Run SRE stress tester (mock-based, 20 rounds)
         env:
           PYTHONPATH: ${{ github.workspace }}
+          # CI-only test credentials (ZEN70_ENV="" = non-production).
           JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
           JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
           ZEN70_ENV: ""

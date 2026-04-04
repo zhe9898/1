@@ -35,6 +35,7 @@ env:
   NODE_VERSION: "20"
   GATEWAY_URL: "http://localhost:8000"
   FRONTEND_URL: "http://localhost:5173"
+  # CI-only test credentials (ZEN70_ENV="" = non-production).
   JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
   JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
   ZEN70_ENV: ""

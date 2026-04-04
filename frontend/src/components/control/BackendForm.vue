@@ -153,7 +153,19 @@ function parseFieldValue(field: FormFieldSchema, rawValue: string): unknown {
     return Number(trimmed);
   }
   if (field.input_type === "json") {
-    return JSON.parse(trimmed) as Record<string, unknown>;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      throw new Error(`${field.label}: 无效的 JSON 格式`);
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+      const keys = Object.keys(parsed as Record<string, unknown>);
+      if (keys.includes("__proto__") || keys.includes("constructor") || keys.includes("prototype")) {
+        throw new Error(`${field.label}: JSON 包含不安全的属性键`);
+      }
+    }
+    return parsed as Record<string, unknown>;
   }
   if (field.input_type === "tags") {
     return trimmed.split(",").map((item) => item.trim()).filter(Boolean);

@@ -23,10 +23,12 @@ const RECONNECT_MAX_MS = 30000;
 const MAX_RETRIES = 10;
 /** 法典 §2.1: 心跳间隔 30 秒 */
 const PING_INTERVAL_MS = 30_000;
+/** Stop pinging after this many consecutive failures */
+const MAX_PING_FAILURES = 3;
 
 function parseData(e: MessageEvent): unknown {
   try {
-    return typeof e.data === "string" ? JSON.parse(e.data) as unknown : e.data as unknown;
+    return typeof e.data === "string" ? JSON.parse(e.data) : e.data;
   } catch {
     return null;
   }
@@ -66,6 +68,7 @@ export function createSSE(
   /** Client-Token: 前端自主生成，不依赖服务端首包 */
   let currentClientToken: string | null = null;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
+  let pingFailures = 0;
 
   /** 停止心跳定时器 */
   function stopPing(): void {
@@ -73,12 +76,14 @@ export function createSSE(
       clearInterval(pingTimer);
       pingTimer = null;
     }
+    pingFailures = 0;
   }
 
   /**
    * 启动 30s 心跳 Ping。
    * 法典 §2.1: 前端每 30s 调 POST /api/v1/events/ping 续期。
    * Client-Token-in-URL: 使用前端自主生成的 token，无需等待服务端首包。
+   * Stops after MAX_PING_FAILURES consecutive failures to avoid wasting bandwidth.
    */
   function startPing(): void {
     stopPing();
@@ -89,8 +94,15 @@ export function createSSE(
         stopPing();
         return;
       }
-      http.post(SSE.ping, { connection_id: currentClientToken }).catch((err: unknown) => {
-        logWarn("[ZEN70 SSE] Ping failed", err);
+      http.post(SSE.ping, { connection_id: currentClientToken }).then(() => {
+        pingFailures = 0;
+      }).catch((err: unknown) => {
+        pingFailures += 1;
+        logWarn(`[ZEN70 SSE] Ping failed (${pingFailures}/${MAX_PING_FAILURES})`, err);
+        if (pingFailures >= MAX_PING_FAILURES) {
+          logWarn("[ZEN70 SSE] Ping suspended after consecutive failures");
+          stopPing();
+        }
       });
     }, PING_INTERVAL_MS);
   }
