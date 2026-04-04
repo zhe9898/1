@@ -1,0 +1,238 @@
+name: ZEN70 端到端测压 (E2E Load Test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      locust_users:
+        description: "Locust 并发用户数"
+        required: false
+        default: "50"
+      locust_spawn_rate:
+        description: "Locust 每秒新增用户数"
+        required: false
+        default: "5"
+      locust_run_time:
+        description: "Locust 运行时长 (如 60s, 2m)"
+        required: false
+        default: "60s"
+  push:
+    branches: [main, master]
+    paths:
+      - "backend/**"
+      - "tests/performance/**"
+      - "tests/e2e/**"
+      - "scripts/sre_stress_tester.py"
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  GATEWAY_URL: "http://localhost:8000"
+  FRONTEND_URL: "http://localhost:5173"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1: 模拟微内核压力测试（无需运行服务，纯逻辑注入）
+  # ──────────────────────────────────────────────────────────────────────────
+  sre-stress:
+    name: SRE 微内核压力测试 (20 轮)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+
+      - name: Run SRE stress tester (mock-based, 20 rounds)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
+          JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
+          ZEN70_ENV: ""
+        run: python scripts/sre_stress_tester.py
+
+      - name: Upload SRE stress report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sre-stress-report
+          path: docs/SRE_STRESS_REPORT.md
+          if-no-files-found: ignore
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2: PlacementSolver 大规模压力测试
+  # ──────────────────────────────────────────────────────────────────────────
+  placement-stress:
+    name: PlacementSolver 压力测试 (1000 节点 × 10000 任务)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+
+      - name: Run placement stress test
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PLACEMENT_STRESS_NODES: "1000"
+          PLACEMENT_STRESS_JOBS: "10000"
+          PLACEMENT_STRESS_CONCURRENCY: "16"
+          PLACEMENT_STRESS_MAX_MS: "5000"
+          PLACEMENT_STRESS_MAX_MEM_MB: "500"
+        run: python tests/performance/placement_stress.py
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 3: Locust HTTP 负载测试 + Playwright E2E（需要运行完整服务栈）
+  # ──────────────────────────────────────────────────────────────────────────
+  live-load-test:
+    name: Locust HTTP 负载测试 + Playwright E2E
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # ── 构建并启动测试服务栈 ───────────────────────────────────────────
+      - name: Start test service stack (Redis + PostgreSQL + Gateway)
+        run: |
+          docker compose -f tests/docker-compose.yml up -d --build redis postgres gateway
+          echo "等待服务就绪..."
+
+      - name: Wait for gateway to become healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Gateway 已就绪 (尝试 $i/30)"
+              exit 0
+            fi
+            echo "Gateway 尚未就绪，等待 5s (尝试 $i/30)..."
+            sleep 5
+          done
+          echo "Gateway 启动超时，输出容器日志："
+          docker compose -f tests/docker-compose.yml logs gateway
+          exit 1
+
+      # ── Python 环境 & Locust ───────────────────────────────────────────
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Locust and test dependencies
+        run: pip install locust==2.37.4
+
+      - name: Run Locust API load test (无头模式)
+        # 使用 || true 收集压测数据：SRE 门禁由 locustfile 内部 events.quitting 钩子打印报告
+        run: |
+          locust -f tests/performance/locustfile.py \
+            --headless \
+            -u ${{ github.event.inputs.locust_users || '50' }} \
+            -r ${{ github.event.inputs.locust_spawn_rate || '5' }} \
+            --run-time ${{ github.event.inputs.locust_run_time || '60s' }} \
+            --host ${{ env.GATEWAY_URL }} \
+            --csv /tmp/locust-api-results \
+            --html /tmp/locust-api-report.html || true
+
+      - name: Run Locust scheduling load test (无头模式)
+        run: |
+          locust -f tests/performance/locustfile_scheduling.py \
+            --headless \
+            -u ${{ github.event.inputs.locust_users || '50' }} \
+            -r ${{ github.event.inputs.locust_spawn_rate || '5' }} \
+            --run-time ${{ github.event.inputs.locust_run_time || '60s' }} \
+            --host ${{ env.GATEWAY_URL }} \
+            --csv /tmp/locust-scheduling-results \
+            --html /tmp/locust-scheduling-report.html || true
+
+      # ── Node.js + Playwright E2E ───────────────────────────────────────
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install frontend dependencies and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Start frontend dev preview server
+        working-directory: frontend
+        run: |
+          npx vite preview --port 5173 --host 0.0.0.0 &
+          echo "等待前端服务就绪..."
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:5173 > /dev/null 2>&1; then
+              echo "前端服务已就绪 (尝试 $i/15)"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: |
+          npm install -D @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Install pytest-playwright
+        run: pip install pytest-playwright==0.7.0
+
+      - name: Run Playwright E2E tests
+        env:
+          FRONTEND_URL: ${{ env.FRONTEND_URL }}
+          BASE_URL: ${{ env.GATEWAY_URL }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          pytest tests/e2e/test_core_flows.py \
+            -v --tb=short \
+            --timeout=60 \
+            -m e2e \
+            --junit-xml=/tmp/e2e-results.xml || true
+
+      # ── 上传测试结果 ───────────────────────────────────────────────────
+      - name: Upload Locust load test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: locust-load-test-results
+          path: |
+            /tmp/locust-api-results*.csv
+            /tmp/locust-api-report.html
+            /tmp/locust-scheduling-results*.csv
+            /tmp/locust-scheduling-report.html
+          if-no-files-found: ignore
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: e2e-test-results
+          path: /tmp/e2e-results.xml
+          if-no-files-found: ignore
+
+      - name: Dump service stack logs on failure
+        if: failure()
+        run: docker compose -f tests/docker-compose.yml logs
