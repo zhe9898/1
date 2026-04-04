@@ -170,7 +170,7 @@ async def lifespan(app: FastAPI) -> object:
             async with _async_session_factory() as session:
                 await get_governance_facade().load_tuner_state(session)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
-            logger.warning("Failed to restore scheduler tuner weights: %s", exc)
+            logger.warning("Failed to restore scheduler tuner weights: %s", exc, exc_info=True)
 
     # Redis is optional; keep degraded mode but log clearly.
     settings = get_settings()
@@ -210,7 +210,7 @@ async def lifespan(app: FastAPI) -> object:
                 async with _async_session_factory() as session:
                     await get_governance_facade().save_tuner_state(session)
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
-                logger.warning("Failed to persist scheduler tuner weights on shutdown: %s", exc)
+                logger.warning("Failed to persist scheduler tuner weights on shutdown: %s", exc, exc_info=True)
 
         signal.signal(signal.SIGTERM, original_handler)
         shutdown_telemetry()
