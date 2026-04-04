@@ -62,6 +62,10 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
 
   config.headers["X-Request-ID"] = getRequestId();
+  // CSRF mitigation: custom request headers cannot be set by cross-origin forms or
+  // img/script tags, so this header acts as a lightweight CSRF token for same-origin
+  // verification on the backend (browsers only send it for XHR/fetch requests).
+  config.headers["X-Requested-With"] = "XMLHttpRequest";
   const token = useAuthStore().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
 
