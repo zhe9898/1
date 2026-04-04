@@ -15,11 +15,18 @@ import asyncio
 import json
 import logging
 import os
+from typing import Protocol, cast
 
 import httpx
 import psutil
 
 logger = logging.getLogger("zen70.sentinel.guardian")
+
+
+class RedisLike(Protocol):
+    async def set(self, name: str, value: str) -> object: ...
+
+    async def publish(self, channel: str, message: str) -> object: ...
 
 
 class SystemGuardian:
@@ -29,9 +36,9 @@ class SystemGuardian:
         self.temperature_threshold = 85.0  # 摄氏度
         self.ups_battery_threshold = 20.0  # 百分比
         # ADR-0006: Redis 连接用于通过 Pub/Sub 下发控制事件（不直连 docker.sock）
-        self._redis: object | None = None
+        self._redis: RedisLike | None = None
 
-    async def _get_redis(self) -> object:
+    async def _get_redis(self) -> RedisLike:
         """惰性获取 Redis 连接（避免构造函数中初始化异步资源）。"""
         if self._redis is not None:
             return self._redis
@@ -41,7 +48,7 @@ class SystemGuardian:
             host = os.getenv("REDIS_HOST", "127.0.0.1")
             port = int(os.getenv("REDIS_PORT", "6379"))
             password = os.getenv("REDIS_PASSWORD", "") or None
-            self._redis = aioredis.Redis(host=host, port=port, password=password, decode_responses=True)
+            self._redis = cast(RedisLike, aioredis.Redis(host=host, port=port, password=password, decode_responses=True))
             return self._redis
         except (OSError, ValueError, KeyError, RuntimeError, TypeError, ImportError) as e:
             logger.error("Redis 连接初始化失败: %s", e)
@@ -92,7 +99,7 @@ class SystemGuardian:
             r = await self._get_redis()
             from backend.core.constants import KEY_SYSTEM_READONLY_DISK
 
-            await r.set(KEY_SYSTEM_READONLY_DISK, "thermal_guardian")  # type: ignore[union-attr]
+            await r.set(KEY_SYSTEM_READONLY_DISK, "thermal_guardian")
             logger.critical("🛑 已写入 Redis 全局只读锁: %s", KEY_SYSTEM_READONLY_DISK)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError, ImportError) as e:
             logger.error("Redis 写入全局只读锁失败: %s — API 网关可能无法拦截写请求", e)
@@ -113,7 +120,7 @@ class SystemGuardian:
                     "reason": "thermal_guardian: 温度越界紧急降级",
                     "source": "guardian",
                 }
-                await r.publish("switch:events", json.dumps(event))  # type: ignore[union-attr]
+                await r.publish("switch:events", json.dumps(event))
                 logger.info("❄️ 已发布降级事件: switch=%s state=PAUSE", container)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError, ImportError) as e:
             logger.error("Redis Pub/Sub 降级事件下发失败: %s — 容器冻结指令未送达", e)

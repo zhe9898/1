@@ -12,7 +12,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
-from backend.api.deps import _bind_tenant_db, get_current_admin, get_current_user, get_db, get_redis, get_tenant_db
+from backend.api.deps import _bind_tenant_db, get_current_admin, get_db, get_redis, get_tenant_db
 from backend.core.errors import zen
 from backend.core.redis_client import CHANNEL_TRIGGER_EVENTS, RedisClient
 from backend.core.trigger_kind_registry import (
@@ -209,7 +209,7 @@ async def _get_trigger_for_tenant(db: AsyncSession, tenant_id: str, trigger_id: 
 
 @router.get("/kinds", response_model=list[TriggerKindResponse])
 async def list_registered_trigger_kinds(
-    current_user: dict[str, object] = Depends(get_current_user),
+    current_user: dict[str, object] = Depends(get_current_admin),
 ) -> list[TriggerKindResponse]:
     del current_user
     return [TriggerKindResponse(**item) for item in list_trigger_kinds()]
@@ -218,7 +218,7 @@ async def list_registered_trigger_kinds(
 @router.get("/kinds/{kind:path}", response_model=TriggerKindResponse)
 async def get_registered_trigger_kind(
     kind: str,
-    current_user: dict[str, object] = Depends(get_current_user),
+    current_user: dict[str, object] = Depends(get_current_admin),
 ) -> TriggerKindResponse:
     del current_user
     try:
@@ -288,6 +288,7 @@ async def upsert_trigger(
 
     await db.flush()
     response = _to_trigger_response(trigger)
+    await db.commit()
     await publish_control_event(
         redis,
         CHANNEL_TRIGGER_EVENTS,
@@ -301,7 +302,7 @@ async def upsert_trigger(
 async def list_triggers(
     kind: str | None = None,
     status: str | None = None,
-    current_user: dict[str, object] = Depends(get_current_user),
+    current_user: dict[str, object] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[TriggerResponse]:
     tenant_id = str(current_user.get("tenant_id") or "default")
@@ -317,7 +318,7 @@ async def list_triggers(
 @router.get("/{trigger_id}", response_model=TriggerResponse)
 async def get_trigger(
     trigger_id: str,
-    current_user: dict[str, object] = Depends(get_current_user),
+    current_user: dict[str, object] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> TriggerResponse:
     tenant_id = str(current_user.get("tenant_id") or "default")
@@ -343,6 +344,7 @@ async def activate_trigger(
         trigger.last_delivery_message = payload.reason
     await db.flush()
     response = _to_trigger_response(trigger)
+    await db.commit()
     await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "activated", {"trigger": response.model_dump(mode="json")})
     return response
 
@@ -365,6 +367,7 @@ async def pause_trigger(
         trigger.last_delivery_message = payload.reason
     await db.flush()
     response = _to_trigger_response(trigger)
+    await db.commit()
     await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "paused", {"trigger": response.model_dump(mode="json")})
     return response
 
@@ -399,7 +402,7 @@ async def fire_trigger_endpoint(
 async def list_trigger_deliveries(
     trigger_id: str,
     limit: int = Query(default=50, ge=1, le=200),
-    current_user: dict[str, object] = Depends(get_current_user),
+    current_user: dict[str, object] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[TriggerDeliveryResponse]:
     tenant_id = str(current_user.get("tenant_id") or "default")

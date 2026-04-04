@@ -348,6 +348,7 @@ async def fire_trigger(
         trigger.last_delivery_target_id = None
         trigger.updated_at = failed_at
         await db.flush()
+        await db.commit()
         await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
         raise
     except ValueError as exc:
@@ -363,6 +364,7 @@ async def fire_trigger(
         trigger.last_delivery_target_id = None
         trigger.updated_at = failed_at
         await db.flush()
+        await db.commit()
         await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
         raise zen(
             "ZEN-TRIG-4002",
@@ -384,6 +386,7 @@ async def fire_trigger(
         trigger.last_delivery_target_id = None
         trigger.updated_at = failed_at
         await db.flush()
+        await db.commit()
         await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
         raise zen(
             "ZEN-TRIG-5001",
@@ -408,5 +411,6 @@ async def fire_trigger(
     trigger.last_delivery_target_id = target_id
     trigger.updated_at = accepted_at
     await db.flush()
+    await db.commit()
     await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "fired", _delivery_event_payload(trigger, delivery))
     return delivery

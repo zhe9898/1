@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from backend.api.deps import get_current_user, get_db, get_tenant_db
+from backend.api.deps import get_current_admin, get_current_user, get_db, get_tenant_db
 from backend.api.main import app
 from backend.api.triggers import TriggerFireRequest, TriggerUpsertRequest, fire_trigger_endpoint, upsert_trigger
 from backend.models.job import Job
@@ -39,6 +39,7 @@ async def override_get_tenant_db(current_user: dict[str, str] | None = None) -> 
 
 
 app.dependency_overrides[get_current_user] = override_get_current_user
+app.dependency_overrides[get_current_admin] = override_get_current_user
 app.dependency_overrides[get_db] = override_get_db
 app.dependency_overrides[get_tenant_db] = override_get_tenant_db
 client = TestClient(app)
@@ -62,6 +63,16 @@ def _scalar_result(value: object | None) -> MagicMock:
 def _count_result(value: int) -> MagicMock:
     result = MagicMock()
     result.scalar.return_value = value
+    return result
+
+
+def _concurrent_counts_result(global_count: int, tenant_count: int, connector_count: int) -> MagicMock:
+    result = MagicMock()
+    counts_row = MagicMock()
+    counts_row.global_count = global_count
+    counts_row.tenant_count = tenant_count
+    counts_row.connector_count = connector_count
+    result.one.return_value = counts_row
     return result
 
 
@@ -99,6 +110,7 @@ async def test_upsert_trigger_persists_validated_contract() -> None:
     db.add = MagicMock()
     db.execute.return_value = _scalar_result(None)
     db.flush = AsyncMock()
+    db.commit = AsyncMock()
 
     response = await upsert_trigger(
         TriggerUpsertRequest(
@@ -124,6 +136,7 @@ async def test_upsert_trigger_persists_validated_contract() -> None:
     created = db.add.call_args.args[0]
     assert isinstance(created, Trigger)
     assert created.config == {"allow_api_fire": True}
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -134,12 +147,11 @@ async def test_fire_trigger_dispatches_job_and_records_delivery() -> None:
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
+    db.commit = AsyncMock()
     db.execute.side_effect = [
         _scalar_result(trigger),  # load trigger
         _count_result(0),  # admission count
-        _count_result(0),  # global concurrent count
-        _count_result(0),  # tenant concurrent count
-        _count_result(0),  # connector concurrent count
+        _concurrent_counts_result(0, 0, 0),  # global/tenant/connector concurrent counts
     ]
 
     response = await fire_trigger_endpoint(
@@ -158,6 +170,7 @@ async def test_fire_trigger_dispatches_job_and_records_delivery() -> None:
     added_types = {type(call.args[0]) for call in db.add.call_args_list}
     assert TriggerDelivery in added_types
     assert Job in added_types
+    db.commit.assert_awaited()
 
 
 @pytest.mark.asyncio
