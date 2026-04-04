@@ -48,12 +48,13 @@ class TestFailureControlPlaneProxies:
             result = await facade.get_kind_circuit_state("shell.exec", now=_now())
         assert result == "closed"
 
-    def test_is_in_burst(self, facade: GovernanceFacade) -> None:
+    @pytest.mark.asyncio
+    async def test_is_in_burst(self, facade: GovernanceFacade) -> None:
         with patch("backend.core.failure_control_plane.get_failure_control_plane") as mock_get:
             fcp = MagicMock()
-            fcp.is_in_burst.return_value = False
+            fcp.is_in_burst = AsyncMock(return_value=False)
             mock_get.return_value = fcp
-            result = facade.is_in_burst(now=_now())
+            result = await facade.is_in_burst(now=_now())
         assert result is False
 
     @pytest.mark.asyncio

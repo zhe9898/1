@@ -23,7 +23,6 @@ import asyncio
 import datetime
 import logging
 from collections import defaultdict, deque
-from threading import RLock
 from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
@@ -89,7 +88,6 @@ class FailureControlPlane:
 
         # ── Global burst detection ───────────────────────────────────
         self._global_events: deque[FailureEvent] = deque(maxlen=500)
-        self._burst_lock = RLock()
 
         # ── Governance timeline ──────────────────────────────────────
         self._governance_timeline: deque[GovernanceEvent] = deque(maxlen=_GOVERNANCE_TIMELINE_MAX)
@@ -324,10 +322,9 @@ class FailureControlPlane:
     # ── Global burst detection ───────────────────────────────────────
 
     def _update_burst(self, evt: FailureEvent, now: datetime.datetime) -> dict[str, object]:
-        with self._burst_lock:
-            self._global_events.append(evt)
-            cutoff = now - datetime.timedelta(seconds=BURST_WINDOW_S)
-            recent = [e for e in self._global_events if e.ts >= cutoff]
+        self._global_events.append(evt)
+        cutoff = now - datetime.timedelta(seconds=BURST_WINDOW_S)
+        recent = [e for e in self._global_events if e.ts >= cutoff]
         if len(recent) >= BURST_THRESHOLD:
             logger.error(
                 "FAILURE BURST detected: %d failures in %ds window",
@@ -344,12 +341,12 @@ class FailureControlPlane:
             return {"burst_detected": len(recent)}
         return {}
 
-    # ── Burst query (synchronous, lock-protected) ────────────
+    # ── Burst query ───────────────────────────────────────────────────
 
-    def is_in_burst(self, *, now: datetime.datetime) -> bool:
-        """Quick check if we're in a failure burst."""
+    async def is_in_burst(self, *, now: datetime.datetime) -> bool:
+        """Check if we're in a failure burst. Uses the main asyncio.Lock for consistency."""
         cutoff = now - datetime.timedelta(seconds=BURST_WINDOW_S)
-        with self._burst_lock:
+        async with self._lock:
             recent = sum(1 for e in self._global_events if e.ts >= cutoff)
         return recent >= BURST_THRESHOLD
 

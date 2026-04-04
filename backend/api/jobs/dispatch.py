@@ -182,7 +182,7 @@ async def pull_jobs(  # noqa: C901
     # When the failure control plane detects a burst of failures, halve
     # the candidate window so fewer jobs are dispatched per pull cycle.
     # This reduces the blast radius while nodes/connectors stabilise.
-    _burst_active = _fcp.is_in_burst(now=now)
+    _burst_active = await _fcp.is_in_burst(now=now)
     if _burst_active:
         candidate_limit = max(candidate_limit // _dc.burst_throttle_divisor, _dc.burst_throttle_floor)
     _audit.context["burst_active"] = _burst_active
@@ -722,7 +722,7 @@ async def explain_job(
         kind_circuit_state=_kind_circuit,
         node_quarantine_count=len(_fcp_explain._quarantine_until),
         connector_cooling_count=len(getattr(_fcp_explain, "_connector_cooling_until", {})),
-        burst_active=_fcp_explain.is_in_burst(now=now),
+        burst_active=await _fcp_explain.is_in_burst(now=now),
         tenant_service_class=_tenant_quota.service_class,
         tenant_max_jobs_per_round=_tenant_quota.max_jobs_per_round,
         tenant_fair_share_weight=_tenant_quota.weight,

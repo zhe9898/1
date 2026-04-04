@@ -192,7 +192,7 @@ class TestGovernanceStages:
         monkeypatch.setattr(
             "backend.core.failure_control_plane.get_failure_control_plane",
             lambda: MagicMock(
-                is_in_burst=MagicMock(return_value=False),
+                is_in_burst=AsyncMock(return_value=False),
                 get_kind_circuit_state=AsyncMock(return_value="closed"),
             ),
         )

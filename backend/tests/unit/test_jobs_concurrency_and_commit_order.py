@@ -290,7 +290,7 @@ async def test_pull_jobs_commits_then_publishes_then_releases_lock(monkeypatch: 
     governance.post_dispatch_audit = AsyncMock(return_value=None)
 
     fcp = MagicMock()
-    fcp.is_in_burst.return_value = False
+    fcp.is_in_burst = AsyncMock(return_value=False)
     fcp.get_kind_circuit_state = AsyncMock(return_value="closed")
 
     selected = SimpleNamespace(job=pending, score=80, eligible_nodes_count=1, score_breakdown={})
@@ -381,7 +381,7 @@ async def test_pull_jobs_releases_lock_on_exception(monkeypatch: pytest.MonkeyPa
     governance.post_dispatch_audit = AsyncMock(return_value=None)
 
     fcp = MagicMock()
-    fcp.is_in_burst.return_value = False
+    fcp.is_in_burst = AsyncMock(return_value=False)
     fcp.get_kind_circuit_state = AsyncMock(return_value="closed")
 
     selected = SimpleNamespace(job=pending, score=80, eligible_nodes_count=1, score_breakdown={})

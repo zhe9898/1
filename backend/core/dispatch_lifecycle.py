@@ -170,7 +170,7 @@ class FilteringStage:
         facade = get_governance_facade()
 
         # Burst throttle
-        ctx.burst_active = fcp.is_in_burst(now=ctx.now)
+        ctx.burst_active = await fcp.is_in_burst(now=ctx.now)
         if ctx.burst_active:
             ctx.candidate_limit = max(ctx.candidate_limit // 2, 10)
 
