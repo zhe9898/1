@@ -22,7 +22,6 @@ import sys
 from pathlib import Path
 
 import yaml
-
 from deploy_utils import project_root as _root
 from deploy_utils import resolve_name_conflict as _resolve_name_conflict
 from deploy_utils import scripts_dir as _scripts_dir
@@ -1039,9 +1038,12 @@ def _compose_down_for_network_reset(
     try:
         subprocess.run(
             [
-                "docker", "compose",
-                "-f", str(compose_file),
-                "down", "--remove-orphans",
+                "docker",
+                "compose",
+                "-f",
+                str(compose_file),
+                "down",
+                "--remove-orphans",
             ],
             cwd=str(root),
             env=env,
@@ -1052,6 +1054,7 @@ def _compose_down_for_network_reset(
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         if logger:
             logger.warning("[网络自愈] compose down 异常: %s", exc)
+
 
 def _validate_compose_up_prerequisites(compose_file: Path) -> None:
     if not compose_file.exists():

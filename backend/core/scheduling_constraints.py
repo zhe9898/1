@@ -14,6 +14,19 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from backend.models.job import Job
 
+__all__ = [
+    "SchedulingConstraint",
+    "SchedulingContext",
+    "SchedulingEngine",
+    "DeadlineExpiryGate",
+    "DependencyGate",
+    "GangSchedulingGate",
+    "PriorityBoostModifier",
+    "ConnectorCoolingGate",
+    "TenantFairShareGate",
+    "get_scheduling_engine",
+]
+
 
 # =====================================================================
 # Constraint engine: class-based, registerable, observable

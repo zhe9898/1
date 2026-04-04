@@ -37,6 +37,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AdmissionResult",
+    "ExecutorFilterResult",
+    "GovernanceFacade",
+    "get_governance_facade",
+]
+
 
 @dataclass
 class AdmissionResult:
