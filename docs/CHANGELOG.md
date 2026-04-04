@@ -8,13 +8,62 @@
 |:---|:---|
 | **文档编号** | ZEN70-DOC-CHANGELOG-001 |
 | **法典版本** | V2.0 绝对零度版 |
-| **最后更新** | 2026-03-21T23:23+08:00 |
+| **最后更新** | 2026-04-04T10:48+08:00 |
 | **责任人** | 系统架构组 |
 | **审批状态** | 自动化生成 (CI/CD pipeline) |
 
 ---
 
 ## [Unreleased]
+
+## [3.42] - 2026-04-04
+
+### Added (Architecture & Governance)
+
+#### PolicyStore 调度策略唯一消费入口 (ADR 0049)
+
+| ID | 组件 | 变更内容 | 法典条款 | 风险等级 | 回滚方案 |
+|:---|:---|:---|:---|:---|:---|
+| CHG-006 | `scheduling_policy_store.py` | 新增 `PolicyStore` 单例：版本化策略管理、审计日志、冻结/回滚机制；缓存 `tenant_quotas`、`placement_policies`、`default_service_class`、`resource_quotas`、`executor_contracts` 五个 system.yaml 配置段 | §1.2/§8.2 | P0 | 回退到各模块独立 YAML 读取 |
+| CHG-007 | `executor_registry.py` | 从 `yaml.safe_load(system.yaml)` 迁移到 `get_policy_store().executor_contracts_config` | §8.2 | P1 | 回退 import |
+| CHG-008 | `placement_policy.py` | 从 `yaml.safe_load(system.yaml)` 迁移到 `get_policy_store().placement_policies_config` | §8.2 | P1 | 回退 import |
+| CHG-009 | `queue_stratification.py` | 从 `yaml.safe_load(system.yaml)` 迁移到 `get_policy_store().tenant_quotas_config` | §8.2 | P1 | 回退 import |
+| CHG-010 | `quota_aware_scheduling.py` | 从 `yaml.safe_load(system.yaml)` 迁移到 `get_policy_store().resource_quotas_config` | §8.2 | P1 | 回退 import |
+
+#### Runner 扩展任务类型与 AcceptedKinds 调度 (ADR 0050)
+
+| ID | 组件 | 变更内容 | 法典条款 | 风险等级 | 回滚方案 |
+|:---|:---|:---|:---|:---|:---|
+| CHG-011 | `executor.go` | 新增 `ExecError` 结构化错误分类（Category 映射到 Python FailureCategory）；`activeJobs` 并发任务追踪 | §8.2 | P0 | 回退 executor 到单一 kind |
+| CHG-012 | `executor_extended.go` | 新增 6 种扩展任务类型：healthcheck（HTTP/TCP 探测）、file.transfer（SHA-256 校验）、container.run、cron.tick、data.sync、wasm.run（预留） | §8.2 | P1 | 删除 executor_extended.go |
+| CHG-013 | `config.go` | 新增 `AcceptedKinds` 配置 + `EffectiveAcceptedKinds()` 向后兼容；新增 7 个边缘遥测字段（NetworkLatencyMs, BandwidthMbps 等） | §1.2 | P1 | 回退 Config struct |
+| CHG-014 | `client.go` | 注册/心跳请求携带 `AcceptedKinds` 字段 | §2.1 | P1 | 回退请求结构 |
+| CHG-015 | `poller.go` | 失败分类上报 `ExecError.Category` → `FailureCategory`；lease 续约指数退避（3 次上限） | §3.2 | P1 | 回退 poller 逻辑 |
+
+#### IaC 三层字段解析 (ADR 0051)
+
+| ID | 组件 | 变更内容 | 法典条款 | 风险等级 | 回滚方案 |
+|:---|:---|:---|:---|:---|:---|
+| CHG-016 | `loader.py` | `ulimits`、`oom_score_adj`、`networks` 三字段实现三层解析：system.yaml 优先 → 服务级内置默认 → 全局兜底 | §1.2/ADR 0008 | P1 | 回退 `_build_service_entry()` |
+
+#### 前端安全加固
+
+| ID | 组件 | 变更内容 | 法典条款 | 风险等级 | 回滚方案 |
+|:---|:---|:---|:---|:---|:---|
+| CHG-017 | `useAuthFlow.ts` | 客户端登录速率限制：5 次尝试后 30 秒冷却期 | §3.2 | P1 | 移除 rate limiter |
+| CHG-018 | `ReservationsView.vue` / `TriggersView.vue` | 新增后端驱动 Surface 配置依赖说明提示 | §2.1 | P2 | 移除提示 |
+
+### Documentation
+
+| ID | 组件 | 变更内容 |
+|:---|:---|:---|
+| DOC-001 | `docs/adr/0049` | 新增 ADR：PolicyStore 作为唯一配置消费入口 |
+| DOC-002 | `docs/adr/0050` | 新增 ADR：Runner 扩展任务类型与 AcceptedKinds 调度 |
+| DOC-003 | `docs/adr/0051` | 新增 ADR：IaC 三层字段解析 |
+| DOC-004 | `docs/EXTENSIBILITY.md` | 更新扩展指南：新增 PolicyStore 消费模式与任务类型扩展说明 |
+| DOC-005 | `docs/FULL_CHAIN_IMPLEMENTATION.md` | 补充扩展执行器 kind 列表与错误分类说明 |
+
+---
 
 ## [3.41] - 2026-03-27
 
