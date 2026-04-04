@@ -138,8 +138,7 @@ defineProps<{
 }>();
 
 defineEmits<{
-  (e: "submit"): void;
+  (e: "submit" | "webauthn"): void;
   (e: "update:form", val: { tenantId: string; username: string; password: string }): void;
-  (e: "webauthn"): void;
 }>();
 </script>

@@ -1,8 +1,12 @@
 <template>
   <div class="p-6">
     <div class="mb-4">
-      <h1 class="text-2xl font-bold">Triggers</h1>
-      <p class="text-sm opacity-60 mt-1">Unified trigger registry, webhook ingress, and delivery history.</p>
+      <h1 class="text-2xl font-bold">
+        Triggers
+      </h1>
+      <p class="text-sm opacity-60 mt-1">
+        Unified trigger registry, webhook ingress, and delivery history.
+      </p>
     </div>
     <div class="alert alert-info">
       <span>Trigger management UI is rendered by backend surface configuration. Connect a Trigger Connector to activate this panel.</span>

@@ -86,7 +86,7 @@ router.beforeEach(async (to, _from, next) => {
     _surfacesLoadedForIdentity = currentIdentity; // guard against concurrent navigations
     try {
       const response = await http.get<{ surfaces: ControlPlaneSurfaceSpec[] }>(CONSOLE.surfaces);
-      const surfaces = response.data?.surfaces ?? [];
+      const surfaces = response.data.surfaces ?? [];
       addControlPlaneRoutesFromSurfaces(router, surfaces);
       // Force Vue Router to re-resolve the target path with the newly registered
       // routes in place; without this the navigation would 404 on fresh routes.

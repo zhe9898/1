@@ -202,7 +202,6 @@ async def test_list_connectors_applies_backend_query_filters() -> None:
 @pytest.mark.asyncio
 async def test_list_jobs_pagination_default_limit() -> None:
     """list_jobs must not return more rows than the SQL LIMIT (default 100)."""
-    now = _utcnow()
     db = AsyncMock()
     # Simulate DB returning exactly 3 jobs (SQL LIMIT applied upstream)
     db.execute.return_value = _scalars_result([_job(job_id=f"job-{i}") for i in range(3)])
@@ -223,7 +222,6 @@ async def test_list_jobs_pagination_default_limit() -> None:
 @pytest.mark.asyncio
 async def test_list_jobs_pagination_custom_limit_and_offset() -> None:
     """list_jobs honours explicit limit and offset parameters."""
-    now = _utcnow()
     db = AsyncMock()
     db.execute.return_value = _scalars_result([_job(job_id="job-page2")])
 
@@ -244,7 +242,6 @@ async def test_list_jobs_pagination_custom_limit_and_offset() -> None:
 @pytest.mark.asyncio
 async def test_list_nodes_pagination_default_limit() -> None:
     """list_nodes must not return more rows than the SQL LIMIT (default 100)."""
-    now = _utcnow()
     db = AsyncMock()
     db.execute.side_effect = [
         _scalars_result([_node(node_id=f"node-{i}") for i in range(3)]),
