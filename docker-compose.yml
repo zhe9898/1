@@ -152,6 +152,11 @@ services:
     - GATEWAY_PROFILE=${GATEWAY_PROFILE}
     - GATEWAY_PACKS=${GATEWAY_PACKS}
     - POSTGRES_DSN=${POSTGRES_DSN}
+    # Fail-closed: deny requests when Redis is unavailable during token revocation check.
+    # This prevents already-revoked JWTs from passing validation if Redis goes down.
+    # ADR 0013 acknowledges the Redis SPOF; this env var is the application-layer guard
+    # that must not depend solely on ZEN70_ENV being set correctly by the operator.
+    - REDIS_REQUIRED_FOR_TOKEN_REVOCATION=1
     depends_on:
       redis:
         condition: service_healthy
