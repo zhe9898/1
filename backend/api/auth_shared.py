@@ -65,7 +65,9 @@ def build_token_response_model(
     scopes: list[str] | None = None,
 ) -> TokenResponse:
     """统一构造 TokenResponse 模型。"""
-    body = _auth_mod().token_response(sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference, scopes=scopes)  # type: ignore[attr-defined]
+    body = _auth_mod().token_response(  # type: ignore[attr-defined]
+        sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference, scopes=scopes
+    )
     return TokenResponse(
         access_token=str(body["access_token"]),
         token_type=str(body["token_type"]),

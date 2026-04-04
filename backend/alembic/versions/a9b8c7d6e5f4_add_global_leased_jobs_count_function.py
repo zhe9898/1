@@ -22,9 +22,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(
-        sa.text(
-            """
+    op.execute(sa.text("""
             CREATE OR REPLACE FUNCTION public.zen70_global_leased_jobs_count(p_job_type text)
             RETURNS bigint
             LANGUAGE plpgsql
@@ -55,9 +53,7 @@ def upgrade() -> None:
                 RETURN COALESCE(v_count, 0);
             END;
             $$;
-            """
-        )
-    )
+            """))
     op.execute(sa.text("REVOKE ALL ON FUNCTION public.zen70_global_leased_jobs_count(text) FROM PUBLIC"))
     op.execute(sa.text("GRANT EXECUTE ON FUNCTION public.zen70_global_leased_jobs_count(text) TO PUBLIC"))
 
