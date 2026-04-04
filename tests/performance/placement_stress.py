@@ -95,24 +95,21 @@ def _job(job_id: str, *, priority: int = 50) -> MagicMock:
     return j
 
 
-def main() -> None:
-    n_nodes = int(os.getenv("PLACEMENT_STRESS_NODES", "1000"))
-    n_jobs = int(os.getenv("PLACEMENT_STRESS_JOBS", "10000"))
-    concurrency_per_node = int(os.getenv("PLACEMENT_STRESS_CONCURRENCY", "16"))
-    time_threshold_ms = float(os.getenv("PLACEMENT_STRESS_MAX_MS", "5000"))
-    memory_threshold_mb = float(os.getenv("PLACEMENT_STRESS_MAX_MEM_MB", "500"))
+# ---------------------------------------------------------------------------
+# Scenario helpers
+# ---------------------------------------------------------------------------
 
-    print(f"Building {n_nodes} nodes × {n_jobs} jobs …")
-    nodes = [_node(f"n{i}", max_concurrency=concurrency_per_node) for i in range(n_nodes)]
-    jobs = [_job(f"j{i}", priority=50 + (i % 50)) for i in range(n_jobs)]
-    accepted = {"shell.exec"}
 
-    solver = PlacementSolver()
-
-    # Warm-up (small batch to JIT-compile any lazy init)
-    solver.solve(jobs[:10], nodes[:5], now=_utcnow(), accepted_kinds=accepted)
-
-    # ── Measure ──────────────────────────────────────────────────────
+def _run_scenario(
+    scenario: str,
+    jobs: list[MagicMock],
+    nodes: list[SchedulerNodeSnapshot],
+    accepted: set[str],
+    solver: PlacementSolver,
+    time_threshold_ms: float,
+    memory_threshold_mb: float,
+) -> bool:
+    """Run one stress scenario and print results.  Returns True if all gate checks pass."""
     tracemalloc.start()
     mem_before = tracemalloc.get_traced_memory()[0]
 
@@ -124,47 +121,153 @@ def main() -> None:
     tracemalloc.stop()
     mem_delta_mb = (mem_after - mem_before) / (1024 * 1024)
 
-    # ── Analyse placement quality ────────────────────────────────────
     placed = len(plan)
-    total_capacity = n_nodes * concurrency_per_node
     node_counts = Counter(plan.values())
     counts = list(node_counts.values()) if node_counts else [0]
     mean_load = statistics.mean(counts)
     stdev_load = statistics.stdev(counts) if len(counts) > 1 else 0.0
-    max_load = max(counts)
-    min_load = min(counts)
+    routing_groups = len({j.kind for j in jobs})
 
-    # ── Report ───────────────────────────────────────────────────────
     print(f"\n{'=' * 60}")
-    print("PlacementSolver Stress Test Results")
+    print(f"Scenario: {scenario}")
     print(f"{'=' * 60}")
-    print(f"  Nodes:          {n_nodes}")
-    print(f"  Jobs:           {n_jobs}")
-    print(f"  Total capacity: {total_capacity} slots")
-    print(f"  Placed:         {placed}/{n_jobs} ({placed / n_jobs:.1%})")
-    print(f"  Elapsed:        {elapsed_ms:.1f} ms")
-    print(f"  Memory delta:   {mem_delta_mb:.1f} MB")
-    print("  Spread quality:")
-    print(f"    Mean jobs/node: {mean_load:.1f}")
-    print(f"    Stdev:          {stdev_load:.2f}")
-    print(f"    Min/Max:        {min_load}/{max_load}")
+    print(f"  Nodes:           {len(nodes)}")
+    print(f"  Jobs:            {len(jobs)}")
+    print(f"  Routing groups:  {routing_groups}  (distinct job kinds)")
+    print(f"  Placed:          {placed}/{len(jobs)} ({placed / len(jobs):.1%})")
+    print(f"  Elapsed:         {elapsed_ms:.1f} ms")
+    print(f"  Memory delta:    {mem_delta_mb:.1f} MB")
+    print(f"  Spread quality:  mean={mean_load:.1f}  stdev={stdev_load:.2f}  min/max={min(counts)}/{max(counts)}")
     print(f"{'=' * 60}")
 
-    # ── Gate checks ──────────────────────────────────────────────────
     ok = True
     if elapsed_ms > time_threshold_ms:
-        print(f"FAIL: solve time {elapsed_ms:.0f}ms > {time_threshold_ms:.0f}ms threshold")
+        print(f"FAIL  solve time {elapsed_ms:.0f}ms > {time_threshold_ms:.0f}ms threshold")
         ok = False
     else:
-        print("PASS: solve time within threshold")
+        print(f"PASS  solve time {elapsed_ms:.1f}ms ≤ {time_threshold_ms:.0f}ms")
 
     if mem_delta_mb > memory_threshold_mb:
-        print(f"FAIL: memory delta {mem_delta_mb:.0f}MB > {memory_threshold_mb:.0f}MB threshold")
+        print(f"FAIL  memory delta {mem_delta_mb:.0f}MB > {memory_threshold_mb:.0f}MB threshold")
         ok = False
     else:
-        print("PASS: memory within threshold")
+        print(f"PASS  memory {mem_delta_mb:.1f}MB ≤ {memory_threshold_mb:.0f}MB")
 
-    if not ok:
+    return ok
+
+
+def main() -> None:
+    n_nodes = int(os.getenv("PLACEMENT_STRESS_NODES", "1000"))
+    n_jobs = int(os.getenv("PLACEMENT_STRESS_JOBS", "10000"))
+    concurrency_per_node = int(os.getenv("PLACEMENT_STRESS_CONCURRENCY", "16"))
+    time_threshold_ms = float(os.getenv("PLACEMENT_STRESS_MAX_MS", "5000"))
+    memory_threshold_mb = float(os.getenv("PLACEMENT_STRESS_MAX_MEM_MB", "500"))
+
+    solver = PlacementSolver()
+
+    # Warm-up (small batch to initialise any lazy state)
+    _warm_nodes = [_node(f"w{i}", max_concurrency=concurrency_per_node) for i in range(5)]
+    _warm_jobs = [_job(f"wj{i}") for i in range(10)]
+    solver.solve(_warm_jobs, _warm_nodes, now=_utcnow(), accepted_kinds={"shell.exec"})
+
+    overall_ok = True
+
+    # ── Scenario 1: Homogeneous batch ──────────────────────────────────
+    # Classic 1 000 × 10 000 with identical routing contracts.
+    # The fast path collapses 10 M candidate pairs to a single group.
+    print(f"\nBuilding {n_nodes} nodes × {n_jobs} jobs (homogeneous) …")
+    nodes = [_node(f"n{i}", max_concurrency=concurrency_per_node) for i in range(n_nodes)]
+    jobs_homo = [_job(f"j{i}", priority=50 + (i % 50)) for i in range(n_jobs)]
+    accepted_homo: set[str] = {"shell.exec"}
+
+    ok1 = _run_scenario(
+        "Homogeneous batch (1 routing group)",
+        jobs_homo,
+        nodes,
+        accepted_homo,
+        solver,
+        time_threshold_ms,
+        memory_threshold_mb,
+    )
+    overall_ok = overall_ok and ok1
+
+    # ── Scenario 2: Heterogeneous batch (smart-home mixed workload) ────
+    # 10 distinct job kinds × 1 000 jobs each.
+    # Exposes the weakness of any "all jobs must be identical" fast path:
+    # with 10 routing groups every group still gets the O(J log N) path and
+    # the shared capacity map prevents over-commit.
+    MIXED_KINDS = [
+        "light.toggle",
+        "thermostat.set",
+        "sensor.query",
+        "camera.snapshot",
+        "lock.control",
+        "fan.speed",
+        "sprinkler.run",
+        "alarm.trigger",
+        "ota.update",
+        "shell.exec",
+    ]
+
+    def _hetero_node(node_id: str) -> SchedulerNodeSnapshot:
+        n = _node(node_id, max_concurrency=concurrency_per_node)
+        # All nodes accept every kind
+        return SchedulerNodeSnapshot(
+            node_id=n.node_id,
+            os=n.os,
+            arch=n.arch,
+            executor=n.executor,
+            zone=n.zone,
+            capabilities=n.capabilities,
+            accepted_kinds=frozenset(MIXED_KINDS),
+            worker_pools=n.worker_pools,
+            max_concurrency=n.max_concurrency,
+            active_lease_count=n.active_lease_count,
+            cpu_cores=n.cpu_cores,
+            memory_mb=n.memory_mb,
+            gpu_vram_mb=n.gpu_vram_mb,
+            storage_mb=n.storage_mb,
+            reliability_score=n.reliability_score,
+            last_seen_at=n.last_seen_at,
+            enrollment_status=n.enrollment_status,
+            status=n.status,
+            drain_status=n.drain_status,
+            network_latency_ms=n.network_latency_ms,
+            bandwidth_mbps=n.bandwidth_mbps,
+            cached_data_keys=n.cached_data_keys,
+            power_capacity_watts=n.power_capacity_watts,
+            current_power_watts=n.current_power_watts,
+            thermal_state=n.thermal_state,
+            cloud_connectivity=n.cloud_connectivity,
+            metadata_json=n.metadata_json,
+        )
+
+    print(f"\nBuilding {n_nodes} nodes × {n_jobs} jobs (heterogeneous, {len(MIXED_KINDS)} kinds) …")
+    hetero_nodes = [_hetero_node(f"h{i}") for i in range(n_nodes)]
+
+    def _hetero_job(job_id: str, kind: str, priority: int = 50) -> MagicMock:
+        j = _job(job_id, priority=priority)
+        j.kind = kind
+        return j
+
+    jobs_hetero = [
+        _hetero_job(f"hj{i}", MIXED_KINDS[i % len(MIXED_KINDS)], priority=50 + (i % 50))
+        for i in range(n_jobs)
+    ]
+    accepted_hetero = set(MIXED_KINDS)
+
+    ok2 = _run_scenario(
+        f"Heterogeneous batch ({len(MIXED_KINDS)} routing groups)",
+        jobs_hetero,
+        hetero_nodes,
+        accepted_hetero,
+        solver,
+        time_threshold_ms,
+        memory_threshold_mb,
+    )
+    overall_ok = overall_ok and ok2
+
+    if not overall_ok:
         sys.exit(1)
 
 
