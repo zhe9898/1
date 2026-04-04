@@ -114,6 +114,11 @@
         "summary": "SSE 事件流",
         "description": "订阅硬件状态变更与软开关事件，以 Server-Sent Events 推送。",
         "operationId": "sse_events_api_v1_events_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "client_token",
@@ -832,7 +837,7 @@
           "auth"
         ],
         "summary": "Create Invite",
-        "description": "生成一次性邀请凭证（仅管理员可用）",
+        "description": "Create a one-time invite token (admin only).",
         "operationId": "create_invite_api_v1_auth_invites_post",
         "requestBody": {
           "content": {
@@ -879,7 +884,7 @@
           "auth"
         ],
         "summary": "Invite Webauthn Register Begin",
-        "description": "带外传递链接 - 开始注册 WebAuthn",
+        "description": "Invite link: start WebAuthn registration.",
         "operationId": "invite_webauthn_register_begin_api_v1_auth_invites__token__webauthn_register_begin_post",
         "parameters": [
           {
@@ -922,7 +927,7 @@
           "auth"
         ],
         "summary": "Invite Webauthn Register Complete",
-        "description": "带外传递链接 - 完成 WebAuthn 注册并销毁 Token",
+        "description": "Invite link: complete WebAuthn registration and consume token.",
         "operationId": "invite_webauthn_register_complete_api_v1_auth_invites__token__webauthn_register_complete_post",
         "parameters": [
           {
@@ -977,8 +982,13 @@
           "auth"
         ],
         "summary": "Invite Fallback Login",
-        "description": "带外传递链接 - 大陆安卓设备降级免密直连并销毁 Token",
+        "description": "Invite link: fallback login with admin confirmation required.\n\nSecurity: requires admin authentication to prevent invite link leak → account takeover.",
         "operationId": "invite_fallback_login_api_v1_auth_invites__token__fallback_login_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "token",
@@ -6137,6 +6147,267 @@
         ]
       }
     },
+    "/api/v1/evaluations/schema": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "Get Evaluation Schema",
+        "operationId": "get_evaluation_schema_api_v1_evaluations_schema_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSchemaResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/evaluations": {
+      "post": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "Create Evaluation",
+        "operationId": "create_evaluation_api_v1_evaluations_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "List Evaluations",
+        "operationId": "list_evaluations_api_v1_evaluations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "software_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Software Id"
+            }
+          },
+          {
+            "name": "branch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EvaluationResponse"
+                  },
+                  "title": "Response List Evaluations Api V1 Evaluations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations/{evaluation_id}": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "Get Evaluation",
+        "operationId": "get_evaluation_api_v1_evaluations__evaluation_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "Delete Evaluation",
+        "operationId": "delete_evaluation_api_v1_evaluations__evaluation_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/kernel/capabilities": {
       "get": {
         "tags": [
@@ -6152,7 +6423,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "default": false,
+              "default": true,
               "title": "Stable Only"
             }
           }
@@ -6398,7 +6669,7 @@
           "workflows"
         ],
         "summary": "Report Step Complete",
-        "description": "Report a workflow step as completed (called by runner-agent callback).",
+        "description": "Report a workflow step as completed (machine callback only).",
         "operationId": "report_step_complete_api_v1_workflows__workflow_id__steps__step_id__complete_post",
         "security": [
           {
@@ -6430,9 +6701,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Result"
+                "$ref": "#/components/schemas/WorkflowStepCompleteRequest"
               }
             }
           }
@@ -6471,7 +6740,7 @@
           "workflows"
         ],
         "summary": "Report Step Failed",
-        "description": "Report a workflow step as failed.",
+        "description": "Report a workflow step as failed (machine callback only).",
         "operationId": "report_step_failed_api_v1_workflows__workflow_id__steps__step_id__fail_post",
         "security": [
           {
@@ -6496,17 +6765,18 @@
               "type": "string",
               "title": "Step Id"
             }
-          },
-          {
-            "name": "error",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Error"
-            }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowStepFailRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9029,6 +9299,139 @@
           "duration_ms"
         ],
         "title": "DecisionSummaryResponse"
+      },
+      "EvaluationCreateRequest": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Evaluation Id"
+          },
+          "software_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Software Id"
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Branch",
+            "default": "main"
+          },
+          "rating": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating"
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Category",
+            "default": "general"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "software_id",
+          "rating"
+        ],
+        "title": "EvaluationCreateRequest"
+      },
+      "EvaluationResponse": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "title": "Evaluation Id"
+          },
+          "software_id": {
+            "type": "string",
+            "title": "Software Id"
+          },
+          "branch": {
+            "type": "string",
+            "title": "Branch"
+          },
+          "rating": {
+            "type": "integer",
+            "title": "Rating"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "evaluator": {
+            "type": "string",
+            "title": "Evaluator"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "status_view": {
+            "$ref": "#/components/schemas/StatusView"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ControlAction"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "software_id",
+          "branch",
+          "rating",
+          "category",
+          "comment",
+          "evaluator",
+          "status",
+          "status_view",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EvaluationResponse"
       },
       "ExecutorContractResponse": {
         "properties": {
@@ -15485,6 +15888,102 @@
           "completed_at"
         ],
         "title": "WorkflowResponse"
+      },
+      "WorkflowStepCompleteRequest": {
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tenant Id"
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "job_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Job Id"
+          },
+          "lease_token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Lease Token"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt"
+          },
+          "result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "node_id",
+          "job_id",
+          "lease_token",
+          "attempt"
+        ],
+        "title": "WorkflowStepCompleteRequest"
+      },
+      "WorkflowStepFailRequest": {
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tenant Id"
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "job_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Job Id"
+          },
+          "lease_token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Lease Token"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt"
+          },
+          "error": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "node_id",
+          "job_id",
+          "lease_token",
+          "attempt",
+          "error"
+        ],
+        "title": "WorkflowStepFailRequest"
       },
       "WorkflowTemplateRenderRequest": {
         "properties": {
