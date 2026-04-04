@@ -36,6 +36,7 @@ Benchmarked against:
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import time
 from collections import defaultdict, deque
@@ -44,9 +45,14 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from backend.core.scheduling_policy_types import AutoTuneConfig
 
 logger = logging.getLogger(__name__)
+
+# DB key used to persist / restore learned weights across restarts.
+_TUNER_STATE_CONFIG_KEY = "scheduler_tuner_weights"
 
 
 # =====================================================================
@@ -518,6 +524,97 @@ class SchedulerTuner:
         self._recent_signals.clear()
         self._last_decay = time.monotonic()
         logger.info("scheduler auto-tune reset to baseline")
+
+    # ── Persistence: load / save dimension weights to system_config ──────
+
+    def state_to_dict(self) -> dict[str, object]:
+        """Serialise dimension multipliers and sample counts for storage.
+
+        Only ``AdaptiveWeightStore`` data is persisted — node/kind/strategy
+        EMA trackers are intentionally ephemeral (they converge quickly and
+        storing per-node history raises privacy/size concerns).
+        """
+        return {
+            "v": 1,
+            "saved_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "total_signals": self._total_signals,
+            "dimensions": {
+                key: {
+                    "multiplier": s.multiplier,
+                    "sample_count": s.sample_count,
+                    "success_rate": s.success_rate,
+                    "contribution_ema": s.contribution_ema,
+                }
+                for key, s in self.weights._states.items()
+            },
+        }
+
+    def load_from_dict(self, data: dict[str, object]) -> None:
+        """Restore dimension state from a previously saved dict.
+
+        Unknown dimensions are silently skipped so that a weight snapshot
+        from an older version with fewer dimensions loads cleanly.
+        """
+        if data.get("v") != 1:
+            logger.warning("scheduler_auto_tune: unknown state version %s, skipping load", data.get("v"))
+            return
+        self._total_signals = int(data.get("total_signals", 0))
+        for key, raw in (data.get("dimensions") or {}).items():
+            state = self.weights._states.get(key)
+            if state is None or not isinstance(raw, dict):
+                continue
+            state.multiplier = float(raw.get("multiplier", 1.0))
+            state.sample_count = int(raw.get("sample_count", 0))
+            state.success_rate = float(raw.get("success_rate", 0.0))
+            state.contribution_ema = float(raw.get("contribution_ema", 0.0))
+        logger.info(
+            "scheduler_auto_tune: loaded weights for %d dimensions (%d total signals)",
+            len(data.get("dimensions") or {}),
+            self._total_signals,
+        )
+
+    async def save_state(self, db: AsyncSession) -> None:
+        """Persist learned dimension weights to the ``system_config`` table."""
+        from sqlalchemy import select
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        from backend.models.feature_flag import SystemConfig
+
+        payload = json.dumps(self.state_to_dict(), separators=(",", ":"))
+        stmt = pg_insert(SystemConfig).values(
+            key=_TUNER_STATE_CONFIG_KEY,
+            value=payload,
+            description="Scheduler auto-tune EMA weights (auto-managed)",
+            updated_at=datetime.datetime.now(datetime.UTC),
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["key"],
+            set_={"value": stmt.excluded.value, "updated_at": stmt.excluded.updated_at},
+        )
+        await db.execute(stmt)
+        await db.commit()
+        logger.debug("scheduler_auto_tune: weights persisted to system_config")
+
+    async def load_state(self, db: AsyncSession) -> None:
+        """Restore learned dimension weights from the ``system_config`` table.
+
+        Silently skips if the key does not exist (first boot).
+        """
+        from sqlalchemy import select
+
+        from backend.models.feature_flag import SystemConfig
+
+        result = await db.execute(select(SystemConfig).where(SystemConfig.key == _TUNER_STATE_CONFIG_KEY))
+        row: SystemConfig | None = result.scalar_one_or_none()
+        if row is None:
+            logger.info("scheduler_auto_tune: no persisted weights found, starting from baseline")
+            return
+        try:
+            data: dict[str, object] = json.loads(row.value)
+        except (ValueError, TypeError) as exc:
+            logger.warning("scheduler_auto_tune: corrupt persisted weights (%s), starting from baseline", exc)
+            return
+        self.load_from_dict(data)
 
 
 # ── Module-level singleton ───────────────────────────────────────────

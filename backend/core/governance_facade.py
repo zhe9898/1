@@ -417,6 +417,18 @@ class GovernanceFacade:
 
         return get_scheduler_tuner().recommend_strategy()
 
+    async def load_tuner_state(self, db: AsyncSession) -> None:
+        """Restore learned EMA weights from the DB on startup."""
+        from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+        await get_scheduler_tuner().load_state(db)
+
+    async def save_tuner_state(self, db: AsyncSession) -> None:
+        """Persist current EMA weights to the DB."""
+        from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+        await get_scheduler_tuner().save_state(db)
+
     # ── Scheduling policy store proxy ────────────────────────────────
 
     def policy_snapshot(self) -> dict[str, object]:
