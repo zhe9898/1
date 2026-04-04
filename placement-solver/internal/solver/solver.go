@@ -200,16 +200,65 @@ func nodeAcceptsJob(j *pb.JobSpec, n *pb.NodeSpec, acceptedKinds map[string]bool
 	return true
 }
 
-// nodeScore returns a simple load-spread score: nodes with more remaining
-// capacity score higher (prefer under-loaded nodes) with reliability as
-// tiebreaker.
-func nodeScore(n *pb.NodeSpec, remaining int32) float64 {
+// nodeScoreForJob returns a context-aware placement score for a node given a
+// specific job.
+//
+// Strategy selection via binpack flag (caller computes once per group):
+//   - binpack=true  → prefer already-loaded nodes to consolidate workload and
+//     let idle nodes sleep (power-saving for IoT "batch" deployments).
+//   - binpack=false → prefer under-loaded nodes for fault-tolerance and
+//     low-latency responsiveness (spread, default).
+//
+// Soft bonuses applied after the base strategy score:
+//
+//	+3.0  data-locality hit   – node caches the job's data_locality_key
+//	+2.0  thermal advantage   – thermal_sensitivity=="high" and node is "cool"
+//	−2.0  thermal penalty     – thermal_sensitivity=="high" and node is "hot"
+//	      or "throttling"
+//	+1.0  latency headroom    – node latency ≤ half the job's latency budget
+func nodeScoreForJob(n *pb.NodeSpec, j *pb.JobSpec, remaining int32, binpack bool) float64 {
 	cap := n.MaxConcurrency
 	if cap <= 0 {
 		cap = 1
 	}
 	loadRatio := float64(remaining) / float64(cap)
-	return loadRatio*10 + float64(n.ReliabilityScore)
+
+	var base float64
+	if binpack {
+		// Binpack: pack loaded nodes first to let idle nodes sleep.
+		base = (1.0-loadRatio)*10 + float64(n.ReliabilityScore)
+	} else {
+		// Spread: distribute jobs across nodes for fault-tolerance.
+		base = loadRatio*10 + float64(n.ReliabilityScore)
+	}
+
+	// Data-locality soft bonus.
+	if j.DataLocalityKey != "" {
+		for _, k := range n.CachedDataKeys {
+			if k == j.DataLocalityKey {
+				base += 3.0
+				break
+			}
+		}
+	}
+
+	// Thermal soft bonus / penalty.
+	if j.ThermalSensitivity == "high" {
+		switch n.ThermalState {
+		case "cool":
+			base += 2.0
+		case "hot", "throttling":
+			base -= 2.0
+		}
+	}
+
+	// Latency headroom bonus: reward nodes well within the latency budget.
+	if j.MaxNetworkLatencyMs > 0 && n.NetworkLatencyMs > 0 &&
+		n.NetworkLatencyMs*2 <= j.MaxNetworkLatencyMs {
+		base += 1.0
+	}
+
+	return base
 }
 
 // Result holds one Solve output.
@@ -292,15 +341,25 @@ func Solve(req *pb.SolveRequest) Result {
 		}
 		totalFeasible += int32(len(g.jobs) * len(eligibleIDs))
 
-		// Sort eligible nodes: most-available first (spread), then reliability
+		// Compute strategy once per group (queue_class is uniform within a group).
+		binpack := strings.ToLower(repJob.QueueClass) == "batch"
+
+		// Sort eligible nodes by context-aware score (best node first).
 		sort.Slice(eligibleIDs, func(i, j int) bool {
 			ni, nj := nodeByID[eligibleIDs[i]], nodeByID[eligibleIDs[j]]
-			si := nodeScore(ni, globalCap[ni.NodeId])
-			sj := nodeScore(nj, globalCap[nj.NodeId])
+			si := nodeScoreForJob(ni, repJob, globalCap[ni.NodeId], binpack)
+			sj := nodeScoreForJob(nj, repJob, globalCap[nj.NodeId], binpack)
 			if si != sj {
 				return si > sj
 			}
 			return eligibleIDs[i] < eligibleIDs[j]
+		})
+
+		// Sort jobs by priority (descending) before gang grouping so that
+		// when capacity is constrained, higher-priority work — including the
+		// leading job of a gang — is processed first.
+		sort.Slice(g.jobs, func(a, b int) bool {
+			return g.jobs[a].Priority > g.jobs[b].Priority
 		})
 
 		// Group jobs by gang_id
