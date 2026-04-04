@@ -97,7 +97,7 @@ Runner 心跳新增以下字段，支持 15 维评分中的边缘感知调度：
 正面影响：
 
 - 节点可精确声明和过滤任务类型，避免不匹配的任务分派。
-- 结构化错误分类使控制面失败控制平面（quarantine/cooldown/circuit-breaker）做出更精准的决策。
+- 结构化错误分类使故障控制面（quarantine/cooldown/circuit-breaker）做出更精准的决策。
 - 边缘遥测为 15 维评分中的 `edge_proximity`、`thermal_headroom` 等因子提供数据源。
 
 成本：
