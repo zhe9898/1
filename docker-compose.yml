@@ -34,6 +34,11 @@ services:
       options:
         max-size: 10m
         max-file: '3'
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   postgres:
     image: pgvector/pgvector:pg15@sha256:7f5681e45237acdf546cf7cdc0dfc0ed7752ede857fda6e54f6ea21b936f8742
@@ -152,11 +157,6 @@ services:
     - GATEWAY_PROFILE=${GATEWAY_PROFILE}
     - GATEWAY_PACKS=${GATEWAY_PACKS}
     - POSTGRES_DSN=${POSTGRES_DSN}
-    # Fail-closed: deny requests when Redis is unavailable during token revocation check.
-    # This prevents already-revoked JWTs from passing validation if Redis goes down.
-    # ADR 0013 acknowledges the Redis SPOF; this env var is the application-layer guard
-    # that must not depend solely on ZEN70_ENV being set correctly by the operator.
-    - REDIS_REQUIRED_FOR_TOKEN_REVOCATION=1
     depends_on:
       redis:
         condition: service_healthy
@@ -222,6 +222,11 @@ services:
       options:
         max-size: 10m
         max-file: '3'
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   sentinel:
     image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
@@ -243,15 +248,8 @@ services:
     - ./scripts:/app/scripts:ro
     - ./iac:/app/iac:ro
     - ./system.yaml:/app/system.yaml:ro
-    - ./config:/app/config
+    - ./config:/app/config:ro
     - ./runtime/control-plane:/app/runtime/control-plane
-    # SECURITY NOTE: /dev and /sys are mounted read-only for hardware monitoring
-    # (disk health, GPU state, UPS detection). These mounts combined with Docker
-    # Socket access via docker-proxy represent an elevated privilege surface.
-    # Mitigations in place: (1) read-only mounts, (2) cap_drop: ALL with only
-    # selected caps re-added, (3) docker-proxy scoped to backend_net (internal).
-    # In high-security deployments, replace these with dedicated hardware metrics
-    # exporters (e.g., node_exporter) that run in isolated containers instead.
     - /dev:/dev:ro
     - /sys:/sys:ro
     environment:
@@ -314,14 +312,6 @@ services:
     - TASKS=1
     - NETWORKS=1
     - NODES=1
-    # SECURITY NOTE: POST=1 is required for Sentinel to call container lifecycle
-    # endpoints (stop, start, pause, unpause, kill). The tecnativa/docker-socket-proxy
-    # v0.4.x does not support per-action POST filtering, so this also enables
-    # /containers/create. Mitigations: (1) docker-proxy is on backend_net (internal),
-    # reachable only by sentinel; (2) cap_drop: ALL on sentinel reduces exploit surface;
-    # (3) no untrusted code runs in sentinel. In a future upgrade, replace with a proxy
-    # that supports per-endpoint ACLs (e.g., a custom Caddy/nginx filter layer) to
-    # restrict POST only to /containers/{id}/start|stop|pause|unpause|kill.
     - POST=1
     networks:
     - backend_net
@@ -330,6 +320,11 @@ services:
       options:
         max-size: 10m
         max-file: '3'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
 
 networks:

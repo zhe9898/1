@@ -57,13 +57,23 @@ def _resolved_current_secret() -> str:
     # Preserve test/runtime overrides when module-level constants are monkeypatched.
     if _CURRENT != _INITIAL_CURRENT:
         return _CURRENT
-    return os.getenv("JWT_SECRET_CURRENT") or os.getenv("JWT_SECRET") or ("" if is_prod else DEFAULT_INSECURE_SECRET)
+    raw = os.getenv("JWT_SECRET_CURRENT") or os.getenv("JWT_SECRET") or ""
+    secret = raw.strip()
+    if raw and raw != secret:
+        logging.getLogger("zen70.jwt").warning("JWT secret env var had leading/trailing whitespace (stripped)")
+    if secret:
+        return secret
+    return "" if is_prod else DEFAULT_INSECURE_SECRET
 
 
 def _resolved_previous_secret() -> str | None:
     if _PREVIOUS != _INITIAL_PREVIOUS:
         return _PREVIOUS
-    return os.getenv("JWT_SECRET_PREVIOUS") or None
+    raw = os.getenv("JWT_SECRET_PREVIOUS") or None
+    if raw is not None:
+        raw = raw.strip()
+        return raw if raw else None
+    return None
 
 
 def _resolved_expire_minutes() -> int:

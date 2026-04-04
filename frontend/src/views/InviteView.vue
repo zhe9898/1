@@ -147,6 +147,8 @@ onMounted(() => {
     errorMsg.value = "缺少有效的邀请凭证";
   } else {
     token.value = qToken;
+    // Remove token from URL to prevent leakage via browser history / Referer header.
+    void router.replace({ ...route, query: { ...route.query, token: undefined } });
   }
   loading.value = false;
 });

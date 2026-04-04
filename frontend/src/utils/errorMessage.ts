@@ -38,10 +38,33 @@ export function apiErrorMessage(payload: unknown, fallback: string): string {
 }
 
 /**
+ * Patterns that indicate internal error details that should not be shown to users.
+ * When matched, the fallback message is used instead.
+ */
+const INTERNAL_ERROR_PATTERNS = [
+  /sql/i,
+  /traceback/i,
+  /stack trace/i,
+  /\/home\//,
+  /\/app\//,
+  /\/usr\//,
+  /file ".*\.py"/i,
+  /relation ".*" does not exist/i,
+  /internal server error/i,
+];
+
+function isSafeErrorMessage(msg: string): boolean {
+  return !INTERNAL_ERROR_PATTERNS.some((pattern) => pattern.test(msg));
+}
+
+/**
  * 从 Axios 错误中提取后端返回的可读错误消息。
  * ADR 0010: 错误响应格式为 {code, message, recovery_hint, details}。
  * FastAPI 默认错误格式为 {detail: string | {message: string}}。
  * 本函数兼容两种格式，且处理 401/403/429 等常见状态码的中文提示。
+ *
+ * Internal error details (SQL, file paths, stack traces) are sanitized
+ * and replaced with the fallback message to avoid information leakage.
  *
  * @param err - catch 块中的 unknown 错误
  * @param fallback - 无法提取消息时的兜底文案
@@ -59,9 +82,10 @@ export function extractAxiosError(err: unknown, fallback: string): string {
   if (status === 403) return "权限不足，无法执行此操作";
   if (status === 429) return "操作过于频繁，请稍后重试";
 
-  // 从后端响应体提取消息
+  // 从后端响应体提取消息，sanitize internal details
   if (data && typeof data === "object") {
-    return apiErrorMessage(data, fallback);
+    const msg = apiErrorMessage(data, fallback);
+    return isSafeErrorMessage(msg) ? msg : fallback;
   }
 
   return err.message ?? fallback;

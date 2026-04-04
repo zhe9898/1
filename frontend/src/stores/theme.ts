@@ -32,7 +32,19 @@ export const useThemeStore = defineStore('theme', () => {
     liveWallpaperEnabled.value = !liveWallpaperEnabled.value;
   }
 
+  /** Max wallpaper size: 500KB base64 (~375KB raw image) */
+  const MAX_WALLPAPER_SIZE = 500 * 1024;
+  const ALLOWED_WALLPAPER_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
   function setCustomWallpaper(base64: string) {
+    // Validate MIME type first (cheap check before size validation).
+    const mimeMatch = base64.match(/^data:([^;]+);base64,/);
+    if (mimeMatch && !ALLOWED_WALLPAPER_MIMES.includes(mimeMatch[1])) {
+      throw new Error("仅支持 PNG / JPEG / WebP / GIF 格式壁纸");
+    }
+    if (base64.length > MAX_WALLPAPER_SIZE) {
+      throw new Error(`壁纸超过 ${MAX_WALLPAPER_SIZE / 1024}KB 限制，请压缩后重试`);
+    }
     customWallpaperUrl.value = base64;
     localStorage.setItem('zen70-custom-wallpaper', base64);
   }

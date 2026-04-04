@@ -80,10 +80,12 @@ async def process_pending_assets(tenant_id: str | None = None) -> int:
                     continue
                 if Image is None:
                     raise RuntimeError("Pillow is unavailable")
-                Image.open(asset.file_path)
+                with Image.open(asset.file_path) as img:
+                    img.load()
                 asset.embedding_status = "done"
                 count += 1
-            except Exception:
+            except Exception as exc:
+                logger.warning("ai worker failed for asset %s: %s", asset.file_path, exc)
                 asset.embedding_status = "failed"
 
         await session.commit()

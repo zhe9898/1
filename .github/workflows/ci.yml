@@ -61,6 +61,9 @@ jobs:
       - name: Unit tests and coverage gate
         working-directory: ${{ github.workspace }}
         env:
+          # CI-only test credentials — NOT production secrets.
+          # ZEN70_ENV="" disables production safety checks so tests can
+          # run with these deterministic values. Never reuse in production.
           JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
           JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
           POSTGRES_DSN: "postgresql://zen70:zen70@localhost:5432/zen70"

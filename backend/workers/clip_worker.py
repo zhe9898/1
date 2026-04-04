@@ -71,7 +71,8 @@ async def process_pending_assets(tenant_id: str | None = None) -> None:
                 tags: list[str] = [str(tag) for tag in raw_tags] if isinstance(raw_tags, list) else []
                 asset.ai_tags = tags
                 asset.is_emotion_highlight = any(tag in EMOTION_KEYWORDS for tag in tags)
-            except Exception:
+            except Exception as exc:
+                logger.warning("clip worker failed for asset %s: %s", asset.file_path, exc)
                 asset.embedding_status = "failed"
 
         await session.commit()

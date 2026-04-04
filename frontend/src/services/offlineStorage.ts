@@ -4,6 +4,7 @@
  */
 import { db, CAPABILITIES_ROW_ID } from "@/db";
 import type { Capabilities } from "@/types/capability";
+import { logWarn } from "@/utils/logger";
 
 /** 离线缓存最大有效期：24 小时 */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -11,7 +12,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await fn();
-  } catch {
+  } catch (err: unknown) {
+    logWarn("[ZEN70 OfflineStorage] IndexedDB operation failed", err);
     return fallback;
   }
 }
