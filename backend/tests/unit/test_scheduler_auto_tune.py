@@ -870,8 +870,7 @@ class TestTunerPersistence:
         assert dst.weights._states["priority"].sample_count == 999
 
     def test_round_trip_preserves_total_signals(self) -> None:
-        from backend.core.scheduler_auto_tune import SchedulerTuner, OutcomeSignal
-        import datetime
+        from backend.core.scheduler_auto_tune import SchedulerTuner
 
         src = SchedulerTuner(enabled=True)
         # Manually bump total_signals so we don't need min_samples
@@ -889,7 +888,12 @@ class TestTunerPersistence:
         tuner = SchedulerTuner(enabled=True)
         tuner.weights._states["priority"].multiplier = 1.9
 
-        tuner.load_from_dict({"v": 99, "dimensions": {"priority": {"multiplier": 0.1, "sample_count": 1, "success_rate": 0.0, "contribution_ema": 0.0}}})
+        tuner.load_from_dict(
+            {
+                "v": 99,
+                "dimensions": {"priority": {"multiplier": 0.1, "sample_count": 1, "success_rate": 0.0, "contribution_ema": 0.0}},
+            }
+        )
 
         # Multiplier should be unchanged because version is unknown
         assert tuner.weights._states["priority"].multiplier == 1.9
@@ -899,7 +903,13 @@ class TestTunerPersistence:
 
         tuner = SchedulerTuner(enabled=True)
         # This must not raise even when the dimension doesn't exist
-        tuner.load_from_dict({"v": 1, "total_signals": 0, "dimensions": {"nonexistent_dimension": {"multiplier": 9.9, "sample_count": 1, "success_rate": 0.0, "contribution_ema": 0.0}}})
+        tuner.load_from_dict(
+            {
+                "v": 1,
+                "total_signals": 0,
+                "dimensions": {"nonexistent_dimension": {"multiplier": 9.9, "sample_count": 1, "success_rate": 0.0, "contribution_ema": 0.0}},
+            }
+        )
 
     def test_reset_after_load_clears_state(self) -> None:
         from backend.core.scheduler_auto_tune import SchedulerTuner
@@ -907,8 +917,33 @@ class TestTunerPersistence:
         tuner = SchedulerTuner(enabled=True)
         tuner.weights._states["priority"].multiplier = 2.0
         tuner.weights._states["priority"].sample_count = 100
-        d = tuner.state_to_dict()
+        tuner.state_to_dict()  # exercise serialisation before reset
 
         tuner.reset()
         assert tuner.weights._states["priority"].multiplier == 1.0
         assert tuner.weights._states["priority"].sample_count == 0
+
+    def test_json_round_trip_preserves_data(self) -> None:
+        """Verify JSON serialisation/deserialisation preserves floating-point fidelity."""
+        import json
+
+        from backend.core.scheduler_auto_tune import SchedulerTuner
+
+        src = SchedulerTuner(enabled=True)
+        src.weights._states["priority"].multiplier = 1.7531
+        src.weights._states["priority"].sample_count = 150
+        src.weights._states["priority"].success_rate = 0.8234
+        src.weights._states["priority"].contribution_ema = 0.1122
+        src._total_signals = 300
+
+        blob = json.dumps(src.state_to_dict(), separators=(",", ":"))
+        restored = json.loads(blob)
+
+        dst = SchedulerTuner(enabled=True)
+        dst.load_from_dict(restored)
+
+        assert dst.weights._states["priority"].multiplier == 1.7531
+        assert dst.weights._states["priority"].sample_count == 150
+        assert dst.weights._states["priority"].success_rate == 0.8234
+        assert dst.weights._states["priority"].contribution_ema == 0.1122
+        assert dst._total_signals == 300

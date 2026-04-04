@@ -575,7 +575,6 @@ class SchedulerTuner:
 
     async def save_state(self, db: AsyncSession) -> None:
         """Persist learned dimension weights to the ``system_config`` table."""
-        from sqlalchemy import select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from backend.models.feature_flag import SystemConfig

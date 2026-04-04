@@ -200,6 +200,18 @@ async def lifespan(app: FastAPI) -> object:
         yield
     finally:
         logger.info("Shutting down API server and draining connections")
+
+        # Persist auto-tune EMA weights on graceful shutdown so no learned
+        # state is lost between the last periodic save and process exit.
+        if _async_session_factory is not None:
+            try:
+                from backend.core.governance_facade import get_governance_facade
+
+                async with _async_session_factory() as session:
+                    await get_governance_facade().save_tuner_state(session)
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+                logger.warning("Failed to persist scheduler tuner weights on shutdown: %s", exc)
+
         signal.signal(signal.SIGTERM, original_handler)
         shutdown_telemetry()
         clear_lru_cache()
