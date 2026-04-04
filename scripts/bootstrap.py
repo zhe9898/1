@@ -23,6 +23,10 @@ from pathlib import Path
 
 import yaml
 
+from deploy_utils import project_root as _root
+from deploy_utils import resolve_name_conflict as _resolve_name_conflict
+from deploy_utils import scripts_dir as _scripts_dir
+
 # Docker SDK：用于 daemon 检查、版本检查与更精确的异常类型（文档 1.1 建议）
 try:
     import docker
@@ -69,16 +73,6 @@ PHASE_COMPILE = "compile"
 PHASE_FRONTEND = "build_frontend"
 PHASE_DEPLOY = "deploy"
 PHASE_VERIFY = "verify"
-
-
-def _root() -> Path:
-    """项目根目录（scripts 的上级），跨平台 pathlib 动态解析，禁止硬编码绝对路径。"""
-    return Path(__file__).resolve().parent.parent
-
-
-def _scripts_dir() -> Path:
-    """scripts 目录。"""
-    return Path(__file__).resolve().parent
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -848,86 +842,6 @@ def docker_login_registry_if_needed(env_path: Path) -> None:
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         if logger:
             logger.warning("docker login 异常: %s", e)
-
-
-# ---------------------------------------------------------------------------
-# 零停机容器名冲突解决（优雅 detect → adopt → retry）(法典 §1.2)
-# ---------------------------------------------------------------------------
-
-
-def _resolve_name_conflict(root: Path, stderr: str) -> None:
-    """
-    从 compose stderr 中提取冲突容器名，诊断归属，精确处理。
-
-    策略:
-      - 容器属于其他 compose project → compose -p <旧project> down
-      - 容器无 compose label（手动创建）→ docker rm -f <此容器>
-      - 容器属于当前 project（不应发生）→ docker rm -f <此容器>
-    """
-    import re
-
-    match = re.search(r'container name ["\'/]*(zen70-[a-zA-Z0-9_-]+)', stderr)
-    if not match:
-        if logger:
-            logger.warning("[冲突修复] 无法从 stderr 提取冲突容器名")
-        return
-
-    cname = match.group(1)
-    if logger:
-        logger.info("[冲突修复] 冲突容器: %s", cname)
-
-    # 诊断容器归属
-    try:
-        inspect = subprocess.run(
-            ["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', cname],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            cwd=str(root),
-        )
-        old_project = inspect.stdout.strip() if inspect.returncode == 0 else ""
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        old_project = ""
-
-    if old_project and old_project != "zen70":
-        if logger:
-            logger.info(
-                "[冲突修复] 容器属于旧 project '%s'，执行 compose -p %s down...",
-                old_project,
-                old_project,
-            )
-        try:
-            subprocess.run(
-                ["docker", "compose", "-p", old_project, "down", "--remove-orphans"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=str(root),
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-            if logger:
-                logger.warning("[冲突修复] down 旧 project 失败: %s，降级 rm -f", e)
-            subprocess.run(
-                ["docker", "rm", "-f", cname],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=str(root),
-            )
-    else:
-        if logger:
-            logger.info("[冲突修复] rm -f %s（无 project label 或状态损坏）", cname)
-        try:
-            subprocess.run(
-                ["docker", "rm", "-f", cname],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=str(root),
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-            if logger:
-                logger.warning("[冲突修复] rm -f 失败: %s", e)
 
 
 # ---------------------------------------------------------------------------
