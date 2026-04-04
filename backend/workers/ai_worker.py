@@ -34,11 +34,13 @@ def get_model() -> Any:
         return None
 
 
+Image: Any
 try:
-    PILImage: Any
-    from PIL import Image as PILImage
+    from PIL import Image as _PILImage
 except ImportError:
-    PILImage = None
+    Image = None
+else:
+    Image = _PILImage
 
 
 def _resolve_worker_tenant_id(explicit_tenant_id: str | None = None) -> str | None:
@@ -76,9 +78,9 @@ async def process_pending_assets(tenant_id: str | None = None) -> int:
                 if not Path(asset.file_path).exists():
                     asset.embedding_status = "failed"
                     continue
-                if PILImage is None:
+                if Image is None:
                     raise RuntimeError("Pillow is unavailable")
-                PILImage.open(asset.file_path)
+                Image.open(asset.file_path)
                 asset.embedding_status = "done"
                 count += 1
             except Exception:

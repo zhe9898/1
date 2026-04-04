@@ -9,6 +9,7 @@ import logging
 import re
 from typing import Any
 
+from sqlalchemy import literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.memory import MemoryFact
@@ -74,10 +75,22 @@ class MemorySummarizerWorker:
         user_sub: str,
         vec384: list[float],
     ) -> list[str]:
-        # Placeholder query - real impl uses pgvector cosine distance.
-        # Keep deterministic no-op behavior in MVP until pgvector query is wired.
-        del session, tenant_id, user_sub, vec384
-        rows: list[tuple[MemoryFact, float]] = []
+        # Placeholder query shape that keeps unit tests deterministic and
+        # allows swapping in pgvector distance expressions later.
+        del vec384
+        result = await session.execute(
+            select(
+                MemoryFact,
+                literal(1.0).label("distance"),
+            )
+            .where(
+                MemoryFact.tenant_id == tenant_id,
+                MemoryFact.user_sub == user_sub,
+                MemoryFact.deprecated.is_(False),
+            )
+            .limit(100)
+        )
+        rows = list(result.all())
         candidates = []
         for row_fact, distance in rows:
             similarity = 1.0 - distance

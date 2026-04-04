@@ -60,13 +60,13 @@ class TestPurgeOldJobs:
 class TestPurgeOldSchedulingDecisions:
     @pytest.mark.asyncio
     async def test_no_decisions_to_purge(self) -> None:
-        session = _mock_session(rowcount=0)
+        session = _mock_session(scalars_result=[])
         count = await purge_old_scheduling_decisions(session, "tenant-a")
         assert count == 0
 
     @pytest.mark.asyncio
     async def test_purges_old_decisions(self) -> None:
-        session = _mock_session(rowcount=42)
+        session = _mock_session(scalars_result=list(range(42)))
         count = await purge_old_scheduling_decisions(session, "tenant-a")
         assert count == 42
         session.commit.assert_awaited_once()
@@ -75,13 +75,13 @@ class TestPurgeOldSchedulingDecisions:
 class TestPurgeOldAuditLogs:
     @pytest.mark.asyncio
     async def test_no_audit_logs_to_purge(self) -> None:
-        session = _mock_session(rowcount=0)
+        session = _mock_session(scalars_result=[])
         count = await purge_old_audit_logs(session, "tenant-a")
         assert count == 0
 
     @pytest.mark.asyncio
     async def test_purges_old_audit_logs(self) -> None:
-        session = _mock_session(rowcount=99)
+        session = _mock_session(scalars_result=list(range(99)))
         count = await purge_old_audit_logs(session, "tenant-a")
         assert count == 99
         session.commit.assert_awaited_once()
