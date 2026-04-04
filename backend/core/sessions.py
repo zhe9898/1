@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime
 import logging
 import uuid
-from typing import cast
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -196,7 +195,7 @@ async def revoke_session(
     # Close the loop: blacklist the JWT so it's rejected immediately
     await _blacklist_session_jti(redis, session.jti, session.expires_at)
 
-    return cast("Session", session)
+    return session
 
 
 async def revoke_all_user_sessions(

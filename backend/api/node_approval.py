@@ -6,7 +6,6 @@ Implements pending → approved → active enrollment lifecycle.
 from __future__ import annotations
 
 import datetime
-from typing import cast
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -55,7 +54,7 @@ async def _get_node(db: AsyncSession, tenant_id: str, node_id: str) -> Node:
     node = result.scalars().first()
     if node is None:
         raise zen("ZEN-NODE-4040", "Node not found", status_code=404)
-    return cast("Node", node)
+    return node
 
 
 @router.get("/pending", response_model=list[NodeApprovalResponse])

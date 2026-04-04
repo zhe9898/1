@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from backend.core.scheduling_constraints import (  # noqa: F401 – re-export
     ConnectorCoolingGate,
@@ -251,7 +251,7 @@ def estimate_job_completion_time(
     Returns: Estimated completion time, or None if cannot estimate
     """
     if job.status == "completed":
-        return cast("datetime.datetime | None", job.completed_at)
+        return job.completed_at
 
     if job.status == "failed" or job.status == "canceled":
         return None

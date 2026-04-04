@@ -1,6 +1,5 @@
 import datetime
 import uuid
-from typing import cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,7 +113,7 @@ async def remove_from_dead_letter_queue(
 
 async def _get_job_by_idempotency_key(db: AsyncSession, tenant_id: str, idempotency_key: str) -> Job | None:
     result = await db.execute(select(Job).where(Job.tenant_id == tenant_id, Job.idempotency_key == idempotency_key))
-    return cast("Job | None", result.scalars().first())
+    return result.scalars().first()
 
 
 _ATTEMPT_LOOKBACK_HOURS = 24
@@ -331,7 +330,7 @@ async def _get_attempt_for_callback(db: AsyncSession, job: Job, payload: JobLeas
             JobAttempt.lease_token == payload.lease_token,
         )
     )
-    return cast("JobAttempt | None", result.scalars().first())
+    return result.scalars().first()
 
 
 async def _get_current_attempt(db: AsyncSession, job: Job) -> JobAttempt | None:
@@ -345,7 +344,7 @@ async def _get_current_attempt(db: AsyncSession, job: Job) -> JobAttempt | None:
             JobAttempt.lease_token == job.lease_token,
         )
     )
-    return cast("JobAttempt | None", result.scalars().first())
+    return result.scalars().first()
 
 
 async def _get_job_by_id(db: AsyncSession, tenant_id: str, job_id: str) -> Job:
@@ -353,7 +352,7 @@ async def _get_job_by_id(db: AsyncSession, tenant_id: str, job_id: str) -> Job:
     job = result.scalars().first()
     if job is None:
         raise zen("ZEN-JOB-4040", "job not found", status_code=404)
-    return cast("Job", job)
+    return job
 
 
 async def _get_job_by_id_for_update(
@@ -385,4 +384,4 @@ async def _get_job_by_id_for_update(
     job = result.scalars().first()
     if job is None:
         raise zen("ZEN-JOB-4040", "job not found", status_code=404)
-    return cast("Job", job)
+    return job

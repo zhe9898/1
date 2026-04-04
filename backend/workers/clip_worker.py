@@ -67,8 +67,10 @@ async def process_pending_assets(tenant_id: str | None = None) -> None:
             try:
                 result_data = await asyncio.to_thread(engine.extract, asset.file_path)
                 asset.embedding_status = "done"
-                asset.ai_tags = result_data.get("tags", [])
-                asset.is_emotion_highlight = any(t in EMOTION_KEYWORDS for t in asset.ai_tags)
+                raw_tags = result_data.get("tags", [])
+                tags: list[str] = [str(tag) for tag in raw_tags] if isinstance(raw_tags, list) else []
+                asset.ai_tags = tags
+                asset.is_emotion_highlight = any(tag in EMOTION_KEYWORDS for tag in tags)
             except Exception:
                 asset.embedding_status = "failed"
 

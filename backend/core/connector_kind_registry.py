@@ -6,7 +6,7 @@ to ensure type safety and prevent business logic coupling in the platform kernel
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -104,7 +104,7 @@ def validate_connector_config(kind: str, config: dict[str, Any]) -> dict[str, An
 
     try:
         validated = schema(**config)
-        return cast(dict[str, Any], validated.model_dump(mode="python"))
+        return validated.model_dump(mode="python")
     except ValidationError as e:
         error_details = e.errors()
         raise ValueError(f"Connector config validation failed for kind '{kind}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}") from e

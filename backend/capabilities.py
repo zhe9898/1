@@ -78,9 +78,9 @@ _lru_ts: float = 0.0
 _redis_available: bool = True
 
 ALL_OFF_MATRIX: dict[str, CapabilityItem] = {
-    "ups": CapabilityItem(status="offline", enabled=False, reason="总线未就绪"),
-    "network": CapabilityItem(status="offline", enabled=False, reason="总线未就绪"),
-    "gpu": CapabilityItem(status="offline", enabled=False, reason="总线未就绪"),
+    "ups": CapabilityItem(status="offline", enabled=False, endpoint=None, models=None, reason="总线未就绪"),
+    "network": CapabilityItem(status="offline", enabled=False, endpoint=None, models=None, reason="总线未就绪"),
+    "gpu": CapabilityItem(status="offline", enabled=False, endpoint=None, models=None, reason="总线未就绪"),
 }
 
 

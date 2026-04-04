@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from collections import Counter
 from dataclasses import asdict
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -117,7 +117,7 @@ async def _get_job_for_tenant(db: AsyncSession, tenant_id: str, job_id: str) -> 
             recovery_hint="Refresh the job list and retry",
             details={"job_id": job_id},
         )
-    return cast("Job", job)
+    return job
 
 
 async def _get_node_for_tenant(db: AsyncSession, tenant_id: str, node_id: str) -> Node:
@@ -131,7 +131,7 @@ async def _get_node_for_tenant(db: AsyncSession, tenant_id: str, node_id: str) -
             recovery_hint="Refresh the node list and retry",
             details={"node_id": node_id},
         )
-    return cast("Node", node)
+    return node
 
 
 @router.get("/stats", response_model=ReservationStatsResponse)

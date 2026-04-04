@@ -53,6 +53,7 @@ async def pin_login(
     redis: RedisClient = Depends(get_redis),
 ) -> TokenResponse:
     require_db_redis(db, redis)
+    assert db is not None  # noqa: S101
     rid, cip = request_id(request), client_ip(request)
     tenant_id = request_tenant_id(req.tenant_id)
 
@@ -64,7 +65,7 @@ async def pin_login(
     if await redis.get(freeze_key):
         raise zen(CODE_TOO_MANY, f"错误次数过多，已被防爆破大闸冻结 {_pin_lockout_window_text()}", status.HTTP_429_TOO_MANY_REQUESTS)
 
-    result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == req.username))  # type: ignore[union-attr]
+    result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == req.username))
     user = result.scalar_one_or_none()
 
     async def _handle_failure(detail: str) -> None:

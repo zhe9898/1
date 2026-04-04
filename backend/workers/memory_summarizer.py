@@ -74,11 +74,10 @@ class MemorySummarizerWorker:
         user_sub: str,
         vec384: list[float],
     ) -> list[str]:
-        result = await session.execute(
-            # Placeholder query - real impl uses pgvector cosine distance
-            ...
-        )
-        rows = result.all()
+        # Placeholder query - real impl uses pgvector cosine distance.
+        # Keep deterministic no-op behavior in MVP until pgvector query is wired.
+        del session, tenant_id, user_sub, vec384
+        rows: list[tuple[MemoryFact, float]] = []
         candidates = []
         for row_fact, distance in rows:
             similarity = 1.0 - distance
@@ -101,7 +100,7 @@ class MemorySummarizerWorker:
             for old_id in supersede_ids:
                 old_fact = await session.get(MemoryFact, old_id)
                 if old_fact:
-                    old_fact.deprecated = True
+                    setattr(old_fact, "deprecated", True)
 
             new_fact = MemoryFact(
                 tenant_id=tenant_id,

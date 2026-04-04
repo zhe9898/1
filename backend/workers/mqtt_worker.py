@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,7 @@ async def get_media_path(session: AsyncSession) -> str:
     result = await session.execute(select(SystemConfig).where(SystemConfig.key == "media_path"))
     config = result.scalar_one_or_none()
     if config is not None:
-        return cast(str, config.value)
+        return str(config.value)
 
     default = os.getenv("MEDIA_PATH", "/mnt/media")
     return f"{default}/frigate_snapshots"

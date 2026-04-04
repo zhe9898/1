@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator
@@ -133,7 +133,7 @@ def validate_trigger_config(kind: str, config: dict[str, object] | None) -> dict
         model = schema(**(config or {}))
     except Exception as exc:
         raise ValueError(f"Invalid config for trigger kind '{normalized_kind}': {exc}") from exc
-    return cast(dict[str, Any], model.model_dump(mode="json"))
+    return model.model_dump(mode="json")
 
 
 def get_trigger_kind_info(kind: str) -> dict[str, Any]:

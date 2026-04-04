@@ -5,7 +5,6 @@ import logging
 import os
 from collections.abc import AsyncIterator, Mapping
 from functools import lru_cache
-from typing import cast
 
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -80,7 +79,7 @@ async def get_current_user(
         raise zen("ZEN-AUTH-401", "Token has been revoked", status_code=401)
     if new_token:
         response.headers["X-New-Token"] = new_token
-    return payload  # type: ignore[return-value]
+    return payload
 
 
 async def get_tenant_db(
@@ -201,7 +200,7 @@ async def get_node_machine_token(
             status_code=401,
             recovery_hint="Attach Authorization: Bearer <node_token> to node control-plane requests",
         )
-    return cast(str, credentials.credentials)
+    return credentials.credentials
 
 
 def require_scope(required_scope: str) -> object:

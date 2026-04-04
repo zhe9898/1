@@ -195,7 +195,7 @@ class TriggerEventPayload(BaseModel):
             return None
 
         try:
-            return cast("TriggerEventPayload", cls.model_validate(normalized))
+            return cls.model_validate(normalized)
         except (KeyError, TypeError, ValueError):
             return None
 
@@ -246,7 +246,7 @@ class ReservationEventPayload(BaseModel):
             return None
 
         try:
-            return cast("ReservationEventPayload", cls.model_validate(data))
+            return cls.model_validate(data)
         except (KeyError, TypeError, ValueError):
             return None
 

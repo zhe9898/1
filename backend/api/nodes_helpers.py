@@ -9,7 +9,6 @@ Schema and bootstrap helpers are in ``nodes_schema.py``.
 from __future__ import annotations
 
 import datetime
-from typing import cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -268,7 +267,7 @@ async def _get_node_by_id(db: AsyncSession, tenant_id: str, node_id: str) -> Nod
     node = result.scalars().first()
     if node is None:
         raise zen("ZEN-NODE-4040", "node not found", status_code=404)
-    return cast("Node", node)
+    return node
 
 
 async def _get_active_lease_counts(

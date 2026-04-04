@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 from threading import RLock
-from typing import Final
+from typing import Final, Sequence, TypedDict
 
 from backend.core.scheduling_policy_types import QueueConfig
 
@@ -51,6 +52,11 @@ PRIORITY_LAYER_ORDER: Final[list[str]] = [
 LAYER_AGING_MULTIPLIER: Final[dict[str, float]] = _QC_DEFAULTS.layer_aging_multipliers
 _SCHED_CONFIG_LOCK = RLock()
 _SCHED_CONFIG_CACHE: dict[str, object] | None = None
+
+
+class LayerStats(TypedDict):
+    count: int
+    oldest: datetime | None
 
 
 def get_priority_layer(priority: int) -> str:
@@ -120,7 +126,7 @@ def calculate_effective_priority(
     return max(0, min(100, effective_priority))
 
 
-def get_priority_layer_stats(jobs: list[object]) -> dict[str, dict[str, object]]:
+def get_priority_layer_stats(jobs: Sequence[object]) -> dict[str, LayerStats]:
     """Get statistics about jobs grouped by priority layer.
 
     Args:
@@ -135,14 +141,14 @@ def get_priority_layer_stats(jobs: list[object]) -> dict[str, dict[str, object]]
         }
     """
 
-    stats: dict[str, dict[str, object]] = {layer: {"count": 0, "oldest": None} for layer in PRIORITY_LAYER_ORDER}
+    stats: dict[str, LayerStats] = {layer: {"count": 0, "oldest": None} for layer in PRIORITY_LAYER_ORDER}
 
     for job in jobs:
         priority = getattr(job, "priority", 50)
         created_at = getattr(job, "created_at", None)
 
         layer = get_priority_layer(priority)
-        stats[layer]["count"] = int(stats[layer]["count"]) + 1  # type: ignore[call-overload]
+        stats[layer]["count"] += 1
 
         if created_at:
             current_oldest = stats[layer]["oldest"]
@@ -153,7 +159,7 @@ def get_priority_layer_stats(jobs: list[object]) -> dict[str, dict[str, object]]
 
 
 def sort_jobs_by_stratified_priority(
-    jobs: list[object],
+    jobs: Sequence[object],
     *,
     now: object | None = None,
     aging_enabled: bool = True,
@@ -174,7 +180,7 @@ def sort_jobs_by_stratified_priority(
         3. Created time (older first)
         4. Job ID (stable tiebreaker)
     """
-    from datetime import datetime, timezone
+    from datetime import timezone
 
     if now is None:
         now = datetime.now(timezone.utc).replace(tzinfo=None)

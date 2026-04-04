@@ -19,6 +19,7 @@ from webauthn import (
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
+    AuthenticatorTransport,
     PublicKeyCredentialDescriptor,
     UserVerificationRequirement,
 )
@@ -91,10 +92,23 @@ def generate_authentication_challenge(
             cred_id_b = base64url_to_bytes(cred_id)
         else:
             continue
+        transports_raw = ac.get("transports")
+        transports: list[AuthenticatorTransport] | None = None
+        if isinstance(transports_raw, list):
+            parsed_transports: list[AuthenticatorTransport] = []
+            for transport in transports_raw:
+                if not isinstance(transport, str):
+                    continue
+                try:
+                    parsed_transports.append(AuthenticatorTransport(transport))
+                except ValueError:
+                    continue
+            if parsed_transports:
+                transports = parsed_transports
         descriptors.append(
             PublicKeyCredentialDescriptor(
                 id=cred_id_b,
-                transports=ac.get("transports"),
+                transports=transports,
             )
         )
     options = generate_authentication_options(

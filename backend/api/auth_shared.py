@@ -8,7 +8,6 @@ import base64
 import json
 import logging
 import sys
-from typing import cast
 
 import bcrypt
 from fastapi import status
@@ -112,7 +111,7 @@ async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
     """读取首个用户；若 schema 未初始化则返回显式 503。"""
     try:
         result = await db.execute(select(User).limit(1))
-        return cast("User | None", result.scalar_one_or_none())
+        return result.scalar_one_or_none()
     except ProgrammingError as exc:
         msg = str(exc).lower()
         if 'relation "users" does not exist' not in msg and "undefinedtableerror" not in msg:

@@ -61,6 +61,7 @@ async def bootstrap(
 ) -> TokenResponse:
     """初始化第一个管理员账户。只有在库为空时可用。"""
     require_db_redis(db, redis)
+    assert db is not None  # noqa: S101
     from backend.api.auth_shared import first_user_or_schema_unavailable
 
     locked = await redis.acquire_lock(BOOTSTRAP_LOCK_KEY, ttl=15)
@@ -83,9 +84,9 @@ async def bootstrap(
             password_hash=hashed_pw,
             tenant_id="admin_tenant",
         )
-        db.add(user)  # type: ignore[union-attr]
-        await db.flush()  # type: ignore[union-attr]
-        await db.commit()  # type: ignore[union-attr]
+        db.add(user)
+        await db.flush()
+        await db.commit()
         return _build_token_response_model(
             str(user.id),
             user.username,

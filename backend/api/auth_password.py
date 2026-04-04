@@ -39,6 +39,7 @@ async def password_login(
 ) -> TokenResponse:
     """标准密码登录通道，防爆破，依赖 tenant 和 role。"""
     require_db_redis(db, redis)
+    assert db is not None  # noqa: S101
     rid, cip = request_id(request), client_ip(request)
     tenant_id = request_tenant_id(req.tenant_id)
     username = req.username.strip()
@@ -64,7 +65,7 @@ async def password_login(
     from backend.api.auth_shared import first_user_or_schema_unavailable
 
     await first_user_or_schema_unavailable(db)
-    result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == username))  # type: ignore[union-attr]
+    result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == username))
     user = result.scalar_one_or_none()
 
     is_valid = False

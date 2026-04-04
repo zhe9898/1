@@ -90,37 +90,57 @@ async def purge_old_scheduling_decisions(session: AsyncSession, tenant_id: str) 
     """Delete scheduling_decisions older than RETENTION_SCHEDULING_DAYS for one tenant."""
     await set_tenant_context(session, tenant_id)
     cutoff = _cutoff(RETENTION_SCHEDULING_DAYS)
-    stmt = delete(SchedulingDecision).where(
-        SchedulingDecision.tenant_id == tenant_id,
-        SchedulingDecision.created_at < cutoff,
+    id_query = (
+        select(SchedulingDecision.id)
+        .where(
+            SchedulingDecision.tenant_id == tenant_id,
+            SchedulingDecision.created_at < cutoff,
+        )
+        .limit(RETENTION_BATCH_SIZE)
     )
-    result = await session.execute(stmt)
-    count = result.rowcount
-    if count:
+    result = await session.execute(id_query)
+    decision_ids = list(result.scalars().all())
+    if decision_ids:
+        await session.execute(
+            delete(SchedulingDecision).where(
+                SchedulingDecision.tenant_id == tenant_id,
+                SchedulingDecision.id.in_(decision_ids),
+            )
+        )
         await session.commit()
         logger.info(
             "data_retention: purged %d scheduling_decisions (tenant=%s cutoff=%s)",
-            count,
+            len(decision_ids),
             tenant_id,
             cutoff.isoformat(),
         )
-    return int(count)
+    return len(decision_ids)
 
 
 async def purge_old_audit_logs(session: AsyncSession, tenant_id: str) -> int:
     """Delete audit_logs older than RETENTION_AUDIT_DAYS for one tenant."""
     await set_tenant_context(session, tenant_id)
     cutoff = _cutoff(RETENTION_AUDIT_DAYS)
-    stmt = delete(AuditLog).where(
-        AuditLog.tenant_id == tenant_id,
-        AuditLog.created_at < cutoff,
+    id_query = (
+        select(AuditLog.id)
+        .where(
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.created_at < cutoff,
+        )
+        .limit(RETENTION_BATCH_SIZE)
     )
-    result = await session.execute(stmt)
-    count = result.rowcount
-    if count:
+    result = await session.execute(id_query)
+    audit_ids = list(result.scalars().all())
+    if audit_ids:
+        await session.execute(
+            delete(AuditLog).where(
+                AuditLog.tenant_id == tenant_id,
+                AuditLog.id.in_(audit_ids),
+            )
+        )
         await session.commit()
-        logger.info("data_retention: purged %d audit_logs (tenant=%s cutoff=%s)", count, tenant_id, cutoff.isoformat())
-    return int(count)
+        logger.info("data_retention: purged %d audit_logs (tenant=%s cutoff=%s)", len(audit_ids), tenant_id, cutoff.isoformat())
+    return len(audit_ids)
 
 
 async def _list_active_tenant_ids(session: AsyncSession) -> list[str]:
