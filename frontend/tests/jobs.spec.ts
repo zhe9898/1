@@ -203,6 +203,16 @@ describe("useJobsStore", () => {
     await store.fetchJobs({ status: "pending" });
   });
 
+  it("fetchJobs serializes numeric limit and offset to string query params", async () => {
+    const store = useJobsStore();
+    mock.onGet("/v1/jobs").reply((config) => {
+      expect(config.params?.limit).toBe("50");
+      expect(config.params?.offset).toBe("100");
+      return [200, []];
+    });
+    await store.fetchJobs({ limit: 50, offset: 100 });
+  });
+
   // ---- fetchJob ----
   it("fetchJob returns and upserts job on success", async () => {
     const store = useJobsStore();

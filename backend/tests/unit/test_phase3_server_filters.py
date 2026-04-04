@@ -197,3 +197,90 @@ async def test_list_connectors_applies_backend_query_filters() -> None:
     assert [item.connector_id for item in response] == ["conn-error"]
     assert response[0].status_view.key == "error"
     assert response[0].attention_reason == "auth failed"
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_pagination_default_limit() -> None:
+    """list_jobs must not return more rows than the SQL LIMIT (default 100)."""
+    now = _utcnow()
+    db = AsyncMock()
+    # Simulate DB returning exactly 3 jobs (SQL LIMIT applied upstream)
+    db.execute.return_value = _scalars_result([_job(job_id=f"job-{i}") for i in range(3)])
+
+    response = await list_jobs(
+        current_user={"sub": "admin"},
+        db=db,
+    )
+
+    assert len(response) == 3
+    # Verify the SQL query was called with a limit clause (query object is inspected via call args)
+    call_args = db.execute.call_args
+    compiled = str(call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+    assert "LIMIT" in compiled.upper()
+    assert "100" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_pagination_custom_limit_and_offset() -> None:
+    """list_jobs honours explicit limit and offset parameters."""
+    now = _utcnow()
+    db = AsyncMock()
+    db.execute.return_value = _scalars_result([_job(job_id="job-page2")])
+
+    response = await list_jobs(
+        limit=10,
+        offset=20,
+        current_user={"sub": "admin"},
+        db=db,
+    )
+
+    assert len(response) == 1
+    call_args = db.execute.call_args
+    compiled = str(call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+    assert "10" in compiled
+    assert "20" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_pagination_default_limit() -> None:
+    """list_nodes must not return more rows than the SQL LIMIT (default 100)."""
+    now = _utcnow()
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _scalars_result([_node(node_id=f"node-{i}") for i in range(3)]),
+        _rows_result([(f"node-{i}", 0) for i in range(3)]),
+    ]
+
+    response = await list_nodes(
+        current_user={"sub": "admin"},
+        db=db,
+    )
+
+    assert len(response) == 3
+    call_args = db.execute.call_args_list[0]
+    compiled = str(call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+    assert "LIMIT" in compiled.upper()
+    assert "100" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_nodes_pagination_custom_limit_and_offset() -> None:
+    """list_nodes honours explicit limit and offset parameters."""
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _scalars_result([_node(node_id="node-page2")]),
+        _rows_result([("node-page2", 0)]),
+    ]
+
+    response = await list_nodes(
+        limit=5,
+        offset=10,
+        current_user={"sub": "admin"},
+        db=db,
+    )
+
+    assert len(response) == 1
+    call_args = db.execute.call_args_list[0]
+    compiled = str(call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+    assert "5" in compiled
+    assert "10" in compiled

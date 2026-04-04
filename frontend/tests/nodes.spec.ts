@@ -225,6 +225,16 @@ describe("useNodesStore", () => {
     await store.fetchNodes({ status: "online" });
   });
 
+  it("fetchNodes serializes numeric limit and offset to string query params", async () => {
+    const store = useNodesStore();
+    mock.onGet("/v1/nodes").reply((config) => {
+      expect(config.params?.limit).toBe("20");
+      expect(config.params?.offset).toBe("40");
+      return [200, []];
+    });
+    await store.fetchNodes({ limit: 20, offset: 40 });
+  });
+
   // ---- fetchNode ----
   it("fetchNode returns and upserts node on success", async () => {
     const store = useNodesStore();

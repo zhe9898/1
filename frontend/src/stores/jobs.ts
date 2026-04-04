@@ -120,6 +120,7 @@ function toListParams(query: Record<string, unknown> = {}): Record<string, strin
     Object.entries(query)
       .map(([key, value]) => {
         if (typeof value === "string" && value) return [key, value];
+        if (typeof value === "number" && Number.isFinite(value)) return [key, String(value)];
         if (Array.isArray(value)) {
           const first = value.find((item): item is string => typeof item === "string" && item.length > 0);
           if (first) return [key, first];
