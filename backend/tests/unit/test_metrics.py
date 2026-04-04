@@ -94,4 +94,3 @@ class TestMetricsDefinitions:
         from backend.core.metrics import ACTIVE_CONNECTIONS
 
         assert ACTIVE_CONNECTIONS is not None
-

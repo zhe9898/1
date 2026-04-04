@@ -30,11 +30,13 @@ class TestScanAndHashFile:
 
         # 初始化 DB
         conn = sqlite3.connect(db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS file_hashes (
                 filepath TEXT PRIMARY KEY, sha256 TEXT NOT NULL, last_checked REAL NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 
@@ -56,11 +58,13 @@ class TestScanAndHashFile:
         test_file.write_text("AAAA", encoding="utf-8")
 
         conn = sqlite3.connect(db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS file_hashes (
                 filepath TEXT PRIMARY KEY, sha256 TEXT NOT NULL, last_checked REAL NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 
@@ -83,11 +87,13 @@ class TestScanAndHashFile:
         test_file.write_text("STABLE_DATA", encoding="utf-8")
 
         conn = sqlite3.connect(db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS file_hashes (
                 filepath TEXT PRIMARY KEY, sha256 TEXT NOT NULL, last_checked REAL NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 
@@ -101,11 +107,13 @@ class TestScanAndHashFile:
 
         db_path = tmp_path / "test_bitrot.db"
         conn = sqlite3.connect(db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS file_hashes (
                 filepath TEXT PRIMARY KEY, sha256 TEXT NOT NULL, last_checked REAL NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 

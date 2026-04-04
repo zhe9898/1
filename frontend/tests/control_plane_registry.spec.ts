@@ -25,6 +25,6 @@ describe("control-plane registry", () => {
       .filter((surface) => surface.profiles.includes("gateway-kernel"))
       .map((surface) => surface.route_name);
 
-    expect(kernelRoutes).toEqual(["dashboard", "nodes", "jobs", "connectors", "settings"]);
+    expect(kernelRoutes).toEqual(["dashboard", "nodes", "jobs", "connectors", "settings", "evaluations"]);
   });
 });

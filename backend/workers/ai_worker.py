@@ -56,9 +56,7 @@ async def process_pending_assets(tenant_id: str | None = None) -> int:
         return 0
 
     async with AsyncSessionLocal() as session:  # type: ignore[misc]
-        result = await session.execute(
-            select(Asset).where(Asset.tenant_id == scoped_tenant_id, Asset.embedding_status == "pending").limit(50)
-        )
+        result = await session.execute(select(Asset).where(Asset.tenant_id == scoped_tenant_id, Asset.embedding_status == "pending").limit(50))
         assets = result.scalars().all()
 
         if not assets:

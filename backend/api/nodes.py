@@ -372,4 +372,3 @@ async def get_node(
     now = _utcnow()
     counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id], now=now)
     return _to_response(node, active_lease_count=counts.get(node.node_id, 0), now=now)
-

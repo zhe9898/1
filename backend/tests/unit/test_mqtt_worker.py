@@ -83,7 +83,7 @@ async def test_process_event_sanitizes_camera_path_traversal(mocker: MockerFixtu
 
     mocker.patch("backend.workers.mqtt_worker.get_media_path", new_callable=AsyncMock, return_value="/tmp/media")
     mocker.patch("backend.workers.mqtt_worker.Path.mkdir")
-    mock_open = mocker.patch("backend.workers.mqtt_worker.Path.open")
+    mocker.patch("backend.workers.mqtt_worker.Path.open")
     mock_session.add = MagicMock()
 
     ev = {

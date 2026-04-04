@@ -274,5 +274,3 @@ async def test_connector(
         },
     )
     return response
-
-

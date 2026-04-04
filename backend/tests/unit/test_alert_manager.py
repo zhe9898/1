@@ -136,7 +136,9 @@ async def test_alert_manager_critical_dispatch(mock_db_session, mock_settings, m
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_alert_manager_channel_failure_is_isolated(mock_db_session, mock_settings, mock_user, mocker, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_alert_manager_channel_failure_is_isolated(  # type: ignore[no-untyped-def]
+    mock_db_session, mock_settings, mock_user, mocker, monkeypatch
+) -> None:
     payload = AlertPayloadFactory.build(level="critical", title="POWER LOSS", message="UPS dying")
     monkeypatch.setenv("BARK_URL", "http://bark.dev/key")
     monkeypatch.setenv("SERVER_CHAN_KEY", "SCT_xxx")

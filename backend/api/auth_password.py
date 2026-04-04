@@ -92,6 +92,7 @@ async def password_login(
 
     # Load user scopes from permissions table for JWT
     from backend.core.permissions import get_user_scopes
+
     user_scopes = await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id))
 
     resp = build_token_response_model(

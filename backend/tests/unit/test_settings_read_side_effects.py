@@ -1,6 +1,5 @@
 ﻿from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -61,4 +60,3 @@ async def test_get_settings_schema_read_path_has_no_writes(monkeypatch: pytest.M
 
     assert response.sections
     db.flush.assert_not_awaited()
-

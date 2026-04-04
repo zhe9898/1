@@ -119,5 +119,3 @@ async def test_report_step_failed_validates_attempt(monkeypatch: pytest.MonkeyPa
         )
 
     assert exc.value.status_code == 409
-
-

@@ -64,7 +64,7 @@ def _resolve_allowed_asset_path(filepath: str) -> Path | None:
     return candidate
 
 
-async def zip_stream_generator(
+async def zip_stream_generator(  # noqa: C901
     session: AsyncSession,
     tenant_id: str,
     user_id: str,

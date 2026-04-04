@@ -15,4 +15,3 @@ async def test_webauthn_rate_limit_falls_back_to_local_bucket() -> None:
         await check_webauthn_rate_limit(None, "127.0.0.2", "rid")
 
     assert exc.value.status_code == 429
-
