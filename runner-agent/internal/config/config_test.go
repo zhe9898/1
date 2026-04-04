@@ -79,3 +79,25 @@ func TestValidateRejectsMalformedFingerprint(t *testing.T) {
 		t.Fatalf("expected malformed gateway certificate fingerprint to be rejected")
 	}
 }
+
+func TestEffectiveAcceptedKindsUsesAcceptedKinds(t *testing.T) {
+	cfg := Config{
+		Capabilities:  []string{"cap-a", "cap-b"},
+		AcceptedKinds: []string{"kind-x", "kind-y"},
+	}
+	got := cfg.EffectiveAcceptedKinds()
+	if len(got) != 2 || got[0] != "kind-x" || got[1] != "kind-y" {
+		t.Fatalf("expected AcceptedKinds when set, got %v", got)
+	}
+}
+
+func TestEffectiveAcceptedKindsFallsBackToCapabilities(t *testing.T) {
+	cfg := Config{
+		Capabilities:  []string{"cap-a", "cap-b"},
+		AcceptedKinds: []string{},
+	}
+	got := cfg.EffectiveAcceptedKinds()
+	if len(got) != 2 || got[0] != "cap-a" || got[1] != "cap-b" {
+		t.Fatalf("expected Capabilities fallback when AcceptedKinds empty, got %v", got)
+	}
+}

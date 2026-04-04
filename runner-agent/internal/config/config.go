@@ -227,6 +227,15 @@ func normalizeFingerprint(value string) string {
 	return cleaned
 }
 
+// EffectiveAcceptedKinds returns AcceptedKinds if explicitly configured,
+// otherwise falls back to Capabilities for backward compatibility.
+func (c Config) EffectiveAcceptedKinds() []string {
+	if len(c.AcceptedKinds) > 0 {
+		return c.AcceptedKinds
+	}
+	return c.Capabilities
+}
+
 func isLoopbackHost(host string) bool {
 	host = strings.TrimSpace(strings.ToLower(host))
 	if host == "localhost" {

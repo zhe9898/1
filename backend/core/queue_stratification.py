@@ -245,7 +245,7 @@ def _load_scheduling_config() -> dict:
 
 
 def reset_scheduling_config_cache() -> None:
-    """Force re-read of system.yaml on next access (for tests / hot-reload)."""
+    """Force re-read of config on next access (for tests / hot-reload)."""
     global _SCHED_CONFIG_CACHE
     with _SCHED_CONFIG_LOCK:
         _SCHED_CONFIG_CACHE = None
@@ -360,7 +360,7 @@ class GlobalFairScheduler:
     _cache_ttl: float | None = None  # resolved from policy store
 
     def _load_tenant_quotas(self) -> dict[str, TenantQuota]:
-        """Load tenant quotas from system.yaml → scheduling.tenant_quotas.
+        """Load tenant quotas from policy store (sourced from system.yaml at boot).
 
         Returns cached result if within TTL window.
         """
@@ -377,14 +377,11 @@ class GlobalFairScheduler:
 
         quotas: dict[str, TenantQuota] = {}
         try:
-            from pathlib import Path
+            from backend.core.scheduling_policy_store import get_policy_store
 
-            import yaml  # type: ignore[import-untyped, unused-ignore]
-
-            config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
-            sched = config.get("scheduling", {}) or {}
-            self.__class__._default_service_class = sched.get("default_service_class", _qc.default_service_class)
-            raw_quotas = sched.get("tenant_quotas", {}) or {}
+            store = get_policy_store()
+            self.__class__._default_service_class = store.default_service_class_override or _qc.default_service_class
+            raw_quotas = store.tenant_quotas_config
             for tenant_id, cfg in raw_quotas.items():
                 if isinstance(cfg, dict):
                     sc = str(cfg.get("service_class", self._default_service_class))

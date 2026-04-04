@@ -105,6 +105,12 @@ class TestGlobalFairScheduler:
         yaml_file.write_text(yaml_content, encoding="utf-8")
 
         monkeypatch.chdir(tmp_path)
+
+        # Reset policy store singleton so it re-reads from the test's temp system.yaml
+        import backend.core.scheduling_policy_store as _sps
+
+        monkeypatch.setattr(_sps, "_store", None)
+
         fs = GlobalFairScheduler()
         # Force fresh load
         fs.invalidate_cache()
