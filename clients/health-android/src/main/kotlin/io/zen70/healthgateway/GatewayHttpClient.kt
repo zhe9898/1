@@ -55,15 +55,18 @@ object GatewayHttpClient {
         return OkHttpClient.Builder()
             .sslSocketFactory(certificates.sslSocketFactory(), certificates.trustManager)
             .hostnameVerifier { hostname, session ->
-                // Verify that the server certificate is issued by our pinned CA.
-                // OkHttp already validates the certificate chain; this check guards
-                // against hostname mismatch in edge deployments.
+                // Verify that the server certificate SAN contains the target hostname.
+                // GeneralName type codes: 2 = dNSName, 7 = iPAddress.
+                // Only dNSName SANs (type 2) are compared against hostname strings;
+                // this prevents IP-address SANs from satisfying DNS hostname checks.
                 session.peerCertificates
                     .filterIsInstance<X509Certificate>()
                     .any { cert ->
                         cert.subjectAlternativeNames
                             ?.filterNotNull()
-                            ?.any { san -> san[1].toString() == hostname }
+                            ?.any { san ->
+                                san.size >= 2 && san[0] == 2 && san[1].toString() == hostname
+                            }
                             ?: false
                     }
             }

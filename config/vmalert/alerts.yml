@@ -115,14 +115,16 @@ groups:
 - name: ZEN70_DiskIO
   rules:
   - alert: DiskReadSaturation
-    # Disk read utilization > 90% for 5 minutes indicates I/O bottleneck.
-    expr: rate(node_disk_read_bytes_total[5m]) / node_disk_read_bytes_total > 0.90
+    # node_disk_io_time_seconds_total is the standard node_exporter metric for
+    # I/O utilization (seconds spent doing I/O per second = utilization ratio).
+    # Values > 0.9 mean the disk was busy more than 90% of the time in the window.
+    expr: rate(node_disk_io_time_seconds_total[5m]) > 0.90
     for: 5m
     labels:
       severity: warning
     annotations:
-      summary: "Disk Read I/O Near Saturation on {{ $labels.instance }}"
-      description: "Disk read throughput has been above 90% of capacity for 5 minutes. PostgreSQL fsync may be affected."
+      summary: "Disk I/O Near Saturation on {{ $labels.instance }}"
+      description: "Disk {{ $labels.device }} I/O utilization has been above 90% for 5 minutes. PostgreSQL fsync may be affected."
 
   - alert: DiskSpaceLow
     expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
