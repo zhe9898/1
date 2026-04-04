@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"zen70/runner-agent/internal/api"
 	"zen70/runner-agent/internal/config"
@@ -14,6 +16,10 @@ import (
 	"zen70/runner-agent/internal/jobs"
 	"zen70/runner-agent/internal/telemetry"
 )
+
+// drainCallTimeout is the maximum time to wait for the backend to acknowledge
+// a graceful-drain request during shutdown.
+const drainCallTimeout = 30 * time.Second
 
 type Service struct {
 	cfg       config.Config
@@ -77,6 +83,18 @@ func (s *Service) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		// Signal the backend that this node is draining so the scheduler stops
+		// dispatching new jobs.  WithoutCancel preserves trace/values from the
+		// parent while being independent of its cancellation.
+		drainCtx, drainCancel := context.WithTimeout(context.WithoutCancel(ctx), drainCallTimeout)
+		defer drainCancel()
+		if err := s.client.DrainSelf(drainCtx, api.SelfDrainRequest{
+			TenantID: s.cfg.TenantID,
+			NodeID:   s.cfg.NodeID,
+			Reason:   "SIGTERM: graceful shutdown",
+		}); err != nil {
+			log.Printf("warn: drain-self failed (proceeding with shutdown): %v", err)
+		}
 		wg.Wait()
 		return nil
 	case err := <-errs:
@@ -90,37 +108,43 @@ func (s *Service) Run(ctx context.Context) error {
 
 // registerNode sends the initial registration request to the gateway.
 func (s *Service) registerNode(ctx context.Context) error {
+	meta := map[string]any{
+		"profile":         s.cfg.Profile,
+		"runtime":         "go",
+		"lease_seconds":   s.cfg.LeaseSeconds,
+		"agent_version":   s.cfg.AgentVersion,
+		"max_concurrency": s.cfg.MaxConcurrency,
+		"cpu_cores":       s.cfg.CPUCores,
+		"memory_mb":       s.cfg.MemoryMB,
+		"gpu_vram_mb":     s.cfg.GPUVRAMMB,
+		"storage_mb":      s.cfg.StorageMB,
+	}
+	// When a cloud auto-approve token is configured, include it so the backend
+	// can activate this node immediately without manual admin approval.
+	if s.cfg.CloudToken != "" {
+		meta["cloud_token"] = s.cfg.CloudToken
+	}
 	return s.client.RegisterNode(ctx, api.RegisterRequest{
-		TenantID:        s.cfg.TenantID,
-		NodeID:          s.cfg.NodeID,
-		Name:            s.cfg.NodeName,
-		NodeType:        s.cfg.NodeType,
-		Address:         s.cfg.NodeAddress,
-		Profile:         s.cfg.Profile,
-		Executor:        s.cfg.Executor,
-		OS:              s.cfg.OperatingSystem,
-		Arch:            s.cfg.Architecture,
-		Zone:            s.cfg.Zone,
-		ProtocolVersion: s.cfg.ProtocolVersion,
-		LeaseVersion:    s.cfg.LeaseVersion,
-		AgentVersion:    s.cfg.AgentVersion,
-		MaxConcurrency:  s.cfg.MaxConcurrency,
-		CPUCores:        s.cfg.CPUCores,
-		MemoryMB:        s.cfg.MemoryMB,
-		GPUVRAMMB:       s.cfg.GPUVRAMMB,
-		StorageMB:       s.cfg.StorageMB,
-		Capabilities:    s.cfg.Capabilities,
-		Metadata: map[string]any{
-			"profile":         s.cfg.Profile,
-			"runtime":         "go",
-			"lease_seconds":   s.cfg.LeaseSeconds,
-			"agent_version":   s.cfg.AgentVersion,
-			"max_concurrency": s.cfg.MaxConcurrency,
-			"cpu_cores":       s.cfg.CPUCores,
-			"memory_mb":       s.cfg.MemoryMB,
-			"gpu_vram_mb":     s.cfg.GPUVRAMMB,
-			"storage_mb":      s.cfg.StorageMB,
-		},
+		TenantID:           s.cfg.TenantID,
+		NodeID:             s.cfg.NodeID,
+		Name:               s.cfg.NodeName,
+		NodeType:           s.cfg.NodeType,
+		Address:            s.cfg.NodeAddress,
+		Profile:            s.cfg.Profile,
+		Executor:           s.cfg.Executor,
+		OS:                 s.cfg.OperatingSystem,
+		Arch:               s.cfg.Architecture,
+		Zone:               s.cfg.Zone,
+		ProtocolVersion:    s.cfg.ProtocolVersion,
+		LeaseVersion:       s.cfg.LeaseVersion,
+		AgentVersion:       s.cfg.AgentVersion,
+		MaxConcurrency:     s.cfg.MaxConcurrency,
+		CPUCores:           s.cfg.CPUCores,
+		MemoryMB:           s.cfg.MemoryMB,
+		GPUVRAMMB:          s.cfg.GPUVRAMMB,
+		StorageMB:          s.cfg.StorageMB,
+		Capabilities:       s.cfg.Capabilities,
+		Metadata:           meta,
 		AcceptedKinds:      s.cfg.AcceptedKinds,
 		NetworkLatencyMs:   s.cfg.NetworkLatencyMs,
 		BandwidthMbps:      s.cfg.BandwidthMbps,

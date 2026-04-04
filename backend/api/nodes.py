@@ -9,6 +9,9 @@ statements keep working.
 
 from __future__ import annotations
 
+import hashlib
+import os
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -35,7 +38,7 @@ from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consum
 )
 
 # 鈹€鈹€ Re-exports (backward-compat) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consumers
+from backend.api.nodes_models import (  # noqa: F401 – re-exported for consumers
     BootstrapReceipt,
     NodeContractPayload,
     NodeDrainRequest,
@@ -44,6 +47,7 @@ from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consume
     NodeProvisionResponse,
     NodeRegisterRequest,
     NodeResponse,
+    NodeSelfDrainRequest,
     _utcnow,
 )
 from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consumers
@@ -61,6 +65,9 @@ from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
+
+# Cached at import time so registration hot-path avoids repeated env lookups.
+_CLOUD_AUTO_APPROVE_TOKEN: str = os.environ.get("CLOUD_AUTO_APPROVE_TOKEN", "").strip()
 
 
 @router.get("/schema", response_model=ResourceSchemaResponse)
@@ -205,6 +212,33 @@ async def undrain_node(
     return response
 
 
+@router.post("/self/drain", response_model=NodeResponse)
+async def self_drain_node(
+    payload: NodeSelfDrainRequest,
+    db: AsyncSession = Depends(get_machine_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+    node_token: str = Depends(get_node_machine_token),
+) -> NodeResponse:
+    """Allow a runner-agent to mark itself as draining using its own node token.
+
+    Called by the agent on SIGTERM so the scheduler stops dispatching new jobs
+    to this node while in-flight jobs complete.
+    """
+    node = await authenticate_node_request(db, payload.node_id, node_token, require_active=False, tenant_id=payload.tenant_id)
+    node.drain_status = "draining"
+    node.health_reason = payload.reason or node.health_reason
+    node.updated_at = _utcnow()
+    await db.flush()
+    response = _to_response(node, now=node.updated_at)
+    await publish_control_event(
+        redis,
+        CHANNEL_NODE_EVENTS,
+        "drain",
+        {"node": response.model_dump(mode="json")},
+    )
+    return response
+
+
 @router.post("/register", response_model=NodeResponse)
 async def register_node(
     payload: NodeRegisterRequest,
@@ -243,8 +277,23 @@ async def register_node(
 
     # Enrollment approval: new nodes stay pending until admin approves.
     # Re-registration of already-active nodes keeps active status.
+    # Exception: cloud nodes presenting a valid CLOUD_AUTO_APPROVE_TOKEN are
+    # activated immediately and tagged with cloud=true for scheduler awareness.
     if node.enrollment_status not in ("active",):
-        node.enrollment_status = "pending"
+        _node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
+        # Hash both tokens to ensure same-length constant-time comparison,
+        # guarding against timing side-channels due to length differences.
+        _expected_hash = hashlib.sha256(_CLOUD_AUTO_APPROVE_TOKEN.encode()).hexdigest()
+        _actual_hash = hashlib.sha256(_node_cloud_token.encode()).hexdigest()
+        if _CLOUD_AUTO_APPROVE_TOKEN and _node_cloud_token and secrets.compare_digest(_expected_hash, _actual_hash):
+            node.enrollment_status = "active"
+            node.metadata_json = {**(node.metadata_json or {}), "cloud": True}
+        else:
+            node.enrollment_status = "pending"
+    # Remove the cloud_token credential from persisted metadata so it is not
+    # stored in the database or returned in API responses.
+    if node.metadata_json:
+        node.metadata_json = {k: v for k, v in node.metadata_json.items() if k != "cloud_token"}
     node.drain_status = "active"
     node.health_reason = None
 

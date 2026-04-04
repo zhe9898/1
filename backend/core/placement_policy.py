@@ -249,6 +249,53 @@ class PowerAwarePolicy:
         return True, ""
 
 
+class CloudOverflowPolicy:
+    """Prefer edge nodes over cloud nodes; cloud nodes act as overflow capacity.
+
+    Applies a configurable score penalty to nodes tagged with ``cloud: true``
+    in their ``metadata_json``.  This ensures the scheduler exhausts on-premises
+    edge capacity first and spills onto cloud nodes only when edge nodes are
+    saturated or unavailable.
+
+    Tag a node as a cloud node by including ``{"cloud": true}`` in its
+    ``metadata_json`` (set automatically when ``CLOUD_AUTO_APPROVE_TOKEN``
+    matches at registration time).
+
+    Configure in system.yaml::
+
+        scheduling:
+          placement_policies:
+            - name: cloud_overflow
+              enabled: true
+              config:
+                penalty: 50
+    """
+
+    name = "cloud_overflow"
+    order = 45
+
+    def __init__(self, *, penalty: int = 50) -> None:
+        self.penalty = penalty
+
+    def adjust_score(
+        self,
+        job: Job,
+        node: SchedulerNodeSnapshot,
+        current_score: int,
+        breakdown: dict[str, int],
+    ) -> tuple[int, dict[str, int]]:
+        if node.metadata_json.get("cloud") is True:
+            breakdown["cloud_overflow_penalty"] = -self.penalty
+            return current_score - self.penalty, breakdown
+        return current_score, breakdown
+
+    def rerank(self, scored: list[ScoredJob], node: SchedulerNodeSnapshot) -> list[ScoredJob]:
+        return scored
+
+    def accept(self, job: Job, node: SchedulerNodeSnapshot, score: int) -> tuple[bool, str]:
+        return True, ""
+
+
 # ── Composite policy runner ──────────────────────────────────────────
 
 
@@ -313,6 +360,7 @@ _BUILTIN_POLICIES: dict[str, type] = {
     "thermal_cap": ThermalCapPolicy,
     "binpack_consolidation": BinPackConsolidationPolicy,
     "power_aware": PowerAwarePolicy,
+    "cloud_overflow": CloudOverflowPolicy,
     "topology_spread": _lazy_topology_spread,  # type: ignore[dict-item]
 }
 
@@ -343,8 +391,9 @@ def load_placement_policies() -> CompositePlacementPolicy:
             except Exception:
                 logger.warning("Failed to instantiate placement policy '%s'", name, exc_info=True)
     else:
-        # Default policy set: resource reservation only
+        # Default policy set: resource reservation + cloud overflow preference
         policies.append(ResourceReservationPolicy())
+        policies.append(CloudOverflowPolicy())
 
     return CompositePlacementPolicy(policies=policies)
 
