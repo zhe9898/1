@@ -175,6 +175,7 @@ class RoutingOperator:
         task.add_done_callback(self._tasks.discard)
 
         while True:
+            r: aioredis.Redis | None = None
             try:
                 r = await self._get_redis()
                 current_routes = []
@@ -191,8 +192,6 @@ class RoutingOperator:
                             }
                         )
 
-                await r.aclose()  # type: ignore[attr-defined]
-
                 # Reconcile: 对比状态指纹，若发生拓扑变更，执行 Dynamic Compilation + Reload
                 routes_str = json.dumps(current_routes, sort_keys=True)
                 routes_hash = hashlib.sha256(routes_str.encode()).hexdigest()
@@ -208,6 +207,12 @@ class RoutingOperator:
 
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
                 logger.debug("Operator loop issue: %s", e)
+            finally:
+                if r is not None:
+                    try:
+                        await r.aclose()  # type: ignore[attr-defined]
+                    except (OSError, ValueError, RuntimeError):
+                        pass
 
             await asyncio.sleep(5)  # 避坑：死循环非常吃 CPU，严格防卫 5 秒间隔
 

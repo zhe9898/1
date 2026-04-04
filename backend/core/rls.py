@@ -23,6 +23,13 @@ _TENANT_TABLES: Final[tuple[str, ...]] = (
     "conversation_memories",
     "memory_facts",
     "conversation_daily_summaries",
+    # Security-sensitive tables that must be tenant-isolated.
+    # Without RLS these records are globally visible to any DB session
+    # that lacks a current_setting('zen70.current_tenant') context.
+    "audit_logs",
+    "permissions",
+    "alert_rules",
+    "alerts",
 )
 
 _POLICY_PREFIX: Final[str] = "zen70_tenant_isolation"
