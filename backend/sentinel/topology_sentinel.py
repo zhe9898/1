@@ -861,7 +861,10 @@ def main() -> None:
         del signum, frame
         if logger:
             logger.info("SIGTERM received, initiating graceful shutdown")
-        sentinel._stop_event.set()
+        # Guard against the signal being delivered before sentinel is fully initialised.
+        stop_event = getattr(sentinel, "_stop_event", None)
+        if stop_event is not None:
+            stop_event.set()
 
     signal.signal(signal.SIGTERM, _handle_sigterm)
 

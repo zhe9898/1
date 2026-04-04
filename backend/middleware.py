@@ -114,9 +114,9 @@ async def global_readonly_lock(request: Request, call_next: RequestResponseEndpo
                 app_redis = getattr(request.app.state, "redis", None)
                 r = getattr(app_redis, "redis", None) if app_redis else None
                 if r:
-                    # 链路 9 修复：通过 pipeline 原子读取 UPS 状态 + 磁盘 95% 只读标志，
-                    # 避免两次独立 GET 之间状态发生变化导致判断不一致。
-                    pipe = r.pipeline()
+                    # 链路 9 修复：通过 pipeline(transaction=True) 原子读取 UPS 状态 + 磁盘 95% 只读标志，
+                    # 使用 MULTI/EXEC 保证两个 GET 之间状态不会发生变化，消除判断不一致窗口。
+                    pipe = r.pipeline(transaction=True)
                     pipe.get(KEY_SYSTEM_UPS_STATUS)
                     pipe.get(KEY_SYSTEM_READONLY_DISK)
                     ups_val, disk_val = await pipe.execute()
