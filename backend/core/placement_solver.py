@@ -591,10 +591,14 @@ def build_time_budgeted_placement_plan(
 ) -> dict[str, str]:
     """Run the global solver only when it fits a strict dispatch latency budget."""
     import datetime as _dt
+    from backend.core import job_scheduler as _job_scheduler
 
     _now: _dt.datetime = now  # type: ignore[assignment]
 
-    solver_cfg = _get_solver_config()
+    compat_get_solver_config = getattr(_job_scheduler, "_get_solver_config", _get_solver_config)
+    compat_get_solver = getattr(_job_scheduler, "get_placement_solver", get_placement_solver)
+
+    solver_cfg = compat_get_solver_config()
     if decision_context is not None:
         decision_context.clear()
         decision_context.update(
@@ -636,7 +640,7 @@ def build_time_budgeted_placement_plan(
     if decision_context is not None:
         decision_context["attempted"] = True
         decision_context["reason"] = "solver_attempted"
-    plan = get_placement_solver().solve(
+    plan = compat_get_solver().solve(
         jobs,
         nodes,
         now=_now,
