@@ -10,6 +10,7 @@ statements keep working.
 from __future__ import annotations
 
 import os
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -63,6 +64,9 @@ from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
+
+# Cached at import time so registration hot-path avoids repeated env lookups.
+_CLOUD_AUTO_APPROVE_TOKEN: str = os.environ.get("CLOUD_AUTO_APPROVE_TOKEN", "").strip()
 
 
 @router.get("/schema", response_model=ResourceSchemaResponse)
@@ -275,9 +279,8 @@ async def register_node(
     # Exception: cloud nodes presenting a valid CLOUD_AUTO_APPROVE_TOKEN are
     # activated immediately and tagged with cloud=true for scheduler awareness.
     if node.enrollment_status not in ("active",):
-        _auto_token = os.environ.get("CLOUD_AUTO_APPROVE_TOKEN", "").strip()
         _node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
-        if _auto_token and _node_cloud_token and _auto_token == _node_cloud_token:
+        if _CLOUD_AUTO_APPROVE_TOKEN and _node_cloud_token and secrets.compare_digest(_CLOUD_AUTO_APPROVE_TOKEN, _node_cloud_token):
             node.enrollment_status = "active"
             node.metadata_json = {**(node.metadata_json or {}), "cloud": True}
         else:

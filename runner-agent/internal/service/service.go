@@ -17,6 +17,10 @@ import (
 	"zen70/runner-agent/internal/telemetry"
 )
 
+// drainCallTimeout is the maximum time to wait for the backend to acknowledge
+// a graceful-drain request during shutdown.
+const drainCallTimeout = 30 * time.Second
+
 type Service struct {
 	cfg       config.Config
 	client    *api.Client
@@ -81,7 +85,7 @@ func (s *Service) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		// Signal the backend that this node is draining so the scheduler stops
 		// dispatching new jobs.  Use a fresh context because the parent is done.
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), drainCallTimeout)
 		defer drainCancel()
 		if err := s.client.DrainSelf(drainCtx, api.SelfDrainRequest{
 			TenantID: s.cfg.TenantID,
