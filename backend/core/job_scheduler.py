@@ -269,7 +269,7 @@ def select_jobs_for_node(  # noqa: C901
         _reservation_mgr = None
         _backfill_eval = None
 
-    # ── Phase A: Cheap pre-filter → compatible candidates ─────────────
+    # 鈹€鈹€ Phase A: Cheap pre-filter 鈫?compatible candidates 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     compatible: list[Job] = []
     for job in jobs:
         if node.accepted_kinds and job.kind not in node.accepted_kinds:
@@ -299,7 +299,7 @@ def select_jobs_for_node(  # noqa: C901
     if not compatible:
         return []
 
-    # ── Phase B: Batch eligible counts for pre-filtered jobs only ─────
+    # 鈹€鈹€ Phase B: Batch eligible counts for pre-filtered jobs only 鈹€鈹€鈹€鈹€鈹€
     # Deferred to after pre-filter so we don't compute counts for
     # jobs that can never match this node.
     eligible_cache = batch_eligible_counts(
@@ -309,7 +309,7 @@ def select_jobs_for_node(  # noqa: C901
         accepted_kinds=accepted_kinds,
     )
 
-    # ── Phase C: Score + top-K pruning ────────────────────────────────
+    # 鈹€鈹€ Phase C: Score + top-K pruning 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     target_k = min(limit, available_slots)
     # Maintain a running floor: once we have K scores, any job whose
     # theoretical maximum (priority=160 + all bonuses) can't beat the
@@ -359,7 +359,7 @@ def select_jobs_for_node(  # noqa: C901
             active_jobs_on_node=_active_jobs,
         )
 
-        # ── Placement policy accept gate ─────────────────────────────
+        # 鈹€鈹€ Placement policy accept gate 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         if placement_plan and placement_plan.get(job.job_id) == node.node_id:
             plan_bonus = _get_solver_config().plan_affinity_bonus
             total += plan_bonus
@@ -394,7 +394,7 @@ def select_jobs_for_node(  # noqa: C901
         )
     )
 
-    # ── Placement policy rerank pass ─────────────────────────────────
+    # 鈹€鈹€ Placement policy rerank pass 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     from backend.core.placement_policy import get_placement_policy as _get_pp
 
     scored = _get_pp().rerank(scored, node)
