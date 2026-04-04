@@ -15,13 +15,9 @@ on:
         description: "Locust 运行时长 (如 60s, 2m)"
         required: false
         default: "60s"
-  push:
-    branches: [main, master]
-    paths:
-      - "backend/**"
-      - "tests/performance/**"
-      - "tests/e2e/**"
-      - "scripts/sre_stress_tester.py"
+  schedule:
+    # Nightly heavy E2E/load regression (Asia/Shanghai 03:00 = UTC 19:00 previous day)
+    - cron: "0 19 * * *"
 
 env:
   PYTHON_VERSION: "3.12"

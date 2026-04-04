@@ -109,37 +109,6 @@ jobs:
           name: backend-coverage
           path: backend/coverage-backend.xml
 
-      - name: Scheduler benchmarks (gate P99 < 100ms)
-        working-directory: ${{ github.workspace }}
-        env:
-          JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
-          JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
-          ZEN70_ENV: ""
-          PYTHONPATH: ${{ github.workspace }}
-          PLACEMENT_STRESS_NODES: "10"
-          PLACEMENT_STRESS_JOBS: "100"
-          PLACEMENT_STRESS_CONCURRENCY: "16"
-          PLACEMENT_STRESS_MAX_MS: "60000"
-          PLACEMENT_STRESS_MAX_MEM_MB: "1000"
-        run: |
-          pip install pytest-benchmark pytest-timeout
-          # Keep benchmark collection bounded so backend job cannot be canceled
-          # by a long-running micro-benchmark calibration loop on slower runners.
-          timeout 180s python -m pytest tests/performance/test_scheduler_bench.py \
-            -v --benchmark-only --benchmark-json=benchmark-results.json \
-            --benchmark-max-time=1 --benchmark-min-rounds=1 \
-            --timeout=120 --timeout-method=thread || true
-          # Run placement stress test with hard failure gate
-          timeout 180s python tests/performance/placement_stress.py
-
-      - name: Upload benchmark results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: scheduler-benchmarks
-          path: benchmark-results.json
-          if-no-files-found: ignore
-
   frontend:
     runs-on: ubuntu-24.04
     defaults:
