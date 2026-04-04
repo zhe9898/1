@@ -1,6 +1,6 @@
 # placement-solver Makefile
 #
-# Requires: Go ≥ 1.22, protoc, protoc-gen-go, protoc-gen-go-grpc
+# Requires: Go ≥ 1.24, protoc, protoc-gen-go, protoc-gen-go-grpc
 # Install plugins: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 #                  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 

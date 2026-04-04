@@ -293,13 +293,12 @@ class PlacementSolver:
             total_feasible_pairs += len(group_jobs) * len(eligible_nodes)
 
             # Order nodes: prefer under-loaded nodes first to spread load.
-            ordered_node_ids.sort(
-                key=lambda nid: (
-                    global_remaining_cap[nid] / max(node_index[nid].max_concurrency, 1),
-                    -float(node_index[nid].reliability_score),
-                    nid,
-                )
-            )
+            # Pre-compute sort keys to avoid repeated dict lookups per comparison.
+            node_sort_keys = [
+                (global_remaining_cap[nid] / max(node_index[nid].max_concurrency, 1), -float(node_index[nid].reliability_score), nid)
+                for nid in ordered_node_ids
+            ]
+            ordered_node_ids = [nid for _, nid in sorted(zip(node_sort_keys, ordered_node_ids))]
 
             group_total_remaining = sum(global_remaining_cap[nid] for nid in ordered_node_ids)
 
