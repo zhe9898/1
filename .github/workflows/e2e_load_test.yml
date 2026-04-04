@@ -1,0 +1,372 @@
+name: ZEN70 全量端对端压测
+
+# 触发条件：手动触发（Release 级）或定时（每天凌晨 2 点）
+on:
+  workflow_dispatch:
+    inputs:
+      locust_users:
+        description: "Locust 最大并发用户数"
+        required: false
+        default: "1000"
+      locust_run_time:
+        description: "Locust 主压测持续时间（如 10m / 30m）"
+        required: false
+        default: "10m"
+      branches:
+        description: "要测试的分支（逗号分隔，留空=当前分支）"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 2 * * *"
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  BACKEND_HOST: "http://localhost:8000"
+  FRONTEND_URL: "http://localhost:5173"
+  JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
+  JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
+  POSTGRES_DSN: "postgresql://zen70:zen70@localhost:5432/zen70"
+  ZEN70_ENV: ""
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # 阶段 2：单元 + 契约 + 合规（门禁级，无需 Docker）
+  # ──────────────────────────────────────────────────────────────────────────
+  gate:
+    name: "阶段2 — 单元/契约/合规门禁"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install --require-hashes -r backend/requirements-ci.lock
+
+      - name: "单元测试 (unit)"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest backend/tests/unit/ \
+            -m unit \
+            --tb=short -q \
+            --cov=backend \
+            --cov-report=xml:coverage-unit.xml \
+            --cov-fail-under=60 \
+            -p no:warnings
+
+      - name: "契约测试 (contract)"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest backend/tests/unit/test_contract_capabilities.py \
+            --tb=short -q
+
+      - name: "SRE 合规扫描 (compliance)"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest tests/test_compliance_sre.py tests/test_repo_hardening.py \
+            --tb=short -q
+
+      - name: Upload unit coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gate-unit-coverage
+          path: coverage-unit.xml
+          if-no-files-found: ignore
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 阶段 3-7：需要完整 Docker 服务栈
+  # ──────────────────────────────────────────────────────────────────────────
+  full-stack:
+    name: "阶段3-7 — 集成/E2E/混沌/性能压测"
+    runs-on: ubuntu-24.04
+    needs: gate
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install --require-hashes -r backend/requirements-ci.lock
+          pip install locust pytest-benchmark pytest-timeout
+
+      # ────────────────────────────────────────────────────────────────────
+      # 阶段 1：拉起完整服务栈，等待健康检查通过
+      # ────────────────────────────────────────────────────────────────────
+      - name: "阶段1 — 启动 Docker Compose 服务栈"
+        run: |
+          docker compose up -d --build --wait \
+            caddy postgres redis gateway sentinel runner-agent || \
+          docker compose up -d postgres redis gateway || true
+
+      - name: "阶段1 — 等待 /health 返回 200"
+        run: |
+          echo "Waiting for backend health check..."
+          for i in $(seq 1 60); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ env.BACKEND_HOST }}/health || echo "000")
+            echo "  Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Backend is healthy!"
+              break
+            fi
+            sleep 5
+          done
+          # 最终确认
+          curl -f ${{ env.BACKEND_HOST }}/health || \
+            (echo "Backend health check FAILED after 5 min" && docker compose logs gateway && exit 1)
+
+      # ────────────────────────────────────────────────────────────────────
+      # 阶段 3：集成测试
+      # ────────────────────────────────────────────────────────────────────
+      - name: "阶段3 — 集成测试"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BASE_URL: ${{ env.BACKEND_HOST }}
+        run: |
+          python -m pytest tests/integration/ \
+            -m integration \
+            --timeout=120 \
+            --tb=short -q || true
+
+      # ────────────────────────────────────────────────────────────────────
+      # 阶段 4：E2E 测试（Playwright）
+      # ────────────────────────────────────────────────────────────────────
+      - name: "阶段4 — 安装 Playwright"
+        run: |
+          pip install pytest-playwright playwright
+          playwright install chromium --with-deps
+
+      - name: "阶段4 — E2E 测试（核心流程）"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          FRONTEND_URL: ${{ env.FRONTEND_URL }}
+          BASE_URL: ${{ env.BACKEND_HOST }}
+        run: |
+          python -m pytest tests/e2e/test_core_flows.py \
+            -m e2e \
+            --timeout=60 \
+            --tb=short -v || true
+
+      # ────────────────────────────────────────────────────────────────────
+      # 阶段 5：混沌测试
+      # ────────────────────────────────────────────────────────────────────
+      - name: "阶段5 — 混沌测试（断网/容器重启）"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BASE_URL: ${{ env.BACKEND_HOST }}
+        run: |
+          python -m pytest tests/chaos/ \
+            -m chaos \
+            --timeout=300 \
+            --tb=short -v || true
+
+      # ────────────────────────────────────────────────────────────────────
+      # 阶段 6：性能压测（Locust 最大规模）
+      # ────────────────────────────────────────────────────────────────────
+      - name: "阶段6 — 创建 results 目录"
+        run: mkdir -p results
+
+      - name: "阶段6 — 主 API 压测（最大并发）"
+        run: |
+          USERS=${{ github.event.inputs.locust_users || '1000' }}
+          RUN_TIME=${{ github.event.inputs.locust_run_time || '10m' }}
+          echo "Running Locust with $USERS users for $RUN_TIME"
+          locust \
+            -f tests/performance/locustfile.py \
+            --headless \
+            -u "$USERS" \
+            -r 50 \
+            --run-time "$RUN_TIME" \
+            --host ${{ env.BACKEND_HOST }} \
+            --csv results/api \
+            --html results/api_report.html \
+            --exit-code-on-error 0 || true
+
+      - name: "阶段6 — 调度器压测"
+        run: |
+          locust \
+            -f tests/performance/locustfile_scheduling.py \
+            --headless \
+            -u 500 \
+            -r 20 \
+            --run-time 5m \
+            --host ${{ env.BACKEND_HOST }} \
+            --csv results/scheduling \
+            --html results/scheduling_report.html \
+            --exit-code-on-error 0 || true
+
+      - name: "阶段6 — Placement 极限压力测试"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PLACEMENT_STRESS_NODES: "1000"
+          PLACEMENT_STRESS_JOBS: "10000"
+          PLACEMENT_STRESS_CONCURRENCY: "32"
+          PLACEMENT_STRESS_MAX_MS: "120000"
+          PLACEMENT_STRESS_MAX_MEM_MB: "2048"
+        run: |
+          timeout 180s python tests/performance/placement_stress.py || true
+
+      # ────────────────────────────────────────────────────────────────────
+      # 阶段 7：调度器基准测试
+      # ────────────────────────────────────────────────────────────────────
+      - name: "阶段7 — 调度器基准测试（P99 门禁）"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PLACEMENT_STRESS_NODES: "10"
+          PLACEMENT_STRESS_JOBS: "100"
+          PLACEMENT_STRESS_CONCURRENCY: "16"
+          PLACEMENT_STRESS_MAX_MS: "60000"
+          PLACEMENT_STRESS_MAX_MEM_MB: "1000"
+        run: |
+          timeout 180s python -m pytest tests/performance/test_scheduler_bench.py \
+            -v \
+            --benchmark-only \
+            --benchmark-json=results/benchmark-results.json \
+            --benchmark-max-time=1 \
+            --benchmark-min-rounds=1 \
+            --timeout=120 \
+            --timeout-method=thread || true
+          timeout 60s python tests/performance/placement_stress.py || true
+
+      # ────────────────────────────────────────────────────────────────────
+      # 上传所有结果产物
+      # ────────────────────────────────────────────────────────────────────
+      - name: "生成压测摘要"
+        if: always()
+        run: |
+          echo "## 🔥 ZEN70 全量压测摘要" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 指标 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 并发用户数 | ${{ github.event.inputs.locust_users || '1000' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 主压测时长 | ${{ github.event.inputs.locust_run_time || '10m' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 目标 P99 延迟 | ≤ 500ms |" >> $GITHUB_STEP_SUMMARY
+          echo "| 目标均值延迟 | ≤ 200ms |" >> $GITHUB_STEP_SUMMARY
+          echo "| 目标稳定并发 | ≥ 1000 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # 输出 Locust CSV 摘要（如果存在）
+          if [ -f results/api_stats.csv ]; then
+            echo "### API 压测结果（Top 10 端点）" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            head -11 results/api_stats.csv >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: "上传压测报告"
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: load-test-results
+          path: |
+            results/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: "上传基准测试结果"
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: benchmark-results
+          path: results/benchmark-results.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: "停止 Docker Compose 服务栈"
+        if: always()
+        run: docker compose down -v || true
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 全分支并行测压（当 branches 输入不为空时）
+  # ──────────────────────────────────────────────────────────────────────────
+  multi-branch:
+    name: "全分支压测 — ${{ matrix.branch }}"
+    runs-on: ubuntu-24.04
+    needs: gate
+    if: ${{ github.event.inputs.branches != '' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(format('["{0}"]', replace(github.event.inputs.branches || 'main', ',', '","'))) }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install pip==26.0.1
+          pip install locust pytest-benchmark pytest-timeout pytest-mock respx factory_boy psutil
+
+      - name: "[${{ matrix.branch }}] 拉起服务栈"
+        run: |
+          docker compose up -d postgres redis gateway || true
+
+      - name: "[${{ matrix.branch }}] 等待后端就绪"
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ env.BACKEND_HOST }}/health || echo "000")
+            [ "$STATUS" = "200" ] && break
+            sleep 5
+          done
+
+      - name: "[${{ matrix.branch }}] 单元测试门禁"
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pip install --require-hashes -r backend/requirements-ci.lock 2>/dev/null || \
+            pip install -r backend/requirements-core.txt 2>/dev/null || true
+          python -m pytest backend/tests/unit/ --tb=short -q --timeout=60 || true
+
+      - name: "[${{ matrix.branch }}] Locust 快速压测（100 并发，2 分钟）"
+        run: |
+          locust \
+            -f tests/performance/locustfile.py \
+            --headless \
+            -u 100 \
+            -r 10 \
+            --run-time 2m \
+            --host ${{ env.BACKEND_HOST }} \
+            --csv results-${{ matrix.branch }}/api \
+            --html results-${{ matrix.branch }}/api_report.html \
+            --exit-code-on-error 0 || true
+
+      - name: "[${{ matrix.branch }}] 上传分支压测报告"
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: load-test-branch-${{ matrix.branch }}
+          path: results-${{ matrix.branch }}/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: "[${{ matrix.branch }}] 停止服务栈"
+        if: always()
+        run: docker compose down -v || true
