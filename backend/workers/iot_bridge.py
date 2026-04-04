@@ -54,3 +54,10 @@ class IoTBridgeWorker:
                         if retries >= MAX_RETRIES:
                             await self.redis.xadd(DLQ_STREAM_KEY, data, maxlen=10000, approximate=True)
                             await self.redis.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
+                        else:
+                            # Re-add the message with incremented retry_count so subsequent
+                            # deliveries track the cumulative failure count correctly.
+                            updated = dict(data)
+                            updated["retry_count"] = str(retries)
+                            await self.redis.xadd(REDIS_STREAM_KEY, updated)
+                            await self.redis.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
