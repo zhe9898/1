@@ -70,6 +70,14 @@ class NodeDrainRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=255)
 
 
+class NodeSelfDrainRequest(BaseModel):
+    """Payload sent by a runner-agent to drain itself gracefully (node-token auth)."""
+
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
+    node_id: str = Field(..., min_length=1, max_length=128)
+    reason: str | None = Field(default=None, max_length=255)
+
+
 class NodeResponse(BaseModel):
     node_id: str
     name: str

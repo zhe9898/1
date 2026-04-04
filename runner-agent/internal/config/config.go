@@ -47,9 +47,12 @@ type Config struct {
 	CurrentPowerWatts  int
 	ThermalState       string
 	CloudConnectivity  string
-	HeartbeatInterval  time.Duration
-	PullInterval       time.Duration
-	LeaseSeconds       int
+	// Cloud elasticity: when set, the agent presents this token at registration
+	// so the backend can auto-activate this node without manual admin approval.
+	CloudToken        string
+	HeartbeatInterval time.Duration
+	PullInterval      time.Duration
+	LeaseSeconds      int
 }
 
 func Load() Config {
@@ -86,6 +89,7 @@ func Load() Config {
 		CurrentPowerWatts:  max(0, getenvInt("RUNNER_CURRENT_POWER_WATTS", 0)),
 		ThermalState:       getenv("RUNNER_THERMAL_STATE", "normal"),
 		CloudConnectivity:  getenv("RUNNER_CLOUD_CONNECTIVITY", "online"),
+		CloudToken:         strings.TrimSpace(os.Getenv("RUNNER_CLOUD_TOKEN")),
 		HeartbeatInterval:  time.Duration(getenvInt("RUNNER_HEARTBEAT_SECONDS", 15)) * time.Second,
 		PullInterval:       time.Duration(getenvInt("RUNNER_PULL_SECONDS", 5)) * time.Second,
 		LeaseSeconds:       getenvInt("RUNNER_LEASE_SECONDS", 30),

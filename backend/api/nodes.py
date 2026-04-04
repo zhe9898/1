@@ -9,6 +9,7 @@ statements keep working.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -35,7 +36,7 @@ from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consum
 )
 
 # 鈹€鈹€ Re-exports (backward-compat) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consumers
+from backend.api.nodes_models import (  # noqa: F401 – re-exported for consumers
     BootstrapReceipt,
     NodeContractPayload,
     NodeDrainRequest,
@@ -44,6 +45,7 @@ from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consume
     NodeProvisionResponse,
     NodeRegisterRequest,
     NodeResponse,
+    NodeSelfDrainRequest,
     _utcnow,
 )
 from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consumers
@@ -205,6 +207,33 @@ async def undrain_node(
     return response
 
 
+@router.post("/self/drain", response_model=NodeResponse)
+async def self_drain_node(
+    payload: NodeSelfDrainRequest,
+    db: AsyncSession = Depends(get_machine_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+    node_token: str = Depends(get_node_machine_token),
+) -> NodeResponse:
+    """Allow a runner-agent to mark itself as draining using its own node token.
+
+    Called by the agent on SIGTERM so the scheduler stops dispatching new jobs
+    to this node while in-flight jobs complete.
+    """
+    node = await authenticate_node_request(db, payload.node_id, node_token, require_active=False, tenant_id=payload.tenant_id)
+    node.drain_status = "draining"
+    node.health_reason = payload.reason or node.health_reason
+    node.updated_at = _utcnow()
+    await db.flush()
+    response = _to_response(node, now=node.updated_at)
+    await publish_control_event(
+        redis,
+        CHANNEL_NODE_EVENTS,
+        "drain",
+        {"node": response.model_dump(mode="json")},
+    )
+    return response
+
+
 @router.post("/register", response_model=NodeResponse)
 async def register_node(
     payload: NodeRegisterRequest,
@@ -243,8 +272,16 @@ async def register_node(
 
     # Enrollment approval: new nodes stay pending until admin approves.
     # Re-registration of already-active nodes keeps active status.
+    # Exception: cloud nodes presenting a valid CLOUD_AUTO_APPROVE_TOKEN are
+    # activated immediately and tagged with cloud=true for scheduler awareness.
     if node.enrollment_status not in ("active",):
-        node.enrollment_status = "pending"
+        _auto_token = os.environ.get("CLOUD_AUTO_APPROVE_TOKEN", "").strip()
+        _node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
+        if _auto_token and _node_cloud_token and _auto_token == _node_cloud_token:
+            node.enrollment_status = "active"
+            node.metadata_json = {**(node.metadata_json or {}), "cloud": True}
+        else:
+            node.enrollment_status = "pending"
     node.drain_status = "active"
     node.health_reason = None
 

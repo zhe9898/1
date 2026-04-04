@@ -156,6 +156,14 @@ type envelope[T any] struct {
 	Data    T      `json:"data"`
 }
 
+// SelfDrainRequest is the payload sent to /api/v1/nodes/self/drain.
+// The agent calls this on SIGTERM to signal graceful shutdown to the scheduler.
+type SelfDrainRequest struct {
+	TenantID string `json:"tenant_id"`
+	NodeID   string `json:"node_id"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 func New(cfg config.Config) *Client {
 	return &Client{
 		baseURL:    strings.TrimRight(cfg.GatewayBaseURL, "/"),
@@ -223,6 +231,12 @@ func normalizedFingerprint(value string) string {
 
 func (c *Client) RegisterNode(ctx context.Context, payload RegisterRequest) error {
 	return c.post(ctx, "/api/v1/nodes/register", payload, nil)
+}
+
+// DrainSelf marks this node as draining via its own node token.  The scheduler
+// will stop dispatching new jobs to the node while in-flight jobs finish.
+func (c *Client) DrainSelf(ctx context.Context, payload SelfDrainRequest) error {
+	return c.post(ctx, "/api/v1/nodes/self/drain", payload, nil)
 }
 
 // HTTPClient returns the underlying *http.Client for reuse (e.g. telemetry probes).
