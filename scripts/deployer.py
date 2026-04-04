@@ -250,7 +250,7 @@ def main() -> None:
     _compose_up_graceful(root, compose_file, env, label="部署")
 
     # host 服务 systemctl 管理
-    _start_host_services(config_path, output_dir / "systemd")
+    _start_host_services(config_path, output_dir)
 
     logger.info("部署完成")
 
