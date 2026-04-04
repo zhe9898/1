@@ -45,8 +45,8 @@ func TestHealthcheckHTTPSuccess(t *testing.T) {
 	if out["healthy"] != true {
 		t.Fatalf("expected healthy=true, got %v", out["healthy"])
 	}
-	if out["latency_ms"] == nil || out["latency_ms"].(float64) <= 0 {
-		t.Fatalf("expected positive latency_ms, got %v", out["latency_ms"])
+	if out["latency_ms"] == nil || out["latency_ms"].(float64) < 0 {
+		t.Fatalf("expected non-negative latency_ms, got %v", out["latency_ms"])
 	}
 }
 

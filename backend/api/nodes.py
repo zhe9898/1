@@ -24,17 +24,19 @@ from backend.api.deps import (
 )
 from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consumers
     _apply_contract,
-    _bootstrap_notes,
-    _bootstrap_token_value,
-    _build_bootstrap_commands,
-    _build_bootstrap_receipts,
     _build_node_actions,
     _get_active_lease_counts,
     _get_node_by_id,
     _matches_node_list_filters,
     _provision_token,
-    _resource_schema,
     _to_response,
+)
+from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consumers
+    _bootstrap_notes,
+    _bootstrap_token_value,
+    _build_bootstrap_commands,
+    _build_bootstrap_receipts,
+    _resource_schema,
 )
 
 # 鈹€鈹€ Re-exports (backward-compat) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

@@ -65,8 +65,18 @@ def build_token_response_model(
     scopes: list[str] | None = None,
 ) -> TokenResponse:
     """统一构造 TokenResponse 模型。"""
+    token_kwargs: dict[str, object] = {
+        "tenant_id": tenant_id,
+        "ai_route_preference": ai_route_preference,
+    }
+    # Keep backward-compatible call shape when scopes are absent.
+    if scopes is not None:
+        token_kwargs["scopes"] = scopes
     body = _auth_mod().token_response(  # type: ignore[attr-defined]
-        sub, username, role, tenant_id=tenant_id, ai_route_preference=ai_route_preference, scopes=scopes
+        sub,
+        username,
+        role,
+        **token_kwargs,
     )
     return TokenResponse(
         access_token=str(body["access_token"]),

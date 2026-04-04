@@ -8,11 +8,12 @@
 import { logInfo, logWarn } from "@/utils/logger";
 
 export async function requestPersistentStorage(): Promise<boolean> {
-  if (!("storage" in navigator) || !("persist" in navigator.storage)) {
+  const persist = (navigator as { storage?: { persist?: () => Promise<boolean> } }).storage?.persist;
+  if (typeof persist !== "function") {
     return false;
   }
   try {
-    const granted = await navigator.storage.persist();
+    const granted = await persist();
     if (!granted) {
       logWarn("[ZEN70 Warning] 离线灾备存储申请被拒绝，当前设备存储空间紧张时，离线缓存 (IndexedDB) 可能会被浏览器自动清理，部分断网能力可用性将受损！");
     } else {
@@ -25,11 +26,12 @@ export async function requestPersistentStorage(): Promise<boolean> {
 }
 
 export async function isPersisted(): Promise<boolean> {
-  if (!("storage" in navigator) || !("persisted" in navigator.storage)) {
+  const persisted = (navigator as { storage?: { persisted?: () => Promise<boolean> } }).storage?.persisted;
+  if (typeof persisted !== "function") {
     return false;
   }
   try {
-    return await navigator.storage.persisted();
+    return await persisted();
   } catch {
     return false;
   }

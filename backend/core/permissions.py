@@ -218,4 +218,11 @@ async def get_user_scopes(
         List of scope strings
     """
     permissions = await list_user_permissions(db, tenant_id=tenant_id, user_id=user_id)
-    return list(set(p.scope for p in permissions))
+    scopes: set[str] = set()
+    for permission in permissions:
+        scope = getattr(permission, "scope", None)
+        if isinstance(scope, str):
+            normalized = scope.strip()
+            if normalized:
+                scopes.add(normalized)
+    return list(scopes)
