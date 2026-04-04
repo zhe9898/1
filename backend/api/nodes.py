@@ -31,13 +31,6 @@ from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consum
     _provision_token,
     _to_response,
 )
-from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consumers
-    _bootstrap_notes,
-    _bootstrap_token_value,
-    _build_bootstrap_commands,
-    _build_bootstrap_receipts,
-    _resource_schema,
-)
 
 # 鈹€鈹€ Re-exports (backward-compat) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consumers
@@ -50,6 +43,13 @@ from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consume
     NodeRegisterRequest,
     NodeResponse,
     _utcnow,
+)
+from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consumers
+    _bootstrap_notes,
+    _bootstrap_token_value,
+    _build_bootstrap_commands,
+    _build_bootstrap_receipts,
+    _resource_schema,
 )
 from backend.api.ui_contracts import ResourceSchemaResponse
 from backend.core.errors import zen
