@@ -62,6 +62,11 @@ services:
     container_name: zen70-caddy
     image: caddy:2-alpine@sha256:fce4f15aad23222c0ac78a1220adf63bae7b94355d5ea28eee53910624acedfa
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
     networks:
     - frontend_net
     - backend_net
@@ -227,6 +232,11 @@ services:
       context: .
       dockerfile: runner-agent/Dockerfile
     image: ${ZEN70_RUNNER_AGENT_IMAGE_REF:-zen70-runner-agent:v3.43}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
     networks:
     - backend_net
     environment:
@@ -299,8 +309,11 @@ services:
     - ./scripts:/app/scripts:ro
     - ./iac:/app/iac:ro
     - ./system.yaml:/app/system.yaml:ro
-    - ./config:/app/config
+    - ./config:/app/config:ro
     - ./runtime/control-plane:/app/runtime/control-plane
+    # SECURITY NOTE: /dev and /sys are mounted read-only for hardware monitoring
+    # (disk health, GPU state, UPS detection via topology_sentinel.py).
+    # In high-security deployments, replace with dedicated metrics exporters.
     - /dev:/dev:ro
     - /sys:/sys:ro
     oom_score_adj: -999
@@ -326,7 +339,15 @@ services:
     restart: unless-stopped
     networks:
     - backend_net
-    privileged: true
+    # SECURITY: privileged mode removed (not required by tecnativa proxy).
+    # Docker socket access is scoped via env vars (CONTAINERS=1, POST=1).
+    # Communication is on internal backend_net only.
+    # TODO: Migrate to TLS (port 2376) or Unix socket when proxy supports per-endpoint ACLs.
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     environment:
       CONTAINERS: '1'
       SERVICES: '1'
