@@ -118,6 +118,7 @@ func (s *Service) registerNode(ctx context.Context) error {
 		"memory_mb":       s.cfg.MemoryMB,
 		"gpu_vram_mb":     s.cfg.GPUVRAMMB,
 		"storage_mb":      s.cfg.StorageMB,
+		"device_profile":  s.cfg.DeviceProfile,
 	}
 	// When a cloud auto-approve token is configured, include it so the backend
 	// can activate this node immediately without manual admin approval.

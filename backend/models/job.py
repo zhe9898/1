@@ -55,6 +55,7 @@ class Job(Base):
     power_budget_watts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     thermal_sensitivity: Mapped[str | None] = mapped_column(String(32), nullable=True)
     cloud_fallback_enabled: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
+    preferred_device_profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Scheduling strategy and affinity
     scheduling_strategy: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     affinity_labels: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)

@@ -211,6 +211,7 @@ async def submit_job(
         power_budget_watts=payload.power_budget_watts,
         thermal_sensitivity=payload.thermal_sensitivity,
         cloud_fallback_enabled=int(payload.cloud_fallback_enabled),
+        preferred_device_profile=payload.preferred_device_profile,
         scheduling_strategy=payload.scheduling_strategy,
         affinity_labels=payload.affinity_labels,
         affinity_rule=payload.affinity_rule,

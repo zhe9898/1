@@ -214,6 +214,40 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
     node.last_seen_at = now
     node.updated_at = now
 
+    # ── Device profile: honour explicit value or auto-infer ──────────────
+    current_meta: dict[str, object] = dict(node.metadata_json or {})
+    explicit_profile = str(current_meta.get("device_profile", "")).strip()
+    if not explicit_profile:
+        from backend.core.device_profiles import apply_profile_defaults, get_device_profile, infer_device_profile
+
+        inferred = infer_device_profile(
+            os=node.os or "",
+            arch=node.arch or "",
+            memory_mb=int(node.memory_mb or 0),
+            executor=node.executor or "",
+            capabilities=list(node.capabilities or []),
+        )
+        current_meta["device_profile"] = inferred
+        profile_obj = get_device_profile(inferred)
+    else:
+        from backend.core.device_profiles import apply_profile_defaults, get_device_profile
+
+        profile_obj = get_device_profile(explicit_profile)
+    if profile_obj is not None:
+        overrides = apply_profile_defaults(
+            profile_obj,
+            executor=node.executor or "",
+            zone=node.zone,
+            max_concurrency=int(node.max_concurrency or 1),
+        )
+        if "executor" in overrides:
+            node.executor = str(overrides["executor"])
+        if "zone" in overrides:
+            node.zone = str(overrides["zone"])
+        if "max_concurrency" in overrides:
+            node.max_concurrency = int(overrides["max_concurrency"])
+    node.metadata_json = current_meta
+
 
 def _matches_node_list_filters(
     node: Node,

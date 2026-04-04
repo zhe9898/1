@@ -44,6 +44,7 @@ from backend.core.job_scheduler import (
     select_jobs_for_node,
 )
 from backend.core.node_auth import authenticate_node_request
+from backend.core.placement_grpc_client import async_build_time_budgeted_placement_plan
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
 from backend.core.reservation_runtime import choose_reservation_slot
 from backend.core.scheduling_governance import (
@@ -396,7 +397,7 @@ async def pull_jobs(  # noqa: C901
 
     set_placement_enabled(_ff_placement)
     _solver_dispatch_context: dict[str, object] = {}
-    placement_plan = build_time_budgeted_placement_plan(
+    placement_plan = await async_build_time_budgeted_placement_plan(
         candidates,
         active_node_snapshots,
         now=now,
