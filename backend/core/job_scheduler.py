@@ -258,18 +258,8 @@ def select_jobs_for_node(  # noqa: C901
         return []
     total_active_nodes = len(active_nodes)
     _active_jobs = active_jobs_on_node or []
-    _reservation_mgr = None
-    _backfill_eval = None
-    try:
-        from backend.core.backfill_scheduling import BackfillEvaluator, get_reservation_manager
 
-        _reservation_mgr = get_reservation_manager()
-        _backfill_eval = BackfillEvaluator(_reservation_mgr)
-    except Exception:
-        _reservation_mgr = None
-        _backfill_eval = None
-
-    # 鈹€鈹€ Phase A: Cheap pre-filter 鈫?compatible candidates 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # ── Phase A: Cheap pre-filter → compatible candidates ─────────────────
     compatible: list[Job] = []
     for job in jobs:
         if node.accepted_kinds and job.kind not in node.accepted_kinds:
@@ -288,18 +278,12 @@ def select_jobs_for_node(  # noqa: C901
             continue
         if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
             continue
-        if _backfill_eval is not None and _reservation_mgr is not None:
-            priority = int(getattr(job, "priority", 0) or 0)
-            if priority < _reservation_mgr.config.reservation_min_priority:
-                can_backfill, _reason = _backfill_eval.can_backfill(job, node, now=now)
-                if not can_backfill:
-                    continue
         compatible.append(job)
 
     if not compatible:
         return []
 
-    # 鈹€鈹€ Phase B: Batch eligible counts for pre-filtered jobs only 鈹€鈹€鈹€鈹€鈹€
+    # ── Phase B: Batch eligible counts for pre-filtered jobs only ─────────
     # Deferred to after pre-filter so we don't compute counts for
     # jobs that can never match this node.
     eligible_cache = batch_eligible_counts(

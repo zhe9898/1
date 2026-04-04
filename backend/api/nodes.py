@@ -9,7 +9,9 @@ statements keep working.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -321,6 +323,8 @@ async def list_nodes(
     heartbeat_state: str | None = None,
     capacity_state: str | None = None,
     attention: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
     current_user: dict[str, object] = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[NodeResponse]:
@@ -338,7 +342,7 @@ async def list_nodes(
         query = query.where(Node.zone == zone)
     if enrollment_status:
         query = query.where(Node.enrollment_status == enrollment_status)
-    result = await db.execute(query.order_by(Node.last_seen_at.desc()))
+    result = await db.execute(query.order_by(Node.last_seen_at.desc()).limit(limit).offset(offset))
     nodes = list(result.scalars().all())
     now = _utcnow()
     counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id for node in nodes], now=now)

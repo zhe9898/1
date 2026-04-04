@@ -56,6 +56,9 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 # ── Self-learning outcome feedback helper ────────────────────────────
 
+# Persist learned weights every this many signals to amortise the write cost.
+_TUNER_PERSIST_EVERY_N: int = 50
+
 
 def _record_tuner_outcome(
     job: object,
@@ -89,6 +92,23 @@ def _record_tuner_outcome(
         )
         get_scheduler_tuner().record_outcome(signal)
     except Exception:  # noqa: BLE001 — best-effort, never crash lifecycle
+        pass
+
+
+async def _maybe_persist_tuner(db: AsyncSession) -> None:
+    """Persist tuner weights every N signals (amortised write).
+
+    Best-effort: never raises so a DB hiccup cannot break lifecycle endpoints.
+    """
+    try:
+        from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+        tuner = get_scheduler_tuner()
+        if tuner._total_signals % _TUNER_PERSIST_EVERY_N == 0 and tuner._total_signals > 0:
+            from backend.core.governance_facade import get_governance_facade
+
+            await get_governance_facade().save_tuner_state(db)
+    except Exception:  # noqa: BLE001 — best-effort
         pass
 
 
@@ -186,6 +206,7 @@ async def complete_job(
 
     # ── Self-learning feedback: record successful outcome ──────────────
     _record_tuner_outcome(job, node_id=payload.node_id, success=True, now=now)
+    await _maybe_persist_tuner(db)
 
     return response
 
@@ -316,6 +337,7 @@ async def fail_job(
 
     # ── Self-learning feedback: record failed outcome ───────────────
     _record_tuner_outcome(job, node_id=payload.node_id, success=False, now=now)
+    await _maybe_persist_tuner(db)
 
     response = _to_response(job, now=now)
     await db.commit()

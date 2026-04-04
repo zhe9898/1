@@ -16,6 +16,15 @@ The dispatch.py ``pull_jobs`` function calls:
 - ``facade.is_sealed`` → checked by ``set_scheduling_feature()`` to block mutations
 
 All strategy selection also flows through ``facade.resolve_strategy(...)``.
+
+**Module boundary**
+This module is a *Facade* (Gang of Four): it routes calls to the real
+implementations in ``scheduling_governance.py`` (DB-backed tenant policy,
+feature flags, audit logger), ``queue_stratification.py`` (fair-share
+quotas), ``failure_control_plane.py`` (circuit breakers, node quarantine),
+``scheduler_auto_tune.py`` (EMA weight tuner), and
+``scheduling_policy_store.py`` (policy CRUD).  Business logic must **not**
+be added here; add it to the appropriate implementation module instead.
 """
 
 from __future__ import annotations
@@ -407,6 +416,18 @@ class GovernanceFacade:
         from backend.core.scheduler_auto_tune import get_scheduler_tuner
 
         return get_scheduler_tuner().recommend_strategy()
+
+    async def load_tuner_state(self, db: AsyncSession) -> None:
+        """Restore learned EMA weights from the DB on startup."""
+        from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+        await get_scheduler_tuner().load_state(db)
+
+    async def save_tuner_state(self, db: AsyncSession) -> None:
+        """Persist current EMA weights to the DB."""
+        from backend.core.scheduler_auto_tune import get_scheduler_tuner
+
+        await get_scheduler_tuner().save_state(db)
 
     # ── Scheduling policy store proxy ────────────────────────────────
 

@@ -836,3 +836,79 @@ class TestSingleton:
         t1 = get_scheduler_tuner()
         t2 = get_scheduler_tuner()
         assert t1 is t2
+
+
+class TestTunerPersistence:
+    """Tests for state_to_dict / load_from_dict (in-memory round-trip)."""
+
+    def _make_tuner(self) -> object:
+        from backend.core.scheduler_auto_tune import SchedulerTuner
+
+        return SchedulerTuner(enabled=True)
+
+    def test_state_to_dict_has_expected_keys(self) -> None:
+        tuner = self._make_tuner()
+        d = tuner.state_to_dict()
+        assert d["v"] == 1
+        assert "saved_at" in d
+        assert "total_signals" in d
+        assert "dimensions" in d
+
+    def test_round_trip_preserves_multiplier(self) -> None:
+        from backend.core.scheduler_auto_tune import SchedulerTuner
+
+        src = SchedulerTuner(enabled=True)
+        # Force a multiplier change bypassing cold-start threshold
+        src.weights._states["priority"].multiplier = 2.5
+        src.weights._states["priority"].sample_count = 999
+
+        d = src.state_to_dict()
+
+        dst = SchedulerTuner(enabled=True)
+        dst.load_from_dict(d)
+        assert dst.weights._states["priority"].multiplier == 2.5
+        assert dst.weights._states["priority"].sample_count == 999
+
+    def test_round_trip_preserves_total_signals(self) -> None:
+        from backend.core.scheduler_auto_tune import SchedulerTuner, OutcomeSignal
+        import datetime
+
+        src = SchedulerTuner(enabled=True)
+        # Manually bump total_signals so we don't need min_samples
+        src._total_signals = 42
+        d = src.state_to_dict()
+        assert d["total_signals"] == 42
+
+        dst = SchedulerTuner(enabled=True)
+        dst.load_from_dict(d)
+        assert dst._total_signals == 42
+
+    def test_load_unknown_version_is_skipped(self) -> None:
+        from backend.core.scheduler_auto_tune import SchedulerTuner
+
+        tuner = SchedulerTuner(enabled=True)
+        tuner.weights._states["priority"].multiplier = 1.9
+
+        tuner.load_from_dict({"v": 99, "dimensions": {"priority": {"multiplier": 0.1, "sample_count": 1, "success_rate": 0.0, "contribution_ema": 0.0}}})
+
+        # Multiplier should be unchanged because version is unknown
+        assert tuner.weights._states["priority"].multiplier == 1.9
+
+    def test_load_unknown_dimension_is_silently_skipped(self) -> None:
+        from backend.core.scheduler_auto_tune import SchedulerTuner
+
+        tuner = SchedulerTuner(enabled=True)
+        # This must not raise even when the dimension doesn't exist
+        tuner.load_from_dict({"v": 1, "total_signals": 0, "dimensions": {"nonexistent_dimension": {"multiplier": 9.9, "sample_count": 1, "success_rate": 0.0, "contribution_ema": 0.0}}})
+
+    def test_reset_after_load_clears_state(self) -> None:
+        from backend.core.scheduler_auto_tune import SchedulerTuner
+
+        tuner = SchedulerTuner(enabled=True)
+        tuner.weights._states["priority"].multiplier = 2.0
+        tuner.weights._states["priority"].sample_count = 100
+        d = tuner.state_to_dict()
+
+        tuner.reset()
+        assert tuner.weights._states["priority"].multiplier == 1.0
+        assert tuner.weights._states["priority"].sample_count == 0

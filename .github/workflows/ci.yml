@@ -9,7 +9,7 @@ on:
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
-  BACKEND_MIN_COVERAGE: "60"
+  BACKEND_MIN_COVERAGE: "70"
 
 jobs:
   backend:

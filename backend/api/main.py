@@ -161,6 +161,17 @@ async def lifespan(app: FastAPI) -> object:
         app.state.rls_ready = True
         logger.info("RLS runtime readiness verified before serving tenant traffic")
 
+    # Restore auto-tune EMA weights from DB so scheduling quality is not
+    # reset on every process restart.
+    if _async_session_factory is not None:
+        try:
+            from backend.core.governance_facade import get_governance_facade
+
+            async with _async_session_factory() as session:
+                await get_governance_facade().load_tuner_state(session)
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+            logger.warning("Failed to restore scheduler tuner weights: %s", exc)
+
     # Redis is optional; keep degraded mode but log clearly.
     settings = get_settings()
     app.state.redis = await connect_redis_with_retry(settings, logger=logger)

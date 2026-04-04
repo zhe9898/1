@@ -122,7 +122,7 @@ class GangSchedulingGate(SchedulingConstraint):
     order = 30
 
     def evaluate(self, job: Job, ctx: SchedulingContext) -> tuple[bool, str]:
-        from backend.core.business_scheduling import calculate_gang_scheduling_readiness
+        from backend.core.gang_scheduler import calculate_gang_scheduling_readiness
 
         gang_id = getattr(job, "gang_id", None)
         if not gang_id:

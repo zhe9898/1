@@ -9,7 +9,9 @@ contracts.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +57,8 @@ async def list_jobs(
     target_executor: str | None = None,
     target_zone: str | None = None,
     required_capability: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
     current_user: dict[str, object] = Depends(get_current_user),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[JobResponse]:
@@ -66,7 +70,7 @@ async def list_jobs(
         query = query.where(Job.target_executor == target_executor)
     if target_zone:
         query = query.where(Job.target_zone == target_zone)
-    result = await db.execute(query.order_by(Job.priority.desc(), Job.created_at.desc()))
+    result = await db.execute(query.order_by(Job.priority.desc(), Job.created_at.desc()).limit(limit).offset(offset))
     now = _utcnow()
     jobs = [
         job

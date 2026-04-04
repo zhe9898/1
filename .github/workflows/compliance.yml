@@ -9,7 +9,7 @@ on:
     branches: [main, master]
 
 env:
-  BACKEND_MIN_COVERAGE: "60"
+  BACKEND_MIN_COVERAGE: "70"
 
 jobs:
   backend-check:

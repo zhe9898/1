@@ -2,8 +2,19 @@
 Business Scheduling Engine
 
 Utility functions for job scheduling: priority boosting, dependency
-checking, gang scheduling, preemption, batch scoring, SLA risk.
+checking, preemption, batch scoring, SLA risk.
 Constraint pipeline classes live in ``scheduling_constraints.py``.
+Gang scheduling coordination lives in ``gang_scheduler.py``.
+
+**Module boundary**
+This module owns *scheduling decision logic* that operates on job metadata:
+priority adjustments, preemption decisions, SLA breach risk, and dependency
+satisfaction.  It does **not** own:
+
+- Constraint classes / the pipeline engine → ``scheduling_constraints.py``
+- Gang readiness / all-or-nothing coordination → ``gang_scheduler.py``
+- Job kind metadata, resource profiles, QoS classes → ``workload_semantics.py``
+- Queue ordering / aging formulas / tenant fair-share → ``queue_stratification.py``
 """
 
 from __future__ import annotations
@@ -129,40 +140,6 @@ def check_job_dependencies_satisfied(
 
     blocking = [dep_id for dep_id in depends_on if dep_id not in completed_job_ids]
     return len(blocking) == 0, blocking
-
-
-def calculate_gang_scheduling_readiness(
-    job: Job,
-    gang_jobs: list[Job],
-    available_slots: int,
-) -> tuple[bool, str]:
-    """Check if gang scheduling requirements are met.
-
-    Gang scheduling: All jobs in a gang must be scheduled together.
-
-    Returns: (ready, reason)
-    """
-    gang_id = getattr(job, "gang_id", None)
-    if not gang_id:
-        return True, ""
-
-    # Find all jobs in the same gang
-    gang_members = [j for j in gang_jobs if getattr(j, "gang_id", None) == gang_id]
-    gang_size = len(gang_members)
-
-    if gang_size == 0:
-        return True, ""
-
-    # Check if enough slots available for entire gang
-    if available_slots < gang_size:
-        return False, f"gang-scheduling:need-{gang_size}-slots:have-{available_slots}"
-
-    # Check if all gang members are ready (no blocking dependencies)
-    for member in gang_members:
-        if member.status not in ("pending", "leased"):
-            return False, f"gang-scheduling:member-{member.job_id}:status-{member.status}"
-
-    return True, ""
 
 
 def should_preempt_for_job(
