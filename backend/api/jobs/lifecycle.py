@@ -96,7 +96,7 @@ def _record_tuner_outcome(
         )
         get_scheduler_tuner().record_outcome(signal)
     except Exception:
-        logger.warning("Failed to record tuner outcome for job %s", getattr(job, "job_id", "?"), exc_info=True)
+        logger.warning("Failed to record tuner outcome for job %s", getattr(job, "job_id", "<unknown>"), exc_info=True)
 
 
 async def _maybe_persist_tuner(db: AsyncSession) -> None:
