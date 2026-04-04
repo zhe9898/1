@@ -35,12 +35,24 @@ logger = logging.getLogger(__name__)
 RETENTION_CYCLE_SECONDS = int(os.getenv("RETENTION_CYCLE_SECONDS", "86400"))  # 默认 24h
 
 
+# ── Phoenix Loop 公共常量 ─────────────────────────────────────────────────
+# 重启风暴防护：指数退避上界（秒），避免 worker 崩溃后无限快速重启
+_PHOENIX_MAX_BACKOFF_S: int = 300
+_PHOENIX_BASE_BACKOFF_S: int = 5
+
+
+def _phoenix_backoff(restart_count: int) -> float:
+    """指数退避：5s → 10s → 20s → 40s → … → 300s (上界)。"""
+    return min(_PHOENIX_BASE_BACKOFF_S * (2 ** max(restart_count - 1, 0)), _PHOENIX_MAX_BACKOFF_S)
+
+
 async def data_retention_worker() -> None:
     """法典 3.x: 定期清理过期数据（jobs/scheduling_decisions/audit_logs）。
 
-    B24: Phoenix Loop 不死鸟循环 — 崩溃后 5s 自动重启。
+    B24: Phoenix Loop 不死鸟循环 — 崩溃后指数退避自动重启，上界 300s 防重启风暴。
     """
     await asyncio.sleep(120)  # 启动延迟 — 等待 DB 稳定
+    restart_count = 0
     while True:  # B24: Phoenix Loop
         try:
             from backend.core.data_retention import run_retention_cycle
@@ -59,13 +71,20 @@ async def data_retention_worker() -> None:
                 else:
                     logger.debug("data_retention_worker: no records to purge")
 
+            restart_count = 0  # 成功执行一轮后重置计数器
             await asyncio.sleep(RETENTION_CYCLE_SECONDS)
         except asyncio.CancelledError:
             logger.info("data_retention_worker: received CancelledError, exiting")
             return  # 优雅退出
         except Exception:  # noqa: BLE001 — Phoenix Loop
-            logger.exception("data_retention_worker: unexpected crash, restarting in 5s")
-            await asyncio.sleep(5)
+            restart_count += 1
+            backoff = _phoenix_backoff(restart_count)
+            logger.exception(
+                "data_retention_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                restart_count,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
 
 
 # -------------------- Bit-Rot 巡检（法典 3.2.3）--------------------
@@ -137,7 +156,8 @@ def _scan_and_hash_file(filepath: Path, db_path: Path) -> str | None:
 
 async def bitrot_worker() -> None:
     """法典 3.2.3: 后台巡检冷数据。A-3: 所有 SQLite+hashing 操作在线程池中执行。"""
-    while True:  # B24: Phoenix Loop 不死鸟循环 — 崩溃后自动重启
+    restart_count = 0
+    while True:  # B24: Phoenix Loop 不死鸟循环 — 崩溃后指数退避自动重启
         try:
             await asyncio.sleep(60)
             await asyncio.to_thread(_init_bitrot_db)
@@ -166,8 +186,14 @@ async def bitrot_worker() -> None:
             logger.info("bitrot_worker: received CancelledError, exiting")
             return  # 优雅退出
         except Exception:  # noqa: BLE001 — Phoenix Loop 必须捕获所有异常防静默死亡
-            logger.exception("bitrot_worker: unexpected crash, restarting in 5s")
-            await asyncio.sleep(5)
+            restart_count += 1
+            backoff = _phoenix_backoff(restart_count)
+            logger.exception(
+                "bitrot_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                restart_count,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
 
 
 # -------------------- SRE 探针 (法典 3.6: Readiness & Liveness) --------------------
@@ -185,9 +211,10 @@ async def health_probe_worker(app_redis: object = None) -> None:
     定期执行微服务探针: Liveness 连续失败 3 次强杀重启; Readiness 封锁进站。
 
     A-1: 接受 app_redis (RedisClient) 参数，使用连接池发布事件（不再 per-request 短连接）。
-    B24: Phoenix Loop 不死鸟循环 — 探针崩溃后 5s 内自动重启。
+    B24: Phoenix Loop 不死鸟循环 — 探针崩溃后指数退避重启，上界 300s 防重启风暴。
     """
     await asyncio.sleep(5)
+    restart_count = 0
     while True:  # B24: Phoenix Loop
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
@@ -231,10 +258,17 @@ async def health_probe_worker(app_redis: object = None) -> None:
                                         )
                                 service_liveness_fails[svc_name] = 0
 
+                    restart_count = 0  # 内循环正常运行时保持计数器清零
                     await asyncio.sleep(10)
         except asyncio.CancelledError:
             logger.info("health_probe_worker: received CancelledError, exiting")
             return  # 优雅退出
         except Exception:  # noqa: BLE001 — Phoenix Loop
-            logger.exception("health_probe_worker: unexpected crash, restarting in 5s")
-            await asyncio.sleep(5)
+            restart_count += 1
+            backoff = _phoenix_backoff(restart_count)
+            logger.exception(
+                "health_probe_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                restart_count,
+                backoff,
+            )
+            await asyncio.sleep(backoff)

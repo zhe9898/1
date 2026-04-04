@@ -54,3 +54,39 @@ describe('HTTP Circuit Breaker (Rule 6.2.3)', () => {
     expect(isCircuitOpen()).toBe(false);
   });
 });
+
+describe('HTTP Request Headers (CSRF & Identity)', () => {
+  let mock: MockAdapter;
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mock = new MockAdapter(http);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    mock.restore();
+    vi.useRealTimers();
+  });
+
+  it('sends X-Requested-With: XMLHttpRequest on every request (CSRF mitigation)', async () => {
+    mock.onGet('/v1/nodes').reply(200, { data: [] });
+
+    await http.get('/v1/nodes');
+
+    const request = mock.history.get[0];
+    expect(request).toBeDefined();
+    expect(request.headers?.['X-Requested-With']).toBe('XMLHttpRequest');
+  });
+
+  it('sends X-Request-ID header on every request (traceability)', async () => {
+    mock.onGet('/v1/nodes').reply(200, { data: [] });
+
+    await http.get('/v1/nodes');
+
+    const request = mock.history.get[0];
+    expect(request).toBeDefined();
+    expect(request.headers?.['X-Request-ID']).toBe('test-req-id');
+  });
+});
+

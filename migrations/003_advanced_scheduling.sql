@@ -4,6 +4,24 @@ Database migration for advanced scheduling features
 Revision ID: 003_advanced_scheduling
 Revises: 002_retry_delay
 Create Date: 2026-03-29
+
+Relationship with backend/alembic:
+------------------------------------
+This file is a STANDALONE SQL script executed outside the Alembic migration chain.
+It is applied once by the deploy pipeline (scripts/bootstrap.py → postdeploy_verify.py)
+AFTER Alembic migrations complete, because it depends on the base table schema that
+Alembic creates.
+
+Alembic tracks its own revision history in the `alembic_version` table.
+This script does NOT insert a row into `alembic_version` — it is idempotent via
+`ADD COLUMN IF NOT EXISTS` semantics on target databases (PostgreSQL 9.6+).
+
+To check whether this script has been applied:
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'jobs' AND column_name = 'data_locality_key';
+
+DO NOT convert this script to an Alembic revision without also removing it from
+the bootstrap pipeline — running it via both paths will cause duplicate-column errors.
 """
 
 # ============================================================================

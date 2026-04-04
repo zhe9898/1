@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -79,6 +80,9 @@ class TopologySentinel:
 
         # 磁盘污点机制：代替命令式 stop，由 _reconcile_loop 统一裁决
         self.has_disk_taint = False
+
+        # 优雅关闭标志：SIGTERM / KeyboardInterrupt 触发后置为 True，主循环在下一轮检查时退出
+        self._stop_event = threading.Event()
 
         self.mounts: list[MountPoint] = []
         mount_points_env = os.getenv("MOUNT_POINTS", "").strip()
@@ -735,7 +739,7 @@ class TopologySentinel:
             if logger is not None:
                 logger.info("Topology sentinel starting declarative Redis pub/sub listener on switch:events")
             # 法典 2.1：消费使用 get_message(timeout=...) 避免 listen() 无限阻塞，便于探针自愈与退出
-            while not self.is_zombie and r:
+            while not self.is_zombie and r and not self._stop_event.is_set():
                 message = pubsub.get_message(timeout=3)
                 if message is None:
                     continue
@@ -761,7 +765,7 @@ class TopologySentinel:
         listener.start()
 
         cycle_timeout = max(self.interval * 2, 10)
-        while True:
+        while not self._stop_event.is_set():
             t = threading.Thread(target=self._run_once_safe)
             t.start()
             t.join(timeout=cycle_timeout)
@@ -772,7 +776,11 @@ class TopologySentinel:
                         cycle_timeout,
                     )
                 t.join()
-            time.sleep(self.interval)
+            # Use Event.wait instead of time.sleep so SIGTERM wakes us immediately
+            self._stop_event.wait(timeout=self.interval)
+
+        if logger:
+            logger.info("Topology sentinel stopped gracefully")
 
     def _evict_zombie_tasks(self) -> None:
         """
@@ -847,16 +855,36 @@ def main() -> None:
     logger = setup_logging(request_id=str(uuid.uuid4()))
     _set_helpers_logger(logger)
     sentinel = TopologySentinel()
+
+    # 注册 SIGTERM 处理器，确保 K8s/Docker 优雅关闭期间能清理 Redis 连接和 event loop
+    def _handle_sigterm(signum: int, frame: object) -> None:
+        del signum, frame
+        if logger:
+            logger.info("SIGTERM received, initiating graceful shutdown")
+        # Guard against the signal being delivered before sentinel is fully initialised.
+        stop_event = getattr(sentinel, "_stop_event", None)
+        if stop_event is not None:
+            stop_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     try:
         sentinel.run()
     except KeyboardInterrupt:
         if logger:
-            logger.info("Shutting down by user")
-        sys.exit(0)
+            logger.info("Shutting down by user (SIGINT)")
+        sentinel._stop_event.set()
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
         if logger:
             logger.critical("Unhandled exception: %s", e, exc_info=True)
         sys.exit(1)
+    finally:
+        # 确保 Redis 连接在退出前关闭
+        if sentinel._redis is not None:
+            try:
+                sentinel._redis.close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

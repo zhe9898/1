@@ -31,10 +31,115 @@ groups:
       description: "One or more containers are in paused state (Hardware missing trigger)"
 
   - alert: ContainerExited
+    # 2m grace period avoids false-positives from normal container restarts
+    # (compose healthcheck probe cycles typically complete within 30-60s).
     expr: engine_daemon_container_states_stopped > 0
-    for: 10s
+    for: 2m
     labels:
       severity: warning
     annotations:
       summary: "Container Exited"
-      description: "A container has stopped running."
+      description: "A container has been stopped for more than 2 minutes."
+
+- name: ZEN70_Redis
+  rules:
+  - alert: RedisMemoryHighUsage
+    # Fires when Redis used_memory exceeds 80% of maxmemory.
+    # Sustained high memory triggers eviction (allkeys-lru) or OOM kills.
+    expr: redis_memory_used_bytes / redis_config_maxmemory_bytes > 0.80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Redis Memory Usage > 80%"
+      description: "Redis is consuming more than 80% of its configured maxmemory for 5 minutes. Risk of key eviction."
+
+  - alert: RedisMemoryCritical
+    expr: redis_memory_used_bytes / redis_config_maxmemory_bytes > 0.95
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Redis Memory Critical (> 95%)"
+      description: "Redis is at > 95% of maxmemory. Immediate risk of OOM or aggressive eviction causing data loss."
+
+  - alert: RedisDown
+    expr: up{job="redis"} == 0
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "Redis Unreachable"
+      description: "Redis has been unreachable for 30 seconds. Gateway will lose pub/sub and lock capability."
+
+- name: ZEN70_PostgreSQL
+  rules:
+  - alert: PostgresConnectionPoolNearExhaustion
+    # max_connections is 100 per postgresql.conf; alert at 85%.
+    expr: pg_stat_activity_count > 85
+    for: 3m
+    labels:
+      severity: warning
+    annotations:
+      summary: "PostgreSQL Connection Count > 85"
+      description: "PostgreSQL has more than 85 active connections (max 100). Risk of connection refusal."
+
+  - alert: PostgresConnectionPoolExhausted
+    expr: pg_stat_activity_count >= 100
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "PostgreSQL Connection Pool Exhausted"
+      description: "All 100 PostgreSQL connections are in use. New connections will be refused."
+
+  - alert: PostgresDown
+    expr: up{job="postgres"} == 0
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "PostgreSQL Unreachable"
+      description: "PostgreSQL has been unreachable for 30 seconds. All API writes will fail."
+
+  - alert: PostgresWALArchivingStalled
+    # archive_command failures increment pg_stat_archiver.failed_count.
+    expr: increase(pg_stat_archiver_failed_count_total[10m]) > 0
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "PostgreSQL WAL Archiving Failures"
+      description: "WAL archiving has failed in the last 10 minutes. PITR recovery window may be degraded."
+
+- name: ZEN70_DiskIO
+  rules:
+  - alert: DiskReadSaturation
+    # node_disk_io_time_seconds_total is the standard node_exporter metric for
+    # I/O utilization (seconds spent doing I/O per second = utilization ratio).
+    # Values > 0.9 mean the disk was busy more than 90% of the time in the window.
+    expr: rate(node_disk_io_time_seconds_total[5m]) > 0.90
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Disk I/O Near Saturation on {{ $labels.instance }}"
+      description: "Disk {{ $labels.device }} I/O utilization has been above 90% for 5 minutes. PostgreSQL fsync may be affected."
+
+  - alert: DiskSpaceLow
+    expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low Disk Space on {{ $labels.instance }}"
+      description: "Root filesystem has less than 15% free space remaining."
+
+  - alert: DiskSpaceCritical
+    expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.05
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical Disk Space on {{ $labels.instance }}"
+      description: "Root filesystem has less than 5% free space. PostgreSQL WAL archiving and logging will fail."

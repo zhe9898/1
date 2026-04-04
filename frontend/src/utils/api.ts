@@ -111,6 +111,8 @@ export const CONSOLE = {
   menu: "/v1/console/menu",
   overview: "/v1/console/overview",
   diagnostics: "/v1/console/diagnostics",
+  /** Backend-authoritative control-plane surface definitions (ADR 0011). */
+  surfaces: "/v1/console/surfaces",
 } as const;
 
 // ---------------------------------------------------------------------------

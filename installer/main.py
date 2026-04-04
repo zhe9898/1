@@ -706,8 +706,18 @@ async def config_import(file: UploadFile) -> dict[str, Any]:
     if not file.filename or not file.filename.endswith(".json"):
         return JSONResponse(status_code=400, content={"error": "仅支持 .json 文件"})
 
+    # 文件大小限制：1 MB。先 seek 到末尾读取大小，无需将整个文件读入内存，
+    # 避免超大文件占用 RAM（DoS 防护）。
+    _MAX_IMPORT_BYTES = 1 * 1024 * 1024  # 1 MB
+    await file.seek(0, 2)  # SEEK_END
+    file_size = await file.tell()
+    await file.seek(0)  # rewind before reading
+    if file_size > _MAX_IMPORT_BYTES:
+        return JSONResponse(status_code=413, content={"error": "配置文件过大，最大允许 1 MB"})
+
+    content = await file.read()
+
     try:
-        content = await file.read()
         imported = json.loads(content.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         return JSONResponse(status_code=400, content={"error": f"JSON 解析失败: {e}"})

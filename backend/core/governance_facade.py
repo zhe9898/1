@@ -284,10 +284,10 @@ class GovernanceFacade:
 
         return await get_failure_control_plane().get_kind_circuit_state(kind, now=now)
 
-    def is_in_burst(self, now: datetime.datetime) -> bool:
+    async def is_in_burst(self, now: datetime.datetime) -> bool:
         from backend.core.failure_control_plane import get_failure_control_plane
 
-        return get_failure_control_plane().is_in_burst(now=now)
+        return await get_failure_control_plane().is_in_burst(now=now)
 
     async def fcp_snapshot(self, now: datetime.datetime) -> dict:
         from backend.core.failure_control_plane import get_failure_control_plane

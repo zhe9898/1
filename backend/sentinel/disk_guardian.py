@@ -158,8 +158,15 @@ def _publish_disk_event(
         }
     )
     try:
-        redis_client.publish(REDIS_CHANNEL_DISK, payload)
-        logger.info("已发布 disk:%s 事件到 %s", level, REDIS_CHANNEL_DISK)
+        receiver_count = redis_client.publish(REDIS_CHANNEL_DISK, payload)
+        if receiver_count == 0:
+            logger.warning(
+                "disk:%s 事件已发布到 %s，但当前无任何订阅者 — 事件可能未被处理",
+                level,
+                REDIS_CHANNEL_DISK,
+            )
+        else:
+            logger.info("已发布 disk:%s 事件到 %s (%d 订阅者)", level, REDIS_CHANNEL_DISK, receiver_count)
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
         logger.error("发布 disk 事件失败: %s", e)
 

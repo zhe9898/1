@@ -277,7 +277,7 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
     governance.post_dispatch_audit = AsyncMock(return_value=None)
 
     fcp = MagicMock()
-    fcp.is_in_burst.return_value = False
+    fcp.is_in_burst = AsyncMock(return_value=False)
     fcp.get_kind_circuit_state = AsyncMock(return_value="closed")
 
     selected = SimpleNamespace(

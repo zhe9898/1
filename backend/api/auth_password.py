@@ -29,6 +29,10 @@ from backend.models.user import User
 
 router = APIRouter()
 
+# A pre-hashed sentinel used for constant-time password comparison when the
+# target user does not exist, preventing username enumeration via response timing.
+_DUMMY_HASH: bytes = bcrypt.hashpw(b"zen70-dummy-constant-time-sentinel", bcrypt.gensalt(rounds=12))
+
 
 @router.post("/password/login", response_model=TokenResponse)
 async def password_login(
@@ -72,6 +76,10 @@ async def password_login(
     if user and user.password_hash:
         if bcrypt.checkpw(req.password.encode("utf-8"), user.password_hash.encode("utf-8")):
             is_valid = True
+    else:
+        # Always run bcrypt to maintain constant response time regardless of whether
+        # the username exists, preventing user enumeration via timing side-channel.
+        bcrypt.checkpw(req.password.encode("utf-8"), _DUMMY_HASH)
 
     if not is_valid:
         new_count = await redis.incr(limit_key)

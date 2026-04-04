@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HealthIngestEnvelope: Sendable, Equatable {
+public struct HealthIngestEnvelope: Sendable, Equatable, Codable {
     public let connectorID: String
     public let tenantID: String
     public let nodeID: String
@@ -22,5 +22,15 @@ public struct HealthIngestEnvelope: Sendable, Equatable {
         self.sampleType = sampleType
         self.submittedAt = submittedAt
         self.payloadRevision = payloadRevision
+    }
+
+    // Maps to the ingest envelope JSON contract (backend/api/health.py HealthIngestPayload).
+    enum CodingKeys: String, CodingKey {
+        case connectorID = "connector_id"
+        case tenantID = "tenant_id"
+        case nodeID = "node_id"
+        case sampleType = "sample_type"
+        case submittedAt = "submitted_at"
+        case payloadRevision = "payload_revision"
     }
 }

@@ -13,3 +13,9 @@ datasources:
     access: proxy
     url: http://loki:3100
     editable: false
+    jsonData:
+      # Required because Loki runs with auth_enabled: true (single-tenant).
+      # Grafana sends this as X-Scope-OrgID on every query.
+      httpHeaderName1: "X-Scope-OrgID"
+    secureJsonData:
+      httpHeaderValue1: "zen70"

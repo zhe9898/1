@@ -7,6 +7,10 @@ positions:
 
 clients:
   - url: http://loki:3100/loki/api/v1/push
+    # Single-tenant org ID required because Loki runs with auth_enabled: true.
+    # All Promtail shippers must present this header; mismatched org-IDs will
+    # cause Loki to reject log pushes with HTTP 401.
+    tenant_id: zen70
 
 scrape_configs:
 - job_name: system

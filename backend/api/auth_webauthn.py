@@ -66,6 +66,20 @@ except (ImportError, RuntimeError):
 
 router = APIRouter()
 
+_CODE_NOT_IMPLEMENTED = "ZEN-AUTH-5010"
+
+
+def _require_webauthn(fn: object, name: str) -> object:
+    """Raise HTTP 501 when the webauthn library is unavailable instead of crashing with TypeError."""
+    if fn is None:
+        raise zen(
+            _CODE_NOT_IMPLEMENTED,
+            f"WebAuthn ({name}) is unavailable: the webauthn library is not installed on this server",
+            status.HTTP_501_NOT_IMPLEMENTED,
+            recovery_hint="Install the python-webauthn package and restart the gateway to enable WebAuthn authentication",
+        )
+    return fn
+
 
 def _auth_mod():  # type: ignore[no-untyped-def]
     """Lazy lookup of backend.api.auth so patches on that module take effect."""
@@ -96,7 +110,7 @@ async def register_begin(
         assert_user_active(user, flow="webauthn_register_begin", rid=rid, username=req.username, client_ip_str=cip)
     user_id_bytes = str(user.id).encode("utf-8")
 
-    _, challenge_b64, options_json_str = generate_registration_challenge(
+    _, challenge_b64, options_json_str = _require_webauthn(generate_registration_challenge, "generate_registration_challenge")(  # type: ignore[operator]
         username=req.username,
         display_name=req.display_name or req.username,
         user_id=user_id_bytes,
@@ -130,7 +144,7 @@ async def register_complete(
 
     origin = origin_from_request(request)
     try:
-        verification = verify_registration(
+        verification = _require_webauthn(verify_registration, "verify_registration")(  # type: ignore[operator]
             credential=req.credential,
             expected_challenge=expected_challenge_bytes(challenge_b64),
             origin=origin,

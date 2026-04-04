@@ -58,7 +58,16 @@ async def get_db_optional() -> AsyncIterator[AsyncSession | None]:
 
 
 async def _bind_tenant_db(db: AsyncSession, tenant_id: str) -> AsyncSession:
-    normalized_tenant_id = (tenant_id or "").strip() or "default"
+    normalized_tenant_id = (tenant_id or "").strip()
+    if not normalized_tenant_id:
+        # Reject requests with a missing tenant context rather than silently
+        # falling back to "default", which could expose cross-tenant data.
+        raise zen(
+            "ZEN-TENANT-4002",
+            "Tenant context is missing from authentication token",
+            status_code=403,
+            recovery_hint="Re-authenticate to obtain a token that includes a valid tenant_id claim",
+        )
     await set_tenant_context(db, normalized_tenant_id)
     try:
         await assert_rls_ready(db)
@@ -100,7 +109,14 @@ async def get_tenant_db(
     current_user: dict[str, object] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AsyncSession:
-    return await _bind_tenant_db(db, str(current_user.get("tenant_id") or "default"))
+    tenant_id = str(current_user.get("tenant_id") or "").strip()
+    if not tenant_id:
+        logger.warning(
+            "JWT tenant_id is missing or empty (sub=%s, role=%s); request rejected to prevent cross-tenant data leak",
+            current_user.get("sub"),
+            current_user.get("role"),
+        )
+    return await _bind_tenant_db(db, tenant_id)
 
 
 def _extract_machine_tenant_id(request: Request) -> str | None:

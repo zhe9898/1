@@ -114,8 +114,12 @@ async def global_readonly_lock(request: Request, call_next: RequestResponseEndpo
                 app_redis = getattr(request.app.state, "redis", None)
                 r = getattr(app_redis, "redis", None) if app_redis else None
                 if r:
-                    # 链路 9 修复：同时检查 UPS 状态 + 磁盘 95% 只读标志
-                    ups_val = await r.get(KEY_SYSTEM_UPS_STATUS)
+                    # 链路 9 修复：通过 pipeline(transaction=True) 原子读取 UPS 状态 + 磁盘 95% 只读标志，
+                    # 使用 MULTI/EXEC 保证两个 GET 之间状态不会发生变化，消除判断不一致窗口。
+                    pipe = r.pipeline(transaction=True)
+                    pipe.get(KEY_SYSTEM_UPS_STATUS)
+                    pipe.get(KEY_SYSTEM_READONLY_DISK)
+                    ups_val, disk_val = await pipe.execute()
                     if ups_val and ups_val.strip().upper() == "LOW_BATTERY_SHUTDOWN":
                         return JSONResponse(
                             status_code=503,
@@ -131,7 +135,6 @@ async def global_readonly_lock(request: Request, call_next: RequestResponseEndpo
                             ).model_dump(mode="json"),
                         )
                     # 法典 §3.3：磁盘 95% 全局只读大闸
-                    disk_val = await r.get(KEY_SYSTEM_READONLY_DISK)
                     if disk_val:
                         return JSONResponse(
                             status_code=503,
