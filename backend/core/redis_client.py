@@ -11,7 +11,7 @@ import asyncio
 import json
 import os
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, TypedDict, TypeVar, cast
 
 try:
@@ -137,7 +137,11 @@ def _redis_to_node(data: dict[str, str]) -> NodeInfo:
                 out[k] = 0.0
         else:
             out[k] = v
-    return out  # type: ignore
+    return cast(NodeInfo, out)
+
+
+def _as_redis_hset_mapping(data: dict[str, str]) -> Mapping[str | bytes, bytes | float | int | str]:
+    return cast(Mapping[str | bytes, bytes | float | int | str], data)
 
 
 class RedisClient:
@@ -183,7 +187,7 @@ class RedisClient:
             socket_keepalive=True,
         )
         try:
-            await self._redis.ping()  # type: ignore[misc]
+            await self._redis.ping()
             self.logger.info("Connected to Redis")
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Redis connection failed: %s", e, exc_info=True)
@@ -202,7 +206,7 @@ class RedisClient:
         if not self._redis:
             return False
         try:
-            await self._redis.ping()  # type: ignore[misc]
+            await self._redis.ping()
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.debug("Redis ping failed: %s", e)
@@ -293,8 +297,11 @@ class RedisClient:
             self.logger.error("Redis not connected")
             return {}
 
+        redis_client = self._redis
+        assert redis_client is not None  # noqa: S101
+
         async def _get() -> dict[str, Capability]:
-            data = await self._redis.hgetall(KEY_CAPABILITIES)  # type: ignore[union-attr, misc]
+            data = await redis_client.hgetall(KEY_CAPABILITIES)
             if not data:
                 return {}
             result: dict[str, Capability] = {}
@@ -312,7 +319,7 @@ class RedisClient:
         if not self._redis:
             return False
         try:
-            await self._redis.hset(KEY_CAPABILITIES, name, json.dumps(capability))  # type: ignore[misc]
+            await self._redis.hset(KEY_CAPABILITIES, name, json.dumps(capability))
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to set capability %s: %s", name, e, exc_info=True)
@@ -323,7 +330,7 @@ class RedisClient:
         if not self._redis:
             return False
         try:
-            await self._redis.hdel(KEY_CAPABILITIES, name)  # type: ignore[misc]
+            await self._redis.hdel(KEY_CAPABILITIES, name)
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             self.logger.error("Failed to delete capability %s: %s", name, e, exc_info=True)
@@ -340,7 +347,7 @@ class RedisClient:
             info_dict: dict[str, object] = dict(info)
             info_dict["last_seen"] = time.time()
             mapping = _node_to_redis(cast(NodeInfo, info_dict))
-            await self._redis.hset(key, mapping=mapping)  # type: ignore[misc]
+            await self._redis.hset(key, mapping=_as_redis_hset_mapping(mapping))
             await self._redis.expire(key, 60)
             return True
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
@@ -353,7 +360,7 @@ class RedisClient:
         if not self._redis:
             return None
         try:
-            data = await self._redis.hgetall(key)  # type: ignore[misc]
+            data = await self._redis.hgetall(key)
             if not data:
                 return None
             return _redis_to_node(data)
@@ -402,8 +409,11 @@ class RedisClient:
         if not self._redis:
             return None
 
+        redis_client = self._redis
+        assert redis_client is not None  # noqa: S101
+
         async def _get() -> SwitchState | None:
-            data = await self._redis.hgetall(key)  # type: ignore[union-attr, misc]
+            data = await redis_client.hgetall(key)
             if not data:
                 return None
             return {
@@ -465,7 +475,7 @@ class RedisClient:
             }
             event: dict[str, object] = {"switch": name, "name": name, **payload}
             pipe = self._redis.pipeline()
-            pipe.hset(key, mapping=payload)
+            pipe.hset(key, mapping=_as_redis_hset_mapping(payload))
             pipe.publish(CHANNEL_SWITCH_EVENTS, json.dumps(event))
             await pipe.execute()
             return True
@@ -481,7 +491,7 @@ class RedisClient:
         if not self._redis:
             return None
         try:
-            data = await self._redis.hgetall(key)  # type: ignore[misc]
+            data = await self._redis.hgetall(key)
             if not data:
                 return None
             hw: HardwareState = {
@@ -518,7 +528,7 @@ class RedisClient:
             }
             event = dict(payload, timestamp=ts)  # JSON 序列化时 timestamp 为 float
             pipe = self._redis.pipeline()
-            pipe.hset(key, mapping=payload)
+            pipe.hset(key, mapping=_as_redis_hset_mapping(payload))
             pipe.publish(CHANNEL_HARDWARE_EVENTS, json.dumps(event))
             await pipe.execute()
             return True

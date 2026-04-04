@@ -28,9 +28,11 @@ on:
 
 jobs:
   Fortify-AST-Scan:
-    if: ${{ secrets.FOD_TENANT != '' || secrets.SSC_TOKEN != '' }}
     # Use the appropriate runner for building your source code. Ensure dev tools required to build your code are present and configured appropriately (MSBuild, Python, etc).
     runs-on: ubuntu-24.04
+    env:
+      FOD_TENANT_PRESENT: ${{ secrets.FOD_TENANT }}
+      SSC_TOKEN_PRESENT: ${{ secrets.SSC_TOKEN }}
     permissions:
       actions: read
       contents: read
@@ -38,8 +40,20 @@ jobs:
       # pull-requests: write     # Required if DO_PR_COMMENT is set to true
 
     steps:
+      - name: Decide whether Fortify scan is enabled
+        id: fortify_gate
+        shell: bash
+        run: |
+          if [[ -z "${FOD_TENANT_PRESENT}" && -z "${SSC_TOKEN_PRESENT}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Fortify credentials not configured; skipping scan."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # Check out source code
       - name: Check Out Source Code
+        if: steps.fortify_gate.outputs.enabled == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Perform SAST and/or SCA scan via Fortify on Demand/Fortify Hosted/ScanCentral SAST/Debricked. Based on
@@ -51,6 +65,7 @@ jobs:
       # documentation at https://github.com/fortify/github-action#readme for more information on the various
       # configuration options and available sub-actions.
       - name: Run Fortify Scan
+        if: steps.fortify_gate.outputs.enabled == 'true'
         # Specify Fortify GitHub Action version to run. As per GitHub starter workflow requirements, this example
         # uses the commit id corresponding to version 1.6.2. It is recommended to check whether any later releases
         # are available at https://github.com/fortify/github-action/releases. Depending on the amount of stability

@@ -18,7 +18,9 @@ import re
 import signal
 import time
 import uuid
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
+from typing import cast
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -241,9 +243,10 @@ app = FastAPI(
 )
 
 settings = get_settings()
+cors_origins = cast(Sequence[str], settings["cors_origins"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings["cors_origins"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key"],
@@ -255,19 +258,19 @@ app.add_middleware(
 # The specialized middleware module owns the read-only disk / UPS guard and
 # request-size limit. Keep the FastAPI wiring thin here.
 @app.middleware("http")
-async def _readonly_lock(request: Request, call_next: object) -> Response:
+async def _readonly_lock(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """Read-only guard for UPS and critical disk pressure states."""
     return await global_readonly_lock(request, call_next)
 
 
 @app.middleware("http")
-async def _limit_body(request: Request, call_next: object) -> Response:
+async def _limit_body(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """Reject oversized request bodies using configured max_request_size."""
     return await limit_request_body(request, call_next)
 
 
 @app.middleware("http")
-async def add_request_id_and_log(request: Request, call_next) -> object:  # type: ignore[no-untyped-def]
+async def add_request_id_and_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """Attach request id, timing headers, and structured request logging."""
     request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
@@ -297,8 +300,9 @@ async def add_request_id_and_log(request: Request, call_next) -> object:  # type
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Convert HTTPException to unified error response."""
     request_id = getattr(request.state, "request_id", "unknown")
-    if isinstance(exc.detail, dict) and "code" in exc.detail:
-        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    detail = cast(object, exc.detail)
+    if isinstance(detail, dict) and "code" in detail:
+        return JSONResponse(status_code=exc.status_code, content=detail)
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
@@ -456,9 +460,9 @@ _ENVELOPE_MAX_BODY_BYTES = 10 * 1024 * 1024  # 10MB safety guard
 
 
 @app.middleware("http")
-async def success_envelope(request: Request, call_next: object) -> Response:
+async def success_envelope(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """Wrap successful JSON responses in the unified envelope format."""
-    response = await call_next(request)  # type: ignore[operator]
+    response = await call_next(request)
 
     # Only wrap successful JSON responses. Leave health/docs/metrics and
     # non-JSON payloads untouched.
@@ -470,10 +474,14 @@ async def success_envelope(request: Request, call_next: object) -> Response:
     if "application/json" not in ct:
         return response
 
+    body_iterator = getattr(response, "body_iterator", None)
+    if body_iterator is None:
+        return response
+
     body_chunks: list[bytes] = []
     body_size = 0
     oversized = False
-    async for chunk in response.body_iterator:
+    async for chunk in body_iterator:
         raw = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8")
         body_size += len(raw)
         body_chunks.append(raw)
@@ -484,7 +492,7 @@ async def success_envelope(request: Request, call_next: object) -> Response:
     if oversized:
         # Preserve the original response if buffering crosses the envelope
         # safety limit while still draining the body iterator.
-        async for remaining in response.body_iterator:
+        async for remaining in body_iterator:
             body_chunks.append(remaining if isinstance(remaining, bytes) else remaining.encode("utf-8"))
         logger.warning(
             "Response body exceeds %d bytes for %s, skip envelope wrapping",

@@ -9,7 +9,10 @@ import json
 try:
     from webauthn.helpers import bytes_to_base64url
 except ImportError:
-    bytes_to_base64url = None
+
+    def bytes_to_base64url(val: bytes) -> str:
+        raise RuntimeError("webauthn helpers are unavailable")
+
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select

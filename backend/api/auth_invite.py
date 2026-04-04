@@ -9,7 +9,10 @@ import time
 try:
     from webauthn.helpers import bytes_to_base64url
 except ImportError:
-    bytes_to_base64url = None
+
+    def bytes_to_base64url(val: bytes) -> str:
+        raise RuntimeError("webauthn helpers are unavailable")
+
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
@@ -83,8 +86,14 @@ async def _consume_invite_token(redis: RedisClient, token: str) -> dict[str, obj
                 "Invite token payload is invalid",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             ) from exc
+        if not isinstance(payload, dict):
+            raise zen(
+                CODE_SERVER_ERROR,
+                "Invite token payload must be an object",
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         await redis.delete(token_key)
-        return payload
+        return dict(payload)
     finally:
         await redis.release_lock(lock_key)
 
@@ -101,13 +110,20 @@ async def _validate_invite_token(redis: RedisClient, token: str) -> dict[str, ob
             recovery_hint="Generate a new invite and retry",
         )
     try:
-        return json.loads(token_data_str)
+        payload = json.loads(token_data_str)
     except json.JSONDecodeError as exc:
         raise zen(
             CODE_SERVER_ERROR,
             "Invite token payload is invalid",
             status.HTTP_500_INTERNAL_SERVER_ERROR,
         ) from exc
+    if not isinstance(payload, dict):
+        raise zen(
+            CODE_SERVER_ERROR,
+            "Invite token payload must be an object",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return dict(payload)
 
 
 @router.post("/invites", response_model=InviteResponse)
