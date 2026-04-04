@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"zen70/runner-agent/internal/device"
 )
 
 type Config struct {
@@ -50,12 +52,24 @@ type Config struct {
 	// Cloud elasticity: when set, the agent presents this token at registration
 	// so the backend can auto-activate this node without manual admin approval.
 	CloudToken        string
+	// DeviceProfile is the hardware classification reported to the backend.
+	// When empty, Load() auto-detects the profile via /proc/cpuinfo and DMI.
+	DeviceProfile     string
 	HeartbeatInterval time.Duration
 	PullInterval      time.Duration
 	LeaseSeconds      int
 }
 
 func Load() Config {
+	memoryMB := max(0, getenvInt("RUNNER_MEMORY_MB", 0))
+	arch := getenv("RUNNER_ARCH", runtime.GOARCH)
+
+	// Resolve device profile: honour explicit env var, otherwise auto-detect.
+	deviceProfile := strings.TrimSpace(os.Getenv("RUNNER_DEVICE_PROFILE"))
+	if deviceProfile == "" {
+		deviceProfile = device.DetectProfile(arch, memoryMB)
+	}
+
 	return Config{
 		GatewayBaseURL:     getenv("GATEWAY_BASE_URL", "https://127.0.0.1:8000"),
 		GatewayCAFile:      strings.TrimSpace(os.Getenv("GATEWAY_CA_FILE")),
@@ -70,14 +84,14 @@ func Load() Config {
 		Profile:            getenv("RUNNER_PROFILE", "go-runner"),
 		Executor:           getenv("RUNNER_EXECUTOR", "go-native"),
 		OperatingSystem:    getenv("RUNNER_OS", runtime.GOOS),
-		Architecture:       getenv("RUNNER_ARCH", runtime.GOARCH),
+		Architecture:       arch,
 		Zone:               strings.TrimSpace(os.Getenv("RUNNER_ZONE")),
 		ProtocolVersion:    getenv("RUNNER_PROTOCOL_VERSION", "runner.v1"),
 		LeaseVersion:       getenv("RUNNER_LEASE_VERSION", "job-lease.v1"),
 		AgentVersion:       getenv("RUNNER_AGENT_VERSION", "runner-agent.v1"),
 		MaxConcurrency:     max(1, getenvInt("RUNNER_MAX_CONCURRENCY", 1)),
 		CPUCores:           max(1, getenvInt("RUNNER_CPU_CORES", runtime.NumCPU())),
-		MemoryMB:           max(0, getenvInt("RUNNER_MEMORY_MB", 0)),
+		MemoryMB:           memoryMB,
 		GPUVRAMMB:          max(0, getenvInt("RUNNER_GPU_VRAM_MB", 0)),
 		StorageMB:          max(0, getenvInt("RUNNER_STORAGE_MB", 0)),
 		Capabilities:       splitCSV(getenv("RUNNER_CAPABILITIES", "connector.invoke,noop")),
@@ -90,6 +104,7 @@ func Load() Config {
 		ThermalState:       getenv("RUNNER_THERMAL_STATE", "normal"),
 		CloudConnectivity:  getenv("RUNNER_CLOUD_CONNECTIVITY", "online"),
 		CloudToken:         strings.TrimSpace(os.Getenv("RUNNER_CLOUD_TOKEN")),
+		DeviceProfile:      deviceProfile,
 		HeartbeatInterval:  time.Duration(getenvInt("RUNNER_HEARTBEAT_SECONDS", 15)) * time.Second,
 		PullInterval:       time.Duration(getenvInt("RUNNER_PULL_SECONDS", 5)) * time.Second,
 		LeaseSeconds:       getenvInt("RUNNER_LEASE_SECONDS", 30),

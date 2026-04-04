@@ -123,6 +123,21 @@ def _sla_risk_to_score(risk: float, level: str) -> int:
     return 0
 
 
+def _device_profile_bonus(job: "Job", node: "SchedulerNodeSnapshot") -> int:
+    """Soft bonus when the node's device profile matches the job's preference.
+
+    This is *never* a hard filter — jobs still run on non-matching nodes.
+    """
+    preferred = getattr(job, "preferred_device_profile", None)
+    if not preferred:
+        return 0
+    node_profile = node.metadata_json.get("device_profile") if node.metadata_json else None
+    if not node_profile:
+        return 0
+    sw = _get_scoring_weights()
+    return sw.device_profile_bonus if str(node_profile) == str(preferred) else 0
+
+
 def _batch_co_location_bonus(job: Job, active_jobs_on_node: list[Job]) -> int:
     """Bonus for scheduling a job on a node already running same-batch jobs."""
     batch_key = getattr(job, "batch_key", None)
@@ -225,6 +240,7 @@ def score_job_for_node(
         "latency": int(latency_bonus * _adj("latency")),
         "power": int(power_bonus * _adj("power")),
         "thermal": int(thermal_bonus * _adj("thermal")),
+        "device_profile": int(_device_profile_bonus(job, node) * _adj("device_profile")),
         "affinity": int(_affinity_bonus(job, node) * _adj("affinity")),
         "sla_urgency": int(_sla_risk_to_score(sla_risk, sla_level) * _adj("sla_urgency")),
         "batch": int(_batch_co_location_bonus(job, _active_jobs) * _adj("batch")),

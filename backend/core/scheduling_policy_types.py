@@ -37,6 +37,7 @@ class ScoringWeights:
     latency_default: int = 5
     power_max: int = 15
     thermal_max: int = 10
+    device_profile_bonus: int = 8
     affinity_max: int = 20
     sla_urgency_max: int = 30
     batch_co_location_max: int = 15

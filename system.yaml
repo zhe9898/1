@@ -251,6 +251,28 @@ services:
       RUNNER_HEARTBEAT_SECONDS: '15'
       RUNNER_PULL_SECONDS: '5'
       RUNNER_LEASE_SECONDS: '30'
+      # RUNNER_DEVICE_PROFILE: auto-detected at startup from /proc/cpuinfo and DMI.
+      # Override with one of the built-in profile names to skip auto-detection:
+      #   raspberry_pi_4 | raspberry_pi_5           — Raspberry Pi SBCs
+      #   industrial_x86                            — Fanless factory/PLC controllers
+      #   soft_router                               — OpenWrt/pfSense/RouterOS boxes (软路由)
+      #   network_switch                            — Managed switches (交换机)
+      #   nvr                                       — NVR/DVR surveillance servers (监控主机)
+      #   ip_camera                                 — Embedded IP cameras (监控摄像头)
+      #   nas                                       — NAS appliances
+      #   mini_pc                                   — Intel NUC / Beelink / BMAX mini PCs (小主机)
+      #   cloud_vm                                  — Cloud VMs (AWS/GCP/Azure)
+      #   gateway_appliance                         — IoT gateway hubs
+      #   generic_edge                              — Catch-all for unrecognised hardware
+      #
+      # Example — Raspberry Pi 4 edge runner:
+      # RUNNER_DEVICE_PROFILE: raspberry_pi_4
+      # RUNNER_ARCH: arm64
+      # RUNNER_EXECUTOR: edge-native
+      # RUNNER_ZONE: home
+      # RUNNER_CAPABILITIES: iot.adapter,connector.invoke
+      # RUNNER_MAX_CONCURRENCY: '4'
+      # RUNNER_POWER_CAPACITY_WATTS: '15'
     depends_on:
     - gateway
     - caddy

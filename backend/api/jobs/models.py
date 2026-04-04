@@ -42,6 +42,7 @@ class JobCreateRequest(BaseModel):
     power_budget_watts: int | None = Field(default=None, ge=1, le=10_000)
     thermal_sensitivity: str | None = Field(default=None, pattern="^(low|normal|high)$")
     cloud_fallback_enabled: bool = False
+    preferred_device_profile: str | None = Field(default=None, max_length=64)
     # Scheduling strategy and affinity
     scheduling_strategy: str | None = Field(default=None, pattern="^(spread|binpack|locality|performance|balanced)$")
     affinity_labels: dict[str, str] = Field(default_factory=dict)
@@ -162,6 +163,7 @@ class JobResponse(BaseModel):
     power_budget_watts: int | None = None
     thermal_sensitivity: str | None = None
     cloud_fallback_enabled: bool = False
+    preferred_device_profile: str | None = None
     # Scheduling strategy and affinity
     scheduling_strategy: str | None = None
     affinity_labels: dict[str, str] = Field(default_factory=dict)
