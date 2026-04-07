@@ -4,8 +4,9 @@ ZEN70 Auth Bootstrap - 系统初始化（首次运行）
 
 from __future__ import annotations
 
-import bcrypt
 import logging
+
+import bcrypt
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 

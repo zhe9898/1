@@ -28,6 +28,7 @@ from .schemas import _resource_schema
 from .submission import submit_job
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+_WRITE_JOBS_SCOPE_DEPENDENCY = require_scope("write:jobs")
 
 
 @router.get("/schema", response_model=ResourceSchemaResponse)
@@ -41,7 +42,7 @@ async def get_job_schema(
 @router.post("", response_model=JobResponse)
 async def create_job(
     payload: JobCreateRequest,
-    current_user: dict[str, object] = Depends(require_scope("write:jobs")),
+    current_user: dict[str, object] = Depends(_WRITE_JOBS_SCOPE_DEPENDENCY),
     db: AsyncSession = Depends(get_tenant_db),
     redis: RedisClient | None = Depends(get_redis),
 ) -> JobResponse:

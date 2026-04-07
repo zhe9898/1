@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.engine import Connection
 
 
-def _normalized_columns(columns: Sequence[str] | None) -> tuple[str, ...]:
+def _normalized_columns(columns: Sequence[object] | None) -> tuple[str, ...]:
     return tuple(str(column) for column in (columns or ()))
 
 
@@ -62,10 +62,7 @@ class SchemaGuard:
     def has_unique_constraint_named(self, table_name: str, constraint_name: str) -> bool:
         if not self.has_table(table_name):
             return False
-        return any(
-            constraint["name"] == constraint_name
-            for constraint in self.inspector.get_unique_constraints(table_name)
-        )
+        return any(constraint["name"] == constraint_name for constraint in self.inspector.get_unique_constraints(table_name))
 
     def has_equivalent_unique_constraint(self, table_name: str, columns: Sequence[str]) -> bool:
         if not self.has_table(table_name):

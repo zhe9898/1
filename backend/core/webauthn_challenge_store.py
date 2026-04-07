@@ -69,7 +69,7 @@ class WebAuthnChallengeStore:
             used_at=None,
             created_at=now,
         )
-        add_result = db.add(record)
+        add_result: object = getattr(db, "add")(record)
         if inspect.isawaitable(add_result):
             await add_result
         await db.flush()
@@ -97,11 +97,7 @@ class WebAuthnChallengeStore:
                 status_code=400,
             )
         now = _utcnow()
-        statement: Select[tuple[WebAuthnChallenge]] = (
-            select(WebAuthnChallenge)
-            .where(WebAuthnChallenge.challenge_id == challenge_id)
-            .with_for_update()
-        )
+        statement: Select[tuple[WebAuthnChallenge]] = select(WebAuthnChallenge).where(WebAuthnChallenge.challenge_id == challenge_id).with_for_update()
         result = await db.execute(statement)
         record = result.scalar_one_or_none()
         if record is None:

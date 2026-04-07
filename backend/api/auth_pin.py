@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.auth_cookies import set_auth_cookie
 from backend.api.auth_session_projection import build_authenticated_session_response
 from backend.api.auth_shared import assert_user_active, hash_pin, register_login_session, request_tenant_id
 from backend.api.auth_token_issue import issue_auth_token
-from backend.api.auth_cookies import set_auth_cookie
 from backend.api.deps import get_current_user, get_db, get_redis
 from backend.api.models.auth import AuthSessionResponse, PinLoginRequest, PinSetRequest
 from backend.core.auth_helpers import (

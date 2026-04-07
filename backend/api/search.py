@@ -93,8 +93,7 @@ async def _memory_semantic_search(
     limit: int,
 ) -> list[SearchHit]:
     candidate_limit = min(max(limit * 20, 100), 500)
-    sql = text(
-        """
+    sql = text("""
         SELECT id::text, text, vec384
         FROM memory_facts
         WHERE tenant_id = :tid
@@ -103,8 +102,7 @@ async def _memory_semantic_search(
           AND vec384 IS NOT NULL
         ORDER BY created_at DESC
         LIMIT :lim
-        """
-    )
+        """)
     rows = (
         await db.execute(
             sql,
@@ -138,8 +136,7 @@ async def _memory_keyword_search(
     limit: int,
 ) -> list[SearchHit]:
     pattern = f"%{_escape_like_term(query_text)}%"
-    sql = text(
-        """
+    sql = text("""
         SELECT id::text, text
         FROM memory_facts
         WHERE tenant_id = :tid
@@ -148,8 +145,7 @@ async def _memory_keyword_search(
           AND text ILIKE :pat ESCAPE '\\'
         ORDER BY created_at DESC
         LIMIT :lim
-        """
-    )
+        """)
     rows = (
         await db.execute(
             sql,
@@ -228,8 +224,7 @@ async def _asset_keyword_search(
     limit: int,
 ) -> list[SearchHit]:
     pattern = f"%{_escape_like_term(query_text)}%"
-    sql = text(
-        """
+    sql = text("""
         SELECT id::text, COALESCE(label, original_filename, file_path) AS display,
                asset_type, ai_tags
         FROM assets
@@ -242,8 +237,7 @@ async def _asset_keyword_search(
           )
         ORDER BY created_at DESC
         LIMIT :lim
-        """
-    )
+        """)
     rows = (await db.execute(sql, {"tid": _user_claim(user, "tenant_id"), "pat": pattern, "lim": limit})).all()
     return [
         SearchHit(

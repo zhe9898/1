@@ -62,8 +62,8 @@ from backend.api.ui_contracts import ResourceSchemaResponse
 from backend.core.compatibility_adapter import canonicalize_status
 from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.errors import zen
-from backend.core.node_enrollment_service import NodeEnrollmentService
 from backend.core.node_auth import authenticate_node_request
+from backend.core.node_enrollment_service import NodeEnrollmentService
 from backend.core.quota import check_node_quota
 from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
@@ -287,11 +287,7 @@ async def register_node(
     node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
     expected_hash = hashlib.sha256(configured_cloud_token.encode()).hexdigest()
     actual_hash = hashlib.sha256(node_cloud_token.encode()).hexdigest()
-    cloud_auto_approved = bool(
-        configured_cloud_token
-        and node_cloud_token
-        and secrets.compare_digest(expected_hash, actual_hash)
-    )
+    cloud_auto_approved = bool(configured_cloud_token and node_cloud_token and secrets.compare_digest(expected_hash, actual_hash))
     if cloud_auto_approved:
         node.metadata_json = {**(node.metadata_json or {}), "cloud": True}
     event_action = NodeEnrollmentService.register_or_refresh(
@@ -394,9 +390,7 @@ async def list_nodes(
     if zone:
         query = query.where(Node.zone == zone)
     if enrollment_status:
-        query = query.where(
-            Node.enrollment_status == canonicalize_status("nodes.enrollment_status", enrollment_status)
-        )
+        query = query.where(Node.enrollment_status == canonicalize_status("nodes.enrollment_status", enrollment_status))
     result = await db.execute(query.order_by(Node.last_seen_at.desc()).limit(limit).offset(offset))
     nodes = list(result.scalars().all())
     now = _utcnow()

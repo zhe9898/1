@@ -16,6 +16,7 @@ from backend.api.deps import _bind_tenant_db, get_current_admin, get_db, get_red
 from backend.core.compatibility_adapter import canonicalize_status, normalize_persisted_status
 from backend.core.errors import zen
 from backend.core.redis_client import CHANNEL_TRIGGER_EVENTS, RedisClient
+from backend.core.trigger_command_service import TriggerCommandService
 from backend.core.trigger_kind_registry import (
     ManualTriggerConfig,
     WebhookTriggerConfig,
@@ -23,7 +24,6 @@ from backend.core.trigger_kind_registry import (
     list_trigger_kinds,
     validate_trigger_config,
 )
-from backend.core.trigger_command_service import TriggerCommandService
 from backend.core.trigger_service import fire_trigger, validate_trigger_target_contract
 from backend.core.webhooks import verify_timestamped_hmac_sha256
 from backend.models.trigger import Trigger, TriggerDelivery

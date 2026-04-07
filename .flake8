@@ -1,0 +1,4 @@
+[flake8]
+exclude =
+    backend/core/gen_grpc,
+    */core/gen_grpc/*

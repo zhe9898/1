@@ -22,9 +22,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _list_chains() -> None:
     for chain in ordered_migration_chains():
         lifecycle = "runtime-managed" if chain.runtime_managed else "manual-only"
-        print(
-            f"{chain.key}\t{lifecycle}\t{chain.version_table}\t{chain.config_path}"
-        )
+        print(f"{chain.key}\t{lifecycle}\t{chain.version_table}\t{chain.config_path}")
 
 
 def main() -> None:

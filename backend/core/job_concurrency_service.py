@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.errors import zen
@@ -12,7 +13,7 @@ from backend.core.job_type_separation import SCHEDULED_JOB_SOURCES, get_job_type
 from backend.models.job import Job
 
 
-def _source_filter(job_type: str) -> object:
+def _source_filter(job_type: str) -> ColumnElement[bool]:
     if job_type == "scheduled":
         return Job.source.in_(list(SCHEDULED_JOB_SOURCES))
     return ~Job.source.in_(list(SCHEDULED_JOB_SOURCES))
@@ -241,11 +242,7 @@ class JobConcurrencyLeaseWindow:
                 recovery_hint="Apply the latest Alembic migrations before accepting job submissions",
                 details={"job_type": job_type, "migration_required": True},
             ) from exc
-        return {
-            str(connector_id): int(count or 0)
-            for connector_id, count in connector_rows
-            if connector_id
-        }
+        return {str(connector_id): int(count or 0) for connector_id, count in connector_rows if connector_id}
 
 
 def build_job_concurrency_window(*, db: AsyncSession, tenant_id: str) -> JobConcurrencyLeaseWindow:

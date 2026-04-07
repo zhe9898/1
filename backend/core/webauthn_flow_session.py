@@ -58,7 +58,7 @@ def clear_webauthn_flow_session(response: Response) -> None:
 
 def _cookie_value(request: Request) -> str | None:
     cookies = getattr(request, "cookies", None)
-    raw_value = cookies.get(WEBAUTHN_FLOW_SESSION_COOKIE) if hasattr(cookies, "get") else None
+    raw_value = cookies.get(WEBAUTHN_FLOW_SESSION_COOKIE) if isinstance(cookies, dict) else None
     if not isinstance(raw_value, str):
         return None
     normalized = raw_value.strip()

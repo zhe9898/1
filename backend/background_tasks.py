@@ -39,7 +39,7 @@ _PHOENIX_BASE_BACKOFF_S: int = 5
 
 def _phoenix_backoff(restart_count: int) -> float:
     """指数退避：5s → 10s → 20s → 40s → … → 300s (上界)。"""
-    return min(_PHOENIX_BASE_BACKOFF_S * (2 ** max(restart_count - 1, 0)), _PHOENIX_MAX_BACKOFF_S)
+    return float(min(_PHOENIX_BASE_BACKOFF_S * (2 ** max(restart_count - 1, 0)), _PHOENIX_MAX_BACKOFF_S))
 
 
 async def data_retention_worker() -> None:

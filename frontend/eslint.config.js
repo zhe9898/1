@@ -8,7 +8,7 @@ import vueParser from "vue-eslint-parser";
 import zen70Plugin from "./eslint-plugin-zen70.js";
 
 export default [
-  { ignores: ["dist/**", "eslint.config.js", "eslint-plugin-zen70.js", "vite.config.ts", "*.config.js", "*.config.ts", "tests/**"] },
+  { ignores: ["coverage/**", "dist/**", "eslint.config.js", "eslint-plugin-zen70.js", "vite.config.ts", "*.config.js", "*.config.ts", "tests/**"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,

@@ -79,7 +79,8 @@ class ConnectorSecretService:
         if cls.is_encrypted_envelope(normalized):
             masked = normalized.get("masked")
             return cls._normalize_config(masked if isinstance(masked, Mapping) else None)
-        return sanitize_sensitive_data(normalized, masked_value=REDACTED_VALUE)
+        sanitized = sanitize_sensitive_data(normalized, masked_value=REDACTED_VALUE)
+        return sanitized if isinstance(sanitized, dict) else {}
 
     @classmethod
     def is_encrypted_envelope(cls, value: Mapping[str, object] | None) -> bool:

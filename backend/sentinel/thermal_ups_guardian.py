@@ -56,20 +56,20 @@ class SystemGuardian:
         if not self.alert_webhook:
             logger.warning("ALERT_WEBHOOK_URL 未配置，跳过告警下发: %s", title)
             return
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                await client.post(
-                    self.alert_webhook,
-                    json={
-                        "level": "critical",
-                        "title": title,
-                        "message": message,
-                        "source": "Guardian",
-                    },
-                )
-                logger.warning("🚨 已发射最高级别实弹警告: %s", title)
-        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-            logger.error("警告下行通道故障: %s", e)
+        sent = await post_public_webhook_async(
+            self.alert_webhook,
+            {
+                "level": "critical",
+                "title": title,
+                "message": message,
+                "source": "Guardian",
+            },
+            timeout=3.0,
+            logger=logger,
+            context="thermal_guardian",
+        )
+        if sent:
+            logger.warning("Critical guardian alert delivered: %s", title)
 
     def fetch_cpu_temperature(self) -> float:
         """读取硬件探针温度 (基于工业级 Linux 容器特权探针挂载)"""
@@ -155,9 +155,6 @@ async def _system_guardian_emit_critical_alert(self: SystemGuardian, title: str,
     )
     if sent:
         logger.warning("Critical guardian alert delivered: %s", title)
-
-
-SystemGuardian.emit_critical_alert = _system_guardian_emit_critical_alert
 
 
 if __name__ == "__main__":

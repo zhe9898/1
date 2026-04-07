@@ -5,7 +5,6 @@ import hmac
 import logging
 import time
 from collections.abc import Mapping
-from typing import Any
 
 import httpx
 

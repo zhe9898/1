@@ -1,2 +1,1 @@
 """Backend operational scripts package."""
-

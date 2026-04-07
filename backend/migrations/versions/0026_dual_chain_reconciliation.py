@@ -55,15 +55,11 @@ def _ensure_tenants(guard: SchemaGuard) -> None:
     guard.add_column_if_missing("tenants", sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()))
     guard.add_column_if_missing("tenants", sa.Column("metadata_json", JSONB(), nullable=True))
     guard.create_index_if_missing("tenants", "ix_tenants_is_active", ["is_active"])
-    op.execute(
-        sa.text(
-            """
+    op.execute(sa.text("""
             INSERT INTO tenants (tenant_id, display_name, plan, is_active, created_at)
             VALUES ('default', 'Default Home', 'home', true, NOW())
             ON CONFLICT (tenant_id) DO NOTHING
-            """
-        )
-    )
+            """))
 
 
 def _ensure_connectors(guard: SchemaGuard) -> None:
@@ -139,16 +135,12 @@ def _ensure_memory_facts(guard: SchemaGuard) -> None:
         op.add_column("memory_facts", sa.Column("text", sa.Text(), nullable=False, server_default=""))
         guard.refresh()
     if guard.has_column("memory_facts", "fact_text"):
-        op.execute(
-            sa.text(
-                """
+        op.execute(sa.text("""
                 UPDATE memory_facts
                 SET text = fact_text
                 WHERE (text IS NULL OR text = '')
                   AND COALESCE(fact_text, '') <> ''
-                """
-            )
-        )
+                """))
         op.alter_column("memory_facts", "text", server_default=None)
         guard.refresh()
     guard.add_column_if_missing("memory_facts", sa.Column("confidence", sa.Float(), nullable=True, server_default="0.0"))

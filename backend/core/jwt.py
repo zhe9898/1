@@ -186,25 +186,30 @@ async def _ensure_token_not_revoked(
 async def _maybe_rotate_token(payload: dict[str, object], *, redis_conn: RedisBlacklistStore | None) -> str | None:
     exp = payload.get("exp")
     iat = payload.get("iat")
-    if not exp or not iat:
+    if isinstance(exp, bool) or isinstance(iat, bool):
         return None
+    if not isinstance(exp, (int, float)) or not isinstance(iat, (int, float)):
+        return None
+    exp_seconds = float(exp)
+    iat_seconds = float(iat)
     current_timestamp = _now().timestamp()
-    lifespan = exp - iat
-    if lifespan <= 0 or (current_timestamp - iat) <= (lifespan / 2):
+    lifespan = exp_seconds - iat_seconds
+    if lifespan <= 0 or (current_timestamp - iat_seconds) <= (lifespan / 2):
         return None
     return await _issue_rotated_token(
         payload,
         redis_conn=redis_conn,
-        ttl_seconds=int(max(exp - current_timestamp, 1)),
+        ttl_seconds=int(max(exp_seconds - current_timestamp, 1)),
     )
 
 
 async def _force_rotate_token(payload: dict[str, object], *, redis_conn: RedisBlacklistStore | None) -> str | None:
     exp = payload.get("exp", 0)
+    exp_seconds = float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else 0.0
     return await _issue_rotated_token(
         payload,
         redis_conn=redis_conn,
-        ttl_seconds=int(max(exp - _now().timestamp(), 60)),
+        ttl_seconds=int(max(exp_seconds - _now().timestamp(), 60)),
     )
 
 

@@ -4,6 +4,7 @@ Provides schema registration and validation for job payloads, plus shared
 submission policy metadata so privileged runner kinds can be gated in one
 place instead of per-endpoint.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -13,12 +14,11 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from backend.core.alert_actions import normalize_alert_action
 from backend.core.errors import zen
-from backend.core.security_policy import (
-    normalize_local_filesystem_path as _shared_normalize_local_filesystem_path,
-    normalize_managed_uri as _shared_normalize_managed_uri,
-    normalize_nonempty_string as _shared_normalize_nonempty_string,
-    normalize_public_network_url as _shared_normalize_public_network_url,
-)
+from backend.core.security_policy import normalize_local_filesystem_path as _shared_normalize_local_filesystem_path
+from backend.core.security_policy import normalize_managed_uri as _shared_normalize_managed_uri
+from backend.core.security_policy import normalize_nonempty_string as _shared_normalize_nonempty_string
+from backend.core.security_policy import normalize_public_network_url as _shared_normalize_public_network_url
+
 # ============================================================================
 # Job Kind Registry
 # ============================================================================
@@ -40,6 +40,8 @@ def _job_metadata(*, requires_admin: bool, risk: str) -> dict[str, Any]:
         "required_scope": JOB_ADMIN_SCOPE if requires_admin else JOB_WRITE_SCOPE,
         "risk": risk,
     }
+
+
 def _has_admin_role(current_user: Mapping[str, object]) -> bool:
     return str(current_user.get("role") or "").strip().lower() in _ADMIN_ROLES
 
@@ -125,10 +127,7 @@ def validate_job_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         return validated.model_dump(mode="python")
     except ValidationError as exc:
         error_details = exc.errors()
-        raise ValueError(
-            f"Job payload validation failed for kind '{kind}': "
-            f"{len(error_details)} error(s) - {error_details[0]['msg']}"
-        ) from exc
+        raise ValueError(f"Job payload validation failed for kind '{kind}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}") from exc
 
 
 def validate_job_result(kind: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -140,10 +139,7 @@ def validate_job_result(kind: str, result: dict[str, Any]) -> dict[str, Any]:
         return validated.model_dump(mode="python")
     except ValidationError as exc:
         error_details = exc.errors()
-        raise ValueError(
-            f"Job result validation failed for kind '{kind}': "
-            f"{len(error_details)} error(s) - {error_details[0]['msg']}"
-        ) from exc
+        raise ValueError(f"Job result validation failed for kind '{kind}': " f"{len(error_details)} error(s) - {error_details[0]['msg']}") from exc
 
 
 def _normalize_string(value: str, *, field_name: str) -> str:

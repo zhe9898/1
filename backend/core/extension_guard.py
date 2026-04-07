@@ -4,7 +4,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-
 SYNC_PLUGIN_BUDGET_MS = 100
 ASYNC_PLUGIN_BUDGET_MS = 500
 MAX_PLUGIN_PAYLOAD_BYTES = 64 * 1024

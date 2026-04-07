@@ -322,6 +322,7 @@ class TestNodeRegistration:
     async def test_get_all_nodes_empty(self) -> None:
         """无节点时返回空字典。"""
         c = _make_connected_client()
+
         async def _scan_iter(*args, **kwargs):  # type: ignore[no-untyped-def]
             del args, kwargs
             if False:

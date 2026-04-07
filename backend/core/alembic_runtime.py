@@ -158,9 +158,7 @@ def _acquire_migration_lock() -> tuple[Any, Any, threading.Event, threading.Thre
             KEY_DB_MIGRATION_LOCK,
         )
         if not lock.acquire(blocking=True, blocking_timeout=60):
-            raise RuntimeError(
-                f"ZEN-DB-MIGRATION-LOCKED: could not acquire {KEY_DB_MIGRATION_LOCK} within 60s [{_LOCK_IDENTITY}]"
-            )
+            raise RuntimeError(f"ZEN-DB-MIGRATION-LOCKED: could not acquire {KEY_DB_MIGRATION_LOCK} within 60s [{_LOCK_IDENTITY}]")
 
         stop_event = threading.Event()
         watchdog = start_migration_lock_watchdog(redis_client, lock, stop_event)

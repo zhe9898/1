@@ -16,7 +16,7 @@ _BASE_BACKOFF_SECONDS = 5
 
 
 def _phoenix_backoff(restart_count: int) -> float:
-    return min(_BASE_BACKOFF_SECONDS * (2 ** max(restart_count - 1, 0)), _MAX_BACKOFF_SECONDS)
+    return float(min(_BASE_BACKOFF_SECONDS * (2 ** max(restart_count - 1, 0)), _MAX_BACKOFF_SECONDS))
 
 
 async def attempt_expiration_worker() -> None:

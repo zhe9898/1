@@ -27,7 +27,6 @@ from typing import cast
 import redis
 
 from backend.core.security_policy import normalize_metric_integer
-
 from backend.sentinel.sentinel_helpers import (
     DEFAULT_PENDING_TTL,
     DISK_CRITICAL_THRESHOLD,

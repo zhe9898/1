@@ -69,9 +69,7 @@ def _build_node_actions(node: Node) -> list[ControlAction]:
             endpoint=f"/v1/nodes/{node.node_id}/drain",
             enabled=can_drain,
             reason=(
-                None
-                if can_drain
-                else ("Node must be approved before it can be drained" if enrollment_status != "approved" else "Node is already draining")
+                None if can_drain else ("Node must be approved before it can be drained" if enrollment_status != "approved" else "Node is already draining")
             ),
             confirmation="Stop assigning new jobs to this node?",
             fields=[optional_reason_field()],
@@ -248,7 +246,9 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
         if "zone" in overrides:
             node.zone = str(overrides["zone"])
         if "max_concurrency" in overrides:
-            node.max_concurrency = int(overrides["max_concurrency"])
+            max_concurrency_override = overrides["max_concurrency"]
+            if isinstance(max_concurrency_override, (int, float)) and not isinstance(max_concurrency_override, bool):
+                node.max_concurrency = int(max_concurrency_override)
     node.metadata_json = current_meta
 
 

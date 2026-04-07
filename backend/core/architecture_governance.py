@@ -30,7 +30,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Kernel/Surface relation constraint",
         priority="P0",
         maturity="enforced",
-        summary="Control-plane surfaces are defined in backend code and validated against the kernel capability registry before export.",
+        summary=("Control-plane surfaces are defined in backend code and validated " "against the kernel capability registry before export."),
         enforcement_layers=("core", "tests"),
         source_modules=("backend.core.control_plane", "backend.core.kernel_capabilities"),
         gate_tests=(
@@ -43,7 +43,11 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Runtime policy single-source constraint",
         priority="P0",
         maturity="enforced",
-        summary="Runtime policy reads flow through RuntimePolicyResolver and PolicyStore, with a static gate blocking direct runtime system.yaml parsing outside the allowlist.",
+        summary=(
+            "Runtime policy reads flow through RuntimePolicyResolver and "
+            "PolicyStore, with a static gate blocking direct runtime "
+            "system.yaml parsing outside the allowlist."
+        ),
         enforcement_layers=("core", "tests"),
         source_modules=("backend.core.runtime_policy_resolver", "backend.core.scheduling_policy_store"),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_runtime_policy_gate_blocks_runtime_system_yaml_reads_outside_allowlist",),
@@ -53,7 +57,11 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Core state write-path constraint",
         priority="P0",
         maturity="enforced",
-        summary="Static analysis restricts writes to protected aggregate fields so API, worker, and sentinel code paths cannot mutate them outside declared owner services.",
+        summary=(
+            "Static analysis restricts writes to protected aggregate fields "
+            "so API, worker, and sentinel code paths cannot mutate them "
+            "outside declared owner services."
+        ),
         enforcement_layers=("tests",),
         source_modules=("backend.core.aggregate_owner_registry",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_state_path_gate_only_allows_owner_services_for_core_field_writes",),
@@ -73,7 +81,11 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Compatibility layer boundary constraint",
         priority="P0",
         maturity="enforced",
-        summary="Transport compatibility for legacy state aliases has been retired; the compatibility adapter export now attests that only canonical values are accepted.",
+        summary=(
+            "Transport compatibility for legacy state aliases has been "
+            "retired; the compatibility adapter export now attests that "
+            "only canonical values are accepted."
+        ),
         enforcement_layers=("core", "tests"),
         source_modules=("backend.core.compatibility_adapter",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_status_compatibility_rules_export_release_window_metadata",),
@@ -83,9 +95,18 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Fault isolation constraint",
         priority="P1",
         maturity="enforced",
-        summary="Execution-plane fault isolation is exported as a dedicated contract covering stale-lease guards, lease-renewal abandonment, timeout-bounded final reporting, and graceful drain behavior.",
+        summary=(
+            "Execution-plane fault isolation is exported as a dedicated "
+            "contract covering stale-lease guards, lease-renewal "
+            "abandonment, timeout-bounded final reporting, and graceful "
+            "drain behavior."
+        ),
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.execution_fault_isolation", "backend.api.jobs.lifecycle", "backend.workers.control_plane_worker"),
+        source_modules=(
+            "backend.core.execution_fault_isolation",
+            "backend.api.jobs.lifecycle",
+            "backend.workers.control_plane_worker",
+        ),
         gate_tests=(
             "backend.tests.unit.test_architecture_governance_gates::test_fault_isolation_contract_matches_runner_and_api_sources",
             "backend.tests.unit.test_control_plane_protocol_contracts::test_complete_job_rejects_stale_lease",
@@ -130,7 +151,9 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Aggregate ownership constraint",
         priority="P0",
         maturity="enforced",
-        summary="Aggregate ownership is declared in a dedicated registry that maps each aggregate root to one owner service and its controlled modules.",
+        summary=(
+            "Aggregate ownership is declared in a dedicated registry that " "maps each aggregate root to one owner service and its " "controlled modules."
+        ),
         enforcement_layers=("core", "tests"),
         source_modules=("backend.core.aggregate_owner_registry",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_aggregate_owner_registry_is_unique_and_complete",),

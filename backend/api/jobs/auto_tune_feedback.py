@@ -22,8 +22,6 @@ def _normalize_score_breakdown(raw: Mapping[str, object] | None) -> dict[str, in
         return {}
     normalized: dict[str, int] = {}
     for key, value in raw.items():
-        if not isinstance(key, str):
-            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
         normalized[key] = int(value)

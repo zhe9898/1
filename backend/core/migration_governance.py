@@ -211,7 +211,8 @@ def _resolve_configured_path(chain: MigrationChain, configured_path: str) -> Pat
 
 def _literal(node: ast.AST) -> object | None:
     try:
-        return ast.literal_eval(node)
+        value: object = ast.literal_eval(node)
+        return value
     except Exception:
         return None
 
@@ -330,20 +331,12 @@ def find_cross_stream_table_overlaps() -> dict[str, tuple[str, ...]]:
         for path in iter_migration_files(chain):
             for table_name in _extract_touched_tables(path):
                 owners[table_name].add(chain.key)
-    return {
-        table_name: tuple(sorted(chain_keys))
-        for table_name, chain_keys in owners.items()
-        if len(chain_keys) > 1
-    }
+    return {table_name: tuple(sorted(chain_keys)) for table_name, chain_keys in owners.items() if len(chain_keys) > 1}
 
 
 def find_unapproved_cross_stream_table_overlaps() -> dict[str, tuple[str, ...]]:
     overlaps = find_cross_stream_table_overlaps()
-    return {
-        table_name: chain_keys
-        for table_name, chain_keys in overlaps.items()
-        if table_name not in APPROVED_CROSS_STREAM_TABLE_OVERLAPS
-    }
+    return {table_name: chain_keys for table_name, chain_keys in overlaps.items() if table_name not in APPROVED_CROSS_STREAM_TABLE_OVERLAPS}
 
 
 def validate_migration_governance() -> list[str]:
@@ -370,24 +363,18 @@ def validate_migration_governance() -> list[str]:
         if not configured_script_location:
             errors.append(f"{chain.key}: missing alembic.script_location in {chain.config_path}")
         elif _resolve_configured_path(chain, configured_script_location) != chain.script_location.resolve():
-            errors.append(
-                f"{chain.key}: config script_location does not match governance ({configured_script_location} != {chain.script_location})"
-            )
+            errors.append(f"{chain.key}: config script_location does not match governance ({configured_script_location} != {chain.script_location})")
 
         configured_version_table = config_options.get("version_table")
         if configured_version_table != chain.version_table:
-            errors.append(
-                f"{chain.key}: config version_table must be {chain.version_table}, got {configured_version_table or '<missing>'}"
-            )
+            errors.append(f"{chain.key}: config version_table must be {chain.version_table}, got {configured_version_table or '<missing>'}")
 
     for table_name, chain_keys in find_unapproved_cross_stream_table_overlaps().items():
         errors.append(f"unapproved cross-stream overlap: {table_name} touched by {', '.join(chain_keys)}")
 
     forbidden_legacy_model_tables = sorted(find_unapproved_legacy_model_table_creations())
     if forbidden_legacy_model_tables:
-        errors.append(
-            "legacy chain created unexpected model-backed tables: " + ", ".join(forbidden_legacy_model_tables)
-        )
+        errors.append("legacy chain created unexpected model-backed tables: " + ", ".join(forbidden_legacy_model_tables))
 
     for table_name, approved in APPROVED_CROSS_STREAM_TABLE_OVERLAPS.items():
         if table_name not in overlaps:
@@ -397,8 +384,6 @@ def validate_migration_governance() -> list[str]:
             errors.append(f"{table_name}: unknown canonical chain {approved.canonical_chain}")
             continue
         if approved.canonical_chain not in overlaps[table_name]:
-            errors.append(
-                f"{table_name}: canonical chain {approved.canonical_chain} is not one of the touching chains {overlaps[table_name]}"
-            )
+            errors.append(f"{table_name}: canonical chain {approved.canonical_chain} is not one of the touching chains {overlaps[table_name]}")
 
     return errors

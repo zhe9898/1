@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from backend.core.status_contracts import StatusContract as StatusCompatibilityRule
 from backend.core.status_contracts import (
-    StatusContract as StatusCompatibilityRule,
     canonicalize_transport_status,
     export_status_compatibility_rules,
     get_status_contract,

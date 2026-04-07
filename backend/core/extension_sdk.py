@@ -23,7 +23,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.core.extension_guard import validate_extension_manifest_contract
 from backend.core.connector_kind_registry import (
     HttpConnectorConfig,
     MqttConnectorConfig,
@@ -33,6 +32,7 @@ from backend.core.connector_kind_registry import (
     register_connector_kind,
     unregister_connector_kind,
 )
+from backend.core.extension_guard import validate_extension_manifest_contract
 from backend.core.job_kind_registry import (
     ContainerRunPayload,
     ContainerRunResult,

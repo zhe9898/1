@@ -145,9 +145,7 @@ def _validate_surface(surface: ControlPlaneSurface) -> None:
     if capability is None:
         raise ValueError(f"Surface '{surface.surface_key}' references unknown capability '{surface.capability_key}'")
     if surface.required_scopes and set(surface.required_scopes) != set(capability.scopes):
-        raise ValueError(
-            f"Surface '{surface.surface_key}' required scopes {surface.required_scopes} do not match capability scopes {capability.scopes}"
-        )
+        raise ValueError(f"Surface '{surface.surface_key}' required scopes {surface.required_scopes} do not match capability scopes {capability.scopes}")
 
 
 @lru_cache(maxsize=1)

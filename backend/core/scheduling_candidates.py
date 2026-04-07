@@ -97,22 +97,22 @@ def _job_routing_key(job: Job) -> tuple[object, ...]:
         get = d.get
     else:
 
-        def get(name: str, default: object = None) -> object:  # type: ignore[misc]
+        def get(name: str, default: object = None) -> object:
             return getattr(job, name, default)
 
     kind = str(get("kind") or "")
 
     # Inline _text_attr: return stripped string or None
     def _ta(v: object) -> str | None:
-        return (v.strip() or None) if isinstance(v, str) else None  # type: ignore[union-attr]
+        return (v.strip() or None) if isinstance(v, str) else None
 
     # Inline _int_attr: return int or 0 (bool is not treated as int)
     def _ia(v: object) -> int:
-        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0  # type: ignore[arg-type]
+        return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
 
     # Inline _bool_attr: return bool or False
     def _ba(v: object) -> bool:
-        return v if isinstance(v, bool) else False  # type: ignore[return-value]
+        return v if isinstance(v, bool) else False
 
     raw_qc = _ta(get("queue_class"))
     raw_wp = _ta(get("worker_pool"))

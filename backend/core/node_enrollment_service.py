@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 
 from backend.api.nodes_helpers import _apply_contract, _provision_token
+from backend.api.nodes_models import NodeContractPayload
 from backend.core.compatibility_adapter import canonicalize_status
 from backend.models.node import Node
 
@@ -41,7 +42,7 @@ class NodeEnrollmentService:
     @staticmethod
     def register_or_refresh(
         node: Node,
-        payload: object,
+        payload: NodeContractPayload,
         *,
         now: datetime.datetime,
         cloud_auto_approved: bool,

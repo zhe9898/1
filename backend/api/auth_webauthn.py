@@ -19,10 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import backend.core.auth_helpers as _auth_helpers
+from backend.api.auth_cookies import set_auth_cookie
 from backend.api.auth_session_projection import build_authenticated_session_response
 from backend.api.auth_shared import assert_user_active, register_login_session, request_tenant_id
 from backend.api.auth_token_issue import issue_auth_token
-from backend.api.auth_cookies import set_auth_cookie
 from backend.api.deps import get_current_user, get_db, get_redis, get_tenant_db
 from backend.api.models.auth import (
     AuthSessionResponse,
@@ -256,14 +256,16 @@ async def register_complete(
         log_auth("webauthn_register_complete", False, rid, username=username, detail=str(e))
         raise zen(CODE_BAD_REQUEST, "Registration verification failed", status.HTTP_400_BAD_REQUEST)
 
-    credential_id_b64 = bytes_to_base64url(verification.credential_id)  # type: ignore[attr-defined]
-    raw_name = req.credential.get("deviceName") or (req.credential.get("response") or {}).get("deviceName")  # type: ignore[attr-defined]
-    device_name = (raw_name or "unknown")[:128]  # type: ignore[index]
+    credential_id_b64 = bytes_to_base64url(verification.credential_id)
+    raw_response = req.credential.get("response")
+    response_dict = raw_response if isinstance(raw_response, dict) else {}
+    raw_name = req.credential.get("deviceName") or response_dict.get("deviceName")
+    device_name = str(raw_name or "unknown")[:128]
     cred = WebAuthnCredential(
         user_id=user.id,
         credential_id=credential_id_b64,
-        public_key=verification.credential_public_key,  # type: ignore[attr-defined]
-        sign_count=verification.sign_count,  # type: ignore[attr-defined]
+        public_key=verification.credential_public_key,
+        sign_count=verification.sign_count,
         device_name=device_name,
         transports=extract_webauthn_transports(req.credential),
     )
@@ -309,6 +311,10 @@ async def login_begin(
             descriptor["transports"] = transports
         allow_credentials.append(descriptor)
     session_id = ensure_webauthn_flow_session(response, request, ttl_seconds=CHALLENGE_TTL)
+    generate_authentication_challenge = _require_webauthn(
+        _auth_mod().generate_authentication_challenge,
+        "generate_authentication_challenge",
+    )
     _, options_dict = await WebAuthnChallengeStore.get_or_create(
         db,
         redis,
@@ -317,7 +323,7 @@ async def login_begin(
         tenant_id=tenant_id,
         flow="login",
         ttl_seconds=CHALLENGE_TTL,
-        options_builder=lambda challenge: _require_webauthn(_auth_mod().generate_authentication_challenge, "generate_authentication_challenge")(  # type: ignore[operator]
+        options_builder=lambda challenge: generate_authentication_challenge(  # type: ignore[operator]
             allow_credentials=allow_credentials,
             challenge=challenge,
         ),

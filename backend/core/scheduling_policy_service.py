@@ -7,12 +7,26 @@ from backend.core.queue_stratification import SERVICE_CLASS_CONFIG, TenantQuota
 from backend.models.tenant_scheduling_policy import TenantSchedulingPolicy
 
 
+def _coerce_service_class_int(value: object, *, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    return default
+
+
+def _coerce_service_class_float(value: object, *, default: float) -> float:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
+
+
 class SchedulingPolicyService:
     @staticmethod
     async def get(db: AsyncSession, tenant_id: str) -> TenantSchedulingPolicy | None:
-        result = await db.execute(
-            select(TenantSchedulingPolicy).where(TenantSchedulingPolicy.tenant_id == tenant_id)
-        )
+        result = await db.execute(select(TenantSchedulingPolicy).where(TenantSchedulingPolicy.tenant_id == tenant_id))
         return result.scalars().first()
 
     @staticmethod
@@ -32,12 +46,14 @@ class SchedulingPolicyService:
     ) -> TenantSchedulingPolicy:
         policy = await SchedulingPolicyService.get(db, tenant_id)
         sc_defaults = SERVICE_CLASS_CONFIG.get(service_class, SERVICE_CLASS_CONFIG["standard"])
+        default_max_jobs_per_round = _coerce_service_class_int(sc_defaults.get("max_jobs_per_round"), default=0)
+        default_weight = _coerce_service_class_float(sc_defaults.get("weight"), default=1.0)
         if policy is None:
             policy = TenantSchedulingPolicy(
                 tenant_id=tenant_id,
                 service_class=service_class,
-                max_jobs_per_round=max_jobs_per_round or int(sc_defaults["max_jobs_per_round"]),
-                fair_share_weight=fair_share_weight or float(sc_defaults["weight"]),
+                max_jobs_per_round=max_jobs_per_round or default_max_jobs_per_round,
+                fair_share_weight=fair_share_weight or default_weight,
                 priority_boost=priority_boost,
                 max_concurrent_jobs=max_concurrent_jobs,
                 placement_policy=placement_policy,

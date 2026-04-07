@@ -10,14 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.api.auth_cookies import set_auth_cookie
 from backend.api.auth_session_projection import build_authenticated_session_response
 from backend.api.auth_shared import bind_admin_scope, enforce_admin_scope
 from backend.api.auth_token_issue import issue_auth_token
-from backend.api.auth_cookies import set_auth_cookie
 from backend.api.deps import get_current_admin, get_current_user, get_current_user_optional, get_db, get_tenant_db
 from backend.api.models.auth import (
-    AuthSessionResponse,
     AiRoutePreferenceRequest,
+    AuthSessionResponse,
     CreateUserRequest,
     UserItem,
     UserListResponse,
@@ -92,7 +92,9 @@ async def get_auth_session(
 ) -> AuthSessionResponse:
     if not current_user:
         return AuthSessionResponse(authenticated=False)
-    scopes = current_user.get("scopes", [])
+    raw_scopes = current_user.get("scopes", [])
+    scopes = raw_scopes if isinstance(raw_scopes, list) else []
+    raw_exp = current_user.get("exp")
     return AuthSessionResponse(
         authenticated=True,
         sub=str(current_user.get("sub") or "") or None,
@@ -101,7 +103,7 @@ async def get_auth_session(
         tenant_id=str(current_user.get("tenant_id") or "") or None,
         scopes=[str(scope) for scope in scopes if isinstance(scope, str)],
         ai_route_preference=str(current_user.get("ai_route_preference") or "auto"),
-        exp=int(current_user["exp"]) if isinstance(current_user.get("exp"), int) else None,
+        exp=raw_exp if isinstance(raw_exp, int) and not isinstance(raw_exp, bool) else None,
     )
 
 

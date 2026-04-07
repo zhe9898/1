@@ -6,8 +6,9 @@ import logging
 import os
 from collections.abc import AsyncIterator, Mapping
 from functools import lru_cache
+from typing import Any, Callable
 
-from fastapi import Depends, HTTPException, Request, Response
+from fastapi import Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -278,7 +279,7 @@ async def get_node_machine_token(
     return credentials.credentials
 
 
-def require_scope(required_scope: str) -> object:
+def require_scope(required_scope: str) -> Callable[..., Any]:
     """Dependency factory for requiring specific permission scope.
 
     Usage:

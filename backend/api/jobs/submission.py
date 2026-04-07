@@ -34,49 +34,49 @@ async def check_concurrent_limits(
     await concurrency_window.assert_capacity(job_type=job_type, connector_id=connector_id)
 
 
-async def submit_job(
-    payload: JobCreateRequest,
-    *,
-    current_user: dict[str, object],
-    db: AsyncSession,
-    redis: RedisClient | None,
-) -> JobResponse:
-    idempotency_key = _normalize_idempotency_key(payload.idempotency_key)
-    created_by = str(current_user.get("sub") or current_user.get("username") or "unknown")
-    tenant_id = str(current_user.get("tenant_id") or "default")
-    now = _utcnow()
-
-    assert_job_submission_authorized(payload.kind, current_user)
-
+async def _check_submission_admission(db: AsyncSession, tenant_id: str) -> None:
     from backend.core.scheduling_resilience import AdmissionController, SchedulingMetrics
 
     admitted, admission_reason, admission_details = await AdmissionController.check_admission(
         db,
         tenant_id,
     )
-    if not admitted:
-        SchedulingMetrics.record_admission_rejection()
+    if admitted:
+        return
+    SchedulingMetrics.record_admission_rejection()
+    raise zen(
+        "ZEN-JOB-4099",
+        admission_reason,
+        status_code=429,
+        recovery_hint="Wait for active jobs to complete before submitting new jobs",
+        details=admission_details,
+    )
+
+
+async def _reuse_idempotent_job(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    idempotency_key: str | None,
+    payload: JobCreateRequest,
+) -> JobResponse | None:
+    if not idempotency_key:
+        return None
+    existing = await _get_job_by_idempotency_key(db, tenant_id, idempotency_key)
+    if existing is None:
+        return None
+    if not _job_definition_matches(existing, payload):
         raise zen(
-            "ZEN-JOB-4099",
-            admission_reason,
-            status_code=429,
-            recovery_hint="Wait for active jobs to complete before submitting new ones",
-            details=admission_details,
+            "ZEN-JOB-4090",
+            "Idempotency key already belongs to a different job definition",
+            status_code=409,
+            recovery_hint="Reuse the original job contract or generate a new idempotency key",
+            details={"job_id": existing.job_id, "idempotency_key": idempotency_key},
         )
+    return _to_response(existing)
 
-    if idempotency_key:
-        existing = await _get_job_by_idempotency_key(db, tenant_id, idempotency_key)
-        if existing is not None:
-            if not _job_definition_matches(existing, payload):
-                raise zen(
-                    "ZEN-JOB-4090",
-                    "Idempotency key already belongs to a different job definition",
-                    status_code=409,
-                    recovery_hint="Reuse the original job contract or generate a new idempotency key",
-                    details={"job_id": existing.job_id, "idempotency_key": idempotency_key},
-                )
-            return _to_response(existing)
 
+def _validated_submission_contract(payload: JobCreateRequest) -> tuple[dict[str, object], str, str]:
     try:
         validated_payload = validate_job_payload(payload.kind, payload.payload)
     except ValueError as exc:
@@ -109,7 +109,21 @@ async def submit_job(
             },
         ) from exc
 
-    job = Job(
+    return validated_payload, queue_class, worker_pool
+
+
+def _build_job_record(
+    payload: JobCreateRequest,
+    *,
+    tenant_id: str,
+    created_by: str,
+    idempotency_key: str | None,
+    validated_payload: dict[str, object],
+    queue_class: str,
+    worker_pool: str,
+    now: object,
+) -> Job:
+    return Job(
         tenant_id=tenant_id,
         job_id=str(uuid.uuid4()),
         kind=payload.kind,
@@ -160,6 +174,8 @@ async def submit_job(
         sla_seconds=payload.sla_seconds,
     )
 
+
+async def _lock_and_guard_submission_capacity(db: AsyncSession, *, tenant_id: str, job: Job) -> str:
     from backend.core.job_type_separation import apply_job_type_defaults, get_job_type
 
     apply_job_type_defaults(job)
@@ -172,10 +188,21 @@ async def submit_job(
         lock_specs.append(("jobs.submit.connector", (job_type, tenant_id, job.connector_id)))
     await acquire_transaction_advisory_locks(db, lock_specs)
     await check_concurrent_limits(db, tenant_id, job_type, connector_id=job.connector_id)
+    return job_type
 
+
+async def _flush_job_or_recover_idempotency(
+    db: AsyncSession,
+    *,
+    job: Job,
+    tenant_id: str,
+    idempotency_key: str | None,
+    payload: JobCreateRequest,
+) -> JobResponse | None:
     db.add(job)
     try:
         await db.flush()
+        return None
     except Exception:
         if not idempotency_key:
             raise
@@ -200,6 +227,52 @@ async def submit_job(
                 details={"idempotency_key": idempotency_key},
             )
         return _to_response(existing)
+
+
+async def submit_job(
+    payload: JobCreateRequest,
+    *,
+    current_user: dict[str, object],
+    db: AsyncSession,
+    redis: RedisClient | None,
+) -> JobResponse:
+    idempotency_key = _normalize_idempotency_key(payload.idempotency_key)
+    created_by = str(current_user.get("sub") or current_user.get("username") or "unknown")
+    tenant_id = str(current_user.get("tenant_id") or "default")
+    now = _utcnow()
+
+    assert_job_submission_authorized(payload.kind, current_user)
+    await _check_submission_admission(db, tenant_id)
+    existing_job = await _reuse_idempotent_job(
+        db,
+        tenant_id=tenant_id,
+        idempotency_key=idempotency_key,
+        payload=payload,
+    )
+    if existing_job is not None:
+        return existing_job
+
+    validated_payload, queue_class, worker_pool = _validated_submission_contract(payload)
+    job = _build_job_record(
+        payload,
+        tenant_id=tenant_id,
+        created_by=created_by,
+        idempotency_key=idempotency_key,
+        validated_payload=validated_payload,
+        queue_class=queue_class,
+        worker_pool=worker_pool,
+        now=now,
+    )
+    await _lock_and_guard_submission_capacity(db, tenant_id=tenant_id, job=job)
+    recovered_job = await _flush_job_or_recover_idempotency(
+        db,
+        job=job,
+        tenant_id=tenant_id,
+        idempotency_key=idempotency_key,
+        payload=payload,
+    )
+    if recovered_job is not None:
+        return recovered_job
 
     await _append_log(
         db,

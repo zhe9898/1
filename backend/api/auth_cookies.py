@@ -1,22 +1,32 @@
 from __future__ import annotations
 
 import os
+from typing import Literal, cast
 
 from fastapi import Request, Response
 
 from backend.core.jwt import get_access_token_expire_seconds
 
+CookieSameSite = Literal["lax", "strict", "none"]
+
 AUTH_COOKIE_NAME = os.getenv("ZEN70_AUTH_COOKIE_NAME", "zen70_access_token").strip() or "zen70_access_token"
 AUTH_COOKIE_DOMAIN = os.getenv("ZEN70_AUTH_COOKIE_DOMAIN", "").strip() or None
 AUTH_COOKIE_PATH = os.getenv("ZEN70_AUTH_COOKIE_PATH", "/").strip() or "/"
-AUTH_COOKIE_SAMESITE = (os.getenv("ZEN70_AUTH_COOKIE_SAMESITE", "lax").strip().lower() or "lax")
-AUTH_COOKIE_SECURE = os.getenv("ZEN70_AUTH_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes"} or os.getenv(
-    "ZEN70_ENV",
-    "",
-).strip().lower() == "production"
+_AUTH_COOKIE_SAMESITE_RAW = os.getenv("ZEN70_AUTH_COOKIE_SAMESITE", "lax").strip().lower() or "lax"
+AUTH_COOKIE_SECURE = (
+    os.getenv("ZEN70_AUTH_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes"}
+    or os.getenv(
+        "ZEN70_ENV",
+        "",
+    )
+    .strip()
+    .lower()
+    == "production"
+)
 
-if AUTH_COOKIE_SAMESITE not in {"lax", "strict", "none"}:
-    AUTH_COOKIE_SAMESITE = "lax"
+if _AUTH_COOKIE_SAMESITE_RAW not in {"lax", "strict", "none"}:
+    _AUTH_COOKIE_SAMESITE_RAW = "lax"
+AUTH_COOKIE_SAMESITE: CookieSameSite = cast(CookieSameSite, _AUTH_COOKIE_SAMESITE_RAW)
 
 
 def get_auth_cookie_token(request: Request) -> str | None:

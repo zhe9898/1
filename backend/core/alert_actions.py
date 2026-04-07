@@ -42,7 +42,7 @@ class WebhookAlertAction(BaseModel):
 
 
 AlertActionModel = Annotated[LogAlertAction | WebhookAlertAction, Field(discriminator="type")]
-_ALERT_ACTION_ADAPTER = TypeAdapter(AlertActionModel)
+_ALERT_ACTION_ADAPTER: TypeAdapter[LogAlertAction | WebhookAlertAction] = TypeAdapter(AlertActionModel)
 
 
 def normalize_alert_action(raw_action: Mapping[str, object] | BaseModel) -> dict[str, Any]:
@@ -55,4 +55,5 @@ def normalize_alert_action(raw_action: Mapping[str, object] | BaseModel) -> dict
         normalized = _ALERT_ACTION_ADAPTER.validate_python(dict(source))
     except ValidationError as exc:
         raise ValueError(str(exc)) from exc
-    return normalized.model_dump(mode="python")
+    normalized_dict = normalized.model_dump(mode="python")
+    return dict(normalized_dict)

@@ -29,12 +29,12 @@ from backend.api.deps import (
 )
 from backend.api.ui_contracts import StatusView
 from backend.core.backfill_scheduling import get_reservation_manager
-from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.control_plane_state import (
     eligibility_view,
     node_drain_status_view,
     node_status_view,
 )
+from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.governance_facade import get_governance_facade
 from backend.core.job_concurrency_service import build_job_concurrency_window
@@ -50,9 +50,8 @@ from backend.core.lease_service import LeaseGrant, LeaseService
 from backend.core.node_auth import authenticate_node_request
 from backend.core.placement_grpc_client import async_build_time_budgeted_placement_plan
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
-from backend.core.runtime_policy_resolver import get_runtime_policy_resolver
-from backend.core.scheduling_policy_service import SchedulingPolicyService
 from backend.core.reservation_runtime import choose_reservation_slot
+from backend.core.runtime_policy_resolver import get_runtime_policy_resolver
 from backend.core.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
     SCHED_FLAG_EXECUTOR_VALIDATION,
@@ -60,6 +59,7 @@ from backend.core.scheduling_governance import (
     SCHED_FLAG_PREEMPTION,
     SchedulingDecisionLogger,
 )
+from backend.core.scheduling_policy_service import SchedulingPolicyService
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
@@ -544,10 +544,7 @@ async def pull_jobs(  # noqa: C901
             await _append_log(
                 db,
                 job.job_id,
-                (
-                    f"job leased by {payload.node_id} attempt={lease_grant.attempt_no} "
-                    f"score={scored.score} eligible_nodes={scored.eligible_nodes_count}"
-                ),
+                (f"job leased by {payload.node_id} attempt={lease_grant.attempt_no} " f"score={scored.score} eligible_nodes={scored.eligible_nodes_count}"),
                 tenant_id=job.tenant_id,
             )
             existing_reservation = _reservation_mgr.get_reservation(job.job_id)

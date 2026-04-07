@@ -27,8 +27,8 @@ from backend.api.deps import get_current_admin, get_current_user, get_redis, get
 from backend.api.jobs.models import JobCreateRequest
 from backend.api.jobs.submission import submit_job
 from backend.api.ui_contracts import ResourceSchemaResponse
-from backend.core.connector_service import ConnectorService
 from backend.core.connector_kind_registry import validate_connector_config
+from backend.core.connector_service import ConnectorService
 from backend.core.errors import zen
 from backend.core.quota import check_connector_quota
 from backend.core.redis_client import CHANNEL_CONNECTOR_EVENTS, RedisClient

@@ -178,8 +178,10 @@ class GovernanceFacade:
         enabled: bool,
     ) -> object | None:
         """Flush the decision audit logger if the flag is enabled."""
-        if enabled and hasattr(audit_logger, "flush"):
-            return await audit_logger.flush(db)
+        flush = getattr(audit_logger, "flush", None)
+        if enabled and callable(flush):
+            result: object = await flush(db)
+            return result
         return None
 
     # ── Guarded feature flag mutation ────────────────────────────────

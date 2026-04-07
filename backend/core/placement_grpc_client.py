@@ -36,7 +36,7 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from backend.core.job_scheduler import SchedulerNodeSnapshot
@@ -103,7 +103,10 @@ def _get_grpc_stub() -> object | None:
         return None
     try:
         import grpc
+
         from backend.core.gen_grpc import placement_pb2_grpc
+
+        placement_pb2_grpc_any = cast(Any, placement_pb2_grpc)
 
         if _grpc_stub is None:
             _grpc_channel = grpc.insecure_channel(
@@ -113,7 +116,7 @@ def _get_grpc_stub() -> object | None:
                     ("grpc.keepalive_time_ms", 10_000),
                 ],
             )
-            _grpc_stub = placement_pb2_grpc.PlacementSolverStub(_grpc_channel)
+            _grpc_stub = placement_pb2_grpc_any.PlacementSolverStub(_grpc_channel)
         return _grpc_stub
     except ImportError:
         return None
@@ -151,6 +154,8 @@ def _job_to_proto(job: Job) -> object:
     """Convert a Job ORM/mock object to a placement_pb2.JobSpec."""
     from backend.core.gen_grpc import placement_pb2
 
+    placement_pb2_any = cast(Any, placement_pb2)
+
     def _s(v: object) -> str:
         return str(v) if v is not None else ""
 
@@ -162,7 +167,7 @@ def _job_to_proto(job: Job) -> object:
         return 0
 
     caps = getattr(job, "required_capabilities", None) or []
-    return placement_pb2.JobSpec(
+    return placement_pb2_any.JobSpec(
         job_id=_s(getattr(job, "job_id", "")),
         kind=_s(getattr(job, "kind", "")),
         priority=_i(getattr(job, "priority", 50)),
@@ -192,7 +197,9 @@ def _node_to_proto(node: SchedulerNodeSnapshot) -> object:
     """Convert a SchedulerNodeSnapshot to a placement_pb2.NodeSpec."""
     from backend.core.gen_grpc import placement_pb2
 
-    return placement_pb2.NodeSpec(
+    placement_pb2_any = cast(Any, placement_pb2)
+
+    return placement_pb2_any.NodeSpec(
         node_id=node.node_id,
         os=node.os,
         arch=node.arch,
@@ -242,13 +249,16 @@ def _grpc_solve_sync(
     try:
         from backend.core.gen_grpc import placement_pb2
 
-        req = placement_pb2.SolveRequest(
+        placement_pb2_any = cast(Any, placement_pb2)
+
+        req = placement_pb2_any.SolveRequest(
             jobs=[_job_to_proto(j) for j in jobs],
             nodes=[_node_to_proto(n) for n in nodes],
             accepted_kinds=list(accepted_kinds),
             budget_ms=budget_ms,
         )
-        resp = stub.Solve(req, timeout=_GRPC_DEADLINE_S)
+        stub_any = cast(Any, stub)
+        resp = stub_any.Solve(req, timeout=_GRPC_DEADLINE_S)
         _record_grpc_success()
         logger.debug(
             "placement_grpc_solve: assigned=%d result=%s elapsed_us=%d",

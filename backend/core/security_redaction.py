@@ -4,7 +4,6 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-
 REDACTED_VALUE = "********"
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _SENSITIVE_KEY_TOKENS = frozenset(

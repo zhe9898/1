@@ -93,15 +93,16 @@ def normalize_webpush_endpoint(value: str, *, field_name: str) -> str:
     if not parsed.path or parsed.path == "/":
         raise ValueError(f"{field_name} must include a provider-issued subscription path")
 
-    configured_suffixes = split_csv_values(
-        os.getenv("WEBPUSH_ALLOWED_HOST_SUFFIXES", ""),
-        field_name="WEBPUSH_ALLOWED_HOST_SUFFIXES",
-    ) if os.getenv("WEBPUSH_ALLOWED_HOST_SUFFIXES", "").strip() else list(_DEFAULT_WEBPUSH_HOST_SUFFIXES)
-
-    normalized_suffixes = tuple(
-        suffix if suffix.startswith(".") else f".{suffix}"
-        for suffix in configured_suffixes
+    configured_suffixes = (
+        split_csv_values(
+            os.getenv("WEBPUSH_ALLOWED_HOST_SUFFIXES", ""),
+            field_name="WEBPUSH_ALLOWED_HOST_SUFFIXES",
+        )
+        if os.getenv("WEBPUSH_ALLOWED_HOST_SUFFIXES", "").strip()
+        else list(_DEFAULT_WEBPUSH_HOST_SUFFIXES)
     )
+
+    normalized_suffixes = tuple(suffix if suffix.startswith(".") else f".{suffix}" for suffix in configured_suffixes)
     if not any(hostname == suffix[1:] or hostname.endswith(suffix) for suffix in normalized_suffixes):
         raise ValueError(f"{field_name} must target an approved Web Push provider")
     return normalized
@@ -198,11 +199,11 @@ def parse_allowed_roots(
             roots.append(path)
         return roots
 
-    for candidate in default_roots:
-        path = Path(candidate).expanduser().resolve(strict=False)
-        if _is_filesystem_root(path):
+    for default_root in default_roots:
+        resolved_root = Path(default_root).expanduser().resolve(strict=False)
+        if _is_filesystem_root(resolved_root):
             continue
-        roots.append(path)
+        roots.append(resolved_root)
     if not roots:
         raise ValueError(f"{field_name} has no allowed roots configured")
     return roots

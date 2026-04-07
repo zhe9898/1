@@ -340,7 +340,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -382,7 +382,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -438,7 +438,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/auth/webauthn/register/complete": {
@@ -483,7 +488,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/auth/webauthn/login/begin": {
@@ -550,7 +560,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -591,7 +601,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -684,7 +694,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -695,6 +705,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Auth Session",
+        "operationId": "get_auth_session_api_v1_auth_session_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -956,9 +992,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Invite Webauthn Register Complete Api V1 Auth Invites  Token  Webauthn Register Complete Post"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -1022,9 +1056,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Invite Fallback Login Api V1 Auth Invites  Token  Fallback Login Post"
+                  "$ref": "#/components/schemas/AuthSessionResponse"
                 }
               }
             }
@@ -1623,6 +1655,29 @@
               ],
               "title": "Attention"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
           }
         ],
         "responses": {
@@ -1861,6 +1916,53 @@
         }
       }
     },
+    "/api/v1/nodes/self/drain": {
+      "post": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Self Drain Node",
+        "description": "Allow a runner-agent to mark itself as draining using its own node token.\n\nCalled by the agent on SIGTERM so the scheduler stops dispatching new jobs\nto this node while in-flight jobs complete.",
+        "operationId": "self_drain_node_api_v1_nodes_self_drain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeSelfDrainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/nodes/register": {
       "post": {
         "tags": [
@@ -2008,27 +2110,63 @@
         "summary": "List Pending Nodes",
         "description": "List nodes awaiting approval (admin only).",
         "operationId": "list_pending_nodes_api_v1_nodes_pending_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/NodeApprovalResponse"
                   },
-                  "type": "array",
                   "title": "Response List Pending Nodes Api V1 Nodes Pending Get"
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/nodes/{node_id}/approve": {
@@ -2037,7 +2175,7 @@
           "node-approval"
         ],
         "summary": "Approve Node",
-        "description": "Approve a pending node (admin only).\n\nTransitions: pending → active\nOnce approved the node can receive and execute jobs.",
+        "description": "Approve a pending node (admin only).\n\nTransitions: pending → approved\nOnce approved the node can receive and execute jobs.",
         "operationId": "approve_node_api_v1_nodes__node_id__approve_post",
         "security": [
           {
@@ -2095,7 +2233,7 @@
           "node-approval"
         ],
         "summary": "Reject Node",
-        "description": "Reject and revoke a pending node (admin only).\n\nTransitions: pending → revoked\nRejected nodes cannot register again with the same node_id.",
+        "description": "Reject and revoke a pending node (admin only).\n\nTransitions: pending → rejected\nRejected nodes cannot register again with the same node_id.",
         "operationId": "reject_node_api_v1_nodes__node_id__reject_post",
         "security": [
           {
@@ -2343,6 +2481,29 @@
                 }
               ],
               "title": "Required Capability"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
             }
           }
         ],
@@ -3012,7 +3173,7 @@
           "jobs"
         ],
         "summary": "Governance Timeline",
-        "description": "Query governance event timeline with optional filters (admin only).\n\nReturns quarantine, cooling, circuit, burst events in reverse chronological order.",
+        "description": "Query governance event timeline with optional filters (admin only).",
         "operationId": "governance_timeline_api_v1_jobs_control_plane_governance_timeline_get",
         "security": [
           {
@@ -7288,9 +7449,22 @@
             "title": "Condition"
           },
           "action": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Action"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LogAlertAction"
+              },
+              {
+                "$ref": "#/components/schemas/WebhookAlertAction"
+              }
+            ],
+            "title": "Action",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "log": "#/components/schemas/LogAlertAction",
+                "webhook": "#/components/schemas/WebhookAlertAction"
+              }
+            }
           },
           "severity": {
             "type": "string",
@@ -7512,6 +7686,84 @@
           "created_at"
         ],
         "title": "AuditLogResponse"
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean",
+            "title": "Authenticated",
+            "default": false
+          },
+          "sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "ai_route_preference": {
+            "type": "string",
+            "title": "Ai Route Preference",
+            "default": "auto"
+          },
+          "exp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exp"
+          }
+        },
+        "type": "object",
+        "title": "AuthSessionResponse"
       },
       "BackfillWindowResponse": {
         "properties": {
@@ -9820,9 +10072,16 @@
             "description": "Public profile name shown to console"
           },
           "runtime_profile": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Runtime Profile",
-            "description": "Internal runtime profile used by backend"
+            "description": "Internal runtime profile used by backend (admin only)"
           },
           "router_names": {
             "items": {
@@ -9875,8 +10134,7 @@
         "type": "object",
         "required": [
           "product",
-          "profile",
-          "runtime_profile"
+          "profile"
         ],
         "title": "GatewayProfileResponse"
       },
@@ -10026,6 +10284,28 @@
             ],
             "title": "Error Message"
           },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
+          "safe_error_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Hint"
+          },
           "result_summary": {
             "anyOf": [
               {
@@ -10078,7 +10358,6 @@
           "status",
           "status_view",
           "score",
-          "error_message",
           "result_summary",
           "created_at",
           "started_at",
@@ -10367,6 +10646,18 @@
             "type": "boolean",
             "title": "Cloud Fallback Enabled",
             "default": false
+          },
+          "preferred_device_profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Device Profile"
           },
           "scheduling_strategy": {
             "anyOf": [
@@ -11047,6 +11338,28 @@
             ],
             "title": "Error Message"
           },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
+          "safe_error_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Hint"
+          },
           "lease_seconds": {
             "type": "integer",
             "title": "Lease Seconds"
@@ -11170,6 +11483,17 @@
             "type": "boolean",
             "title": "Cloud Fallback Enabled",
             "default": false
+          },
+          "preferred_device_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Device Profile"
           },
           "scheduling_strategy": {
             "anyOf": [
@@ -11327,7 +11651,6 @@
           "attempt",
           "payload",
           "result",
-          "error_message",
           "lease_seconds",
           "leased_until",
           "lease_state",
@@ -11821,6 +12144,28 @@
             ],
             "title": "Error Message"
           },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
+          "safe_error_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Hint"
+          },
           "lease_seconds": {
             "type": "integer",
             "title": "Lease Seconds"
@@ -11944,6 +12289,17 @@
             "type": "boolean",
             "title": "Cloud Fallback Enabled",
             "default": false
+          },
+          "preferred_device_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Device Profile"
           },
           "scheduling_strategy": {
             "anyOf": [
@@ -12097,7 +12453,6 @@
           "attempt",
           "payload",
           "result",
-          "error_message",
           "lease_seconds",
           "leased_until",
           "lease_state",
@@ -12179,9 +12534,9 @@
             "type": "integer",
             "title": "Failed"
           },
-          "canceled": {
+          "cancelled": {
             "type": "integer",
-            "title": "Canceled"
+            "title": "Cancelled"
           }
         },
         "type": "object",
@@ -12190,7 +12545,7 @@
           "leased",
           "completed",
           "failed",
-          "canceled"
+          "cancelled"
         ],
         "title": "JobTypeStatsItem"
       },
@@ -12217,6 +12572,18 @@
           "concurrent_limits"
         ],
         "title": "JobTypeStatsResponse"
+      },
+      "LogAlertAction": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "log",
+            "title": "Type",
+            "default": "log"
+          }
+        },
+        "type": "object",
+        "title": "LogAlertAction"
       },
       "NodeApprovalRequest": {
         "properties": {
@@ -13378,6 +13745,41 @@
         ],
         "title": "NodeResponse"
       },
+      "NodeSelfDrainRequest": {
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tenant Id",
+            "default": "default"
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id"
+        ],
+        "title": "NodeSelfDrainRequest",
+        "description": "Payload sent by a runner-agent to drain itself gracefully (node-token auth)."
+      },
       "OverviewAttentionItem": {
         "properties": {
           "severity": {
@@ -13446,9 +13848,9 @@
             "title": "Failed",
             "default": 0
           },
-          "canceled": {
+          "cancelled": {
             "type": "integer",
-            "title": "Canceled",
+            "title": "Cancelled",
             "default": 0
           },
           "degraded": {
@@ -13461,9 +13863,9 @@
             "title": "Offline",
             "default": 0
           },
-          "revoked": {
+          "rejected": {
             "type": "integer",
-            "title": "Revoked",
+            "title": "Rejected",
             "default": 0
           },
           "attention": {
@@ -13522,6 +13924,7 @@
             "type": "string",
             "maxLength": 128,
             "minLength": 1,
+            "pattern": "^\\d+$",
             "title": "User Id"
           },
           "scope": {
@@ -14800,31 +15203,6 @@
         ],
         "title": "TenantPolicyResponse"
       },
-      "TokenResponse": {
-        "properties": {
-          "access_token": {
-            "type": "string",
-            "title": "Access Token",
-            "description": "JWT access token"
-          },
-          "token_type": {
-            "type": "string",
-            "title": "Token Type",
-            "default": "bearer"
-          },
-          "expires_in": {
-            "type": "integer",
-            "title": "Expires In",
-            "description": "Token TTL in seconds"
-          }
-        },
-        "type": "object",
-        "required": [
-          "access_token",
-          "expires_in"
-        ],
-        "title": "TokenResponse"
-      },
       "TriggerDeliveryResponse": {
         "properties": {
           "delivery_id": {
@@ -15270,10 +15648,8 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "active",
-              "paused"
-            ],
+            "maxLength": 32,
+            "minLength": 1,
             "title": "Status",
             "default": "active"
           },
@@ -15656,6 +16032,45 @@
         ],
         "title": "WebAuthnRegisterCompleteRequest"
       },
+      "WebhookAlertAction": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "webhook",
+            "title": "Type"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "const": "POST",
+            "title": "Method",
+            "default": "POST"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.5,
+            "title": "Timeout Seconds",
+            "default": 5.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "url"
+        ],
+        "title": "WebhookAlertAction"
+      },
       "WorkflowCreateRequest": {
         "properties": {
           "name": {
@@ -15677,8 +16092,7 @@
           },
           "steps": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/WorkflowStepDefinition"
             },
             "type": "array",
             "minItems": 1,
@@ -15923,6 +16337,56 @@
           "attempt"
         ],
         "title": "WorkflowStepCompleteRequest"
+      },
+      "WorkflowStepDefinition": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Kind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On"
+          },
+          "priority": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "default": 60
+          },
+          "max_retries": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Max Retries",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "WorkflowStepDefinition"
       },
       "WorkflowStepFailRequest": {
         "properties": {

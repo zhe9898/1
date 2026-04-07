@@ -15,15 +15,11 @@ depends_on = None
 
 
 def _insert_default_tenant() -> None:
-    op.execute(
-        sa.text(
-            """
+    op.execute(sa.text("""
             INSERT INTO tenants (tenant_id, display_name, plan, is_active, created_at)
             VALUES ('default', 'Default Home', 'home', true, NOW())
             ON CONFLICT (tenant_id) DO NOTHING
-            """
-        )
-    )
+            """))
 
 
 def upgrade() -> None:

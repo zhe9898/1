@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING
 
 from backend.core.job_scoring import score_job_for_node
 from backend.core.scheduling_candidates import (
-    _bool_attr,
     _candidate_nodes_for_job,
     _has_items_attr,
     _int_attr,
@@ -370,7 +369,6 @@ class PlacementSolver:
             metrics["assignments"] = len(combined_plan)
             metrics["result"] = "fast_path_planned" if combined_plan else "fast_path_no_assignments"
         return combined_plan
-
 
     def _apply_global_adjustments(
         self,

@@ -13,18 +13,14 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-_JSON_SECRET_PATTERN = re.compile(
-    r'(?i)("(?:password|passwd|pwd|secret|token|access_token|refresh_token|api_key|apikey|client_secret)"\s*:\s*")[^"]+(")'
-)
-_INLINE_SECRET_PATTERN = re.compile(
-    r"(?i)\b(password|passwd|pwd|secret|token|access_token|refresh_token|api_key|apikey|client_secret)\b\s*([=:])\s*([^\s,;]+)"
-)
+_JSON_SECRET_PATTERN = re.compile(r'(?i)("(?:password|passwd|pwd|secret|token|access_token|refresh_token|api_key|apikey|client_secret)"\s*:\s*")[^"]+(")')
+_INLINE_SECRET_PATTERN = re.compile(r"(?i)\b(password|passwd|pwd|secret|token|access_token|refresh_token|api_key|apikey|client_secret)\b\s*([=:])\s*([^\s,;]+)")
 _AUTHORIZATION_PATTERN = re.compile(r"(?i)\bauthorization\b\s*:\s*bearer\s+[^\s,;]+")
 _EMAIL_PATTERN = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 
 
 def _redact_sensitive_text(value: str) -> str:
-    redacted = _JSON_SECRET_PATTERN.sub(r'\1[REDACTED]\2', value)
+    redacted = _JSON_SECRET_PATTERN.sub(r"\1[REDACTED]\2", value)
     redacted = _AUTHORIZATION_PATTERN.sub("authorization: Bearer [REDACTED]", redacted)
     redacted = _INLINE_SECRET_PATTERN.sub(r"\1\2[REDACTED]", redacted)
     redacted = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", redacted)

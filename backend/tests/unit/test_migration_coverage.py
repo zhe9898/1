@@ -96,8 +96,7 @@ def test_migration_chain_is_linear() -> None:
     for revision, down_revision in down_revisions.items():
         if down_revision is not None:
             assert down_revision in known, (
-                f"Migration '{revision}' references unknown predecessor '{down_revision}'. "
-                "Ensure the migration chain is continuous."
+                f"Migration '{revision}' references unknown predecessor '{down_revision}'. " "Ensure the migration chain is continuous."
             )
 
 

@@ -279,10 +279,10 @@ def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
     assert "if leaseSeconds > 10 {" in executor_source
     assert "return time.Duration(leaseSeconds-5) * time.Second" in executor_source
 
-    assert "_assert_valid_lease_owner(job, payload, \"renew\")" in lifecycle_source
-    assert "_assert_valid_lease_owner(job, payload, \"result\")" in lifecycle_source
-    assert "_assert_valid_lease_owner(job, payload, \"fail\")" in lifecycle_source
-    assert "asyncio.create_task(factory(redis_client), name=f\"control-worker:{name}\")" in worker_source
+    assert '_assert_valid_lease_owner(job, payload, "renew")' in lifecycle_source
+    assert '_assert_valid_lease_owner(job, payload, "result")' in lifecycle_source
+    assert '_assert_valid_lease_owner(job, payload, "fail")' in lifecycle_source
+    assert 'asyncio.create_task(factory(redis_client), name=f"control-worker:{name}")' in worker_source
 
 
 def test_extension_manifest_guard_requires_traceable_manifest_path() -> None:

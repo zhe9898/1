@@ -170,30 +170,6 @@ def _scan_directory_against_baseline(target: Path) -> list[Path]:
 
 
 def _send_corruption_alert(corrupted_files: list[Path]) -> None:
-    """将静默腐败事件推送至外部告警通道。"""
-    alert_webhook = os.getenv("ALERT_WEBHOOK_URL", "").strip()
-    if not alert_webhook:
-        return
-
-    alert_timeout_seconds = _read_positive_float_env(
-        ENV_ALERT_TIMEOUT_SECONDS,
-        DEFAULT_ALERT_TIMEOUT_SECONDS,
-    )
-    file_list = "\n".join(str(f) for f in corrupted_files[:10])
-    payload = {
-        "level": "critical",
-        "title": "☢️ 静默数据腐败检测触发",
-        "message": f"发现 {len(corrupted_files)} 个腐败文件:\n{file_list}",
-        "source": "data_integrity",
-    }
-    try:
-        with httpx.Client(timeout=alert_timeout_seconds) as client:
-            client.post(alert_webhook, json=payload)
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as alert_err:
-        logger.error("告警下行通道故障: %s", alert_err)
-
-
-def _send_corruption_alert(corrupted_files: list[Path]) -> None:
     """Send corruption alerts only to validated public webhook destinations."""
     alert_webhook = os.getenv("ALERT_WEBHOOK_URL", "").strip()
     if not alert_webhook:

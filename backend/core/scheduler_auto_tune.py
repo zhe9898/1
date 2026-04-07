@@ -13,12 +13,12 @@ from typing import TYPE_CHECKING
 from backend.core.scheduler_auto_tune_state import (
     DEFAULT_DECAY_RATE,
     DEFAULT_LEARNING_RATE,
-    DimensionStateDelta,
     MAX_MULTIPLIER,
     MIN_MULTIPLIER,
     MIN_SAMPLES_BEFORE_ADJUST,
     AdaptiveWeightStore,
     AutoTuneAuditRecord,
+    DimensionStateDelta,
     KindPerformanceTracker,
     NodePerformanceTracker,
     OutcomeSignal,
@@ -109,15 +109,15 @@ class SchedulerTuner:
     def restore_audit_record(self, record: AutoTuneAuditRecord) -> None:
         """Rollback in-memory tuner state if audit/persistence fails."""
 
-        for delta in reversed(record.dimension_deltas):
-            self.weights.restore_delta(delta)
-        for delta in reversed(record.tracker_deltas):
-            if delta.tracker == "node_performance":
-                self.node_tracker.restore_delta(delta)
-            elif delta.tracker == "kind_performance":
-                self.kind_tracker.restore_delta(delta)
-            elif delta.tracker == "strategy_effectiveness":
-                self.strategy_tracker.restore_delta(delta)
+        for dimension_delta in reversed(record.dimension_deltas):
+            self.weights.restore_delta(dimension_delta)
+        for tracker_delta in reversed(record.tracker_deltas):
+            if tracker_delta.tracker == "node_performance":
+                self.node_tracker.restore_delta(tracker_delta)
+            elif tracker_delta.tracker == "kind_performance":
+                self.kind_tracker.restore_delta(tracker_delta)
+            elif tracker_delta.tracker == "strategy_effectiveness":
+                self.strategy_tracker.restore_delta(tracker_delta)
         self._total_signals = record.previous_total_signals
         self._last_decay = record.previous_last_decay
         if self._recent_signals and self._recent_signals[-1] == record.signal:
@@ -194,18 +194,31 @@ class SchedulerTuner:
                 data.get("v"),
             )
             return
-        self._total_signals = int(data.get("total_signals", 0))
-        for key, raw in (data.get("dimensions") or {}).items():
+        total_signals = data.get("total_signals", 0)
+        self._total_signals = int(total_signals) if isinstance(total_signals, (int, float)) and not isinstance(total_signals, bool) else 0
+        raw_dimensions = data.get("dimensions")
+        dimensions = raw_dimensions if isinstance(raw_dimensions, dict) else {}
+        for key, raw in dimensions.items():
             state = self.weights._states.get(key)
             if state is None or not isinstance(raw, dict):
                 continue
-            state.multiplier = max(MIN_MULTIPLIER, min(MAX_MULTIPLIER, float(raw.get("multiplier", 1.0))))
-            state.sample_count = int(raw.get("sample_count", 0))
-            state.success_rate = float(raw.get("success_rate", 0.0))
-            state.contribution_ema = float(raw.get("contribution_ema", 0.0))
+            multiplier = raw.get("multiplier", 1.0)
+            sample_count = raw.get("sample_count", 0)
+            success_rate = raw.get("success_rate", 0.0)
+            contribution_ema = raw.get("contribution_ema", 0.0)
+            state.multiplier = max(
+                MIN_MULTIPLIER,
+                min(
+                    MAX_MULTIPLIER,
+                    float(multiplier) if isinstance(multiplier, (int, float)) and not isinstance(multiplier, bool) else 1.0,
+                ),
+            )
+            state.sample_count = int(sample_count) if isinstance(sample_count, (int, float)) and not isinstance(sample_count, bool) else 0
+            state.success_rate = float(success_rate) if isinstance(success_rate, (int, float)) and not isinstance(success_rate, bool) else 0.0
+            state.contribution_ema = float(contribution_ema) if isinstance(contribution_ema, (int, float)) and not isinstance(contribution_ema, bool) else 0.0
         logger.info(
             "scheduler_auto_tune: loaded weights for %d dimensions (%d total signals)",
-            len(data.get("dimensions") or {}),
+            len(dimensions),
             self._total_signals,
         )
 

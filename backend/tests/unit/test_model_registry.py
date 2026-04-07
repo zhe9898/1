@@ -9,11 +9,7 @@ from backend.models import CANONICAL_MODEL_MODULES, load_canonical_model_metadat
 def test_registry_declares_every_model_module() -> None:
     models_dir = Path(__file__).resolve().parents[2] / "models"
     declared = set(CANONICAL_MODEL_MODULES)
-    discovered = {
-        f"backend.models.{path.stem}"
-        for path in models_dir.glob("*.py")
-        if path.stem not in {"__init__", "base", "registry"}
-    }
+    discovered = {f"backend.models.{path.stem}" for path in models_dir.glob("*.py") if path.stem not in {"__init__", "base", "registry"}}
 
     assert declared == discovered
 

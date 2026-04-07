@@ -5,7 +5,6 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -32,14 +31,15 @@ class AesGcmEnvelopeService:
         envelope_format: str,
         extra_fields: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
-        plaintext = json.dumps(dict(payload), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload_dict: dict[str, object] = {str(key): value for key, value in payload.items()}
+        plaintext = json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode("utf-8")
         nonce = os.urandom(12)
         ciphertext = AESGCM(key_material.key_bytes).encrypt(
             nonce,
             plaintext,
             AesGcmEnvelopeService._encode_associated_data(associated_data),
         )
-        envelope = {
+        envelope: dict[str, object] = {
             "format": envelope_format,
             "key_version": key_material.version,
             "nonce_b64": AesGcmEnvelopeService.encode_b64(nonce),
@@ -71,7 +71,7 @@ class AesGcmEnvelopeService:
         payload = json.loads(plaintext.decode("utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("Secret envelope payload must decode to a JSON object")
-        return dict(payload)
+        return {str(key): value for key, value in payload.items()}
 
     @staticmethod
     def encode_b64(value: bytes) -> str:

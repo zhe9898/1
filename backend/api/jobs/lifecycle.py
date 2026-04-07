@@ -24,8 +24,8 @@ from backend.core.backfill_scheduling import get_reservation_manager
 from backend.core.errors import zen
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
-from backend.core.job_status import normalize_job_status
 from backend.core.job_lifecycle_service import JobLifecycleService
+from backend.core.job_status import normalize_job_status
 from backend.core.lease_service import LeaseService
 from backend.core.node_auth import authenticate_node_request
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient

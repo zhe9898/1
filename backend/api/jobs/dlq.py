@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
@@ -24,7 +24,7 @@ def _dead_letter_stmt(
     tenant_id: str,
     failure_category: str | None = None,
     connector_id: str | None = None,
-):
+) -> Select[tuple[Job]]:
     stmt = select(Job).where(
         Job.tenant_id == tenant_id,
         Job.status == "failed",

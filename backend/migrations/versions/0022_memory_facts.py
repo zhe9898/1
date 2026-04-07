@@ -15,16 +15,12 @@ depends_on = None
 
 
 def _backfill_memory_text() -> None:
-    op.execute(
-        sa.text(
-            """
+    op.execute(sa.text("""
             UPDATE memory_facts
             SET text = fact_text
             WHERE (text IS NULL OR text = '')
               AND COALESCE(fact_text, '') <> ''
-            """
-        )
-    )
+            """))
 
 
 def upgrade() -> None:
