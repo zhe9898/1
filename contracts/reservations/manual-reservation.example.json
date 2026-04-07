@@ -1,0 +1,7 @@
+{
+  "job_id": "job-photo-embed-20260401-001",
+  "node_id": "gpu-node-a",
+  "start_at": "2026-04-01T12:15:00Z",
+  "estimated_duration_s": 900,
+  "reason": "Reserve the next GPU slot for a latency-sensitive embedding job."
+}

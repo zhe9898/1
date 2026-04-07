@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# ZEN70 容器级 GC (Garbage Collection)
+# 法典 §3.7：每周清扫悬空镜像与废弃卷，保留带 zen70.gc.keep=true 标签的资产。
+#
+# 安装：crontab -e → 0 3 * * 0 /path/to/gc_cron.sh >> /var/log/zen70-gc.log 2>&1
+# 即每周日凌晨 3:00 执行。
+
+set -euo pipefail
+
+SCRIPT_NAME="zen70-gc"
+LOG_PREFIX="[${SCRIPT_NAME}]"
+KEEP_LABEL="zen70.gc.keep=true"
+
+echo "${LOG_PREFIX} $(date -u +%Y-%m-%dT%H:%M:%SZ) — 容器级 GC 开始"
+
+# 1. 清理悬空镜像（排除带 gc.keep 标签的镜像）
+echo "${LOG_PREFIX} 清理未使用镜像（保留 ${KEEP_LABEL} 标签）..."
+docker system prune -a --volumes --force --filter "label!=${KEEP_LABEL}" 2>&1 || {
+    echo "${LOG_PREFIX} [WARN] docker system prune 执行失败，可能缺少权限"
+}
+
+# 2. 清理已停止超过 7 天的容器
+echo "${LOG_PREFIX} 清理已停止超过 7 天的容器..."
+docker container prune --force --filter "until=168h" --filter "label!=${KEEP_LABEL}" 2>&1 || true
+
+# 3. 清理未使用的网络
+echo "${LOG_PREFIX} 清理未使用网络..."
+docker network prune --force 2>&1 || true
+
+# 4. 清理匿名卷（非命名卷）
+echo "${LOG_PREFIX} 清理未使用卷..."
+docker volume prune --force --filter "label!=${KEEP_LABEL}" 2>&1 || true
+
+# 5. 清理多媒体转码残骸（法典 §3.7 应用级 GC）
+TRANSCODE_TMP="${TRANSCODE_TMP_DIR:-/tmp/zen70-transcode}"
+if [ -d "${TRANSCODE_TMP}" ]; then
+    echo "${LOG_PREFIX} 清理转码残骸: ${TRANSCODE_TMP}"
+    find "${TRANSCODE_TMP}" -type f -mtime +3 -delete 2>/dev/null || true
+    find "${TRANSCODE_TMP}" -type d -empty -delete 2>/dev/null || true
+fi
+
+# 6. 汇总磁盘使用
+echo "${LOG_PREFIX} 当前磁盘使用情况:"
+df -h / 2>/dev/null || true
+echo "${LOG_PREFIX} Docker 磁盘使用:"
+docker system df 2>/dev/null || true
+
+echo "${LOG_PREFIX} $(date -u +%Y-%m-%dT%H:%M:%SZ) — 容器级 GC 完成"

@@ -1,0 +1,73 @@
+"""Scheduling governance tables: tenant policies + decision audit
+
+Revision ID: d4e5f6a7b8c9
+Revises: a1b2c3d4e5f6
+Create Date: 2026-03-31 00:00:00.000000
+"""
+
+from __future__ import annotations
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "d4e5f6a7b8c9"
+down_revision: Union[str, Sequence[str], None] = "a1b2c3d4e5f6"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def _inspector() -> sa.Inspector:
+    return sa.inspect(op.get_bind())
+
+
+def _has_table(table_name: str) -> bool:
+    return _inspector().has_table(table_name)
+
+
+def upgrade() -> None:
+    # ── tenant_scheduling_policies ────────────────────────────────────
+    if not _has_table("tenant_scheduling_policies"):
+        op.create_table(
+            "tenant_scheduling_policies",
+            sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column("tenant_id", sa.String(64), nullable=False, unique=True, index=True),
+            sa.Column("service_class", sa.String(32), nullable=False, server_default="standard"),
+            sa.Column("max_jobs_per_round", sa.Integer, nullable=False, server_default="20"),
+            sa.Column("fair_share_weight", sa.Float, nullable=False, server_default="2.0"),
+            sa.Column("priority_boost", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("max_concurrent_jobs", sa.Integer, nullable=False, server_default="-1"),
+            sa.Column("placement_policy", sa.String(64), nullable=False, server_default=""),
+            sa.Column("enabled", sa.Boolean, nullable=False, server_default=sa.text("true")),
+            sa.Column("notes", sa.Text, nullable=True),
+            sa.Column("updated_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_by", sa.String(128), nullable=True),
+        )
+
+    # ── scheduling_decisions ──────────────────────────────────────────
+    if not _has_table("scheduling_decisions"):
+        op.create_table(
+            "scheduling_decisions",
+            sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column("tenant_id", sa.String(64), nullable=False, index=True),
+            sa.Column("node_id", sa.String(128), nullable=False, index=True),
+            sa.Column("cycle_ts", sa.DateTime, nullable=False, index=True),
+            sa.Column("candidates_count", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("selected_count", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("preemptions_count", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("placement_policy", sa.String(64), nullable=False, server_default="default"),
+            sa.Column("policy_rejections", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("placements_json", sa.JSON, nullable=False, server_default="[]"),
+            sa.Column("rejections_json", sa.JSON, nullable=False, server_default="[]"),
+            sa.Column("duration_ms", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("context_json", sa.JSON, nullable=False, server_default="{}"),
+            sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
+        )
+
+
+def downgrade() -> None:
+    if _has_table("scheduling_decisions"):
+        op.drop_table("scheduling_decisions")
+    if _has_table("tenant_scheduling_policies"):
+        op.drop_table("tenant_scheduling_policies")

@@ -1,0 +1,20 @@
+{
+  "generated_by": "ZEN70-AI-Agent",
+  "architecture_version": "V2.0",
+  "compliance": "strict-sre-ruleset",
+  "contracts": {
+    "openapi": [
+      "openapi/zen70-gateway-kernel.openapi.json",
+      "openapi/zen70-gateway-iot.openapi.json",
+      "openapi/zen70-gateway-ops.openapi.json"
+    ],
+    "triggers": [
+      "triggers/README.md",
+      "triggers/manual-trigger.example.json"
+    ],
+    "reservations": [
+      "reservations/README.md",
+      "reservations/manual-reservation.example.json"
+    ]
+  }
+}

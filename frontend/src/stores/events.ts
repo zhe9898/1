@@ -1,0 +1,39 @@
+/**
+ * @description SSE 事件时间线 store
+ */
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
+import type { SSEEvent } from "@/types/sse";
+
+interface TimelineItem {
+  ts: number;
+  ev: SSEEvent;
+}
+
+export const useEventsStore = defineStore("events", () => {
+  const items = ref<TimelineItem[]>([]);
+  /** 每次 push 递增；用于 watch（队列满时 length 不变，避免漏事件） */
+  const revision = ref(0);
+  const maxItems = 200;
+
+  function push(ev: SSEEvent): void {
+    items.value.unshift({ ts: Date.now(), ev });
+    if (items.value.length > maxItems) items.value.length = maxItems;
+    revision.value += 1;
+  }
+
+  const byType = computed(() => {
+    const map: Record<string, TimelineItem[]> = {};
+    for (const it of items.value) {
+      const key = it.ev.type;
+      if (key in map) {
+        map[key].push(it);
+      } else {
+        map[key] = [it];
+      }
+    }
+    return map;
+  });
+
+  return { items, byType, revision, push };
+});

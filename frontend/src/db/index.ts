@@ -1,0 +1,43 @@
+/**
+ * @description ZEN70 unified offline cache database
+ */
+import Dexie, { type Table } from "dexie";
+import type { Capabilities } from "@/types/capability";
+import type { SwitchState } from "@/types/switch";
+
+export interface CachedCapabilitiesRow {
+  id: number;
+  data: Capabilities;
+  lastUpdated: number;
+}
+
+export interface CachedSwitchRow {
+  name: string;
+  data: SwitchState;
+  updated: number;
+}
+
+export interface CachedAssetRow {
+  id: string;
+  url: string;
+  base64Data: string;
+  timestamp: number;
+}
+
+class ZEN70CacheDb extends Dexie {
+  capabilities!: Table<CachedCapabilitiesRow, number>;
+  switches!: Table<CachedSwitchRow, string>;
+  cachedAssets!: Table<CachedAssetRow, string>;
+
+  constructor() {
+    super("ZEN70Cache");
+    this.version(2).stores({
+      capabilities: "id",
+      switches: "name, updated",
+      cachedAssets: "id, url, timestamp",
+    });
+  }
+}
+
+export const db = new ZEN70CacheDb();
+export const CAPABILITIES_ROW_ID = 1;

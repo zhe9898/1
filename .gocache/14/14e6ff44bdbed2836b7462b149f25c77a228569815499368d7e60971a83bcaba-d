@@ -1,0 +1,453 @@
+# test log
+getenv GOTMPDIR
+getenv GOTMPDIR
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001\source.txt
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001\source.txt
+getenv PATHEXT
+getenv NoDefaultCurrentDirectoryInExePath
+stat cmd.bat
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001\dest.txt
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001
+stat cmd.cmd
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001\source.txt
+stat cmd.com
+stat cmd.exe
+stat cmd.vbs
+stat cmd.vbe
+stat cmd.js
+stat cmd.jse
+stat cmd.wsf
+stat cmd.wsh
+stat cmd.msc
+stat cmd.cpl
+getenv path
+stat C:\Program Files\Go\bin\cmd.bat
+stat C:\Program Files\Go\bin\cmd.cmd
+stat C:\Program Files\Go\bin\cmd.com
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Program Files\Go\bin\cmd.exe
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Program Files\Go\bin\cmd.vbs
+stat C:\Program Files\Go\bin\cmd.vbe
+stat C:\Program Files\Go\bin\cmd.js
+stat C:\Program Files\Go\bin\cmd.jse
+stat C:\Program Files\Go\bin\cmd.wsf
+stat C:\Program Files\Go\bin\cmd.wsh
+stat C:\Program Files\Go\bin\cmd.msc
+stat C:\Program Files\Go\bin\cmd.cpl
+stat C:\Users\Administrator\.sbx-denybin\cmd.bat
+stat C:\Users\Administrator\.sbx-denybin\cmd.cmd
+stat C:\Users\Administrator\.sbx-denybin\cmd.com
+stat C:\Users\Administrator\.sbx-denybin\cmd.exe
+stat C:\Users\Administrator\.sbx-denybin\cmd.vbs
+stat C:\Users\Administrator\.sbx-denybin\cmd.vbe
+stat C:\Users\Administrator\.sbx-denybin\cmd.js
+stat C:\Users\Administrator\.sbx-denybin\cmd.jse
+stat C:\Users\Administrator\.sbx-denybin\cmd.wsf
+stat C:\Users\Administrator\.sbx-denybin\cmd.wsh
+stat C:\Users\Administrator\.sbx-denybin\cmd.msc
+stat C:\Users\Administrator\.sbx-denybin\cmd.cpl
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.bat
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.cmd
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.com
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.exe
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.vbs
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.vbe
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.js
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.jse
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.wsf
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.wsh
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.msc
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.cpl
+stat C:\Windows\system32\cmd.bat
+stat C:\Windows\system32\cmd.cmd
+stat C:\Windows\system32\cmd.com
+stat C:\Windows\system32\cmd.exe
+getenv PATHEXT
+open NUL
+getenv GOTMPDIR
+open C:\Windows\system32\cmd.exe
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferSourceNotFound2173024200\001\nonexistent.txt
+getenv GOTMPDIR
+getenv GOTMPDIR
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\src.txt
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\dst.txt
+open C:\Users\Administrator\AppData\Local\Temp
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\src.txt
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\dst.txt
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\src.txt
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\src.txt
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\src.txt
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001\dest.txt
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\dst.bin
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\src.txt
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\sub\dir\deep\dst.txt
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\sub\dir\deep
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\sub\dir
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\sub
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001
+getenv PATHEXT
+getenv NoDefaultCurrentDirectoryInExePath
+stat cmd.bat
+stat cmd.cmd
+stat cmd.com
+stat cmd.exe
+stat cmd.vbs
+stat cmd.vbe
+stat cmd.js
+stat cmd.jse
+stat cmd.wsf
+stat cmd.wsh
+stat cmd.msc
+stat cmd.cpl
+getenv path
+stat C:\Program Files\Go\bin\cmd.bat
+stat C:\Program Files\Go\bin\cmd.cmd
+stat C:\Program Files\Go\bin\cmd.com
+stat C:\Program Files\Go\bin\cmd.exe
+stat C:\Program Files\Go\bin\cmd.vbs
+stat C:\Program Files\Go\bin\cmd.vbe
+getenv PATHEXT
+getenv NoDefaultCurrentDirectoryInExePath
+stat cmd.bat
+stat C:\Program Files\Go\bin\cmd.js
+getenv PATHEXT
+getenv NoDefaultCurrentDirectoryInExePath
+stat docker.bat
+stat C:\Program Files\Go\bin\cmd.jse
+stat C:\Program Files\Go\bin\cmd.wsf
+stat cmd.cmd
+stat cmd.com
+stat C:\Program Files\Go\bin\cmd.wsh
+stat docker.cmd
+stat cmd.exe
+stat docker.com
+stat C:\Program Files\Go\bin\cmd.msc
+stat cmd.vbs
+stat docker.exe
+stat cmd.vbe
+stat C:\Program Files\Go\bin\cmd.cpl
+stat docker.vbs
+stat cmd.js
+stat docker.vbe
+stat C:\Users\Administrator\.sbx-denybin\cmd.bat
+stat cmd.jse
+stat docker.js
+stat cmd.wsf
+stat docker.jse
+stat docker.wsf
+stat C:\Users\Administrator\.sbx-denybin\cmd.cmd
+stat cmd.wsh
+stat docker.wsh
+stat cmd.msc
+stat C:\Users\Administrator\.sbx-denybin\cmd.com
+stat cmd.cpl
+getenv path
+stat C:\Users\Administrator\.sbx-denybin\cmd.exe
+stat C:\Users\Administrator\.sbx-denybin\cmd.vbs
+stat C:\Users\Administrator\.sbx-denybin\cmd.vbe
+stat C:\Program Files\Go\bin\cmd.bat
+stat C:\Users\Administrator\.sbx-denybin\cmd.js
+stat C:\Users\Administrator\.sbx-denybin\cmd.jse
+stat docker.msc
+stat C:\Users\Administrator\.sbx-denybin\cmd.wsf
+stat C:\Users\Administrator\.sbx-denybin\cmd.wsh
+stat C:\Users\Administrator\.sbx-denybin\cmd.msc
+stat docker.cpl
+stat C:\Users\Administrator\.sbx-denybin\cmd.cpl
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.bat
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.cmd
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.com
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.exe
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.vbs
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.vbe
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.js
+getenv path
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.jse
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.wsf
+stat C:\Program Files\Go\bin\docker.bat
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.wsh
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.msc
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.cpl
+stat C:\Windows\system32\cmd.bat
+stat C:\Windows\system32\cmd.cmd
+stat C:\Windows\system32\cmd.com
+stat C:\Windows\system32\cmd.exe
+getenv PATHEXT
+open NUL
+stat C:\Program Files\Go\bin\docker.cmd
+open C:\Windows\system32\cmd.exe
+stat C:\Program Files\Go\bin\docker.com
+stat C:\Program Files\Go\bin\docker.exe
+stat C:\Program Files\Go\bin\cmd.cmd
+stat C:\Program Files\Go\bin\cmd.com
+stat C:\Program Files\Go\bin\cmd.exe
+stat C:\Program Files\Go\bin\cmd.vbs
+stat C:\Program Files\Go\bin\cmd.vbe
+stat C:\Program Files\Go\bin\cmd.js
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\dst2.bin
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001
+stat C:\Program Files\Go\bin\cmd.jse
+stat C:\Program Files\Go\bin\docker.vbs
+stat C:\Program Files\Go\bin\cmd.wsf
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Program Files\Go\bin\cmd.wsh
+stat C:\Program Files\Go\bin\docker.vbe
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferBasic4081323267\001\dest.txt
+stat C:\Program Files\Go\bin\cmd.msc
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\dst2.bin
+stat C:\Program Files\Go\bin\docker.js
+stat C:\Program Files\Go\bin\docker.jse
+stat C:\Program Files\Go\bin\cmd.cpl
+stat C:\Program Files\Go\bin\docker.wsf
+stat C:\Program Files\Go\bin\docker.wsh
+stat C:\Program Files\Go\bin\docker.msc
+stat C:\Program Files\Go\bin\docker.cpl
+stat C:\Users\Administrator\.sbx-denybin\cmd.bat
+stat C:\Users\Administrator\.sbx-denybin\docker.bat
+stat C:\Users\Administrator\.sbx-denybin\cmd.cmd
+stat C:\Users\Administrator\.sbx-denybin\docker.cmd
+stat C:\Users\Administrator\.sbx-denybin\cmd.com
+stat C:\Users\Administrator\.sbx-denybin\docker.com
+stat C:\Users\Administrator\.sbx-denybin\cmd.exe
+stat C:\Users\Administrator\.sbx-denybin\docker.exe
+stat C:\Users\Administrator\.sbx-denybin\cmd.vbs
+stat C:\Users\Administrator\.sbx-denybin\docker.vbs
+stat C:\Users\Administrator\.sbx-denybin\cmd.vbe
+stat C:\Users\Administrator\.sbx-denybin\docker.vbe
+stat C:\Users\Administrator\.sbx-denybin\cmd.js
+stat C:\Users\Administrator\.sbx-denybin\docker.js
+stat C:\Users\Administrator\.sbx-denybin\cmd.jse
+stat C:\Users\Administrator\.sbx-denybin\docker.jse
+stat C:\Users\Administrator\.sbx-denybin\cmd.wsf
+stat C:\Users\Administrator\.sbx-denybin\docker.wsf
+stat C:\Users\Administrator\.sbx-denybin\cmd.wsh
+stat C:\Users\Administrator\.sbx-denybin\docker.wsh
+stat C:\Users\Administrator\.sbx-denybin\cmd.msc
+stat C:\Users\Administrator\.sbx-denybin\cmd.cpl
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.bat
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.cmd
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\src.txt
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.com
+stat C:\Users\Administrator\.sbx-denybin\docker.msc
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.exe
+stat C:\Users\Administrator\.sbx-denybin\docker.cpl
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.vbs
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\dst3.bin
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.vbe
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.bat
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.js
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.jse
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.cmd
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.wsf
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.com
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.wsh
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.exe
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.msc
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\src.bin
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.vbs
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\cmd.cpl
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.vbe
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\dst3.bin
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.js
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.jse
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.wsf
+stat C:\Windows\system32\cmd.bat
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.wsh
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.msc
+stat C:\Users\Administrator\.codex\tmp\arg0\codex-arg0jPtBLz\docker.cpl
+stat C:\Windows\system32\docker.bat
+stat C:\Windows\system32\cmd.cmd
+open C:\Users\Administrator\AppData\Local\Temp
+stat C:\Windows\system32\docker.cmd
+stat C:\Windows\system32\docker.com
+stat C:\Windows\system32\docker.exe
+stat C:\Windows\system32\cmd.com
+stat C:\Windows\system32\docker.vbs
+stat C:\Windows\system32\docker.vbe
+stat C:\Windows\system32\cmd.exe
+stat C:\Windows\system32\docker.js
+stat C:\Windows\system32\docker.jse
+stat C:\Windows\system32\docker.wsf
+stat C:\Windows\system32\docker.wsh
+getenv PATHEXT
+open NUL
+stat C:\Windows\system32\docker.msc
+stat C:\Windows\system32\docker.cpl
+stat C:\Windows\docker.bat
+stat C:\Windows\docker.cmd
+stat C:\Windows\docker.com
+stat C:\Windows\docker.exe
+open C:\Windows\system32\cmd.exe
+stat C:\Windows\docker.vbs
+stat C:\Windows\docker.vbe
+stat C:\Windows\docker.js
+stat C:\Windows\docker.jse
+stat C:\Windows\docker.wsf
+stat C:\Windows\docker.wsh
+stat C:\Windows\docker.msc
+stat C:\Windows\docker.cpl
+stat C:\Windows\System32\Wbem\docker.bat
+stat C:\Windows\System32\Wbem\docker.cmd
+stat C:\Windows\System32\Wbem\docker.com
+stat C:\Windows\System32\Wbem\docker.exe
+stat C:\Windows\System32\Wbem\docker.vbs
+stat C:\Windows\System32\Wbem\docker.vbe
+stat C:\Windows\System32\Wbem\docker.js
+stat C:\Windows\System32\Wbem\docker.jse
+stat C:\Windows\System32\Wbem\docker.wsf
+stat C:\Windows\System32\Wbem\docker.wsh
+stat C:\Windows\System32\Wbem\docker.msc
+stat C:\Windows\System32\Wbem\docker.cpl
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.bat
+stat C:\Users\Administrator\AppData\Local\Temp\TestFileTransferWithSHA256Verify554811397\001\dst3.bin
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.cmd
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.com
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.exe
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.vbs
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.vbe
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.js
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.jse
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.wsf
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.wsh
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.msc
+stat C:\Windows\System32\WindowsPowerShell\v1.0\docker.cpl
+stat C:\Windows\System32\OpenSSH\docker.bat
+stat C:\Windows\System32\OpenSSH\docker.cmd
+stat C:\Windows\System32\OpenSSH\docker.com
+stat C:\Windows\System32\OpenSSH\docker.exe
+stat C:\Windows\System32\OpenSSH\docker.vbs
+stat C:\Windows\System32\OpenSSH\docker.vbe
+stat C:\Windows\System32\OpenSSH\docker.js
+stat C:\Windows\System32\OpenSSH\docker.jse
+stat C:\Windows\System32\OpenSSH\docker.wsf
+stat C:\Windows\System32\OpenSSH\docker.wsh
+stat C:\Windows\System32\OpenSSH\docker.msc
+stat C:\Windows\System32\OpenSSH\docker.cpl
+stat C:\Program Files\dotnet\docker.bat
+stat C:\Program Files\dotnet\docker.cmd
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferOverwriteProtection2715781834\001\dst.txt
+stat C:\Program Files\dotnet\docker.com
+stat C:\Program Files\dotnet\docker.exe
+stat C:\Program Files\dotnet\docker.vbs
+stat C:\Program Files\dotnet\docker.vbe
+stat C:\Program Files\dotnet\docker.js
+stat C:\Program Files\dotnet\docker.jse
+stat C:\Program Files\dotnet\docker.wsf
+stat C:\Program Files\dotnet\docker.wsh
+stat C:\Program Files\dotnet\docker.msc
+stat C:\Program Files\dotnet\docker.cpl
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.bat
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.cmd
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.com
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.exe
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.vbs
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.vbe
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.js
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.jse
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.wsf
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.wsh
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.msc
+stat C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR\docker.cpl
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.bat
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.cmd
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.com
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.exe
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.vbs
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.vbe
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.js
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.jse
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.wsf
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.wsh
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.msc
+stat C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common\docker.cpl
+stat C:\Program Files (x86)\cloudflared\docker.bat
+stat C:\Program Files (x86)\cloudflared\docker.cmd
+stat C:\Program Files (x86)\cloudflared\docker.com
+stat C:\Program Files (x86)\cloudflared\docker.exe
+stat C:\Program Files (x86)\cloudflared\docker.vbs
+stat C:\Program Files (x86)\cloudflared\docker.vbe
+stat C:\Program Files (x86)\cloudflared\docker.js
+stat C:\Program Files (x86)\cloudflared\docker.jse
+stat C:\Program Files (x86)\cloudflared\docker.wsf
+stat C:\Program Files (x86)\cloudflared\docker.wsh
+stat C:\Program Files (x86)\cloudflared\docker.msc
+stat C:\Program Files (x86)\cloudflared\docker.cpl
+stat C:\Program Files\Go\bin\docker.bat
+stat C:\Program Files\Go\bin\docker.cmd
+stat C:\Program Files\Go\bin\docker.com
+stat C:\Program Files\Go\bin\docker.exe
+stat C:\Program Files\Go\bin\docker.vbs
+open C:\Users\Administrator\AppData\Local\Temp
+stat C:\Program Files\Go\bin\docker.vbe
+stat C:\Program Files\Go\bin\docker.js
+stat C:\Program Files\Go\bin\docker.jse
+stat C:\Program Files\Go\bin\docker.wsf
+stat C:\Program Files\Go\bin\docker.wsh
+stat C:\Program Files\Go\bin\docker.msc
+stat C:\Program Files\Go\bin\docker.cpl
+stat C:\Program Files\Git\cmd\docker.bat
+stat C:\Program Files\Git\cmd\docker.cmd
+stat C:\Program Files\Git\cmd\docker.com
+stat C:\Program Files\Git\cmd\docker.exe
+stat C:\Program Files\Git\cmd\docker.vbs
+stat C:\Program Files\Git\cmd\docker.vbe
+stat C:\Program Files\Git\cmd\docker.js
+stat C:\Program Files\Git\cmd\docker.jse
+stat C:\Program Files\Git\cmd\docker.wsf
+stat C:\Program Files\Git\cmd\docker.wsh
+stat C:\Program Files\Git\cmd\docker.msc
+stat C:\Program Files\Git\cmd\docker.cpl
+stat C:\Program Files\PuTTY\docker.bat
+stat C:\Program Files\PuTTY\docker.cmd
+stat C:\Program Files\PuTTY\docker.com
+stat C:\Program Files\PuTTY\docker.exe
+stat C:\Program Files\PuTTY\docker.vbs
+stat C:\Program Files\PuTTY\docker.vbe
+stat C:\Program Files\PuTTY\docker.js
+stat C:\Program Files\PuTTY\docker.jse
+stat C:\Program Files\PuTTY\docker.wsf
+stat C:\Program Files\PuTTY\docker.wsh
+stat C:\Program Files\PuTTY\docker.msc
+stat C:\Program Files\PuTTY\docker.cpl
+stat C:\Program Files\nodejs\docker.bat
+stat C:\Program Files\nodejs\docker.cmd
+stat C:\Program Files\nodejs\docker.com
+stat C:\Program Files\nodejs\docker.exe
+stat C:\Program Files\nodejs\docker.vbs
+stat C:\Program Files\nodejs\docker.vbe
+stat C:\Program Files\nodejs\docker.js
+stat C:\Program Files\nodejs\docker.jse
+stat C:\Program Files\nodejs\docker.wsf
+stat C:\Program Files\nodejs\docker.wsh
+stat C:\Program Files\nodejs\docker.msc
+stat C:\Program Files\nodejs\docker.cpl
+stat C:\Program Files\GitHub CLI\docker.bat
+stat C:\Program Files\GitHub CLI\docker.cmd
+stat C:\Program Files\GitHub CLI\docker.com
+stat C:\Program Files\GitHub CLI\docker.exe
+stat C:\Program Files\GitHub CLI\docker.vbs
+stat C:\Program Files\GitHub CLI\docker.vbe
+stat C:\Program Files\GitHub CLI\docker.js
+stat C:\Program Files\GitHub CLI\docker.jse
+stat C:\Program Files\GitHub CLI\docker.wsf
+stat C:\Program Files\GitHub CLI\docker.wsh
+stat C:\Program Files\GitHub CLI\docker.msc
+stat C:\Program Files\GitHub CLI\docker.cpl
+stat C:\Program Files\Docker\Docker\resources\bin\docker.bat
+stat C:\Program Files\Docker\Docker\resources\bin\docker.cmd
+stat C:\Program Files\Docker\Docker\resources\bin\docker.com
+stat C:\Program Files\Docker\Docker\resources\bin\docker.exe
+getenv PATHEXT
+open NUL
+open C:\Program Files\Docker\Docker\resources\bin\docker.exe
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\sub\dir\deep\dst.txt
+open C:\Users\Administrator\AppData\Local\Temp\TestFileTransferMkdir1225330053\001\sub\dir\deep\dst.txt
+open C:\Users\Administrator\AppData\Local\Temp
+open C:\Users\Administrator\AppData\Local\Temp

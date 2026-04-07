@@ -1,0 +1,235 @@
+# SRE 门禁：外部 I/O 必须显式 timeout、禁止 shell=True，防止弱网/僵死与注入风险。
+"""
+法典 2.1 / 3.3 合规审计测试：
+- requests.* 调用必须带 timeout=
+- subprocess.run 必须带 timeout=，且禁止 shell=True
+- httpx.AsyncClient 建议带 timeout（客户端级）
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+# 扫描根目录（仓库根）
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# 纳入审计的目录（业务与脚本，不含 venv / 第三方）
+AUDIT_DIRS = [
+    REPO_ROOT / "backend",
+    REPO_ROOT / "scripts",
+    REPO_ROOT / "deploy",
+]
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
+# 仅 backend 做 subprocess.run timeout 门禁（scripts 多为长时 docker/restic/git）
+SUBPROCESS_AUDIT_DIRS = [REPO_ROOT / "backend"]
+# 排除的路径片段
+EXCLUDE_PATTERNS = [
+    "test_observability_pipeline.py",  # 已加固
+    "conftest.py",
+    "__pycache__",
+    ".git",
+]
+
+
+def _collect_py_files() -> list[Path]:
+    out: list[Path] = []
+    for d in AUDIT_DIRS:
+        if not d.exists():
+            continue
+        for p in d.rglob("*.py"):
+            if any(ex in p.parts for ex in EXCLUDE_PATTERNS):
+                continue
+            out.append(p)
+    return out
+
+
+def _collect_backend_py_files() -> list[Path]:
+    out: list[Path] = []
+    for d in SUBPROCESS_AUDIT_DIRS:
+        if not d.exists():
+            continue
+        for p in d.rglob("*.py"):
+            if any(ex in p.parts for ex in EXCLUDE_PATTERNS):
+                continue
+            out.append(p)
+    return out
+
+
+def _line_has_timeout_in_call(line: str, start: int) -> bool:
+    """检查同一行或后续括号内是否含 timeout=（简单启发式）。"""
+    rest = line[start:]
+    if "timeout" in rest:
+        return True
+    return False
+
+
+@pytest.mark.parametrize("path", _collect_py_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_no_requests_without_timeout(path: Path) -> None:
+    """requests.get/post/put/delete/patch 必须带 timeout=。"""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    violations: list[tuple[int, str]] = []
+    for i, line in enumerate(lines, 1):
+        for method in ("get", "post", "put", "delete", "patch"):
+            pattern = f"requests.{method}("
+            if pattern not in line:
+                continue
+            # 单行调用：本行须含 timeout
+            if "timeout" in line:
+                continue
+            # 多行调用：在后续 8 行内查找 timeout
+            found = False
+            for j in range(i, min(i + 8, len(lines))):
+                if "timeout" in lines[j - 1]:
+                    found = True
+                    break
+                if ")" in lines[j - 1] and "requests." not in lines[j - 1]:
+                    break
+            if not found:
+                violations.append((i, line.strip()[:100]))
+    assert not violations, (
+        f"{path.relative_to(REPO_ROOT)}: requests 调用缺少 timeout= "
+        f"(行: {[v[0] for v in violations]})"
+    )
+
+
+@pytest.mark.parametrize("path", _collect_py_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_no_subprocess_shell_true(path: Path) -> None:
+    """禁止 subprocess 使用 shell=True（法典 7 / 安全与可审计）。"""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    violations: list[tuple[int, str]] = []
+    for i, line in enumerate(lines, 1):
+        if "subprocess." in line and "shell" in line and "True" in line:
+            if re.search(r"shell\s*=\s*True", line):
+                violations.append((i, line.strip()[:100]))
+    assert not violations, (
+        f"{path.relative_to(REPO_ROOT)}: 禁止 subprocess shell=True "
+        f"(行: {[v[0] for v in violations]})"
+    )
+
+
+@pytest.mark.parametrize("path", _collect_backend_py_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_subprocess_run_has_timeout(path: Path) -> None:
+    """backend 内 subprocess.run( 必须带 timeout=，防止僵死。"""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    violations: list[tuple[int, str]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            i += 1
+            continue
+        if "subprocess.run(" in line or "subprocess.run (" in line:
+            block = lines[i : i + 15]
+            full = " ".join(block)
+            if "timeout" not in full:
+                violations.append((i + 1, stripped[:100]))
+            i += 1
+        else:
+            i += 1
+    assert not violations, (
+        f"{path.relative_to(REPO_ROOT)}: subprocess.run 缺少 timeout= "
+        f"(行: {[v[0] for v in violations]})"
+    )
+
+
+def test_audit_dirs_exist() -> None:
+    """至少 backend 存在，保证门禁在正确仓库运行。"""
+    assert (REPO_ROOT / "backend").exists(), "backend/ 不存在，请在仓库根执行 pytest"
+    # scripts/ 可能未 COPY 进 Docker 测试镜像
+    if not (REPO_ROOT / "scripts").exists():
+        pytest.skip("scripts/ 未挂载，跳过")
+
+
+def test_compose_up_uses_remove_orphans() -> None:
+    """法典 1.2.4：编排必须带 --remove-orphans，禁止僵尸容器。"""
+    # 优先检查 scripts 目录（宿主机）；Docker 镜像中检查 docker-compose.yml
+    bootstrap = REPO_ROOT / "scripts" / "bootstrap.py"
+    deployer = REPO_ROOT / "scripts" / "deployer.py"
+    compose_file = REPO_ROOT / "docker-compose.yml"
+    if bootstrap.exists() and deployer.exists():
+        text_b = bootstrap.read_text(encoding="utf-8")
+        text_d = deployer.read_text(encoding="utf-8")
+        assert "remove-orphans" in text_b or "--remove-orphans" in text_b, "bootstrap 须调用 compose up ... --remove-orphans"
+        assert "remove-orphans" in text_d or "--remove-orphans" in text_d, "deployer 须调用 compose up ... --remove-orphans"
+    elif compose_file.exists():
+        pytest.skip("scripts/ 未挂载，跳过脚本检查")
+    else:
+        pytest.skip("scripts/ 和 docker-compose.yml 均不在测试镜像中")
+
+
+# =========================================================================
+# 以下为风险驱动新增规则
+# =========================================================================
+
+
+@pytest.mark.parametrize("path", _collect_backend_py_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_no_bare_except(path: Path) -> None:
+    """禁止裸 except:（必须指定异常类型）。"""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    violations: list[tuple[int, str]] = []
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        # 匹配 "except:" 但不匹配 "except SomeError:" 或 "except Exception"
+        if re.match(r"^except\s*:", stripped):
+            violations.append((i, stripped[:100]))
+    assert not violations, (
+        f"{path.relative_to(REPO_ROOT)}: 禁止裸 except:，必须指定异常类型 "
+        f"(行: {[v[0] for v in violations]})"
+    )
+
+
+@pytest.mark.parametrize("path", _collect_backend_py_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_no_os_path_usage(path: Path) -> None:
+    """禁止 os.path，强制使用 pathlib.Path（法典 8.2）。"""
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    violations: list[tuple[int, str]] = []
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        # 匹配 os.path.join / os.path.exists 等调用
+        if re.search(r"os\.path\.\w+", stripped):
+            violations.append((i, stripped[:100]))
+    assert not violations, (
+        f"{path.relative_to(REPO_ROOT)}: 禁止 os.path，请使用 pathlib.Path "
+        f"(行: {[v[0] for v in violations]})"
+    )
+
+
+@pytest.mark.parametrize("path", _collect_backend_py_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_no_print_in_backend(path: Path) -> None:
+    """后端代码禁止 print()，必须使用 logger（法典 2.5）。"""
+    # 排除测试文件、conftest 和 CLI 脚本（scripts/ 下的 CLI 工具允许 print）
+    if "test_" in path.name or path.name == "conftest.py":
+        return
+    rel = path.relative_to(REPO_ROOT)
+    if str(rel).replace("\\", "/").startswith("backend/scripts/"):
+        return
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    violations: list[tuple[int, str]] = []
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        # 匹配独立 print( 调用（stripped 已去首尾空白，仅需匹配开头）
+        if re.match(r"^print\s*\(", stripped):
+            # 排除 docstring 中的示例
+            if '"""' in line or "'''" in line:
+                continue
+            violations.append((i, stripped[:100]))
+    assert not violations, (
+        f"{path.relative_to(REPO_ROOT)}: 后端禁止 print()，请使用 logger "
+        f"(行: {[v[0] for v in violations]})"
+    )

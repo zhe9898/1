@@ -1,0 +1,27 @@
+# ZEN70 容器编排 - 由 scripts/compiler.py 生成
+# 法典 1.2：网络平面隔离 frontend_net / backend_net
+
+services:
+{% for svc in services_list %}
+  {{ svc.name }}:
+{{ svc.build_block }}    image: {{ svc.image }}
+    container_name: {{ svc.container_name }}
+    restart: {{ svc.restart }}
+{{ svc.stop_grace_period_block }}{{ svc.security_block }}{{ svc.ulimits_block }}{{ svc.oom_score_adj_block }}{{ svc.healthcheck_block }}{{ svc.volumes_block }}{{ svc.environment_block }}{{ svc.command_block }}{{ svc.ports_block }}{{ svc.depends_on_block }}{{ svc.networks_block }}{{ svc.logging_block }}{{ svc.deploy_block }}
+{% endfor %}
+
+{# 模板底部：动态解析 system.yaml 的 networks 块，internal: true 正确渲染 #}
+networks:
+{% for net in networks_list %}
+  {{ net.name }}:
+    driver: {{ net.driver }}
+{% if net.internal %}    internal: true
+{% endif %}
+{% endfor %}
+
+{% if volumes_list %}
+volumes:
+{% for vol in volumes_list %}
+  {{ vol }}: {}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,644 @@
+version: '2.0'
+config_version: 2
+registry:
+  enabled: false
+  url: ${REGISTRY_URL}
+backup:
+  enabled: false
+networks:
+  frontend_net:
+    driver: bridge
+  backend_net:
+    driver: bridge
+    internal: true
+network:
+  domain: zen70.cn
+  internal_host: 192.168.1.100
+  tunnel_enabled: true
+capabilities:
+  compute:
+    vram_mb: 8192
+    tags:
+    - gpu_nvenc_v1
+  storage:
+    media_path: ./data/media
+    min_free_gb: 10
+  agent:
+    enabled: false
+# ── Scheduling configuration ──────────────────────────────────────────
+# Per-tenant fair-share quotas and service class definitions.
+# Tenants not listed inherit the default_service_class settings.
+scheduling:
+  default_service_class: standard
+  default_tenant_quota: 10
+  starvation_threshold_seconds: 3600
+  aging:
+    enabled: true
+    interval_seconds: 300
+    bonus_per_interval: 1
+    max_bonus: 20
+  tenant_quotas: {}
+  # Example per-tenant overrides:
+  #   tenant-alpha:
+  #     service_class: premium
+  #   tenant-beta:
+  #     service_class: economy
+  #     max_jobs_per_round: 8
+sentinel:
+  mount_container_map: {}
+  switch_container_map: {}
+  switch_service_ports: {}
+  watch_targets: {}
+  # Container role declarations — IAC single source of truth
+  # Sentinel reads these from env vars injected by compiler
+  stateful_containers:
+    - zen70-postgres
+    - zen70-redis
+  disk_taint_containers: []
+  heavy_containers: []
+services:
+  caddy:
+    enabled: true
+    container_name: zen70-caddy
+    image: caddy:2-alpine@sha256:fce4f15aad23222c0ac78a1220adf63bae7b94355d5ea28eee53910624acedfa
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+    - frontend_net
+    - backend_net
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+    - ./frontend/dist:/var/www/html:ro
+    - caddy_data:/data
+    - caddy_config:/config
+    environment:
+      MACHINE_API_ALLOWLIST: ${MACHINE_API_ALLOWLIST:-private_ranges}
+      MACHINE_API_INTERNAL_HOST: ${MACHINE_API_INTERNAL_HOST:-caddy}
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:2019/config/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  postgres:
+    enabled: true
+    container_name: zen70-postgres
+    image: pgvector/pgvector:pg15@sha256:7f5681e45237acdf546cf7cdc0dfc0ed7752ede857fda6e54f6ea21b936f8742
+    restart: unless-stopped
+    networks:
+    - backend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U ${POSTGRES_USER:-zen70} || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  redis:
+    enabled: true
+    container_name: zen70-redis
+    image: redis:7-alpine@sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065
+    restart: unless-stopped
+    networks:
+    - backend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    command:
+    - redis-server
+    - --appendonly
+    - true
+    - --maxmemory
+    - 800mb
+    - --maxmemory-policy
+    - volatile-lru
+    - --aclfile
+    - /etc/redis/users.acl
+    volumes:
+    - redis_data:/data
+    # IMPORTANT: REDIS_ACL_FILE must point to a valid file path. If unset or the
+    # file does not exist, Redis will fail to start. The bootstrap script
+    # (scripts/bootstrap.py) generates this file automatically.
+    - ${REDIS_ACL_FILE}:/etc/redis/users.acl:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    oom_score_adj: -999
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  gateway:
+    enabled: true
+    container_name: zen70-gateway
+    restart: unless-stopped
+    security:
+      apply_baseline: true
+      user: ${PUID:-1000}:${PGID:-1000}
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+    networks:
+    - backend_net
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      REDIS_USER: ${REDIS_USER}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      AI_BACKEND_URL: ${AI_BACKEND_URL}
+      GATEWAY_PROFILE: ${GATEWAY_PROFILE}
+      GATEWAY_PACKS: ${GATEWAY_PACKS}
+      POSTGRES_DSN: ${POSTGRES_DSN}
+    depends_on:
+    - redis
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    oom_score_adj: -999
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - >-
+        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)" || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  runner-agent:
+    enabled: true
+    container_name: zen70-runner-agent
+    restart: unless-stopped
+    security:
+      apply_baseline: true
+      user: ${PUID:-1000}:${PGID:-1000}
+    build:
+      context: .
+      dockerfile: runner-agent/Dockerfile
+    image: ${ZEN70_RUNNER_AGENT_IMAGE_REF:-zen70-runner-agent:v3.43}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+    - backend_net
+    environment:
+      GATEWAY_BASE_URL: https://${MACHINE_API_INTERNAL_HOST:-caddy}
+      GATEWAY_CA_FILE: /caddy-data/caddy/pki/authorities/local/root.crt
+      RUNNER_NODE_NAME: zen70-go-runner
+      RUNNER_PROFILE: go-runner
+      RUNNER_CAPABILITIES: connector.invoke
+      RUNNER_HEARTBEAT_SECONDS: '15'
+      RUNNER_PULL_SECONDS: '5'
+      RUNNER_LEASE_SECONDS: '30'
+      # RUNNER_DEVICE_PROFILE: auto-detected at startup from /proc/cpuinfo and DMI.
+      # Override with one of the built-in profile names to skip auto-detection:
+      #   raspberry_pi_4 | raspberry_pi_5           — Raspberry Pi SBCs
+      #   industrial_x86                            — Fanless factory/PLC controllers
+      #   soft_router                               — OpenWrt/pfSense/RouterOS boxes (软路由)
+      #   network_switch                            — Managed switches (交换机)
+      #   nvr                                       — NVR/DVR surveillance servers (监控主机)
+      #   ip_camera                                 — Embedded IP cameras (监控摄像头)
+      #   nas                                       — NAS appliances
+      #   mini_pc                                   — Intel NUC / Beelink / BMAX mini PCs (小主机)
+      #   cloud_vm                                  — Cloud VMs (AWS/GCP/Azure)
+      #   gateway_appliance                         — IoT gateway hubs
+      #   generic_edge                              — Catch-all for unrecognised hardware
+      #
+      # Example — Raspberry Pi 4 edge runner:
+      # RUNNER_DEVICE_PROFILE: raspberry_pi_4
+      # RUNNER_ARCH: arm64
+      # RUNNER_EXECUTOR: edge-native
+      # RUNNER_ZONE: home
+      # RUNNER_CAPABILITIES: iot.adapter,connector.invoke
+      # RUNNER_MAX_CONCURRENCY: '4'
+      # RUNNER_POWER_CAPACITY_WATTS: '15'
+    depends_on:
+    - gateway
+    - caddy
+    volumes:
+    - caddy_data:/caddy-data:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - cat /proc/1/comm | grep -q runner-agent || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  sentinel:
+    enabled: true
+    image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
+    container_name: zen70-sentinel
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+    - backend_net
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      REDIS_USER: ${REDIS_USER}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
+      BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT: 
+        ${BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT:-50}
+      BIT_ROT_ALERT_TIMEOUT_SECONDS: ${BIT_ROT_ALERT_TIMEOUT_SECONDS:-5}
+      BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS: 
+        ${BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS:-5}
+      BIT_ROT_SQLITE_BUSY_TIMEOUT_MS: ${BIT_ROT_SQLITE_BUSY_TIMEOUT_MS:-5000}
+      BITROT_SCAN_DIRS: ${BITROT_SCAN_DIRS}
+      MOUNT_POINTS: ${MOUNT_POINTS}
+      SWITCH_CONTAINER_MAP: ${SWITCH_CONTAINER_MAP_JSON}
+      SWITCH_SERVICE_PORTS: ${SWITCH_SERVICE_PORTS}
+      ROUTING_STATE_FILE: /app/runtime/control-plane/routes.json
+      CADDY_ADMIN_URL: http://caddy:2019/load
+      DOCKER_HOST: tcp://docker-proxy:2375
+    command:
+    - python
+    - backend/sentinel/control_plane_supervisor.py
+    depends_on:
+    - redis
+    - docker-proxy
+    volumes:
+    - ./backend:/app/backend:ro
+    - ./scripts:/app/scripts:ro
+    - ./iac:/app/iac:ro
+    - ./system.yaml:/app/system.yaml:ro
+    - ./config:/app/config:ro
+    - ./runtime/control-plane:/app/runtime/control-plane
+    # SECURITY NOTE: /dev and /sys are mounted read-only for hardware monitoring
+    # (disk health, GPU state, UPS detection via topology_sentinel.py).
+    # In high-security deployments, replace with dedicated metrics exporters.
+    - /dev:/dev:ro
+    - /sys:/sys:ro
+    oom_score_adj: -999
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - >-
+        python -c "import pathlib; assert 'control_plane_supervisor' in pathlib.Path('/proc/1/cmdline').read_text()" || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  docker-proxy:
+    enabled: true
+    container_name: zen70-docker-proxy
+    image: ${DOCKER_SOCKET_PROXY_IMAGE_REF:-tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476}
+    restart: unless-stopped
+    networks:
+    - backend_net
+    # SECURITY: privileged mode removed (not required by tecnativa proxy).
+    # Docker socket access is scoped via env vars (CONTAINERS=1, POST=1).
+    # Communication is on internal backend_net only.
+    # TODO: Migrate to TLS (port 2376) or Unix socket when proxy supports per-endpoint ACLs.
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    environment:
+      CONTAINERS: '1'
+      SERVICES: '1'
+      TASKS: '1'
+      NETWORKS: '1'
+      NODES: '1'
+      POST: '1'
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    oom_score_adj: -999
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:2375/version || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  mosquitto:
+    enabled: false
+    container_name: zen70-mosquitto
+    image: eclipse-mosquitto:2.0@sha256:aeae007ed49c6e55a1b476e43b60014d1ee6d3d68e8e45bb46e86182d88c54eb
+    restart: unless-stopped
+    networks:
+    - backend_net
+    ports:
+    - 1883:1883
+    volumes:
+    - ./config/mosquitto:/mosquitto/config:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - mosquitto_sub -t '$$SYS/#' -C 1 -W 3 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  victoriametrics:
+    enabled: false
+    container_name: zen70-victoriametrics
+    image: victoriametrics/victoria-metrics:v1.93.4@sha256:e8c462e5dbb27abc39f5f4af5c2e8de97d7e39cf6b1dbedb1cabc18e4fbb0e91
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - victoriametrics_data:/victoria-metrics-data
+    command: -retentionPeriod=30d -httpListenAddr=:8428
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:8428/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  grafana:
+    enabled: false
+    container_name: zen70-grafana
+    image: grafana/grafana:10.0.0@sha256:4d5308c296c49ec57b6e73854b041c731edab19571f41fa1c588dbd7288eba38
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - grafana_data:/var/lib/grafana
+    - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:3000/api/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  categraf:
+    enabled: false
+    container_name: zen70-categraf
+    image: flashcatcloud/categraf:v0.3.51@sha256:a6b2c8d4e5f0718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - ./config/categraf:/etc/categraf/conf:ro
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
+    depends_on:
+    - docker-proxy
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - test -f /etc/categraf/conf/config.toml || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  loki:
+    enabled: false
+    container_name: zen70-loki
+    image: grafana/loki:2.9.1@sha256:b4e1301fc2b0577e5e5b7d1e8e9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - loki_data:/loki
+    - ./config/loki:/etc/loki:ro
+    command: -config.file=/etc/loki/loki-config.yaml
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  promtail:
+    enabled: false
+    container_name: zen70-promtail
+    image: grafana/promtail:2.9.1@sha256:c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - /var/log:/var/log:ro
+    - ./config/promtail:/etc/promtail:ro
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  alertmanager:
+    enabled: false
+    container_name: zen70-alertmanager
+    image: prom/alertmanager:v0.26.0@sha256:d9e0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - ./config/alertmanager:/etc/alertmanager:ro
+    command: --config.file=/etc/alertmanager/alertmanager.yml
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:9093/-/healthy || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  vmalert:
+    enabled: false
+    container_name: zen70-vmalert
+    image: victoriametrics/vmalert:v1.93.4@sha256:e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2
+    restart: unless-stopped
+    networks:
+    - backend_net
+    volumes:
+    - ./config/vmalert:/etc/vmalert:ro
+    command: -datasource.url=http://victoriametrics:8428 -notifier.url=http://alertmanager:9093
+    depends_on:
+    - victoriametrics
+    - alertmanager
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:8880/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  watchdog:
+    enabled: false
+    container_name: zen70-watchdog
+    image: python:3.11-slim@sha256:9358444059ed78e2975ada2c189f1c1a3144a5dab6f35bff8c981afb38946634
+    restart: unless-stopped
+    networks:
+    - backend_net
+    command: python -m http.server 8080
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/')" || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+storage:
+  caddy_data:
+    path: /data/caddy/data
+    backup_tier: critical
+  caddy_config:
+    path: /data/caddy/config
+    backup_tier: critical
+  postgres_data:
+    path: /var/lib/postgresql/data
+    backup_tier: critical
+  redis_data:
+    path: /data
+    backup_tier: critical
+  ephemeral:
+    path: /tmp/zen70-cache
+    backup_tier: ephemeral
+deployment:
+  product: ZEN70 Gateway Kernel
+  profile: gateway-kernel
+  packs: []
+  # Formal runtime surface stays fixed to gateway-kernel.
+  # Legacy preset inputs may still be accepted by migration/bootstrap paths,
+  # but they must collapse into packs instead of becoming public product names.
+  available_profiles:
+  - gateway-kernel
+  available_packs:
+  - iot-pack
+  - ops-pack
+  - health-pack
+  - vector-pack
+  platform: auto
+# Compiler-injected kernel security posture:
+# read_only, cap_drop, oom_score_adj, and healthcheck are rendered by IaC
+# defaults even when they are not spelled out in this source file.
+secrets: {}

@@ -1,0 +1,59 @@
+"""Add global leased jobs count function for cross-tenant concurrent limits.
+
+Revision ID: a9b8c7d6e5f4
+Revises: f1a2b3c4d5e6
+Create Date: 2026-04-03 21:00:00.000000
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "a9b8c7d6e5f4"
+down_revision: str | Sequence[str] | None = "f1a2b3c4d5e6"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.execute(sa.text("""
+            CREATE OR REPLACE FUNCTION public.zen70_global_leased_jobs_count(p_job_type text)
+            RETURNS bigint
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public, pg_temp
+            AS $$
+            DECLARE
+                v_count bigint;
+            BEGIN
+                IF p_job_type NOT IN ('scheduled', 'background') THEN
+                    RAISE EXCEPTION 'unsupported job_type: %', p_job_type
+                        USING ERRCODE = '22023';
+                END IF;
+
+                SELECT COUNT(*)::bigint
+                INTO v_count
+                FROM public.jobs j
+                WHERE j.status = 'leased'
+                  AND (
+                    (p_job_type = 'scheduled' AND j.source = ANY (ARRAY['scheduler', 'cron', 'timer']))
+                    OR (
+                        p_job_type = 'background'
+                        AND j.source IS NOT NULL
+                        AND j.source <> ALL (ARRAY['scheduler', 'cron', 'timer'])
+                    )
+                  );
+
+                RETURN COALESCE(v_count, 0);
+            END;
+            $$;
+            """))
+    op.execute(sa.text("REVOKE ALL ON FUNCTION public.zen70_global_leased_jobs_count(text) FROM PUBLIC"))
+    op.execute(sa.text("GRANT EXECUTE ON FUNCTION public.zen70_global_leased_jobs_count(text) TO PUBLIC"))
+
+
+def downgrade() -> None:
+    op.execute(sa.text("DROP FUNCTION IF EXISTS public.zen70_global_leased_jobs_count(text)"))

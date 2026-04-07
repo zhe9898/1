@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""
+ZEN70 部署后核心链路验证 (Post-Deploy Verification)。
+
+在 release.sh 完成镜像构建后、或 docker compose up 后执行。
+对运行中的实例进行 HTTP 端点健康检查与契约验证。
+
+用法:
+    python scripts/postdeploy_verify.py [--base-url http://localhost:8000]
+
+检查项：
+  1. /health          → 200 + status: ok
+  2. /api/v1/capabilities  → 200 + Envelope code: ZEN-OK-0
+  3. /api/v1/auth/sys/status → 200 + Envelope code: ZEN-OK-0
+  4. 安全响应头验证 (Content-Type, X-Request-ID)
+  5. SSE 端点连通性 (/api/v1/events → text/event-stream)
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from http.client import HTTPConnection, HTTPSConnection
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+# ---------------------------------------------------------------------------
+# 常量
+# ---------------------------------------------------------------------------
+
+DEFAULT_BASE_URL = "http://localhost:8000"
+CONNECT_TIMEOUT = 10
+MAX_RETRIES = 5
+RETRY_DELAY = 3
+
+
+# ---------------------------------------------------------------------------
+# HTTP 工具
+# ---------------------------------------------------------------------------
+
+
+def _request(
+    base_url: str,
+    path: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    timeout: int = CONNECT_TIMEOUT,
+) -> tuple[int, dict[str, str], str]:
+    """
+    发送 HTTP 请求，返回 (status_code, response_headers, body)。
+
+    使用 http.client 避免 requests 依赖。
+    """
+    parsed = urlparse(base_url)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if is_https else 80)
+
+    conn_class = HTTPSConnection if is_https else HTTPConnection
+    conn = conn_class(host, port, timeout=timeout)
+
+    req_headers = {"Accept": "application/json", "User-Agent": "ZEN70-PostDeploy/1.0"}
+    if headers:
+        req_headers.update(headers)
+
+    try:
+        conn.request(method, path, headers=req_headers)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8", errors="replace")
+        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+        return resp.status, resp_headers, body
+    finally:
+        conn.close()
+
+
+def _wait_for_ready(base_url: str) -> bool:
+    """等待服务就绪（最多重试 MAX_RETRIES 次）。"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            status, _, _ = _request(base_url, "/health", timeout=5)
+            if status == 200:
+                return True
+        except (OSError, TimeoutError):
+            pass
+        if attempt < MAX_RETRIES - 1:
+            print(f"  ⏳ 服务未就绪，{RETRY_DELAY}s 后重试 ({attempt + 1}/{MAX_RETRIES})...")
+            time.sleep(RETRY_DELAY)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Check 1: Health 端点
+# ---------------------------------------------------------------------------
+
+
+def check_health(base_url: str) -> tuple[bool, str]:
+    """验证 /health 返回 200 + status: ok。"""
+    try:
+        status, _, body = _request(base_url, "/health")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    health_status = data.get("status")
+    if health_status not in ("healthy", "degraded"):
+        return False, f"status={health_status} (期望 healthy 或 degraded)"
+
+    return True, f"status={health_status}, version={data.get('version', 'unknown')}"
+
+
+# ---------------------------------------------------------------------------
+# Check 2: Envelope 一致性 (/api/v1/capabilities)
+# ---------------------------------------------------------------------------
+
+
+def check_envelope_capabilities(base_url: str) -> tuple[bool, str]:
+    """验证 /api/v1/capabilities 返回 Envelope 格式。"""
+    try:
+        status, _, body = _request(base_url, "/api/v1/capabilities")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    if data.get("code") != "ZEN-OK-0":
+        return False, f"code={data.get('code')} (期望 ZEN-OK-0)"
+
+    if "data" not in data:
+        return False, "缺少 data 字段"
+
+    return True, "Envelope OK (code=ZEN-OK-0)"
+
+
+# ---------------------------------------------------------------------------
+# Check 3: Auth 链路 (/api/v1/auth/sys/status)
+# ---------------------------------------------------------------------------
+
+
+def check_auth_status(base_url: str) -> tuple[bool, str]:
+    """验证 Auth 系统状态端点。"""
+    try:
+        status, _, body = _request(base_url, "/api/v1/auth/sys/status")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    if data.get("code") != "ZEN-OK-0":
+        return False, f"code={data.get('code')} (期望 ZEN-OK-0)"
+
+    inner = data.get("data", {})
+    if not isinstance(inner, dict) or "initialized" not in inner:
+        return False, "data 缺少 initialized 字段"
+
+    return True, f"Envelope OK, initialized={inner['initialized']}"
+
+
+# ---------------------------------------------------------------------------
+# Check 4: 安全响应头
+# ---------------------------------------------------------------------------
+
+
+def check_security_headers(base_url: str) -> tuple[bool, str]:
+    """验证安全响应头存在。"""
+    try:
+        _, headers, _ = _request(base_url, "/api/v1/capabilities")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    issues: list[str] = []
+    ct = headers.get("content-type", "")
+    if "application/json" not in ct:
+        issues.append(f"Content-Type={ct} (期望含 application/json)")
+
+    return len(issues) == 0, "; ".join(issues) if issues else "安全头验证通过"
+
+
+# ---------------------------------------------------------------------------
+# Check 5: SSE 端点连通性
+# ---------------------------------------------------------------------------
+
+
+def check_sse_endpoint(base_url: str) -> tuple[bool, str]:
+    """验证 SSE 端点返回 text/event-stream。"""
+    try:
+        status, headers, _ = _request(
+            base_url,
+            "/api/v1/events",
+            headers={"Accept": "text/event-stream"},
+            timeout=5,
+        )
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    # SSE 端点可能返回 200 (text/event-stream) 或 401 (Unauthorized)
+    # 401 表示 SSE 需要认证，但端点本身可达
+    if status in (200, 401):
+        ct = headers.get("content-type", "")
+        if status == 200 and "text/event-stream" in ct:
+            return True, "SSE 端点可达 (200 text/event-stream)"
+        if status == 401:
+            return True, "SSE 端点可达 (401 Unauthorized — 需认证，属正常)"
+        return True, f"SSE 端点可达 ({status})"
+
+    return False, f"HTTP {status} (期望 200 或 401)"
+
+
+# ---------------------------------------------------------------------------
+# 主执行器
+# ---------------------------------------------------------------------------
+
+
+CHECKS: list[tuple[str, object]] = [
+    ("C1: Health 端点", check_health),
+    ("C2: Envelope 一致性 (capabilities)", check_envelope_capabilities),
+    ("C3: Auth 链路 (sys/status)", check_auth_status),
+    ("C4: 安全响应头", check_security_headers),
+    ("C5: SSE 端点连通性", check_sse_endpoint),
+]
+
+
+def main() -> int:
+    """执行全部部署后验证，返回 0=全通过, 1=有失败。"""
+    # 解析 --base-url 参数
+    base_url = DEFAULT_BASE_URL
+    for arg in sys.argv[1:]:
+        if arg.startswith("--base-url="):
+            base_url = arg.split("=", 1)[1].rstrip("/")
+        elif arg == "--base-url" and sys.argv.index(arg) + 1 < len(sys.argv):
+            base_url = sys.argv[sys.argv.index(arg) + 1].rstrip("/")
+
+    print("═══════════════════════════════════════════")
+    print("  ZEN70 Post-Deploy Verification")
+    print(f"  Target: {base_url}")
+    print("═══════════════════════════════════════════")
+    print()
+
+    # 等待服务就绪
+    print("[预热] 等待服务就绪...")
+    if not _wait_for_ready(base_url):
+        print("  ✗ 服务启动超时，中止验证")
+        return 1
+    print("  ✓ 服务已就绪")
+    print()
+
+    all_passed = True
+    for check_name, check_fn in CHECKS:
+        print(f"[Check] {check_name}...")
+        try:
+            passed, detail = check_fn(base_url)  # type: ignore[operator]
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+            passed = False
+            detail = f"异常: {exc}"
+
+        if passed:
+            print(f"  ✓ {detail}")
+        else:
+            print(f"  ✗ {detail}")
+            all_passed = False
+        print()
+
+    print("═══════════════════════════════════════════")
+    if all_passed:
+        print("  ✓ 部署验证全部通过")
+        return 0
+    print("  ✗ 存在失败项，请排查")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

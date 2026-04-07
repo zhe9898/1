@@ -1,0 +1,37 @@
+extension_id: acme.photo
+version: 1.2.3
+sdk_version: 1.0.0
+name: Acme Photo Pack
+publisher: Acme
+description: Example external manifest for a photo-processing extension
+compatibility:
+  min_kernel_version: 1.58.0
+  supported_api_versions:
+    - v1
+  compatibility_mode: same-major
+job_kinds:
+  - kind: photo.index
+    payload_schema_ref: acme_photo.schemas:PhotoIndexPayload
+    result_schema_ref: acme_photo.schemas:PhotoIndexResult
+    schema_version: 2.0.0
+    stability: stable
+    description: Index photo assets into the media graph
+connector_kinds:
+  - kind: photo.library
+    config_schema_ref: acme_photo.schemas:PhotoLibraryConnectorConfig
+    schema_version: 1.1.0
+    stability: beta
+    description: Connector for external photo libraries
+workflow_templates:
+  - template_id: photo.ingest
+    parameters_schema_ref: acme_photo.schemas:PhotoIngestParams
+    version: 1.0.0
+    schema_version: 1.0.0
+    display_name: Photo Ingest
+    description: Run the photo indexing workflow template
+    steps:
+      - id: index
+        kind: photo.index
+        payload:
+          album_id: ${album_id}
+          max_items: ${max_items}

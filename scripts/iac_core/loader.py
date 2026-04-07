@@ -1,0 +1,636 @@
+"""
+iac_core.loader — 配置加载、合并与预处理。
+
+职责:
+1. 单文件 system.yaml 加载
+2. conf.d/*.yml 碎片合并 (deep_merge)
+3. 服务列表预处理 (prepare_services)
+4. 网络/卷提取 (extract_networks / extract_named_volumes)
+5. 环境变量聚合 (prepare_env)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from scripts.iac_core.profiles import (
+    allowed_services_for_profile,
+    normalize_profile,
+    resolve_requested_pack_keys,
+    resolve_gateway_image_target,
+)
+from scripts.iac_core.renderer import dict_to_yaml_block
+from scripts.iac_core.secrets import resolve_env_default
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# 1. 配置加载与碎片合并
+# ---------------------------------------------------------------------------
+
+
+def load_yaml(path: Path) -> dict[str, Any]:
+    """
+    加载单个 YAML 配置文件。
+
+    Args:
+        path: system.yaml 文件路径。
+
+    Returns:
+        解析后的配置字典。
+
+    Raises:
+        yaml.YAMLError: YAML 格式非法。
+        OSError: 文件读取失败。
+    """
+    text = path.read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        msg = f"根节点必须为字典，实际为 {type(data).__name__}: {path}"
+        raise ValueError(msg)
+    return data
+
+
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """
+    递归深合并：override 覆盖 base，嵌套字典递归合并。
+
+    不修改 base/override；返回新字典。
+
+    Args:
+        base: 基础字典。
+        override: 覆盖字典，同键时以 override 为准。
+
+    Returns:
+        合并后的新字典。
+    """
+    result: dict[str, Any] = deepcopy(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+
+def load_config_dir(config_dir: Path) -> dict[str, Any]:
+    """
+    加载 conf.d 碎片目录：按文件名排序合并，.local.yml 排除。
+
+    Args:
+        config_dir: conf.d 目录路径。
+
+    Returns:
+        合并后的配置字典。
+
+    Raises:
+        FileNotFoundError: 目录中无 .yml/.yaml 文件。
+    """
+    yaml_files = sorted(list(config_dir.glob("*.yml")) + list(config_dir.glob("*.yaml")))
+    yaml_files = [p for p in yaml_files if not (p.name.endswith(".local.yml") or p.name.endswith(".local.yaml"))]
+    if not yaml_files:
+        msg = f"No .yml/.yaml files found in {config_dir}"
+        raise FileNotFoundError(msg)
+
+    merged: dict[str, Any] = {}
+    for yf in yaml_files:
+        logger.debug("Merging fragment: %s", yf.name)
+        part = load_yaml(yf)
+        merged = deep_merge(merged, part)
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# 2. 服务预处理
+# ---------------------------------------------------------------------------
+
+
+def prepare_services(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    将 system.yaml 的 services 预处理为模板可用的列表。
+
+    每个元素为扁平 dict，含 name、image、及预格式化的 YAML 块字符串。
+    runtime: host 的服务跳过（由 prepare_host_services 处理）。
+    """
+    profile = _resolve_profile(config)
+    selected_packs = _resolve_packs(config)
+    result: list[dict[str, Any]] = []
+
+    for name, svc in _iter_active_services(config):
+        if svc.get("runtime") == "host":
+            continue
+        svc_for_render = deepcopy(svc)
+        if name == "gateway":
+            build_cfg = svc_for_render.get("build")
+            if isinstance(build_cfg, dict):
+                build_cfg.setdefault("target", resolve_gateway_image_target(profile, selected_packs=selected_packs))
+                svc_for_render["build"] = build_cfg
+
+        entry = _build_service_entry(name, svc_for_render, config)
+        result.append(entry)
+
+    return result
+
+
+def prepare_host_services(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    返回所有 runtime: host 服务的预处理列表，用于生成 systemd unit 文件。
+
+    每个元素含 name, exec, args, user, group, working_dir, environment,
+    port, caddy_path, description, after, restart, restart_sec。
+
+    注：host 服务不受 profile 过滤约束（用户自定义进程，不属于功能 pack）。
+    """
+    result: list[dict[str, Any]] = []
+    for name, svc in (config.get("services") or {}).items():
+        if not isinstance(svc, dict):
+            continue
+        if svc.get("enabled") is False:
+            continue
+        if svc.get("runtime") != "host":
+            continue
+        result.append(_build_host_service_entry(name, svc))
+    return result
+
+
+def _build_host_service_entry(name: str, svc: dict[str, Any]) -> dict[str, Any]:
+    """构建单个宿主机进程服务的描述字典（用于 systemd unit 渲染）。"""
+    exec_start = svc.get("exec", "")
+    if not exec_start:
+        logger.warning("host service '%s' missing required 'exec' field", name)
+
+    environment: dict[str, str] = {}
+    for k, v in (svc.get("environment") or {}).items():
+        environment[str(k)] = str(v)
+
+    return {
+        "name": name,
+        "runtime": "host",
+        "description": svc.get("description") or f"{name} (ZEN70 host process)",
+        "exec": exec_start,
+        "args": svc.get("args") or "",
+        "user": svc.get("user") or "",
+        "group": svc.get("group") or "",
+        "working_dir": svc.get("working_dir") or "",
+        "environment": environment,
+        "port": int(svc["port"]) if svc.get("port") is not None else None,
+        "caddy_path": svc.get("caddy_path") or "",
+        "after": svc.get("after") or "network.target",
+        "restart": svc.get("restart") or "on-failure",
+        "restart_sec": int(svc.get("restart_sec", 5)),
+    }
+
+
+def _resolve_profile(config: dict[str, Any]) -> str:
+    deployment_cfg = config.get("deployment") or {}
+    return normalize_profile(deployment_cfg.get("profile"))
+
+
+def _resolve_packs(config: dict[str, Any]) -> tuple[str, ...]:
+    deployment_cfg = config.get("deployment") or {}
+    return resolve_requested_pack_keys(
+        deployment_cfg.get("profile"),
+        deployment_cfg.get("packs"),
+    )
+
+
+def _iter_active_services(config: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    services_raw = config.get("services") or {}
+    tunnel_enabled = (config.get("network") or {}).get("tunnel_enabled", True)
+    allowed = allowed_services_for_profile(_resolve_profile(config), selected_packs=_resolve_packs(config))
+    active: list[tuple[str, dict[str, Any]]] = []
+
+    for name, svc in services_raw.items():
+        if not isinstance(svc, dict):
+            continue
+        # Pack-resolved services: if a service is in the allowed list, it overrides enabled=false.
+        # This lets ops-pack services be disabled by default but activated when the pack is selected.
+        if svc.get("enabled") is False:
+            if allowed is None or name not in allowed:
+                continue
+        if allowed is not None and name not in allowed:
+            continue
+        if name == "cloudflared" and not tunnel_enabled:
+            continue
+        active.append((name, svc))
+    return active
+
+
+def _build_service_entry(
+    name: str,
+    svc: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """构建单个服务的预处理 YAML 块字典。"""
+    # --- image / registry ---
+    image = svc.get("image", "unknown")
+    reg = config.get("registry") or {}
+    if reg.get("enabled") and reg.get("url") and not svc.get("build"):
+        url = str(reg.get("url", "")).strip()
+        if url and not image.startswith("${") and not image.startswith("http"):
+            image = f"{url.rstrip('/')}/{image}"
+
+    # --- build ---
+    build_block = ""
+    build_cfg = svc.get("build")
+    if isinstance(build_cfg, dict):
+        build_payload: dict[str, Any] = {"context": build_cfg.get("context", ".")}
+        if build_cfg.get("dockerfile"):
+            build_payload["dockerfile"] = build_cfg["dockerfile"]
+        if build_cfg.get("target"):
+            build_payload["target"] = build_cfg["target"]
+        if isinstance(build_cfg.get("args"), dict) and build_cfg["args"]:
+            build_payload["args"] = build_cfg["args"]
+        build_block = dict_to_yaml_block({"build": build_payload})
+
+    container_name = svc.get("container_name") or f"zen70-{name}"
+    restart = "unless-stopped"
+
+    # --- security baseline ---
+    security_block = ""
+    sec = svc.get("security") or {}
+    if sec.get("apply_baseline"):
+        user = sec.get("user", "${PUID:-1000}:${PGID:-1000}")
+        security_block = dict_to_yaml_block(
+            {
+                "user": user,
+                "read_only": True,
+                "tmpfs": ["/tmp"],
+                "cap_drop": ["ALL"],
+                "cap_add": ["NET_BIND_SERVICE"],
+            }
+        )
+
+    # --- volumes (normalize Windows paths) ---
+    vols = svc.get("volumes") or []
+    volumes_block = ""
+    if vols:
+        vols_normalized = [str(v).replace("\\", "/") for v in vols]
+        volumes_block = dict_to_yaml_block({"volumes": vols_normalized})
+
+    # --- environment ---
+    env = dict(svc.get("environment") or {})
+    if name == "postgres":
+        env.setdefault("POSTGRES_USER", "${POSTGRES_USER}")
+        env.setdefault("POSTGRES_PASSWORD", "${POSTGRES_PASSWORD}")
+        env.setdefault("POSTGRES_DB", "${POSTGRES_DB}")
+    if name == "cloudflared":
+        env.setdefault("TUNNEL_TOKEN", "${TUNNEL_TOKEN}")
+    env_block = ""
+    if env:
+        lines = [f"{k}={v}" for k, v in env.items()]
+        env_block = dict_to_yaml_block({"environment": lines})
+
+    # --- ports ---
+    ports = svc.get("ports") or []
+    ports_block = ""
+    if ports:
+        ports_block = dict_to_yaml_block({"ports": [str(p) for p in ports]})
+
+    # --- command ---
+    cmd = svc.get("command")
+    command_block = ""
+    if cmd:
+        # 法典兜底: YAML 可能将 true/false/yes/no 解析为布尔值，
+        # Docker Compose 要求 command 元素全部为 string。
+        # Python str(True) → "True"（首字母大写），但多数工具期望小写 "true"。
+        # 根治方案: system.yaml 中必须用引号包裹（如 'yes'），
+        # 此处作为防腐降级层，将布尔值还原为 YAML 1.1 规范的小写形式。
+        if isinstance(cmd, list):
+            safe_cmd: list[str] = []
+            for item in cmd:
+                if isinstance(item, bool):
+                    safe_cmd.append("yes" if item else "no")
+                else:
+                    safe_cmd.append(str(item))
+            cmd = safe_cmd
+        command_block = dict_to_yaml_block({"command": cmd})
+
+    # --- networks (法典 1.2) ---
+    # 三层原则: system.yaml → 内置默认 → backend_net
+    nets = svc.get("networks")
+    if not nets:
+        if name == "cloudflared":
+            nets = ["frontend_net", "backend_net"]
+        else:
+            nets = ["backend_net"]
+    networks_block = dict_to_yaml_block({"networks": nets})
+
+    # --- ulimits / oom_score_adj (法典 3.3) ---
+    # 三层原则: system.yaml → 内置默认 → 空
+    ulimits_block = ""
+    ulimits_cfg = svc.get("ulimits")
+    if isinstance(ulimits_cfg, dict) and ulimits_cfg:
+        ulimits_block = dict_to_yaml_block({"ulimits": ulimits_cfg})
+    elif name in ("gateway", "redis"):
+        ulimits_block = dict_to_yaml_block({"ulimits": {"nofile": {"soft": 65536, "hard": 65536}}})
+
+    oom_score_adj_block = ""
+    oom_cfg = svc.get("oom_score_adj")
+    if oom_cfg is not None:
+        oom_score_adj_block = dict_to_yaml_block({"oom_score_adj": oom_cfg})
+    elif name in ("gateway", "redis", "sentinel", "watchdog", "docker-proxy"):
+        oom_score_adj_block = dict_to_yaml_block({"oom_score_adj": -999})
+
+    # --- healthcheck (法典 3.4) ---
+    healthcheck_block = _build_healthcheck_block(name, svc)
+
+    # --- stop_grace_period ---
+    _default_grace: dict[str, str] = {
+        "postgres": "30s",
+        "redis": "30s",
+        "loki": "15s",
+        "gateway": "15s",
+        "sentinel": "15s",
+        "victoriametrics": "15s",
+    }
+    stop_grace = svc.get("stop_grace_period") or _default_grace.get(name, "10s")
+    stop_grace_period_block = dict_to_yaml_block({"stop_grace_period": stop_grace})
+
+    # --- deploy (resources + update_config) ---
+    deploy_block = ""
+    deploy_cfg = svc.get("deploy")
+    if not isinstance(deploy_cfg, dict):
+        deploy_cfg = {}
+    # gateway / frontend 采用 start-first 滚动更新
+    if name in ("gateway", "frontend"):
+        deploy_cfg.setdefault("update_config", {})["order"] = "start-first"
+    if deploy_cfg:
+        raw = yaml.dump({"deploy": deploy_cfg}, default_flow_style=False, sort_keys=False)
+        deploy_block = "".join(f"    {line}\n" for line in raw.splitlines() if line.strip())
+
+    # --- depends_on (结构化条件) ---
+    deps = svc.get("depends_on")
+    deps_block = ""
+    _no_healthcheck_services = {"loki", "promtail"}
+    if isinstance(deps, list) and len(deps) > 0:
+        structured: dict[str, dict[str, str]] = {}
+        for dep_name in deps:
+            if dep_name in _no_healthcheck_services:
+                structured[dep_name] = {"condition": "service_started"}
+            else:
+                structured[dep_name] = {"condition": "service_healthy"}
+        deps_block = dict_to_yaml_block({"depends_on": structured})
+    elif isinstance(deps, dict) and len(deps) > 0:
+        deps_block = dict_to_yaml_block({"depends_on": deps})
+
+    # --- logging（法典 §2.5: 必须在 daemon.json 配置 Docker 日志轮转防爆盘） ---
+    logging_block = ""
+    logging_cfg = svc.get("logging")
+    if isinstance(logging_cfg, dict):
+        logging_block = dict_to_yaml_block({"logging": logging_cfg})
+    else:
+        # 兜底: json-file + 10MB + 3 files（法典 §2.5 强制防爆盘）
+        logging_block = dict_to_yaml_block(
+            {
+                "logging": {
+                    "driver": "json-file",
+                    "options": {"max-size": "10m", "max-file": "3"},
+                }
+            }
+        )
+
+    return {
+        "name": name,
+        "image": image,
+        "build_block": build_block,
+        "container_name": container_name,
+        "restart": restart,
+        "security_block": security_block,
+        "stop_grace_period_block": stop_grace_period_block,
+        "ulimits_block": ulimits_block,
+        "oom_score_adj_block": oom_score_adj_block,
+        "healthcheck_block": healthcheck_block,
+        "volumes_block": volumes_block,
+        "environment_block": env_block,
+        "command_block": command_block,
+        "ports_block": ports_block,
+        "depends_on_block": deps_block,
+        "networks_block": networks_block,
+        "deploy_block": deploy_block,
+        "logging_block": logging_block,
+    }
+
+
+def _build_healthcheck_block(name: str, svc: dict[str, Any]) -> str:
+    """构建服务的 healthcheck YAML 块。
+
+    Single source of truth: if ``svc["healthcheck"]`` is defined in system.yaml
+    it always takes precedence.  Built-in defaults only apply when the service
+    has no explicit healthcheck configuration.
+    """
+    _default_start_period: dict[str, str] = {
+        "postgres": "30s",
+        "gateway": "30s",
+        "sentinel": "15s",
+        "watchdog": "40s",
+        "victoriametrics": "15s",
+        "grafana": "15s",
+        "pgbouncer": "15s",
+        "cloudflared": "15s",
+        "vmalert": "15s",
+    }
+
+    hc = svc.get("healthcheck")
+
+    # ── system.yaml explicit healthcheck — single source of truth ────
+    if isinstance(hc, dict) and hc.get("test"):
+        return dict_to_yaml_block(
+            {
+                "healthcheck": {
+                    "test": hc["test"] if isinstance(hc["test"], list) else [hc["test"]],
+                    "interval": hc.get("interval", "30s"),
+                    "timeout": hc.get("timeout", "10s"),
+                    "retries": hc.get("retries", 3),
+                    "start_period": hc.get("start_period", _default_start_period.get(name, "10s")),
+                }
+            }
+        )
+
+    # ── Built-in fallback defaults (when system.yaml omits healthcheck) ──
+    _default_healthchecks: dict[str, dict[str, Any]] = {
+        "gateway": {"test": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\" || exit 1"]},
+        "redis": {"test": ["CMD", "redis-cli", "ping"]},
+        "postgres": {"test": ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zen70} || exit 1"]},
+        "caddy": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:2019/config/ || exit 1"]},
+        "pgbouncer": {"test": ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || exit 1"]},
+        "sentinel": {
+            "test": ["CMD-SHELL", "python -c \"import pathlib; assert 'control_plane_supervisor' in pathlib.Path('/proc/1/cmdline').read_text()\" || exit 1"]
+        },
+        "watchdog": {"test": ["CMD-SHELL", "python -c \"import pathlib; assert 'watchdog' in pathlib.Path('/proc/1/cmdline').read_text()\" || exit 1"]},
+        "cloudflared": {"test": ["CMD-SHELL", "pgrep -x cloudflared || exit 1"]},
+        "victoriametrics": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8428/health || exit 1"]},
+        "grafana": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3000/api/health || exit 1"]},
+        "docker-proxy": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:2375/version || exit 1"]},
+        "categraf": {"test": ["CMD-SHELL", "test -f /etc/categraf/conf/config.toml || exit 1"]},
+        "alertmanager": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:9093/-/healthy || exit 1"]},
+        "vmalert": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8880/health || exit 1"]},
+    }
+    if name in _default_healthchecks:
+        hc_def = _default_healthchecks[name]
+        return dict_to_yaml_block(
+            {
+                "healthcheck": {
+                    "test": hc_def["test"],
+                    "interval": "30s",
+                    "timeout": "10s",
+                    "retries": 3,
+                    "start_period": _default_start_period.get(name, "10s"),
+                }
+            }
+        )
+
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 3. 网络与卷提取
+# ---------------------------------------------------------------------------
+
+
+def extract_networks(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    从 network.planes 或 services.*.networks 提取网络定义。
+
+    法典 §3.3: backend_net 强制 internal:true。
+    """
+    nets = config.get("networks") or (config.get("network") or {}).get("planes") or {}
+    if nets:
+        return [
+            {
+                "name": name,
+                "driver": (v.get("driver") or "bridge") if isinstance(v, dict) else "bridge",
+                "internal": bool(v.get("internal")) if isinstance(v, dict) else False,
+            }
+            for name, v in nets.items()
+        ]
+
+    # Fallback: 从 services.*.networks 推导
+    seen: set[str] = set()
+    for _n, svc in _iter_active_services(config):
+        if svc.get("runtime") == "host":
+            continue
+        for n in svc.get("networks") or []:
+            seen.add(str(n).strip())
+
+    default_nets = sorted(seen) or ["frontend_net", "backend_net"]
+    return [{"name": n, "driver": "bridge", "internal": n == "backend_net"} for n in default_nets]
+
+
+def extract_named_volumes(config: dict[str, Any]) -> list[str]:
+    """从 services.*.volumes 提取命名卷（非 / 或 . 开头的 name:path 格式）。runtime: host 服务跳过。"""
+    seen: set[str] = set()
+    for _name, svc in _iter_active_services(config):
+        if svc.get("runtime") == "host":
+            continue
+        for v in svc.get("volumes") or []:
+            s = str(v).strip()
+            if ":" in s:
+                vol_name = s.split(":")[0].strip()
+                if _is_named_volume_source(vol_name):
+                    seen.add(vol_name)
+    return sorted(seen)
+
+
+def _is_named_volume_source(source: str) -> bool:
+    candidate = source.strip()
+    if not candidate:
+        return False
+    if candidate.startswith(("/", ".", "${")):
+        return False
+    if "\\" in candidate or "/" in candidate:
+        return False
+    if len(candidate) >= 2 and candidate[1] == ":" and candidate[0].isalpha():
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# 4. 环境变量聚合
+# ---------------------------------------------------------------------------
+
+
+def prepare_env(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    从 system.yaml 提取 .env 所需变量。
+
+    法典路径解耦: MEDIA_PATH / MOUNT_CONTAINER_MAP / WATCH_TARGETS / BITROT_SCAN_DIRS
+    仅从 system.yaml 读取，零硬编码。
+    """
+    network = config.get("network") or {}
+    services = config.get("services") or {}
+    pg_env = (services.get("postgres") or {}).get("environment") or {}
+    pg_svc = services.get("postgres") or {}
+    redis_svc = services.get("redis") or {}
+    cap_storage = (config.get("capabilities") or {}).get("storage") or {}
+    deployment_cfg = config.get("deployment") or {}
+    sentinel_cfg = config.get("sentinel") or {}
+    media_path = cap_storage.get("media_path") or ""
+    mount_map = sentinel_cfg.get("mount_container_map") or {}
+    watch_targets = sentinel_cfg.get("watch_targets") or {}
+    bitrot_dirs = [media_path]
+    if sentinel_cfg.get("models_path"):
+        bitrot_dirs.append(sentinel_cfg["models_path"])
+
+    switch_map = sentinel_cfg.get("switch_container_map") or {}
+    switch_ports = sentinel_cfg.get("switch_service_ports") or {}
+    # Container role lists — injected to .env for sentinel to read at runtime
+    sentinel_stateful = sentinel_cfg.get("stateful_containers") or []
+    sentinel_disk_taint = sentinel_cfg.get("disk_taint_containers") or []
+    sentinel_heavy = sentinel_cfg.get("heavy_containers") or []
+    cap_top = config.get("capabilities") or {}
+    agent_cfg = cap_top.get("agent")
+    zen70_agent_enabled = "true" if (isinstance(agent_cfg, dict) and agent_cfg.get("enabled")) else "false"
+
+    pg_container = pg_svc.get("container_name", "zen70-postgres")
+    pg_host = pg_container.removeprefix("zen70-")
+    redis_container = redis_svc.get("container_name", "zen70-redis")
+    redis_host = redis_container.removeprefix("zen70-")
+    gateway_profile = normalize_profile(deployment_cfg.get("profile"))
+    gateway_packs = ",".join(_resolve_packs(config))
+
+    return {
+        # 法典 §1.2: IaC 唯一事实来源 —— 钉死 compose project name
+        # 确保所有 compose 操作（bootstrap/update/手动 CLI）都在同一 project 下
+        # 防止跨 project 容器名冲突 (name already in use)
+        "compose_project_name": "zen70",
+        "postgres_user": resolve_env_default(pg_env.get("POSTGRES_USER"), "zen70"),
+        "postgres_db": resolve_env_default(pg_env.get("POSTGRES_DB"), "zen70"),
+        "postgres_password": "",
+        "postgres_host": pg_host,
+        "postgres_port": int(pg_env.get("PGPORT", 5432)),
+        "redis_host": redis_host,
+        "redis_port": int((redis_svc.get("environment") or {}).get("REDIS_PORT", 6379)),
+        "redis_password": "",
+        "redis_user": "zen70_gateway",
+        "redis_acl_file": "",
+        "jwt_secret_current": "",
+        "jwt_secret_previous": "",
+        "domain": network.get("domain", "home.zen70.local"),
+        "gateway_profile": gateway_profile,
+        "gateway_packs": gateway_packs,
+        "tunnel_token": str((config.get("secrets") or {}).get("tunnel_token", "")),
+        "ai_backend_url": "",
+        "backup_enabled": "true" if (isinstance(config.get("backup"), dict) and config["backup"].get("enabled")) else "false",
+        "zen70_agent_enabled": zen70_agent_enabled,
+        "media_path": media_path,
+        "bitrot_scan_dirs": ",".join(str(p).strip() for p in bitrot_dirs if str(p).strip()),
+        "mount_container_map": json.dumps(mount_map, ensure_ascii=False),
+        "mount_points": sentinel_cfg.get("mount_points", ""),
+        "watch_targets": json.dumps(watch_targets, ensure_ascii=False),
+        "switch_container_map": json.dumps(switch_map, ensure_ascii=False),
+        "switch_service_ports": json.dumps(switch_ports, ensure_ascii=False),
+        # Sentinel container role lists (law §1.2 IAC single source of truth)
+        "sentinel_stateful_containers": ",".join(sentinel_stateful),
+        "sentinel_disk_taint_containers": ",".join(sentinel_disk_taint),
+        "sentinel_heavy_containers": ",".join(sentinel_heavy),
+        "now": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+    }

@@ -1,0 +1,181 @@
+/**
+ * @description API 路径统一注册表 — 唯一事实源 (ADR 0009 / 工单 FE-API-CONTRACT-003)
+ *
+ * 所有业务 API 路径必须从此处导出，页面内严禁硬编码 /v1/ 字符串。
+ * 白名单场景（SSE/静态资源 fetch）需在此文件注释中显式记录。
+ */
+
+/** API 基地址，SSE 等需完整 URL 时使用 */
+export const API_BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api").replace(/\/$/, "");
+const toPathSegment = (value: string | number): string => String(value);
+
+// ---------------------------------------------------------------------------
+// Auth 域
+// ---------------------------------------------------------------------------
+export const AUTH = {
+  sysStatus: "/v1/auth/sys/status",
+  bootstrap: "/v1/auth/bootstrap",
+  passwordLogin: "/v1/auth/password/login",
+  pinLogin: "/v1/auth/pin/login",
+  pinSet: "/v1/auth/pin/set",
+  webauthnLoginBegin: "/v1/auth/webauthn/login/begin",
+  webauthnLoginComplete: "/v1/auth/webauthn/login/complete",
+  session: "/v1/auth/session",
+  pushVapidKey: "/v1/auth/push/vapid-public-key",
+  pushSubscribe: "/v1/auth/push/subscribe",
+  invites: "/v1/auth/invites",
+  inviteWebauthnBegin: (token: string) => `/v1/auth/invites/${token}/webauthn/register/begin`,
+  inviteWebauthnComplete: (token: string) => `/v1/auth/invites/${token}/webauthn/register/complete`,
+  inviteFallbackLogin: (token: string) => `/v1/auth/invites/${token}/fallback/login`,
+  updateAiPreference: "/v1/auth/me/ai-preference",
+  users: "/v1/auth/users",
+  removeCredential: (id: number | string) => `/v1/auth/credentials/${toPathSegment(id)}`,
+} as const;
+
+
+
+
+// ---------------------------------------------------------------------------
+// Settings 域
+// ---------------------------------------------------------------------------
+export const SETTINGS = {
+  schema: "/v1/settings/schema",
+  flags: "/v1/settings/flags",
+  flagToggle: (key: string) => `/v1/settings/flags/${key}`,
+  system: "/v1/settings/system",
+  config: "/v1/settings/config",
+  configUpdate: (key: string) => `/v1/settings/config/${key}`,
+  aiProviderEndpoints: "/v1/settings/ai-providers/endpoints",
+  aiProviderHealth: "/v1/settings/ai-providers/health",
+  aiProviderUrlUpdate: (key: string) => `/v1/settings/ai-providers/${key}/url`,
+  aiModels: "/v1/settings/ai-models",
+  aiModelsScan: "/v1/settings/ai-models/scan",
+  aiModelUpdate: "/v1/settings/ai-model",
+} as const;
+
+export const NODES = {
+  list: "/v1/nodes",
+  schema: "/v1/nodes/schema",
+  detail: (id: string) => `/v1/nodes/${id}`,
+  provision: "/v1/nodes",
+  rotateToken: (id: string) => `/v1/nodes/${id}/token`,
+  revoke: (id: string) => `/v1/nodes/${id}/revoke`,
+  drain: (id: string) => `/v1/nodes/${id}/drain`,
+  undrain: (id: string) => `/v1/nodes/${id}/undrain`,
+  register: "/v1/nodes/register",
+  heartbeat: "/v1/nodes/heartbeat",
+} as const;
+
+export const JOBS = {
+  list: "/v1/jobs",
+  schema: "/v1/jobs/schema",
+  detail: (id: string) => `/v1/jobs/${id}`,
+  attempts: (id: string) => `/v1/jobs/${id}/attempts`,
+  explain: (id: string) => `/v1/jobs/${id}/explain`,
+  create: "/v1/jobs",
+  pull: "/v1/jobs/pull",
+  progress: (id: string) => `/v1/jobs/${id}/progress`,
+  renew: (id: string) => `/v1/jobs/${id}/renew`,
+  result: (id: string) => `/v1/jobs/${id}/result`,
+  fail: (id: string) => `/v1/jobs/${id}/fail`,
+  cancel: (id: string) => `/v1/jobs/${id}/cancel`,
+  retry: (id: string) => `/v1/jobs/${id}/retry`,
+} as const;
+
+export const CONNECTORS = {
+  list: "/v1/connectors",
+  schema: "/v1/connectors/schema",
+  upsert: "/v1/connectors",
+  invoke: (id: string) => `/v1/connectors/${id}/invoke`,
+  test: (id: string) => `/v1/connectors/${id}/test`,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Evaluations 域
+// ---------------------------------------------------------------------------
+export const EVALUATIONS = {
+  list: "/v1/evaluations",
+  schema: "/v1/evaluations/schema",
+  create: "/v1/evaluations",
+  detail: (id: string) => `/v1/evaluations/${id}`,
+  delete: (id: string) => `/v1/evaluations/${id}`,
+} as const;
+
+export const PROFILE = {
+  current: "/v1/profile",
+} as const;
+
+export const CONSOLE = {
+  menu: "/v1/console/menu",
+  overview: "/v1/console/overview",
+  diagnostics: "/v1/console/diagnostics",
+  /** Backend-authoritative control-plane surface definitions (ADR 0011). */
+  surfaces: "/v1/console/surfaces",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Switches / IoT 域
+// ---------------------------------------------------------------------------
+export const SWITCHES = {
+  list: "/v1/switches",
+  toggle: (name: string) => `/v1/switches/${name}`,
+} as const;
+
+
+
+
+// ---------------------------------------------------------------------------
+// Agent / Memory 域
+// ---------------------------------------------------------------------------
+export const AGENT = {
+  aiRoot: "/v1/ai",
+  capabilities: "/v1/agent/capabilities",
+  plan: "/v1/agent/plan",
+  act: "/v1/agent/act",
+  memoryRecent: "/v1/agent/memory/recent",
+  memorySearch: "/v1/agent/memory/search",
+  memorySummary: "/v1/agent/memory/summary/daily?limit=30",
+  voice: "/v1/agent/voice",
+} as const;
+
+
+
+
+// ---------------------------------------------------------------------------
+// System 域
+// ---------------------------------------------------------------------------
+export const SYSTEM = {
+  capabilities: "/v1/capabilities",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Observability 域
+// ---------------------------------------------------------------------------
+export const OBS = {
+  dlq: "/v1/obs/dlq",
+  dlqByName: (name: string) => `/v1/obs/dlq/${name}?limit=50`,
+  dlqClear: (name: string) => `/v1/obs/dlq/${name}`,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Portability / Privacy 域
+// ---------------------------------------------------------------------------
+export const PORTABILITY = {
+  export: "/v1/portability/export",
+  shred: (id: string) => `/v1/portability/shred/${id}`,
+} as const;
+
+// ---------------------------------------------------------------------------
+// SSE / 实时事件（白名单：需完整 URL，由 sse.ts 消费）
+// ---------------------------------------------------------------------------
+export const SSE = {
+  events: () => `${API_BASE}/v1/events`,
+  ping: "/v1/events/ping",
+} as const;
+
+// ---------------------------------------------------------------------------
+// 白名单说明（fetch 合法使用场景）
+// ---------------------------------------------------------------------------
+// 1. core/db.ts: cacheImage() — 静态图片资源缓存，非 API 调用
+// 2. push.ts: 已迁移至 http.get/post（本次工单 FE-HTTP-UNIFY-002）
+// 3. sse.ts: EventSource 需完整 URL，使用 SSE.events()

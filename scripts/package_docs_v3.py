@@ -1,0 +1,77 @@
+"""
+ZEN70 V3.0 文档包打包脚本。
+
+将 docs/zen70_v3.0/ 与 docs/ops/、docs/adr/ 打为单 zip，便于分发。
+解压后 ZEN70_3.0_FULL.md 内相对链接 ops/*、adr/* 可正常打开。
+
+用法（在项目根目录执行）:
+    python scripts/package_docs_v3.py
+
+输出:
+    dist/zen70_docs_v3.0.zip
+
+可选环境变量:
+    ZEN70_DOCS_ZIP  -- 覆盖输出路径，如 E:\\releases\\zen70_docs_v3.0.zip
+"""
+
+from __future__ import annotations
+
+import logging
+import zipfile
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DOCS_ROOT = PROJECT_ROOT / "docs"
+ZEN70_V3_DIR = DOCS_ROOT / "zen70_v3.0"
+OPS_DIR = DOCS_ROOT / "ops"
+ADR_DIR = DOCS_ROOT / "adr"
+DEFAULT_ZIP = PROJECT_ROOT / "dist" / "zen70_docs_v3.0.zip"
+
+
+def _add_dir(zipf: zipfile.ZipFile, base: Path, arc_prefix: str = "") -> None:
+    """将 base 下所有 .md 与 .json 加入 zip，arcname = arc_prefix/relpath."""
+    for f in sorted(base.rglob("*")):
+        if not f.is_file():
+            continue
+        if f.suffix not in (".md", ".json"):
+            continue
+        arcname = arc_prefix + str(f.relative_to(base)).replace("\\", "/")
+        zipf.write(f, arcname)
+
+
+def main() -> None:
+    import os
+
+    env_zip = os.environ.get("ZEN70_DOCS_ZIP")
+    out_zip = Path(env_zip) if env_zip else DEFAULT_ZIP
+
+    out_zip.parent.mkdir(parents=True, exist_ok=True)
+
+    if not ZEN70_V3_DIR.is_dir():
+        raise SystemExit(f"[ERROR] 未找到文档目录: {ZEN70_V3_DIR}")
+
+    logger.info("打包 3.0 文档: %s -> %s", ZEN70_V3_DIR, out_zip)
+    with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(ZEN70_V3_DIR.iterdir()):
+            if f.is_file() and f.suffix in (".md", ".json", ".bat"):
+                zf.write(f, f.name)
+        if OPS_DIR.is_dir():
+            _add_dir(zf, OPS_DIR, "ops/")
+        if ADR_DIR.is_dir():
+            _add_dir(zf, ADR_DIR, "adr/")
+
+    logger.info("完成: %s", out_zip)
+
+
+if __name__ == "__main__":
+    import sys
+
+    main()
+    # Windows 下双击运行时保持窗口不闪退，便于查看输出
+    if sys.platform == "win32":
+        try:
+            input("按回车键退出...")
+        except (EOFError, KeyboardInterrupt):
+            pass

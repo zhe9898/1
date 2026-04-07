@@ -1,0 +1,101 @@
+# ZEN70 IaC 策略文件 — 核心安全/可靠性规则
+# @architecture-version: V2.0
+# @compliance: strict-sre-ruleset
+#
+# 该文件为 IaC 渲染管道的策略声明层（Tier 2 + Tier 3）。
+# 修改本文件即可调整安全红线，无需改动编译器 Python 代码。
+#
+# severity: fail  — 违反时编译失败
+# severity: warn  — 违反时仅警告（编译器自动兜底注入）
+#
+# selector.service_names: 规则适用的目标服务列表（空 = 全服务扫描）
+# assert.<类型>: 校验逻辑（内置类型见 iac_core/policy.py）
+
+policy_version: 2
+
+rules:
+  # ========== Tier 2: 安全红线（fail = 编译失败） ==========
+
+  # --- 网络隔离 ---
+  - id: NET-001
+    tier: 2
+    description: "数据库/缓存/Docker 代理禁止接入 frontend_net（法典 §3.3）"
+    selector:
+      service_names: [postgres, redis, docker-proxy]
+    assert:
+      networks_exclude: [frontend_net]
+    severity: fail
+
+  # --- 持久化 ---
+  - id: DATA-001
+    tier: 2
+    description: "有状态服务必须挂载持久卷（防止数据丢失）"
+    selector:
+      service_names: [postgres, redis]
+    assert:
+      volumes_not_empty: true
+    severity: fail
+
+  # --- 安全容器 ---
+  - id: SEC-001
+    tier: 2
+    description: "read_only: true 必须配套 tmpfs（法典 §3.4）"
+    selector: {}
+    assert:
+      read_only_requires_tmpfs: true
+    severity: fail
+
+  # ========== Tier 2: 编译器兜底（warn = 自动注入） ==========
+
+  # --- 句柄/OOM 保护 ---
+  - id: SYS-001
+    tier: 2
+    description: "核心服务 ulimits.nofile >= 65536（法典 §3.3, 编译器兜底注入）"
+    selector:
+      service_names: [gateway, redis]
+    assert:
+      ulimits_nofile_min: 65536
+    severity: warn
+
+  - id: SYS-002
+    tier: 2
+    description: "核心服务 oom_score_adj == -999（法典 §3.3, 编译器兜底注入）"
+    selector:
+      service_names: [gateway, redis, sentinel, watchdog, docker-proxy]
+    assert:
+      oom_score_adj: -999
+    severity: warn
+
+  # ========== Tier 3: 建议项（warn = 仅日志警告） ==========
+
+  - id: REC-001
+    tier: 3
+    description: "建议声明 healthcheck（编译器兜底默认值）"
+    selector: {}
+    assert:
+      field_recommended: "healthcheck"
+    severity: warn
+
+  - id: REC-002
+    tier: 3
+    description: "建议声明 stop_grace_period（编译器兜底 10s）"
+    selector: {}
+    assert:
+      field_recommended: "stop_grace_period"
+    severity: warn
+
+  - id: REC-003
+    tier: 3
+    description: "建议声明 logging（编译器兜底 json-file 轮转）"
+    selector: {}
+    assert:
+      field_recommended: "logging"
+    severity: warn
+
+  - id: REC-004
+    tier: 3
+    description: "建议声明 container_name（编译器兜底 zen70-{name}）"
+    selector: {}
+    assert:
+      field_recommended: "container_name"
+    severity: warn

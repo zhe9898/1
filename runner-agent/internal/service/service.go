@@ -1,0 +1,158 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+	"time"
+
+	"zen70/runner-agent/internal/api"
+	"zen70/runner-agent/internal/config"
+	runnerexec "zen70/runner-agent/internal/exec"
+	"zen70/runner-agent/internal/heartbeat"
+	"zen70/runner-agent/internal/jobs"
+	"zen70/runner-agent/internal/telemetry"
+)
+
+// drainCallTimeout is the maximum time to wait for the backend to acknowledge
+// a graceful-drain request during shutdown.
+const drainCallTimeout = 30 * time.Second
+
+type Service struct {
+	cfg       config.Config
+	client    *api.Client
+	executor  *runnerexec.Executor
+	collector *telemetry.Collector
+}
+
+func New(cfg config.Config) *Service {
+	client := api.New(cfg)
+	return &Service{
+		cfg:    cfg,
+		client: client,
+		executor: runnerexec.New(runnerexec.Config{
+			DefaultTimeoutSeconds: cfg.LeaseSeconds,
+			MaxOutputBytes:        1 << 20,
+		}, client.HTTPClient()),
+		collector: telemetry.NewCollector(
+			cfg.GatewayBaseURL,
+			client.HTTPClient(),
+			telemetry.Snapshot{
+				NetworkLatencyMs:  cfg.NetworkLatencyMs,
+				CurrentPowerWatts: cfg.CurrentPowerWatts,
+				ThermalState:      cfg.ThermalState,
+				CloudConnectivity: cfg.CloudConnectivity,
+			},
+		),
+	}
+}
+
+func (s *Service) Run(ctx context.Context) error {
+	if strings.TrimSpace(s.cfg.NodeToken) == "" {
+		return fmt.Errorf("runner NODE_TOKEN is required")
+	}
+	if err := s.cfg.Validate(); err != nil {
+		return err
+	}
+	if err := s.registerNode(ctx); err != nil {
+		return err
+	}
+
+	errs := make(chan error, 3)
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		s.collector.Run(ctx, s.cfg.HeartbeatInterval)
+		errs <- nil // collector exits cleanly on ctx cancel
+	}()
+
+	go func() {
+		defer wg.Done()
+		errs <- heartbeat.Loop(ctx, s.cfg, s.client, s.collector)
+	}()
+
+	go func() {
+		defer wg.Done()
+		errs <- jobs.Loop(ctx, s.cfg, s.client, s.executor)
+	}()
+
+	select {
+	case <-ctx.Done():
+		// Signal the backend that this node is draining so the scheduler stops
+		// dispatching new jobs.  WithoutCancel preserves trace/values from the
+		// parent while being independent of its cancellation.
+		drainCtx, drainCancel := context.WithTimeout(context.WithoutCancel(ctx), drainCallTimeout)
+		defer drainCancel()
+		if err := s.client.DrainSelf(drainCtx, api.SelfDrainRequest{
+			TenantID: s.cfg.TenantID,
+			NodeID:   s.cfg.NodeID,
+			Reason:   "SIGTERM: graceful shutdown",
+		}); err != nil {
+			log.Printf("warn: drain-self failed (proceeding with shutdown): %v", err)
+		}
+		wg.Wait()
+		return nil
+	case err := <-errs:
+		if errors.Is(err, context.Canceled) {
+			wg.Wait()
+			return nil
+		}
+		return err
+	}
+}
+
+// registerNode sends the initial registration request to the gateway.
+func (s *Service) registerNode(ctx context.Context) error {
+	meta := map[string]any{
+		"profile":         s.cfg.Profile,
+		"runtime":         "go",
+		"lease_seconds":   s.cfg.LeaseSeconds,
+		"agent_version":   s.cfg.AgentVersion,
+		"max_concurrency": s.cfg.MaxConcurrency,
+		"cpu_cores":       s.cfg.CPUCores,
+		"memory_mb":       s.cfg.MemoryMB,
+		"gpu_vram_mb":     s.cfg.GPUVRAMMB,
+		"storage_mb":      s.cfg.StorageMB,
+		"device_profile":  s.cfg.DeviceProfile,
+	}
+	// When a cloud auto-approve token is configured, include it so the backend
+	// can activate this node immediately without manual admin approval.
+	if s.cfg.CloudToken != "" {
+		meta["cloud_token"] = s.cfg.CloudToken
+	}
+	return s.client.RegisterNode(ctx, api.RegisterRequest{
+		TenantID:           s.cfg.TenantID,
+		NodeID:             s.cfg.NodeID,
+		Name:               s.cfg.NodeName,
+		NodeType:           s.cfg.NodeType,
+		Address:            s.cfg.NodeAddress,
+		Profile:            s.cfg.Profile,
+		Executor:           s.cfg.Executor,
+		OS:                 s.cfg.OperatingSystem,
+		Arch:               s.cfg.Architecture,
+		Zone:               s.cfg.Zone,
+		ProtocolVersion:    s.cfg.ProtocolVersion,
+		LeaseVersion:       s.cfg.LeaseVersion,
+		AgentVersion:       s.cfg.AgentVersion,
+		MaxConcurrency:     s.cfg.MaxConcurrency,
+		CPUCores:           s.cfg.CPUCores,
+		MemoryMB:           s.cfg.MemoryMB,
+		GPUVRAMMB:          s.cfg.GPUVRAMMB,
+		StorageMB:          s.cfg.StorageMB,
+		Capabilities:       s.cfg.Capabilities,
+		Metadata:           meta,
+		AcceptedKinds:      s.cfg.AcceptedKinds,
+		NetworkLatencyMs:   s.cfg.NetworkLatencyMs,
+		BandwidthMbps:      s.cfg.BandwidthMbps,
+		CachedDataKeys:     s.cfg.CachedDataKeys,
+		PowerCapacityWatts: s.cfg.PowerCapacityWatts,
+		CurrentPowerWatts:  s.cfg.CurrentPowerWatts,
+		ThermalState:       s.cfg.ThermalState,
+		CloudConnectivity:  s.cfg.CloudConnectivity,
+	})
+}

@@ -1,0 +1,15 @@
+# 集成测试用：网关 + 探针运行环境（从项目根构建）
+# 用法: docker build -f tests/Dockerfile.backend -t zen70-test-backend .
+ARG PYTHON=3.12-slim
+FROM ${PYTHON}
+WORKDIR /app
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# 后端依赖（网关 + 探针）
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY backend ./backend
+
+# 默认启动网关；探针用 command 覆盖
+CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

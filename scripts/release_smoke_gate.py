@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""
+ZEN70 发布级冒烟门禁 (Release Smoke Gate) — 分层退出码版本。
+
+对运行中实例执行 Critical / Non-Critical 两级 HTTP 端点检查。
+用于 release.sh 预检 / CI 流水线 / 手动验证。
+
+退出码语义：
+  0 — 全部通过（含可能的 degraded 状态亦视为通过）
+  2 — Critical 全通过，但 Non-Critical 存在异常（带伤发布，警告级别）
+  1 — 任一 Critical 检查未达标，阻断发布
+
+用法：
+    python scripts/release_smoke_gate.py [--base-url http://localhost:8000]
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from http.client import HTTPConnection, HTTPSConnection
+from typing import Any
+from urllib.parse import urlparse
+
+# ---------------------------------------------------------------------------
+# 常量
+# ---------------------------------------------------------------------------
+
+DEFAULT_BASE_URL: str = "http://localhost:8000"
+CONNECT_TIMEOUT: int = 10
+MAX_RETRIES: int = 5
+RETRY_DELAY: int = 3
+
+EXIT_ALL_PASS: int = 0
+EXIT_CRITICAL_FAIL: int = 1
+EXIT_NON_CRITICAL_FAIL: int = 2
+
+
+# ---------------------------------------------------------------------------
+# HTTP 工具（零外部依赖）
+# ---------------------------------------------------------------------------
+
+
+def _request(
+    base_url: str,
+    path: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: str | None = None,
+    timeout: int = CONNECT_TIMEOUT,
+) -> tuple[int, dict[str, str], str]:
+    """发送 HTTP 请求，返回 (status_code, response_headers, body)。"""
+    parsed = urlparse(base_url)
+    is_https = parsed.scheme == "https"
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if is_https else 80)
+
+    conn_class = HTTPSConnection if is_https else HTTPConnection
+    conn = conn_class(host, port, timeout=timeout)
+
+    req_headers: dict[str, str] = {
+        "Accept": "application/json",
+        "User-Agent": "ZEN70-SmokeGate/1.0",
+    }
+    if headers:
+        req_headers.update(headers)
+    if body and "Content-Type" not in req_headers:
+        req_headers["Content-Type"] = "application/json"
+
+    try:
+        conn.request(method, path, body=body, headers=req_headers)
+        resp = conn.getresponse()
+        resp_body = resp.read().decode("utf-8", errors="replace")
+        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+        return resp.status, resp_headers, resp_body
+    finally:
+        conn.close()
+
+
+def _wait_for_ready(base_url: str) -> bool:
+    """等待服务就绪（最多重试 MAX_RETRIES 次）。"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            status, _, _ = _request(base_url, "/health", timeout=5)
+            if status == 200:
+                return True
+        except (OSError, TimeoutError):
+            pass
+        if attempt < MAX_RETRIES - 1:
+            print(f"  ⏳ 服务未就绪，{RETRY_DELAY}s 后重试 ({attempt + 1}/{MAX_RETRIES})...")
+            time.sleep(RETRY_DELAY)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# 检查项定义
+# ---------------------------------------------------------------------------
+
+
+def check_health(base_url: str) -> tuple[bool, str]:
+    """GET /health → 200, status in (healthy, degraded)。"""
+    try:
+        status, _, body = _request(base_url, "/health")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    health_status = data.get("status")
+    if health_status not in ("healthy", "degraded"):
+        return False, f"status={health_status} (期望 healthy 或 degraded)"
+
+    return True, f"status={health_status}, version={data.get('version', 'unknown')}"
+
+
+def check_auth_sys_status(base_url: str) -> tuple[bool, str]:
+    """GET /api/v1/auth/sys/status → 200, code=ZEN-OK-0。"""
+    try:
+        status, _, body = _request(base_url, "/api/v1/auth/sys/status")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    if data.get("code") != "ZEN-OK-0":
+        return False, f"code={data.get('code')} (期望 ZEN-OK-0)"
+
+    return True, "Envelope OK (code=ZEN-OK-0)"
+
+
+def check_capabilities(base_url: str) -> tuple[bool, str]:
+    """GET /api/v1/capabilities → 200, code=ZEN-OK-0, data 存在。"""
+    try:
+        status, _, body = _request(base_url, "/api/v1/capabilities")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    if data.get("code") != "ZEN-OK-0":
+        return False, f"code={data.get('code')} (期望 ZEN-OK-0)"
+
+    if "data" not in data:
+        return False, "缺少 data 字段"
+
+    return True, "Envelope OK (code=ZEN-OK-0)"
+
+
+def check_settings_system(base_url: str) -> tuple[bool, str]:
+    """GET /api/v1/settings/system → 200, code=ZEN-OK-0。"""
+    try:
+        status, _, body = _request(base_url, "/api/v1/settings/system")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    # 可能因 auth 要求返回 401，此时认为端点可达
+    if status == 401:
+        return True, "端点可达 (401 Unauthorized — 需认证)"
+
+    if status != 200:
+        return False, f"HTTP {status} (期望 200 或 401)"
+
+    try:
+        data: dict[str, Any] = json.loads(body)
+    except json.JSONDecodeError:
+        return False, "响应非 JSON"
+
+    if data.get("code") != "ZEN-OK-0":
+        return False, f"code={data.get('code')} (期望 ZEN-OK-0)"
+
+    return True, "Envelope OK (code=ZEN-OK-0)"
+
+
+def check_security_headers(base_url: str) -> tuple[bool, str]:
+    """验证安全响应头 (Content-Type, X-Request-ID)。"""
+    try:
+        _, headers, _ = _request(base_url, "/api/v1/capabilities")
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    issues: list[str] = []
+    ct = headers.get("content-type", "")
+    if "application/json" not in ct:
+        issues.append(f"Content-Type={ct} (期望含 application/json)")
+
+    if "x-request-id" not in headers:
+        issues.append("缺少 X-Request-ID")
+
+    return len(issues) == 0, "; ".join(issues) if issues else "安全头验证通过"
+
+
+
+
+
+def check_sse_endpoint(base_url: str) -> tuple[bool, str]:
+    """GET /api/v1/events → text/event-stream 或 401。"""
+    try:
+        status, headers, _ = _request(
+            base_url,
+            "/api/v1/events",
+            headers={"Accept": "text/event-stream"},
+            timeout=5,
+        )
+    except (OSError, TimeoutError) as exc:
+        return False, f"连接失败: {exc}"
+
+    if status in (200, 401):
+        ct = headers.get("content-type", "")
+        if status == 200 and "text/event-stream" in ct:
+            return True, "SSE 端点可达 (200 text/event-stream)"
+        if status == 401:
+            return True, "SSE 端点可达 (401 Unauthorized — 需认证)"
+        return True, f"SSE 端点可达 ({status})"
+
+    return False, f"HTTP {status} (期望 200 或 401)"
+
+
+# ---------------------------------------------------------------------------
+# 检查项注册：(名称, 函数, 是否 Critical)
+# ---------------------------------------------------------------------------
+
+CHECKS: list[tuple[str, object, bool]] = [
+    # Critical — 失败即阻断发布 (exit 1)
+    ("C1: /health 健康探针", check_health, True),
+    ("C2: /api/v1/auth/sys/status 认证链路", check_auth_sys_status, True),
+    ("C3: /api/v1/capabilities 能力矩阵", check_capabilities, True),
+    ("C4: /api/v1/settings/system 系统设置", check_settings_system, True),
+    ("C5: 安全响应头", check_security_headers, True),
+    # Non-Critical — 失败仅告警 (exit 2)
+    ("N2: /api/v1/events SSE 连通性", check_sse_endpoint, False),
+]
+
+
+# ---------------------------------------------------------------------------
+# 主执行器
+# ---------------------------------------------------------------------------
+
+
+def main() -> int:
+    """执行全部门禁检查，返回分层退出码。"""
+    # 解析 --base-url 参数
+    base_url = DEFAULT_BASE_URL
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg.startswith("--base-url="):
+            base_url = arg.split("=", 1)[1].rstrip("/")
+        elif arg == "--base-url" and i + 1 < len(args):
+            base_url = args[i + 1].rstrip("/")
+
+    print("═══════════════════════════════════════════")
+    print("  ZEN70 Release Smoke Gate (Tiered)")
+    print(f"  Target: {base_url}")
+    print("═══════════════════════════════════════════")
+    print()
+
+    # 等待服务就绪
+    print("[预热] 等待服务就绪...")
+    if not _wait_for_ready(base_url):
+        print("  ✗ 服务启动超时，中止验证")
+        return EXIT_CRITICAL_FAIL
+    print("  ✓ 服务已就绪")
+    print()
+
+    critical_failed = False
+    non_critical_failed = False
+
+    for check_name, check_fn, is_critical in CHECKS:
+        tier_label = "CRITICAL" if is_critical else "NON-CRIT"
+        print(f"[{tier_label}] {check_name}...")
+        try:
+            passed, detail = check_fn(base_url)  # type: ignore[operator]
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+            passed = False
+            detail = f"异常: {exc}"
+
+        if passed:
+            print(f"  ✓ {detail}")
+        else:
+            print(f"  ✗ {detail}")
+            if is_critical:
+                critical_failed = True
+            else:
+                non_critical_failed = True
+        print()
+
+    # 输出汇总
+    print("═══════════════════════════════════════════")
+    if critical_failed:
+        print("  ✗ Critical 检查未通过 — 阻断发布")
+        print(f"  EXIT CODE: {EXIT_CRITICAL_FAIL}")
+        return EXIT_CRITICAL_FAIL
+    if non_critical_failed:
+        print("  ⚠ Critical 全部通过，但 Non-Critical 存在异常")
+        print("  → 可带伤发布（视 CI 配置决定是否阻断）")
+        print(f"  EXIT CODE: {EXIT_NON_CRITICAL_FAIL}")
+        return EXIT_NON_CRITICAL_FAIL
+
+    print("  ✓ 所有检查通过")
+    print(f"  EXIT CODE: {EXIT_ALL_PASS}")
+    return EXIT_ALL_PASS
+
+
+if __name__ == "__main__":
+    sys.exit(main())

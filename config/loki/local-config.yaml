@@ -1,0 +1,40 @@
+# auth_enabled: true enforces X-Scope-OrgID header on all Loki HTTP endpoints,
+# preventing any container in backend_net from reading logs across org boundaries.
+# In single-tenant deployments, set X-Scope-OrgID: zen70 in all clients
+# (Promtail and Grafana datasource). See config/promtail/promtail-config.yaml.
+auth_enabled: true
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: "2020-10-24" # Quote the date string
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h # 7 days retention
+  allow_structured_metadata: false
+
+compactor:
+  working_directory: /loki/boltdb-shipper-compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+

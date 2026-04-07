@@ -1,0 +1,270 @@
+"""
+后台 Worker：Bit-Rot 静默数据腐败巡检 + SRE 微服务探针（Liveness/Readiness）。
+
+红线合规：
+- Bit-Rot 巡检：低优先级 SHA256 哈希，每 24h 一轮，每文件间 0.5s yield
+- SRE 探针：连续 3 次 Liveness 失败触发 switch:events RESTART
+
+A-1 修复：探针使用 app_redis 连接池（由 lifespan 注入）。
+A-3 修复：SQLite 操作全部移入 asyncio.to_thread，消除同步阻塞事件循环。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import os
+import sqlite3
+import time
+from pathlib import Path
+
+import httpx
+
+from backend.core.events_schema import build_switch_event
+from backend.shared_state import service_liveness_fails, service_readiness
+
+logger = logging.getLogger(__name__)
+
+# -------------------- Data Retention 数据保留清理 --------------------
+RETENTION_CYCLE_SECONDS = int(os.getenv("RETENTION_CYCLE_SECONDS", "86400"))  # 默认 24h
+
+
+# ── Phoenix Loop 公共常量 ─────────────────────────────────────────────────
+# 重启风暴防护：指数退避上界（秒），避免 worker 崩溃后无限快速重启
+_PHOENIX_MAX_BACKOFF_S: int = 300
+_PHOENIX_BASE_BACKOFF_S: int = 5
+
+
+def _phoenix_backoff(restart_count: int) -> float:
+    """指数退避：5s → 10s → 20s → 40s → … → 300s (上界)。"""
+    return min(_PHOENIX_BASE_BACKOFF_S * (2 ** max(restart_count - 1, 0)), _PHOENIX_MAX_BACKOFF_S)
+
+
+async def data_retention_worker() -> None:
+    """法典 3.x: 定期清理过期数据（jobs/scheduling_decisions/audit_logs）。
+
+    B24: Phoenix Loop 不死鸟循环 — 崩溃后指数退避自动重启，上界 300s 防重启风暴。
+    """
+    await asyncio.sleep(120)  # 启动延迟 — 等待 DB 稳定
+    restart_count = 0
+    while True:  # B24: Phoenix Loop
+        try:
+            from backend.core.data_retention import run_retention_cycle
+            from backend.db import _async_session_factory
+
+            if _async_session_factory is None:
+                logger.warning("data_retention_worker: DB not configured, sleeping")
+                await asyncio.sleep(RETENTION_CYCLE_SECONDS)
+                continue
+
+            async with _async_session_factory() as session:
+                result = await run_retention_cycle(session)
+                total = sum(result.values())
+                if total:
+                    logger.info("data_retention_worker: cycle complete — %s", result)
+                else:
+                    logger.debug("data_retention_worker: no records to purge")
+
+            restart_count = 0  # 成功执行一轮后重置计数器
+            await asyncio.sleep(RETENTION_CYCLE_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("data_retention_worker: received CancelledError, exiting")
+            return  # 优雅退出
+        except Exception:  # noqa: BLE001 — Phoenix Loop
+            restart_count += 1
+            backoff = _phoenix_backoff(restart_count)
+            logger.exception(
+                "data_retention_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                restart_count,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+
+
+# -------------------- Bit-Rot 巡检（法典 3.2.3）--------------------
+BITROT_DB_PATH = Path("/app/data/bitrot.db") if Path("/app").exists() else Path("bitrot.db")
+_bitrot_dirs_raw = os.getenv("BITROT_SCAN_DIRS", "")
+BITROT_SCAN_DIRS = [p.strip() for p in _bitrot_dirs_raw.split(",") if p.strip()]
+
+
+def _init_bitrot_db() -> None:
+    """A-3: 同步函数，由 to_thread 调用。"""
+    conn = sqlite3.connect(BITROT_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_hashes (
+            filepath TEXT PRIMARY KEY,
+            sha256 TEXT NOT NULL,
+            last_checked REAL NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def _scan_and_hash_file(filepath: Path, db_path: Path) -> str | None:
+    """
+    A-3: 纯同步函数——计算文件 SHA256 并与 SQLite 基线比对。
+    整个函数在 to_thread 中执行，绝不阻塞事件循环。
+    """
+    try:
+        # Reject symlinks to prevent path traversal
+        if filepath.is_symlink():
+            return None
+        sha256_hash = hashlib.sha256()
+        with filepath.open("rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        file_hash = sha256_hash.hexdigest()
+        now = time.time()
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT sha256 FROM file_hashes WHERE filepath = ?",
+                (str(filepath),),
+            )
+            row = cursor.fetchone()
+
+            if row is None:
+                cursor.execute(
+                    "INSERT INTO file_hashes (filepath, sha256, last_checked) VALUES (?, ?, ?)",
+                    (str(filepath), file_hash, now),
+                )
+            elif row[0] != file_hash:
+                conn.close()
+                return f"重大警告: 侦测到静默数据腐败 (Bit-Rot)! " f"文件: {filepath} 原哈希: {row[0]} 现哈希: {file_hash}"
+            else:
+                cursor.execute(
+                    "UPDATE file_hashes SET last_checked = ? WHERE filepath = ?",
+                    (now, str(filepath)),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return None
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+        return f"bitrot scan failed for {filepath}: {e}"
+
+
+async def bitrot_worker() -> None:
+    """法典 3.2.3: 后台巡检冷数据。A-3: 所有 SQLite+hashing 操作在线程池中执行。"""
+    restart_count = 0
+    while True:  # B24: Phoenix Loop 不死鸟循环 — 崩溃后指数退避自动重启
+        try:
+            await asyncio.sleep(60)
+            await asyncio.to_thread(_init_bitrot_db)
+
+            while True:
+                for directory in BITROT_SCAN_DIRS:
+                    dir_path = Path(directory)
+                    if not dir_path.exists():
+                        continue
+                    for filepath in dir_path.rglob("*"):
+                        if not filepath.is_file() or filepath.is_symlink():
+                            continue
+
+                        result = await asyncio.to_thread(_scan_and_hash_file, filepath, BITROT_DB_PATH)
+                        if result is not None:
+                            if result.startswith("重大警告"):
+                                logger.error(result)
+                            else:
+                                logger.debug(result)
+                        # 每个文件计算后主动让出事件循环并延时，绝对防霸占 CPU
+                        await asyncio.sleep(0.5)
+
+                # 24 小时巡检一次
+                await asyncio.sleep(86400)
+        except asyncio.CancelledError:
+            logger.info("bitrot_worker: received CancelledError, exiting")
+            return  # 优雅退出
+        except Exception:  # noqa: BLE001 — Phoenix Loop 必须捕获所有异常防静默死亡
+            restart_count += 1
+            backoff = _phoenix_backoff(restart_count)
+            logger.exception(
+                "bitrot_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                restart_count,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+
+
+# -------------------- SRE 探针 (法典 3.6: Readiness & Liveness) --------------------
+_microservices_health_urls: dict[str, str] = {}
+try:
+    urls_raw = os.getenv("MICROSERVICE_HEALTH_URLS", "{}")
+    if urls_raw:
+        _microservices_health_urls = json.loads(urls_raw)
+except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+    logger.debug("MICROSERVICE_HEALTH_URLS parse failed: %s", e)
+
+
+async def health_probe_worker(app_redis: object = None) -> None:
+    """
+    定期执行微服务探针: Liveness 连续失败 3 次强杀重启; Readiness 封锁进站。
+
+    A-1: 接受 app_redis (RedisClient) 参数，使用连接池发布事件（不再 per-request 短连接）。
+    B24: Phoenix Loop 不死鸟循环 — 探针崩溃后指数退避重启，上界 300s 防重启风暴。
+    """
+    await asyncio.sleep(5)
+    restart_count = 0
+    while True:  # B24: Phoenix Loop
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                while True:
+                    for svc_name, health_url in _microservices_health_urls.items():
+                        is_ok = False
+                        try:
+                            resp = await client.get(health_url)
+                            if resp.status_code == 200:
+                                is_ok = True
+                        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+                            logger.debug("health probe request failed for %s: %s", svc_name, e)
+
+                        if is_ok:
+                            service_readiness[svc_name] = True
+                            service_liveness_fails[svc_name] = 0
+                        else:
+                            service_readiness[svc_name] = False
+                            service_liveness_fails[svc_name] = service_liveness_fails.get(svc_name, 0) + 1
+
+                            if service_liveness_fails[svc_name] >= 3:
+                                logger.error(
+                                    "Liveness Probe failed 3 times for %s. Emitting kill signal.",
+                                    svc_name,
+                                )
+                                r = getattr(app_redis, "redis", None) if app_redis else None
+                                if r is not None:
+                                    try:
+                                        event = build_switch_event(
+                                            svc_name,
+                                            "RESTART",
+                                            reason="liveness_failed_3_times",
+                                            updated_by="health_probe",
+                                        )
+                                        await r.publish("switch:events", json.dumps(event))
+                                    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+                                        logger.warning(
+                                            "publish restart event failed for %s: %s",
+                                            svc_name,
+                                            e,
+                                        )
+                                service_liveness_fails[svc_name] = 0
+
+                    restart_count = 0  # 内循环正常运行时保持计数器清零
+                    await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            logger.info("health_probe_worker: received CancelledError, exiting")
+            return  # 优雅退出
+        except Exception:  # noqa: BLE001 — Phoenix Loop
+            restart_count += 1
+            backoff = _phoenix_backoff(restart_count)
+            logger.exception(
+                "health_probe_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                restart_count,
+                backoff,
+            )
+            await asyncio.sleep(backoff)

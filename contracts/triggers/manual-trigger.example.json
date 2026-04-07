@@ -1,0 +1,21 @@
+{
+  "trigger_id": "manual-healthcheck",
+  "name": "Manual Healthcheck",
+  "description": "Operator-fired HTTP healthcheck through the workflow template registry.",
+  "kind": "manual",
+  "status": "active",
+  "config": {
+    "allow_api_fire": true
+  },
+  "input_defaults": {
+    "target": "https://example.invalid/healthz"
+  },
+  "target": {
+    "target_kind": "workflow_template",
+    "template_id": "ops.http-healthcheck",
+    "parameters": {
+      "expected_status": 200,
+      "timeout": 10
+    }
+  }
+}

@@ -1,0 +1,98 @@
+[
+  {
+    "capability_key": "gateway.capabilities",
+    "route_name": "dashboard",
+    "route_path": "/",
+    "label": "Dashboard",
+    "description": "Backend-driven control-plane summary.",
+    "endpoint": "/v1/capabilities",
+    "backend_router": "routes",
+    "frontend_view": "ControlDashboard",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.nodes",
+    "route_name": "nodes",
+    "route_path": "/nodes",
+    "label": "Nodes",
+    "description": "Node registration, heartbeat, and runner inventory.",
+    "endpoint": "/v1/nodes",
+    "backend_router": "nodes",
+    "frontend_view": "NodesView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.jobs",
+    "route_name": "jobs",
+    "route_path": "/jobs",
+    "label": "Jobs",
+    "description": "Dispatch queue, leases, results, and failures.",
+    "endpoint": "/v1/jobs",
+    "backend_router": "jobs",
+    "frontend_view": "JobsView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.connectors",
+    "route_name": "connectors",
+    "route_path": "/connectors",
+    "label": "Connectors",
+    "description": "Connector registry, health checks, and invoke entrypoints.",
+    "endpoint": "/v1/connectors",
+    "backend_router": "connectors",
+    "frontend_view": "ConnectorsView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.triggers",
+    "route_name": "triggers",
+    "route_path": "/triggers",
+    "label": "Triggers",
+    "description": "Unified trigger registry, webhook ingress, and delivery history.",
+    "endpoint": "/v1/triggers",
+    "backend_router": "triggers",
+    "frontend_view": "TriggersView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.reservations",
+    "route_name": "reservations",
+    "route_path": "/reservations",
+    "label": "Reservations",
+    "description": "Time-dimension reservations, backfill windows, and planning diagnostics.",
+    "endpoint": "/v1/reservations",
+    "backend_router": "reservations",
+    "frontend_view": "ReservationsView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.evaluations",
+    "route_name": "evaluations",
+    "route_path": "/evaluations",
+    "label": "Evaluations",
+    "description": "Submit and review software evaluations across all branches and components.",
+    "endpoint": "/v1/evaluations",
+    "backend_router": "evaluations",
+    "frontend_view": "EvaluationsView",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": false
+  },
+  {
+    "capability_key": "gateway.settings",
+    "route_name": "settings",
+    "route_path": "/settings",
+    "label": "Settings",
+    "description": "Schema-driven kernel settings for profile, network, connectors, and security.",
+    "endpoint": "/v1/settings/schema",
+    "backend_router": "settings",
+    "frontend_view": "SystemSettings",
+    "profiles": ["gateway-kernel"],
+    "requires_admin": true
+  }
+]

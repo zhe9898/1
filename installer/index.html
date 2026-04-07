@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZEN70 部署向导</title>
+  <meta name="description" content="ZEN70 智慧家庭系统图形化部署向导 — 三步完成全栈部署">
+  <style>
+    /* ====================================================================
+       设计系统 — 深色毛玻璃主题
+       ==================================================================== */
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-card: rgba(15, 23, 42, 0.85);
+      --bg-card-hover: rgba(20, 30, 55, 0.95);
+      --bg-input: rgba(30, 41, 59, 0.7);
+      --border: rgba(100, 116, 139, 0.25);
+      --border-focus: #3b82f6;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --accent-glow: rgba(59, 130, 246, 0.3);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.2);
+      --warning: #f59e0b;
+      --warning-glow: rgba(245, 158, 11, 0.2);
+      --danger: #ef4444;
+      --danger-glow: rgba(239, 68, 68, 0.2);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      --font: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* 背景渐变动画 */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: radial-gradient(ellipse at 20% 50%, rgba(59,130,246,0.08) 0%, transparent 50%),
+                  radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 50%),
+                  radial-gradient(ellipse at 50% 80%, rgba(16,185,129,0.05) 0%, transparent 50%);
+      animation: bg-drift 20s ease-in-out infinite alternate;
+      z-index: 0;
+      pointer-events: none;
+    }
+    @keyframes bg-drift { 0% { transform: translate(0,0); } 100% { transform: translate(-5%,3%); } }
+
+    /* ====================================================================
+       布局
+       ==================================================================== */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 840px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+
+    /* 顶部 Logo */
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #10b981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      color: var(--text-secondary);
+      margin-top: 8px;
+      font-size: 0.95rem;
+    }
+
+    /* ====================================================================
+       步骤指示器
+       ==================================================================== */
+    .stepper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 36px;
+    }
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      border-radius: 100px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      transition: var(--transition);
+      cursor: default;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+    .step-indicator.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--text-primary);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .step-indicator.done {
+      background: var(--success-glow);
+      border-color: var(--success);
+      color: var(--success);
+    }
+    .step-num {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 0.8rem;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      transition: var(--transition);
+    }
+    .step-indicator.active .step-num {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .step-indicator.done .step-num {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+    .step-connector {
+      width: 40px; height: 2px;
+      background: var(--border);
+      transition: var(--transition);
+    }
+    .step-connector.done { background: var(--success); }
+
+    /* ====================================================================
+       卡片
+       ==================================================================== */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      transition: var(--transition);
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ====================================================================
+       预检列表
+       ==================================================================== */
+    .check-list { list-style: none; }
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 8px;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      transition: var(--transition);
+    }
+    .check-item.ok { border-color: rgba(16,185,129,0.3); }
+    .check-item.fail { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.05); }
+    .check-item.warn { border-color: rgba(245,158,11,0.3); }
+    .check-item.pending { opacity: 0.5; }
+
+    .check-icon {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .check-icon.ok { background: var(--success-glow); color: var(--success); }
+    .check-icon.fail { background: var(--danger-glow); color: var(--danger); }
+    .check-icon.warn { background: var(--warning-glow); color: var(--warning); }
+    .check-icon.pending { background: var(--bg-input); color: var(--text-dim); }
+
+    .check-info { flex: 1; }
+    .check-label { font-weight: 500; font-size: 0.9rem; }
+    .check-msg { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+    .check-hint { font-size: 0.75rem; color: var(--warning); margin-top: 4px; }
+
+    /* 进入动画 */
+    @keyframes check-in {
+      from { opacity: 0; transform: translateX(-12px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .check-item.animate { animation: check-in 0.4s ease forwards; }
+
+    /* ====================================================================
+       表单
+       ==================================================================== */
+    .form-group { margin-bottom: 18px; }
+    .form-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .form-input, .form-select {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      font-family: var(--font);
+      transition: var(--transition);
+      outline: none;
+    }
+    .form-input:focus, .form-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .form-input::placeholder { color: var(--text-dim); }
+    .form-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+
+    /* Tab 栏 */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      background: var(--bg-input);
+      border-radius: var(--radius-sm);
+      padding: 4px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font);
+      font-size: 0.85rem;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* 服务开关 */
+    .svc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .svc-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: var(--transition);
+    }
+    .svc-card.enabled { border-color: rgba(59,130,246,0.4); }
+    .svc-card.locked { opacity: 0.6; cursor: not-allowed; }
+    .svc-name { flex: 1; font-size: 0.85rem; font-weight: 500; }
+    .svc-tier {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 100px;
+      background: var(--bg-card);
+      color: var(--text-dim);
+    }
+    .svc-tier.t0 { color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+    .svc-tier.t1 { color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
+    .svc-tier.t2 { color: var(--accent); border: 1px solid rgba(59,130,246,0.3); }
+
+    /* Toggle 开关 */
+    .toggle {
+      position: relative;
+      width: 40px; height: 22px;
+      border-radius: 11px;
+      background: var(--border);
+      cursor: pointer;
+      transition: var(--transition);
+      flex-shrink: 0;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle.locked { cursor: not-allowed; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      transition: var(--transition);
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    /* ====================================================================
+       按钮
+       ==================================================================== */
+    .btn {
+      padding: 12px 28px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-family: var(--font);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      color: #fff;
+      box-shadow: 0 4px 15px var(--accent-glow);
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(59,130,246,0.4);
+    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-secondary {
+      background: var(--bg-input);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+
+    .btn-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 24px;
+      gap: 12px;
+    }
+
+    /* ====================================================================
+       部署终端
+       ==================================================================== */
+    .terminal {
+      background: #0c0c14;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      min-height: 320px;
+      max-height: 480px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+    .terminal::-webkit-scrollbar { width: 6px; }
+    .terminal::-webkit-scrollbar-track { background: transparent; }
+    .terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .log-phase { color: var(--accent); font-weight: 700; }
+    .log-ok { color: var(--success); }
+    .log-warn { color: var(--warning); }
+    .log-err { color: var(--danger); }
+
+    /* 进度条 */
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: var(--bg-input);
+      border-radius: 2px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--success));
+      border-radius: 2px;
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    /* 推荐画像标签 */
+    .profile-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
+      border-radius: 100px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      margin-top: 12px;
+    }
+
+    /* 变更模式横幅 */
+    .deploy-banner {
+      padding: 16px 20px;
+      background: rgba(59,130,246,0.08);
+      border: 1px solid rgba(59,130,246,0.25);
+      border-radius: var(--radius-sm);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.9rem;
+    }
+
+    /* 隐藏 */
+    .hidden { display: none !important; }
+
+    /* 响应式 */
+    @media (max-width: 640px) {
+      .container { padding: 20px 12px; }
+      .stepper { gap: 0; flex-wrap: nowrap; overflow-x: auto; }
+      .step-indicator { padding: 8px 12px; font-size: 0.8rem; }
+      .step-connector { width: 20px; }
+      .svc-grid { grid-template-columns: 1fr; }
+    }
+
+    /* 加载旋转 */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="container" id="app">
+
+  <!-- 顶部 -->
+  <div class="header">
+    <h1>⚡ ZEN70 部署向导</h1>
+    <p>三步完成智慧家庭全栈部署</p>
+  </div>
+
+  <!-- 变更模式横幅 -->
+  <div class="deploy-banner hidden" id="changeBanner">
+    <span>🔄</span>
+    <span>检测到已部署环境 — <strong id="runningCount">0</strong> 个容器运行中</span>
+    <button class="btn btn-secondary" onclick="goToStep(2)" style="margin-left:auto">修改配置</button>
+  </div>
+
+  <!-- 步骤指示器 -->
+  <div class="stepper" id="stepper">
+    <div class="step-indicator active" id="step-ind-1">
+      <div class="step-num">1</div>
+      <span>环境检测</span>
+    </div>
+    <div class="step-connector" id="conn-1-2"></div>
+    <div class="step-indicator" id="step-ind-2">
+      <div class="step-num">2</div>
+      <span>参数配置</span>
+    </div>
+    <div class="step-connector" id="conn-2-3"></div>
+    <div class="step-indicator" id="step-ind-3">
+      <div class="step-num">3</div>
+      <span>编译部署</span>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       Step 1: 环境检测
+       ════════════════════════════════════════ -->
+  <div id="step1" class="step-panel">
+    <div class="card">
+      <div class="card-title">🔍 环境预检</div>
+
+      <ul class="check-list" id="checkList">
+        <!-- 由 JS 动态填充 -->
+        <li class="check-item pending" id="check-placeholder">
+          <div class="check-icon pending"><span class="spinner"></span></div>
+          <div class="check-info">
+            <div class="check-label">正在检测系统环境…</div>
+          </div>
+        </li>
+      </ul>
+
+      <div id="profileRecommend" class="hidden">
+        <div class="profile-badge" id="profileBadge"></div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="runPreflight()">🔄 重新检测</button>
+        <button class="btn btn-primary" id="btnNext1" disabled onclick="goToStep(2)">
+          下一步 →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       Step 2: 参数配置
+       ════════════════════════════════════════ -->
+  <div id="step2" class="step-panel hidden">
+    <div class="card">
+      <div class="card-title">⚙️ 系统配置</div>
+
+      <!-- Tab 栏 -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-basic" onclick="switchTab(this)">基础设置</button>
+        <button class="tab-btn" data-tab="tab-services" onclick="switchTab(this)">服务开关</button>
+        <button class="tab-btn" data-tab="tab-hardware" onclick="switchTab(this)">硬件发现</button>
+      </div>
+
+      <!-- Tab: 基础设置 -->
+      <div class="tab-panel active" id="tab-basic">
+        <div class="form-group">
+          <label class="form-label" for="inputDomain">域名</label>
+          <input class="form-input" id="inputDomain" type="text" placeholder="home.zen70.local">
+          <div class="form-hint">Cloudflare Tunnel 或内网域名，如 zen70.cn</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="inputToken">Tunnel Token</label>
+          <input class="form-input" id="inputToken" type="password" placeholder="eyJhIjoixx...">
+          <div class="form-hint">Cloudflare Zero Trust → Tunnels → 创建隧道获取 Token</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="inputMediaPath">媒体存储路径</label>
+          <input class="form-input" id="inputMediaPath" type="text" placeholder="/mnt/media">
+          <div class="form-hint" id="mediaPathHint">宿主机上的媒体库挂载路径（如 NAS 共享目录）</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="selectPlatform">目标部署平台</label>
+          <select class="form-select" id="selectPlatform" onchange="onPlatformChange()">
+            <option value="linux_x86">🖥️ Linux 服务器 (x86_64) — 推荐</option>
+            <option value="wsl2">🪟 Windows WSL2 原生 Linux</option>
+            <option value="windows_desktop">🪟 Windows Docker Desktop</option>
+            <option value="arm64">🫦 ARM64 边缘设备 (树莓派等)</option>
+            <option value="macos">🍎 macOS Docker Desktop</option>
+          </select>
+          <div class="form-hint" id="platformHint">
+            系统将根据平台自动适配挂载策略、权限管理和资源限制
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="selectProfile">部署画像</label>
+          <select class="form-select" id="selectProfile" onchange="onProfileChange()">
+            <option value="gateway-kernel" selected>gateway-kernel — 轻量控制面 (默认)</option>
+            <option value="full">full — 扩展业务面 (可选)</option>
+          </select>
+          <div class="form-hint">默认建议 gateway-kernel；仅在资源充足且明确需要时切换 full</div>
+        </div>
+      </div>
+
+      <!-- Tab: 服务开关 -->
+      <div class="tab-panel" id="tab-services">
+        <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:16px">
+          按服务层级分组 — T0 内核层锁定 / T1 平台层按画像预选 / T2 业务层手动
+        </p>
+        <div class="svc-grid" id="svcGrid">
+          <!-- 由 JS 动态填充 -->
+        </div>
+      </div>
+
+      <!-- Tab: 硬件发现 -->
+      <div class="tab-panel" id="tab-hardware">
+        <div id="hwLoading" style="text-align:center;padding:40px;color:var(--text-dim)">
+          <div class="spinner" style="width:24px;height:24px;margin:0 auto 12px"></div>
+          <div>正在扫描硬件…</div>
+        </div>
+        <div id="hwResults" class="hidden">
+          <div class="form-group">
+            <div class="form-label">💾 磁盘</div>
+            <div id="hwDisks" style="font-size:0.85rem;color:var(--text-secondary)">未检测到</div>
+          </div>
+          <div class="form-group">
+            <div class="form-label">🎮 GPU</div>
+            <div id="hwGpu" style="font-size:0.85rem;color:var(--text-secondary)">未检测到</div>
+          </div>
+          <div class="form-group">
+            <div class="form-label">🧠 内存</div>
+            <div id="hwRam" style="font-size:0.85rem;color:var(--text-secondary)">未检测到</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" onclick="goToStep(1)">← 上一步</button>
+          <button class="btn btn-secondary" onclick="exportConfig()">📥 导出配置</button>
+          <label class="btn btn-secondary" style="cursor:pointer">
+            📤 导入配置
+            <input type="file" accept=".json" onchange="importConfig(event)" style="display:none">
+          </label>
+        </div>
+        <button class="btn btn-primary" onclick="saveAndNext()">保存并部署 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       Step 3: 编译部署
+       ════════════════════════════════════════ -->
+  <div id="step3" class="step-panel hidden">
+    <div class="card">
+      <div class="card-title">🚀 编译 → 部署 → 验证</div>
+
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+      <div class="terminal" id="terminal"></div>
+
+      <div class="btn-row">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" id="btnExportLogs" onclick="exportLogs()" disabled>📋 导出日志</button>
+          <button class="btn btn-secondary" id="btnRetry" onclick="startDeploy()" class="hidden">🔄 重试</button>
+        </div>
+        <div id="deployStatus" style="font-size:0.85rem;color:var(--text-dim)"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/**
+ * @generated by ZEN70-AI-Agent
+ * @architecture-version V2.0
+ * @compliance strict-sre-ruleset
+ * @description 安装器 V2 前端逻辑。严禁 WebSocket（法典 §2.1），SSE only。
+ */
+
+// ====================================================================
+// 全局状态
+// ====================================================================
+
+const state = {
+  currentStep: 1,
+  preflightPassed: false,
+  recommendedProfile: 'gateway-kernel',
+  detectedPlatform: 'linux_x86',
+  config: {},
+  deployed: false,
+  logLines: [],
+  sseSource: null,   // EventSource 引用
+  sseRetries: 0,
+};
+
+// ====================================================================
+// 步骤导航
+// ====================================================================
+
+function goToStep(step) {
+  state.currentStep = step;
+
+  // 面板切换
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.add('hidden'));
+  const panel = document.getElementById('step' + step);
+  if (panel) panel.classList.remove('hidden');
+
+  // 指示器更新
+  for (let i = 1; i <= 3; i++) {
+    const ind = document.getElementById('step-ind-' + i);
+    ind.classList.remove('active', 'done');
+    if (i < step) ind.classList.add('done');
+    else if (i === step) ind.classList.add('active');
+  }
+  // 连接线
+  const c12 = document.getElementById('conn-1-2');
+  const c23 = document.getElementById('conn-2-3');
+  c12.classList.toggle('done', step > 1);
+  c23.classList.toggle('done', step > 2);
+
+  // Step 2 进入时加载配置
+  if (step === 2) loadConfig();
+  // Step 3 进入时开始部署
+  if (step === 3) startDeploy();
+}
+
+// ====================================================================
+// Step 1: 环境预检
+// ====================================================================
+
+async function runPreflight() {
+  const list = document.getElementById('checkList');
+  list.innerHTML = `
+    <li class="check-item pending" id="check-placeholder">
+      <div class="check-icon pending"><span class="spinner"></span></div>
+      <div class="check-info"><div class="check-label">正在检测系统环境…</div></div>
+    </li>`;
+  document.getElementById('btnNext1').disabled = true;
+  document.getElementById('profileRecommend').classList.add('hidden');
+
+  try {
+    const resp = await fetch('/api/preflight');
+    if (!resp.ok) throw new Error('预检接口失败: ' + resp.status);
+    const data = await resp.json();
+
+    list.innerHTML = '';
+
+    data.checks.forEach((c, i) => {
+      const li = document.createElement('li');
+      li.className = `check-item ${c.status} animate`;
+      li.style.animationDelay = `${i * 120}ms`;
+
+      const icon = c.status === 'ok' ? '✅' : c.status === 'fail' ? '❌' : '⚠️';
+      li.innerHTML = `
+        <div class="check-icon ${c.status}">${icon}</div>
+        <div class="check-info">
+          <div class="check-label">${esc(c.label)}</div>
+          <div class="check-msg">${esc(c.message)}</div>
+          ${c.fix_hint ? `<div class="check-hint">💡 ${esc(c.fix_hint)}</div>` : ''}
+        </div>`;
+      list.appendChild(li);
+    });
+
+    state.preflightPassed = data.all_passed;
+    document.getElementById('btnNext1').disabled = !data.all_passed;
+
+    // 平台自动检测预选
+    const platformCheck = data.checks.find(c => c.id === 'platform_detect');
+    if (platformCheck) {
+      const msg = platformCheck.message.toLowerCase();
+      if (msg.includes('windows')) {
+        state.detectedPlatform = 'windows_desktop';
+      } else if (msg.includes('arm') || msg.includes('aarch64')) {
+        state.detectedPlatform = 'arm64';
+      } else if (msg.includes('darwin') || msg.includes('macos')) {
+        state.detectedPlatform = 'macos';
+      } else {
+        state.detectedPlatform = 'linux_x86';
+      }
+    }
+
+    // 画像推荐
+    if (data.recommended_profile) {
+      state.recommendedProfile = data.recommended_profile;
+      const badge = document.getElementById('profileBadge');
+      const ramGb = (data.detected_ram_mb / 1024).toFixed(1);
+      badge.textContent = `💡 检测到 ${ramGb} GB 内存 → 推荐画像: ${data.recommended_profile}`;
+      document.getElementById('profileRecommend').classList.remove('hidden');
+    }
+  } catch (e) {
+    list.innerHTML = `
+      <li class="check-item fail">
+        <div class="check-icon fail">❌</div>
+        <div class="check-info">
+          <div class="check-label">预检失败</div>
+          <div class="check-msg">${esc(e.message)}</div>
+        </div>
+      </li>`;
+  }
+}
+
+// ====================================================================
+// Step 2: 配置管理
+// ====================================================================
+
+async function loadConfig() {
+  try {
+    const resp = await fetch('/api/config/load');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    state.config = data.config || {};
+
+    // 填充表单
+    const net = state.config.network || {};
+    document.getElementById('inputDomain').value = net.domain || 'home.zen70.local';
+
+    const cap = (state.config.capabilities || {}).storage || {};
+    document.getElementById('inputMediaPath').value = cap.media_path || '/mnt/media';
+
+    const dep = state.config.deployment || {};
+    const profileSelect = document.getElementById('selectProfile');
+    profileSelect.value = dep.profile || state.recommendedProfile;
+
+    // 平台选择器联动
+    const platformSelect = document.getElementById('selectPlatform');
+    platformSelect.value = dep.platform || state.detectedPlatform;
+    onPlatformChange();
+
+    // Token
+    const secrets = state.config.secrets || {};
+    if (secrets.tunnel_token) {
+      document.getElementById('inputToken').value = secrets.tunnel_token;
+    }
+
+    // 渲染服务开关
+    renderServices();
+
+    // 加载硬件
+    loadHardware();
+  } catch (e) {
+    console.error('加载配置失败:', e);
+  }
+}
+
+function renderServices() {
+  const grid = document.getElementById('svcGrid');
+  grid.innerHTML = '';
+
+  const services = state.config.services || {};
+  // 内置 tier 映射（编译器 + ADR 0012 定义）
+  const tierMap = {
+    postgres: 0, redis: 0, gateway: 0, caddy: 0,
+    sentinel: 1, watchdog: 1, 'docker-proxy': 1,
+    victoriametrics: 1, grafana: 1, loki: 1, categraf: 1,
+    jellyfin: 2, mosquitto: 2, ollama: 2, frigate: 2,
+    cloudflared: 1,
+  };
+
+  Object.entries(services).forEach(([name, svc]) => {
+    if (typeof svc !== 'object' || svc === null) return;
+    const tier = svc.tier !== undefined ? svc.tier : (tierMap[name] ?? 2);
+    const enabled = svc.enabled !== false;
+    const locked = tier === 0; // T0 内核层锁定
+
+    const card = document.createElement('div');
+    card.className = `svc-card ${enabled ? 'enabled' : ''} ${locked ? 'locked' : ''}`;
+    card.innerHTML = `
+      <span class="svc-name">${esc(name)}</span>
+      <span class="svc-tier t${tier}">T${tier}</span>
+      <div class="toggle ${enabled ? 'on' : ''} ${locked ? 'locked' : ''}"
+           data-svc="${esc(name)}"
+           onclick="toggleService(this)"></div>`;
+    grid.appendChild(card);
+  });
+}
+
+function toggleService(el) {
+  if (el.classList.contains('locked')) return;
+  el.classList.toggle('on');
+  const card = el.parentElement;
+  card.classList.toggle('enabled');
+
+  const name = el.dataset.svc;
+  if (state.config.services && state.config.services[name]) {
+    state.config.services[name].enabled = el.classList.contains('on');
+  }
+}
+
+function onProfileChange() {
+  // 画像切换联动服务 toggle（未来增强）
+}
+
+function onPlatformChange() {
+  const platform = document.getElementById('selectPlatform').value;
+  const mediaInput = document.getElementById('inputMediaPath');
+  const mediaHint = document.getElementById('mediaPathHint');
+  const platformHint = document.getElementById('platformHint');
+
+  switch (platform) {
+    case 'windows_desktop':
+      mediaInput.placeholder = './volumes/media';
+      mediaHint.textContent = 'Windows Docker Desktop 不支持 Linux 绝对路径，使用相对路径或 Docker 卷';
+      platformHint.innerHTML = '⚠️ Windows Docker Desktop I/O 性能约为原生 Linux 1/10。建议切换到 <strong>WSL2 原生 Linux</strong> 以获得最佳性能。';
+      platformHint.style.color = 'var(--warning)';
+      break;
+    case 'wsl2':
+      mediaInput.placeholder = '/mnt/d/media';
+      mediaHint.textContent = '使用 /mnt/x/ 前缀访问 Windows 磁盘，或用 WSL 内部路径 /home/user/media';
+      platformHint.textContent = '✅ WSL2 原生 Linux 环境，完整 chown/权限支持，性能与裸机 Linux 一致。';
+      platformHint.style.color = 'var(--success)';
+      break;
+    case 'arm64':
+      mediaInput.placeholder = '/mnt/usb/media';
+      mediaHint.textContent = 'ARM 设备建议挂载 USB 外置存储（SD 卡 I/O 过慢）';
+      platformHint.textContent = '🧠 ARM64 模式：自动降低资源配额，跳过非必要的监控服务。';
+      platformHint.style.color = 'var(--accent)';
+      break;
+    case 'macos':
+      mediaInput.placeholder = './volumes/media';
+      mediaHint.textContent = 'macOS Docker Desktop 使用相对路径或 Docker 卷';
+      platformHint.innerHTML = '⚠️ macOS Docker Desktop 存在文件系统性能限制，仅适合开发/测试。';
+      platformHint.style.color = 'var(--warning)';
+      break;
+    default: // linux_x86
+      mediaInput.placeholder = '/mnt/media';
+      mediaHint.textContent = '宿主机上的媒体库挂载路径（如 NAS 共享目录）';
+      platformHint.textContent = '✅ 原生 Linux 服务器，最佳部署环境。';
+      platformHint.style.color = 'var(--success)';
+      break;
+  }
+}
+
+function switchTab(btn) {
+  const tabId = btn.dataset.tab;
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  btn.closest('.card').querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+
+  if (tabId === 'tab-hardware') loadHardware();
+}
+
+async function loadHardware() {
+  const loading = document.getElementById('hwLoading');
+  const results = document.getElementById('hwResults');
+  loading.classList.remove('hidden');
+  results.classList.add('hidden');
+
+  try {
+    const resp = await fetch('/api/scan/hardware');
+    if (!resp.ok) throw new Error('硬件扫描失败');
+    const data = await resp.json();
+
+    // 磁盘
+    const disksEl = document.getElementById('hwDisks');
+    if (data.disks && data.disks.length > 0) {
+      disksEl.innerHTML = data.disks.map(d =>
+        `<div style="padding:4px 0">💾 ${esc(d.name)} — ${esc(d.size)} ${d.fstype ? '(' + esc(d.fstype) + ')' : ''} ${d.mountpoint ? '→ ' + esc(d.mountpoint) : ''}</div>`
+      ).join('');
+    } else {
+      disksEl.textContent = '未检测到磁盘信息';
+    }
+
+    // GPU
+    const gpuEl = document.getElementById('hwGpu');
+    if (data.gpu) {
+      gpuEl.textContent = `🎮 ${data.gpu.name}` + (data.gpu.vram_mb ? ` (${data.gpu.vram_mb} MB VRAM)` : '');
+    } else {
+      gpuEl.textContent = '未检测到独立 GPU（Jellyfin 转码将使用 CPU）';
+    }
+
+    // RAM
+    const ramEl = document.getElementById('hwRam');
+    if (data.ram_mb > 0) {
+      ramEl.textContent = `🧠 ${(data.ram_mb / 1024).toFixed(1)} GB 物理内存`;
+    }
+
+    loading.classList.add('hidden');
+    results.classList.remove('hidden');
+  } catch (e) {
+    loading.innerHTML = `<div style="color:var(--warning)">⚠️ ${esc(e.message)}</div>`;
+  }
+}
+
+async function saveAndNext() {
+  const body = {
+    network: { domain: document.getElementById('inputDomain').value.trim() || 'home.zen70.local' },
+    capabilities: { storage: { media_path: document.getElementById('inputMediaPath').value.trim() || '/mnt/media' } },
+    deployment: {
+      profile: document.getElementById('selectProfile').value,
+      platform: document.getElementById('selectPlatform').value,
+    },
+  };
+
+  const token = document.getElementById('inputToken').value.trim();
+  if (token) body.tunnel_token = token;
+
+  // 收集服务开关
+  body.services = {};
+  document.querySelectorAll('.toggle[data-svc]').forEach(el => {
+    if (!el.classList.contains('locked')) {
+      body.services[el.dataset.svc] = { enabled: el.classList.contains('on') };
+    }
+  });
+
+  try {
+    const resp = await fetch('/api/config/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert('保存失败: ' + (err.error || resp.statusText));
+      return;
+    }
+    goToStep(3);
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+async function exportConfig() {
+  try {
+    const resp = await fetch('/api/config/export');
+    if (!resp.ok) throw new Error('导出失败');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'zen70-config-export.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('导出失败: ' + e.message);
+  }
+}
+
+async function importConfig(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const resp = await fetch('/api/config/import', { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert('导入失败: ' + (err.error || resp.statusText));
+      return;
+    }
+    alert('配置导入成功，重新加载表单…');
+    loadConfig();
+  } catch (e) {
+    alert('导入失败: ' + e.message);
+  }
+  event.target.value = '';
+}
+
+// ====================================================================
+// Step 3: SSE 部署
+// ====================================================================
+
+function startDeploy() {
+  const terminal = document.getElementById('terminal');
+  const progress = document.getElementById('progressFill');
+  const statusEl = document.getElementById('deployStatus');
+  const exportBtn = document.getElementById('btnExportLogs');
+  const retryBtn = document.getElementById('btnRetry');
+
+  terminal.innerHTML = '';
+  state.logLines = [];
+  progress.style.width = '0%';
+  statusEl.textContent = '部署中…';
+  exportBtn.disabled = true;
+  retryBtn.classList.add('hidden');
+
+  // 关闭旧连接（法典 §3.6）
+  if (state.sseSource) {
+    state.sseSource.close();
+    state.sseSource = null;
+  }
+
+  const es = new EventSource('/api/deploy');
+  state.sseSource = es;
+  let startTime = Date.now();
+
+  es.onmessage = function(event) {
+    const text = event.data;
+    state.logLines.push(text);
+
+    // 进度条映射 & 动态更新
+    const progressMatch = text.match(/\[PROGRESS:(\d+)\]/i);
+    if (progressMatch) {
+      progress.style.width = progressMatch[1] + '%';
+    } else if (text.includes('[PHASE:0]')) {
+      progress.style.width = '10%';
+    } else if (text.includes('[PHASE:1]')) {
+      progress.style.width = '20%';
+    } else if (text.includes('[PHASE:2]')) {
+      progress.style.width = '90%';
+    } else if (text.includes('[PHASE:DONE]')) {
+      progress.style.width = '100%';
+    }
+
+    // 日志着色
+    const line = document.createElement('div');
+    if (text.includes('[PHASE:')) line.className = 'log-phase';
+    else if (text.includes('✅')) line.className = 'log-ok';
+    else if (text.includes('⚠️') || text.includes('警告')) line.className = 'log-warn';
+    else if (text.includes('❌') || text.includes('错误') || text.includes('[错误]')) line.className = 'log-err';
+    line.textContent = text;
+    terminal.appendChild(line);
+    terminal.scrollTop = terminal.scrollHeight;
+
+    // 计时
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    statusEl.textContent = `部署中… (${elapsed}s)`;
+
+    // EOF 处理
+    if (text.includes('[EOF]')) {
+      es.close();
+      state.sseSource = null;
+      exportBtn.disabled = false;
+
+      const success = text.includes('exit code 0');
+      if (success) {
+        statusEl.innerHTML = `<span style="color:var(--success)">✅ 部署完成 (${elapsed}s)</span>`;
+        progress.style.width = '100%';
+        // 10 秒后自动跳转
+        setTimeout(function() {
+          const domain = document.getElementById('inputDomain').value.trim();
+          if (domain && domain !== 'home.zen70.local') {
+            statusEl.innerHTML += '<br>即将跳转到 https://' + esc(domain) + ' …';
+          }
+        }, 3000);
+      } else {
+        statusEl.innerHTML = `<span style="color:var(--danger)">❌ 部署失败 (${elapsed}s)</span>`;
+        retryBtn.classList.remove('hidden');
+      }
+    }
+  };
+
+  es.onerror = function() {
+    // 法典 §2.1: SSE 断线指数退避重连（1s→2s→4s，上限 30s，最多 10 次）
+    es.close();
+    state.sseSource = null;
+    state.sseRetries++;
+
+    if (state.sseRetries <= 10) {
+      const delay = Math.min(1000 * Math.pow(2, state.sseRetries - 1), 30000);
+      const line = document.createElement('div');
+      line.className = 'log-warn';
+      line.textContent = `⚠️ SSE 连接断开，${delay / 1000}s 后重连 (${state.sseRetries}/10)…`;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+      setTimeout(startDeploy, delay);
+    } else {
+      const line = document.createElement('div');
+      line.className = 'log-err';
+      line.textContent = '❌ SSE 连接失败已达上限，请手动重试';
+      terminal.appendChild(line);
+      exportBtn.disabled = false;
+      retryBtn.classList.remove('hidden');
+      statusEl.innerHTML = '<span style="color:var(--danger)">连接失败</span>';
+    }
+  };
+}
+
+function exportLogs() {
+  const text = state.logLines.join('\n');
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'zen70-deploy-' + new Date().toISOString().slice(0, 19).replace(/:/g, '') + '.log';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ====================================================================
+// 工具函数
+// ====================================================================
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ====================================================================
+// 法典 §3.6: 锁屏生命周期接管
+// ====================================================================
+
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden && state.sseSource) {
+    state.sseSource.close();
+    state.sseSource = null;
+  }
+});
+
+// ====================================================================
+// 初始化
+// ====================================================================
+
+async function init() {
+  // 检测是否已部署
+  try {
+    const resp = await fetch('/api/status');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.deployed && data.containers_running > 0) {
+        state.deployed = true;
+        document.getElementById('runningCount').textContent = data.containers_running;
+        document.getElementById('changeBanner').classList.remove('hidden');
+      }
+    }
+  } catch (e) {
+    // 静默降级
+  }
+
+  // 自动开始预检
+  runPreflight();
+}
+
+init();
+</script>
+
+</body>
+</html>

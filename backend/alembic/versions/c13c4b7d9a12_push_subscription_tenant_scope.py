@@ -1,0 +1,90 @@
+"""Tenant-scope push subscriptions and protect endpoint ownership.
+
+Revision ID: c13c4b7d9a12
+Revises: 9f2c7a1d4e61
+Create Date: 2026-03-28 05:00:00.000000
+"""
+
+from __future__ import annotations
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "c13c4b7d9a12"
+down_revision: Union[str, Sequence[str], None] = "9f2c7a1d4e61"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def _inspector() -> sa.Inspector:
+    return sa.inspect(op.get_bind())
+
+
+def _has_table(table_name: str) -> bool:
+    return _inspector().has_table(table_name)
+
+
+def _has_column(table_name: str, column_name: str) -> bool:
+    return any(column["name"] == column_name for column in _inspector().get_columns(table_name))
+
+
+def _has_index(table_name: str, index_name: str) -> bool:
+    return any(index["name"] == index_name for index in _inspector().get_indexes(table_name))
+
+
+def _has_unique_constraint(table_name: str, constraint_name: str) -> bool:
+    return any(constraint["name"] == constraint_name for constraint in _inspector().get_unique_constraints(table_name))
+
+
+def _add_column_if_missing(table_name: str, column: sa.Column[object]) -> None:
+    if _has_table(table_name) and not _has_column(table_name, column.name):
+        op.add_column(table_name, column)
+
+
+def _drop_index_if_exists(table_name: str, index_name: str) -> None:
+    if _has_table(table_name) and _has_index(table_name, index_name):
+        op.drop_index(index_name, table_name=table_name)
+
+
+def _drop_unique_constraint_if_exists(table_name: str, constraint_name: str) -> None:
+    if _has_table(table_name) and _has_unique_constraint(table_name, constraint_name):
+        op.drop_constraint(constraint_name, table_name, type_="unique")
+
+
+def _create_index_if_missing(table_name: str, index_name: str, columns: list[str]) -> None:
+    if _has_table(table_name) and not _has_index(table_name, index_name):
+        op.create_index(index_name, table_name, columns, unique=False)
+
+
+def _create_unique_constraint_if_missing(
+    table_name: str,
+    constraint_name: str,
+    columns: list[str],
+) -> None:
+    if _has_table(table_name) and not _has_unique_constraint(table_name, constraint_name):
+        op.create_unique_constraint(constraint_name, table_name, columns)
+
+
+def upgrade() -> None:
+    _add_column_if_missing(
+        "push_subscriptions",
+        sa.Column("tenant_id", sa.String(length=64), nullable=False, server_default="default"),
+    )
+    if _has_table("push_subscriptions") and _has_column("push_subscriptions", "tenant_id"):
+        op.execute(sa.text("UPDATE push_subscriptions SET tenant_id = 'default' WHERE tenant_id IS NULL"))
+    _drop_unique_constraint_if_exists("push_subscriptions", "push_subscriptions_endpoint_key")
+    _drop_index_if_exists("push_subscriptions", "ix_push_subscriptions_endpoint")
+    _create_index_if_missing("push_subscriptions", "ix_push_subscriptions_tenant_id", ["tenant_id"])
+    _create_unique_constraint_if_missing(
+        "push_subscriptions",
+        "ux_push_subscriptions_tenant_endpoint",
+        ["tenant_id", "endpoint"],
+    )
+
+
+def downgrade() -> None:
+    _drop_unique_constraint_if_exists("push_subscriptions", "ux_push_subscriptions_tenant_endpoint")
+    _drop_index_if_exists("push_subscriptions", "ix_push_subscriptions_tenant_id")
+    _create_unique_constraint_if_missing("push_subscriptions", "push_subscriptions_endpoint_key", ["endpoint"])

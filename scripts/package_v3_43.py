@@ -1,0 +1,445 @@
+"""
+ZEN70 V3.43 完整安装包打包脚本。
+
+ADR-0047 修订版 — 修复 4 个自相矛盾：
+  Fix 1: RELEASE_REQUIRED_FILES 优先放行，不被 IGNORE_* 规则截断
+  Fix 2: Lockfile Gate 改为硬失败（SystemExit），检查前后端两个 lockfile
+  Fix 3: bundle validator 移到打包后对 zip 内容做验收，而不是预检仓库工作树
+  Fix 4: 业务域排除从 JSON 机读注册表 (domain_registry.json) 动态加载，代码不再是硬常量
+
+用法（在项目根目录执行）:
+    python scripts/package_v3_42.py
+
+跳过发布门禁（仅用于断网调试）:
+    ZEN70_SKIP_RELEASE_GATE=1 python scripts/package_v3_42.py
+
+输出:
+    dist/ZEN70_v3.43_Install.zip
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ZIP = PROJECT_ROOT / "dist" / "ZEN70_v3.43_Install.zip"
+DOMAIN_REGISTRY_PATH = PROJECT_ROOT / "backend" / "models" / "domain_registry.json"
+
+# ── 排除目录（不打包）─────────────────────────────────────────────────────────
+IGNORE_DIRS = frozenset(
+    {
+        ".git",
+        ".backups",
+        ".mypy_cache",
+        ".tmp-ci",
+        ".pytest_cache",
+        ".vscode",
+        ".cursor",
+        ".gemini",
+        ".claude",
+        ".agents",
+        "node_modules",
+        "venv",
+        ".venv",
+        "__pycache__",
+        "dist",
+        "zen70_v3.0_sre_hardened",
+        "out",
+        "out_test",
+        "out2",
+        "test_results",
+        ".ruff_cache",        # ruff lint cache — dev artifact
+    }
+)
+
+# ── 排除文件（不打包）─────────────────────────────────────────────────────────
+# Fix 1: 移除 package-lock.json — 它是发布必需文件，不得排除
+IGNORE_FILES = frozenset(
+    {
+        ".DS_Store",
+        "Thumbs.db",
+        ".env",
+        ".coverage",
+        "yarn.lock",         # 非标 lockfile，不纳入 RELEASE_REQUIRED_FILES
+        "pnpm-lock.yaml",    # 非标 lockfile，不纳入 RELEASE_REQUIRED_FILES
+        "bandit_results.json",
+        "logs.txt",
+        "logs_utf8.txt",
+        "out_pytest.txt",
+        "run_output.txt",
+        "run_output2.txt",
+        "test_iac.txt",
+        "safety_results.json",
+        "db_dump.sql",
+        "diff.txt",
+        "final_diff.txt",
+        "safe_diff.txt",
+        "specific_diff.txt",
+        "git_diff.txt",
+        "git_audit.txt",
+        "lint_output.txt",
+        "mypy_eval.txt",
+        "status.txt",
+        "hlth.txt",
+        # repo/dev metadata — not part of a release install package
+        ".cursorrules",
+        ".gitignore",
+        ".dockerignore",
+        ".flake8",
+        ".pre-commit-config.yaml",
+        ".editorconfig",
+    }
+)
+
+# ── 排除后缀 ──────────────────────────────────────────────────────────────────
+# Fix 1: 移除 .lock — requirements-ci.lock / package-lock.json 是发布必需文件
+IGNORE_SUFFIXES = (".pyc", ".pyo", ".log", ".sqlite", ".db", ".tar")
+
+# ── Fix 1: 发布必需文件白名单 ─────────────────────────────────────────────────
+# 这些文件路径（相对 PROJECT_ROOT 的 parts tuple）必须打入包，
+# 不受 IGNORE_FILES / IGNORE_SUFFIXES 拦截。
+# Gate 3 会在打包前验证它们在仓库中存在；打包阶段会确保它们进入 zip。
+RELEASE_REQUIRED_FILES: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("backend", "requirements-ci.lock"),
+        ("frontend", "package-lock.json"),
+    }
+)
+
+
+def _is_release_required(rel_path: Path) -> bool:
+    """检查文件是否属于发布必需白名单。"""
+    return tuple(rel_path.parts) in RELEASE_REQUIRED_FILES
+
+
+# ── Fix 4: 从 domain_registry.json 动态加载业务域排除集 ──────────────────────
+
+def _load_inactive_business_paths() -> frozenset[str]:
+    """
+    从 domain_registry.json 加载 business-layer && active=false 的 path 字段集合。
+    使用 path（如 "backend/models/asset.py"）而非 file 名做匹配，
+    避免同名文件在不同目录时误命中。这是唯一权威事实来源。
+    """
+    try:
+        registry = json.loads(DOMAIN_REGISTRY_PATH.read_text(encoding="utf-8"))
+        return frozenset(
+            entry["path"]
+            for entry in registry.get("models", [])
+            if entry.get("domain") == "business-layer" and not entry.get("active", True)
+        )
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        raise SystemExit(
+            f"Packaging aborted: domain_registry.json missing or corrupt ({exc}). "
+            "The domain registry is the release boundary source of truth — "
+            "it must exist and be valid JSON."
+        ) from exc
+
+
+def _is_inactive_business_model(rel_path: Path) -> bool:
+    """通过 rel_path（相对项目根的路径）精确匹配 JSON 注册表中的 inactive path。"""
+    # 统一为正斜杠字符串与注册表 path 字段对比
+    rel_posix = rel_path.as_posix()
+    return rel_posix in _INACTIVE_BUSINESS_PATHS
+
+
+# 模块级加载一次（避免每次文件遍历都读磁盘）
+_INACTIVE_BUSINESS_PATHS: frozenset[str] = _load_inactive_business_paths()
+
+
+def _should_skip_file(name: str, path: Path, rel_path: Path) -> bool:
+    # 发布必需文件不受任何排除规则影响
+    if _is_release_required(rel_path):
+        return False
+    if name in IGNORE_FILES:
+        return True
+    if any(name.endswith(s) for s in IGNORE_SUFFIXES):
+        return True
+    if name == ".env" and path.is_file():
+        return True
+    if name.endswith(".txt") and "err" in name.lower():
+        return True
+    if name.startswith("pytest_"):
+        return True
+    # frontend test artifact — matches FORBIDDEN_PATTERNS in bundle validator
+    if name.startswith("test_result") and name.endswith(".json"):
+        return True
+    if name.startswith(".env.bak"):
+        return True
+    # 从 JSON 注册表精确路径匹配的业务域排除（path 字段，非 file 名）
+    if _is_inactive_business_model(rel_path):
+        logger.debug("排除 business-layer 模型 (path match): %s", rel_path.as_posix())
+        return True
+    return False
+
+
+# ── Fix 2 / Fix 3: 发布门禁 ───────────────────────────────────────────────────
+
+def _run_gate(cmd: list[str], label: str) -> None:
+    """执行单个发布门禁检查。失败时 SystemExit。"""
+    logger.info("▶ Gate [%s] ...", label)
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Gate [%s] TIMEOUT（超过 120s）", label)
+        raise SystemExit(f"Packaging aborted: gate timeout [{label}]")
+    except FileNotFoundError as exc:
+        logger.error("Gate [%s] command not found: %s", label, exc)
+        raise SystemExit(
+            f"Packaging aborted: gate command not found [{label}] — "
+            f"install the missing tool or fix PATH. Detail: {exc}"
+        ) from exc
+
+    if result.returncode != 0:
+        logger.error(
+            "Gate [%s] FAILED:\n%s%s",
+            label,
+            result.stdout[-2000:],
+            result.stderr[-1000:],
+        )
+        raise SystemExit(f"Packaging aborted: release gate not passed [{label}]")
+    logger.info("✅ Gate [%s] passed", label)
+
+
+
+def _openapi_freeze_gate() -> None:
+    """Gate 4: verify OpenAPI path surface has not drifted from locked snapshot.
+
+    Gracefully skipped when docs/api/openapi_locked.json does not exist yet.
+    Activate once by running: python scripts/freeze_openapi.py --init
+    """
+    freeze_script = PROJECT_ROOT / "scripts" / "freeze_openapi.py"
+    snapshot = PROJECT_ROOT / "docs" / "api" / "openapi_locked.json"
+    if not snapshot.exists():
+        logger.warning(
+            "Gate [OpenAPI surface freeze] SKIPPED — snapshot not initialised. "
+            "Run: python scripts/freeze_openapi.py --init"
+        )
+        return
+    _run_gate(
+        [sys.executable, str(freeze_script), "--check", "--quiet"],
+        "OpenAPI path-surface freeze",
+    )
+
+
+def _run_pre_package_gates() -> None:
+    """
+    打包前门禁（Fix 2: 全硬失败）:
+      Gate 1 — Ruff lint
+      Gate 2 — Core unit tests smoke
+      Gate 3 — Lockfile existence（前后端两个，缺一 SystemExit）
+    """
+    # Gate 1: Ruff lint
+    _run_gate(
+        [sys.executable, "-m", "ruff", "check", "backend/", "--select=E,F,W", "--quiet"],
+        "Ruff lint (E/F/W)",
+    )
+
+    # Gate 2: Core unit tests — expanded coverage (ADR-0047)
+    _run_gate(
+        [
+            sys.executable, "-m", "pytest",
+            # Control-plane state machine
+            "backend/tests/unit/test_node_state_machine.py",
+            # Protocol contracts
+            "backend/tests/unit/test_control_plane_protocol_contracts.py",
+            # Multi-tenant isolation
+            "backend/tests/unit/test_control_plane_multitenant_constraints.py",
+            # Job runtime
+            "backend/tests/unit/test_jobs_runtime.py",
+            # Release gate negative validation (ADR-0047 WP)
+            "backend/tests/unit/test_release_gates_negative.py",
+            "--tb=short", "-q", "--ignore-glob=*integration*",
+        ],
+        "Core unit tests (state machine + contracts + tenant + jobs + gate negative)",
+    )
+
+    # Gate 3 — Lockfile existence (hard fail, frontend + backend)
+    _lockfile_gate()
+
+    # Gate 4 — OpenAPI path-surface freeze (ADR-0047 WP-P2a)
+    # Skipped gracefully when snapshot not yet initialised (run --init once to activate).
+    _openapi_freeze_gate()
+
+
+def _lockfile_gate() -> None:
+    """
+    Fix 2: 硬门禁 — 前后端 lockfile 必须同时存在，缺一即 SystemExit。
+    法典 §5.2: 依赖锁定是发布纪律，不是软建议。
+    """
+    required_lockfiles = [
+        (PROJECT_ROOT / "backend" / "requirements-ci.lock",
+         "backend/requirements-ci.lock",
+         "pip-compile backend/requirements.txt -o backend/requirements-ci.lock"),
+        (PROJECT_ROOT / "frontend" / "package-lock.json",
+         "frontend/package-lock.json",
+         "cd frontend && npm install"),
+    ]
+    missing: list[str] = []
+    for lock_path, label, hint in required_lockfiles:
+        if lock_path.exists():
+            logger.info("✅ Gate [Lockfile: %s] passed", label)
+        else:
+            logger.error("Gate [Lockfile: %s] FAILED — file not found. Fix: %s", label, hint)
+            missing.append(label)
+
+    if missing:
+        raise SystemExit(
+            f"Packaging aborted: required lockfiles missing: {missing}. "
+            "Dependency locking is mandatory per §5.2 (fix hints logged above)."
+        )
+
+
+def _run_post_package_validation(out_zip: Path) -> None:
+    """
+    Fix 3: bundle validator 在打包后对 zip 做验收。
+    解压到临时目录后再跑 validator，确保验证的是发布物，而非仓库工作树。
+    """
+    validator = PROJECT_ROOT / "scripts" / "validate_offline_bundle.py"
+    if not validator.exists():
+        logger.info("ℹ  Post-package gate [Offline bundle validator] skipped (script not found)")
+        return
+
+    logger.info("▶ Post-package gate [Offline bundle validator] — validating zip contents ...")
+    with tempfile.TemporaryDirectory(prefix="zen70_bundle_validate_") as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        with zipfile.ZipFile(out_zip, "r") as zf:
+            zf.extractall(tmp_path)
+
+        try:
+            result = subprocess.run(
+                [sys.executable, str(validator), str(tmp_path)],
+                cwd=str(tmp_path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error("Post-package gate [Offline bundle validator] TIMEOUT")
+            raise SystemExit("Packaging aborted: bundle validator timeout")
+
+        if result.returncode != 0:
+            logger.error(
+                "Post-package gate [Offline bundle validator] FAILED:\n%s%s",
+                result.stdout[-2000:],
+                result.stderr[-1000:],
+            )
+            raise SystemExit("Packaging aborted: bundle validation failed on zip contents")
+
+    logger.info("✅ Post-package gate [Offline bundle validator] passed")
+
+
+def main() -> None:
+    """打包 ZEN70 V3.43 安装包的 CLI 入口。"""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    env_zip = os.environ.get("ZEN70_INSTALL_ZIP")
+    out_zip = Path(env_zip) if env_zip else DEFAULT_ZIP
+    include_frontend_dist = os.environ.get("ZEN70_INSTALL_INCLUDE_FRONTEND_DIST", "").strip() == "1"
+    skip_gate = os.environ.get("ZEN70_SKIP_RELEASE_GATE", "").strip() == "1"
+
+    # ── CI 环境硬拦截：即使设了 SKIP 也不允许在 CI 里绕过 ─────────────────────
+    _in_ci = any(
+        os.environ.get(v)
+        for v in ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "TF_BUILD", "BUILDKITE")
+    )
+    if skip_gate and _in_ci:
+        logger.error(
+            "🚫 FATAL: ZEN70_SKIP_RELEASE_GATE=1 is forbidden in CI environments. "
+            "Release gates cannot be bypassed in automated pipelines. "
+            "Remove the environment variable and fix the failing gates."
+        )
+        raise SystemExit(1)
+
+    # ── 打包前门禁 ─────────────────────────────────────────────────────────────
+    if skip_gate:
+        # !! STRICTLY LOCAL DEBUGGING ONLY !!
+        # ZEN70_SKIP_RELEASE_GATE=1 MUST NOT be set in:
+        #   - Any CI/CD pipeline (GitHub Actions, GitLab CI, Jenkins, etc.)
+        #   - Any production or staging packaging workflow
+        #   - Any Makefile / release.sh used for official releases
+        # The only legitimate use: local offline debugging when deps are unavailable.
+        # Formal escape path is documented in ADR-0047. Misuse voids the release gate contract.
+        logger.warning(
+            "⚠  RELEASE GATES SKIPPED — ZEN70_SKIP_RELEASE_GATE=1 is set (local debug only). "
+            "THIS MUST NOT BE USED IN CI OR OFFICIAL RELEASE WORKFLOWS."
+        )
+    else:
+        _run_pre_package_gates()
+        logger.info("🚀 Pre-package gates passed — proceeding to archive")
+
+    # ── 打包归档 ───────────────────────────────────────────────────────────────
+    out_zip.parent.mkdir(parents=True, exist_ok=True)
+    source = PROJECT_ROOT
+
+    logger.info("打包 ZEN70 V3.43 完整安装包: %s -> %s", source, out_zip)
+    logger.info(
+        "发布必需文件白名单: %s",
+        ["/".join(p) for p in sorted(RELEASE_REQUIRED_FILES)],
+    )
+    logger.info(
+        "业务残留域排除 (来源: domain_registry.json path 字段): %s",
+        sorted(_INACTIVE_BUSINESS_PATHS),
+    )
+    count = 0
+    excluded_business = 0
+    with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in source.rglob("*"):
+            if not file_path.is_file():
+                continue
+
+            try:
+                rel_path = file_path.relative_to(source)
+            except ValueError:
+                continue
+
+            parts_list = list(rel_path.parts)
+            if parts_list[0] == "dist":
+                continue
+
+            if any(part in IGNORE_DIRS for part in parts_list[:-1]):
+                continue
+
+            if not include_frontend_dist and "frontend" in rel_path.parts and "dist" in rel_path.parts:
+                continue
+
+            if _should_skip_file(file_path.name, file_path, rel_path):
+                if _is_inactive_business_model(rel_path):
+                    excluded_business += 1
+                continue
+
+            zf.write(file_path, rel_path)
+            count += 1
+
+    size_mb = out_zip.stat().st_size / (1024 * 1024)
+    logger.info("归档完成: %s（共 %s 个文件，%.1f MB）", out_zip, count, size_mb)
+    if excluded_business:
+        logger.info(
+            "业务残留域排除: %d 个文件（path 精确匹配，来源: domain_registry.json）",
+            excluded_business,
+        )
+
+    # ── Fix 3: 打包后验收 ──────────────────────────────────────────────────────
+    if not skip_gate:
+        _run_post_package_validation(out_zip)
+        logger.info("✅ 所有门禁通过 — %s 已就绪", out_zip.name)
+    else:
+        logger.warning("⚠  Post-package validation SKIPPED")
+
+
+if __name__ == "__main__":
+    main()

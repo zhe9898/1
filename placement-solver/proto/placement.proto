@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package placement;
+
+option go_package = "zen70/placement-solver/gen/placement";
+
+// PlacementSolver assigns pending jobs to nodes.
+service PlacementSolver {
+  // Solve computes job→node assignments for a dispatch window.
+  rpc Solve(SolveRequest) returns (SolveResponse);
+  // Health returns server liveness for readiness probes.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SolveRequest {
+  repeated JobSpec   jobs           = 1;
+  repeated NodeSpec  nodes          = 2;
+  repeated string    accepted_kinds = 3;
+  // Unix epoch milliseconds for "now".
+  int64  now_unix_ms            = 4;
+  // Wall-clock deadline: solver aborts after this many milliseconds.
+  // 0 means no deadline.
+  int64  budget_ms              = 5;
+}
+
+message JobSpec {
+  string job_id            = 1;
+  string kind              = 2;
+  int32  priority          = 3;
+  string gang_id           = 4;
+  string tenant_id         = 5;
+
+  // Placement constraints
+  string target_os         = 6;
+  string target_arch       = 7;
+  string target_zone       = 8;
+  string target_executor   = 9;
+  repeated string required_capabilities = 10;
+
+  // Resource requirements (0 = unconstrained)
+  int32  required_cpu_cores    = 11;
+  int32  required_memory_mb    = 12;
+  int32  required_gpu_vram_mb  = 13;
+  int32  required_storage_mb   = 14;
+
+  // Edge / IoT constraints
+  int32  max_network_latency_ms = 15;
+  string data_locality_key      = 16;
+  bool   prefer_cached_data     = 17;
+  int32  power_budget_watts     = 18;
+  string thermal_sensitivity    = 19;
+  bool   cloud_fallback_enabled = 20;
+
+  // Scheduling class
+  string queue_class  = 21;
+  string worker_pool  = 22;
+}
+
+message NodeSpec {
+  string node_id           = 1;
+  string os                = 2;
+  string arch              = 3;
+  string executor          = 4;
+  string zone              = 5;
+  repeated string capabilities  = 6;
+  repeated string accepted_kinds = 7;
+  repeated string worker_pools  = 8;
+  int32  max_concurrency   = 9;
+  int32  active_lease_count = 10;
+
+  // Hardware resources
+  int32  cpu_cores         = 11;
+  int32  memory_mb         = 12;
+  int32  gpu_vram_mb       = 13;
+  int32  storage_mb        = 14;
+
+  // Node health
+  float  reliability_score = 15;
+  string enrollment_status = 16;
+  string status            = 17;
+  string drain_status      = 18;
+
+  // Edge attributes
+  int32  network_latency_ms    = 19;
+  repeated string cached_data_keys = 20;
+  int32  power_capacity_watts  = 21;
+  int32  current_power_watts   = 22;
+  string thermal_state         = 23;
+  string cloud_connectivity    = 24;
+}
+
+message SolveResponse {
+  // job_id → node_id assignments
+  map<string, string> assignments = 1;
+  int32  feasible_pairs           = 2;
+  string result                   = 3;
+  int64  elapsed_us               = 4;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;  // "ok"
+}

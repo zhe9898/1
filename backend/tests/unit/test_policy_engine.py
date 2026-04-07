@@ -1,0 +1,374 @@
+"""
+iac_core/policy.py 单元测试 — 策略引擎完整性验证。
+
+覆盖：
+  - policy_version 校验（缺失/非法/过低）
+  - 全部 7 个 assert handler（含新增 field_recommended）
+  - evaluate_policy 端到端
+  - evaluate_and_enforce 异常路径
+  - fallback 策略完整性
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from scripts.iac_core.exceptions import PolicyValidationError
+from scripts.iac_core.policy import (
+    _builtin_fallback_policy,
+    evaluate_and_enforce,
+    evaluate_policy,
+)
+
+# ---------------------------------------------------------------------------
+# policy_version 校验
+# ---------------------------------------------------------------------------
+
+
+class TestPolicyVersionValidation:
+    """_validate_policy_version 校验。"""
+
+    def test_missing_version_raises(self) -> None:
+        policy = {"rules": []}  # type: ignore[var-annotated]
+        config: dict = {"services": {}}
+        with pytest.raises(PolicyValidationError) as exc:
+            evaluate_policy(config, policy)
+        assert any(v.rule_id == "POLICY-VERSION" for v in exc.value.violations)
+
+    def test_invalid_version_raises(self) -> None:
+        policy = {"policy_version": "abc", "rules": []}
+        config: dict = {"services": {}}
+        with pytest.raises(PolicyValidationError):
+            evaluate_policy(config, policy)
+
+    def test_zero_version_raises(self) -> None:
+        policy = {"policy_version": 0, "rules": []}
+        config: dict = {"services": {}}
+        with pytest.raises(PolicyValidationError):
+            evaluate_policy(config, policy)
+
+    def test_valid_version_passes(self) -> None:
+        policy = {"policy_version": 2, "rules": []}
+        config: dict = {"services": {}}
+        violations = evaluate_policy(config, policy)
+        assert violations == []
+
+
+# ---------------------------------------------------------------------------
+# assert handler 测试
+# ---------------------------------------------------------------------------
+
+
+class TestNetworksExclude:
+    """NET-001: 网络隔离。"""
+
+    def test_forbidden_network_fails(self) -> None:
+        config = {"services": {"postgres": {"enabled": True, "networks": ["frontend_net", "backend_net"]}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "NET-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["postgres"]},
+                    "assert": {"networks_exclude": ["frontend_net"]},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 1
+        assert violations[0].rule_id == "NET-001"
+
+    def test_clean_network_passes(self) -> None:
+        config = {"services": {"postgres": {"enabled": True, "networks": ["backend_net"]}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "NET-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["postgres"]},
+                    "assert": {"networks_exclude": ["frontend_net"]},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestVolumesNotEmpty:
+    """DATA-001: 有状态服务必须挂载持久卷。"""
+
+    def test_no_volumes_fails(self) -> None:
+        config = {"services": {"redis": {"enabled": True}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "DATA-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["redis"]},
+                    "assert": {"volumes_not_empty": True},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 1
+
+    def test_with_volumes_passes(self) -> None:
+        config = {"services": {"redis": {"enabled": True, "volumes": ["redis_data:/data"]}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "DATA-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["redis"]},
+                    "assert": {"volumes_not_empty": True},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestUlimitsNofileMin:
+    """SYS-001: ulimits.nofile >= 65536。"""
+
+    def test_no_ulimits_warns(self) -> None:
+        config = {"services": {"gateway": {"enabled": True}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SYS-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["gateway"]},
+                    "assert": {"ulimits_nofile_min": 65536},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 1
+        assert violations[0].severity == "warn"
+
+    def test_sufficient_ulimits_passes(self) -> None:
+        config = {
+            "services": {
+                "gateway": {
+                    "enabled": True,
+                    "ulimits": {"nofile": {"soft": 65536, "hard": 65536}},
+                }
+            }
+        }
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SYS-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["gateway"]},
+                    "assert": {"ulimits_nofile_min": 65536},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestOomScoreAdj:
+    """SYS-002: oom_score_adj == -999。"""
+
+    def test_missing_oom_warns(self) -> None:
+        config = {"services": {"redis": {"enabled": True}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SYS-002",
+                    "tier": 2,
+                    "selector": {"service_names": ["redis"]},
+                    "assert": {"oom_score_adj": -999},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 1
+
+    def test_correct_oom_passes(self) -> None:
+        config = {"services": {"redis": {"enabled": True, "oom_score_adj": -999}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SYS-002",
+                    "tier": 2,
+                    "selector": {"service_names": ["redis"]},
+                    "assert": {"oom_score_adj": -999},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestFieldRecommended:
+    """REC-001~004: Tier3 声明式建议。"""
+
+    def test_missing_field_warns(self) -> None:
+        config = {"services": {"caddy": {"enabled": True}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "REC-001",
+                    "tier": 3,
+                    "selector": {"service_names": ["caddy"]},
+                    "assert": {"field_recommended": "healthcheck"},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 1
+        assert "healthcheck" in violations[0].message
+
+    def test_present_field_passes(self) -> None:
+        config = {"services": {"caddy": {"enabled": True, "healthcheck": {"test": "curl"}}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "REC-001",
+                    "tier": 3,
+                    "selector": {"service_names": ["caddy"]},
+                    "assert": {"field_recommended": "healthcheck"},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestReadOnlyRequiresTmpfs:
+    """SEC-001: read_only + tmpfs。"""
+
+    def test_read_only_without_tmpfs_fails(self) -> None:
+        config = {"services": {"app": {"enabled": True, "read_only": True}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SEC-001",
+                    "tier": 2,
+                    "selector": {},
+                    "assert": {"read_only_requires_tmpfs": True},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 1
+
+    def test_read_only_with_tmpfs_passes(self) -> None:
+        config = {"services": {"app": {"enabled": True, "read_only": True, "tmpfs": ["/tmp"]}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SEC-001",
+                    "tier": 2,
+                    "selector": {},
+                    "assert": {"read_only_requires_tmpfs": True},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestDisabledServicesSkipped:
+    """disabled 服务不参与策略评估。"""
+
+    def test_disabled_service_skipped(self) -> None:
+        config = {"services": {"postgres": {"enabled": False, "networks": ["frontend_net"]}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "NET-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["postgres"]},
+                    "assert": {"networks_exclude": ["frontend_net"]},
+                    "severity": "fail",
+                }
+            ],
+        }
+        violations = evaluate_policy(config, policy)
+        assert len(violations) == 0
+
+
+class TestEvaluateAndEnforce:
+    """evaluate_and_enforce 异常路径。"""
+
+    def test_fail_violations_raise(self) -> None:
+        config = {"services": {"postgres": {"enabled": True, "networks": ["frontend_net"]}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "NET-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["postgres"]},
+                    "assert": {"networks_exclude": ["frontend_net"]},
+                    "severity": "fail",
+                }
+            ],
+        }
+        with pytest.raises(PolicyValidationError):
+            evaluate_and_enforce(config, policy)
+
+    def test_warn_only_returns_violations(self) -> None:
+        config = {"services": {"gateway": {"enabled": True}}}
+        policy = {
+            "policy_version": 2,
+            "rules": [
+                {
+                    "id": "SYS-001",
+                    "tier": 2,
+                    "selector": {"service_names": ["gateway"]},
+                    "assert": {"ulimits_nofile_min": 65536},
+                    "severity": "warn",
+                }
+            ],
+        }
+        violations = evaluate_and_enforce(config, policy)
+        assert len(violations) == 1
+        assert violations[0].severity == "warn"
+
+
+class TestFallbackPolicy:
+    """内置 fallback 策略完整性。"""
+
+    def test_fallback_has_version_2(self) -> None:
+        fb = _builtin_fallback_policy()
+        assert fb["policy_version"] == 2
+
+    def test_fallback_has_core_rules(self) -> None:
+        fb = _builtin_fallback_policy()
+        rule_ids = {r["id"] for r in fb["rules"]}
+        assert "NET-001" in rule_ids
+        assert "DATA-001" in rule_ids
+        assert "SEC-001" in rule_ids
+        assert "SYS-001" in rule_ids
+        assert "SYS-002" in rule_ids

@@ -1,0 +1,109 @@
+"""Add conversation memory table (async rumination)
+
+Revision ID: 8c2f1a6b4d10
+Revises: 7b9fa39e00a0
+Create Date: 2026-03-18 00:00:00.000000
+
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+
+class Vector(sa.types.UserDefinedType):
+    """pgvector VECTOR 类型适配器（无需安装 pgvector Python 包）"""
+
+    cache_ok = True
+
+    def __init__(self, dim: int = 512):
+        self.dim = dim
+
+    def get_col_spec(self) -> str:
+        return f"VECTOR({self.dim})"
+
+
+# revision identifiers, used by Alembic.
+revision: str = "8c2f1a6b4d10"
+down_revision: Union[str, Sequence[str], None] = "7b9fa39e00a0"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    op.create_table(
+        "conversation_memories",
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            nullable=False,
+        ),
+        sa.Column("tenant_id", sa.String(length=64), nullable=False, server_default="default"),
+        sa.Column("user_sub", sa.String(length=255), nullable=False),
+        sa.Column("raw_text", sa.Text(), nullable=False),
+        sa.Column("summary", sa.Text(), nullable=False, server_default=""),
+        sa.Column("meta_info", sa.JSON(), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+    )
+    op.create_index("ix_conversation_memories_tenant_id", "conversation_memories", ["tenant_id"])
+    op.create_index("ix_conversation_memories_user_sub", "conversation_memories", ["user_sub"])
+    op.create_index("ix_conversation_memories_created_at", "conversation_memories", ["created_at"])
+
+    # 金块事实表（pgvector）
+    op.create_table(
+        "memory_facts",
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            nullable=False,
+        ),
+        sa.Column("tenant_id", sa.String(length=64), nullable=False, server_default="default"),
+        sa.Column("user_sub", sa.String(length=255), nullable=False),
+        sa.Column("fact_text", sa.Text(), nullable=False),
+        sa.Column("embedding", Vector(512), nullable=True),
+        sa.Column(
+            "embedding_status",
+            sa.String(length=16),
+            nullable=False,
+            server_default="pending",
+        ),
+        sa.Column("meta_info", sa.JSON(), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+    )
+    op.create_index("ix_memory_facts_tenant_id", "memory_facts", ["tenant_id"])
+    op.create_index("ix_memory_facts_user_sub", "memory_facts", ["user_sub"])
+    op.create_index("ix_memory_facts_created_at", "memory_facts", ["created_at"])
+    op.create_index(
+        "ix_memory_fact_embedding",
+        "memory_facts",
+        ["embedding"],
+        postgresql_using="ivfflat",
+        postgresql_with={"lists": 100},
+        postgresql_ops={"embedding": "vector_cosine_ops"},
+    )
+
+
+def downgrade() -> None:
+    op.drop_index("ix_memory_fact_embedding", table_name="memory_facts")
+    op.drop_index("ix_memory_facts_created_at", table_name="memory_facts")
+    op.drop_index("ix_memory_facts_user_sub", table_name="memory_facts")
+    op.drop_index("ix_memory_facts_tenant_id", table_name="memory_facts")
+    op.drop_table("memory_facts")
+    op.drop_index("ix_conversation_memories_created_at", table_name="conversation_memories")
+    op.drop_index("ix_conversation_memories_user_sub", table_name="conversation_memories")
+    op.drop_index("ix_conversation_memories_tenant_id", table_name="conversation_memories")
+    op.drop_table("conversation_memories")

@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""
+容器内数据完整性 E2E 验证脚本。
+执行闭环：文件建档 -> 静默翻转 -> 巡检检测 -> webhook 告警接收。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import tempfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+
+import backend.sentinel.data_integrity as data_integrity
+
+logger = logging.getLogger(__name__)
+
+
+class _WebhookSink:
+    """线程安全的 webhook 请求存储器。"""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._events: list[dict[str, Any]] = []
+
+    def push(self, payload: dict[str, Any]) -> None:
+        with self._lock:
+            self._events.append(payload)
+
+    def events(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._events)
+
+
+def _build_handler(sink: _WebhookSink) -> type[BaseHTTPRequestHandler]:
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            content_length_raw = self.headers.get("Content-Length", "0")
+            try:
+                content_length = int(content_length_raw)
+            except ValueError:
+                content_length = 0
+            body = self.rfile.read(content_length)
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                payload = {"_raw": body.decode("utf-8", errors="ignore")}
+            sink.push(payload)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+            return
+
+    return _Handler
+
+
+def _start_webhook_server(sink: _WebhookSink) -> tuple[ThreadingHTTPServer, threading.Thread, str]:
+    handler = _build_handler(sink)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host_raw, port = server.server_address[0], server.server_address[1]
+    host = host_raw.decode("utf-8", errors="ignore") if isinstance(host_raw, bytes) else str(host_raw)
+    webhook_url = f"http://{host}:{port}/alerts"
+    return server, thread, webhook_url
+
+
+def _wait_for_event(sink: _WebhookSink, timeout_seconds: float) -> dict[str, Any] | None:
+    end_time = time.perf_counter() + timeout_seconds
+    while time.perf_counter() < end_time:
+        events = sink.events()
+        if events:
+            return events[-1]
+        time.sleep(0.05)
+    return None
+
+
+def run_e2e() -> int:
+    """执行 data_integrity 端到端链路验证，返回进程退出码。"""
+    sink = _WebhookSink()
+    server, thread, webhook_url = _start_webhook_server(sink)
+    original_db_path = data_integrity.DB_PATH
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="zen70-bitrot-e2e-") as temp_dir:
+            root = Path(temp_dir)
+            data_dir = root / "dataset"
+            state_dir = root / "state"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            state_dir.mkdir(parents=True, exist_ok=True)
+
+            data_file = data_dir / "cold_data.bin"
+            data_file.write_bytes(b"A" * 1024)
+            data_integrity.DB_PATH = state_dir / "bit_rot_baseline.db"
+
+            os.environ["ALERT_WEBHOOK_URL"] = webhook_url
+            os.environ["BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT"] = "100"
+            os.environ["BIT_ROT_ALERT_TIMEOUT_SECONDS"] = "3"
+            os.environ["BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS"] = "3"
+            os.environ["BIT_ROT_SQLITE_BUSY_TIMEOUT_MS"] = "3000"
+
+            data_integrity.init_baseline_db()
+            data_integrity.scan_and_verify_directory(str(data_dir))
+
+            data_file.write_bytes(b"B" * 1024)
+            data_integrity.scan_and_verify_directory(str(data_dir))
+
+            event = _wait_for_event(sink, timeout_seconds=3.0)
+            if event is None:
+                logger.error("E2E 失败：未在时限内收到 webhook 告警。")
+                return 1
+
+            level = str(event.get("level", ""))
+            source = str(event.get("source", ""))
+            message = str(event.get("message", ""))
+            if level != "critical" or source != "data_integrity" or "腐败文件" not in message:
+                logger.error("E2E 失败：告警载荷不符合契约: %s", event)
+                return 1
+
+            report = {
+                "status": "passed",
+                "webhook_url": webhook_url,
+                "events_received": len(sink.events()),
+                "last_event": event,
+            }
+            print(json.dumps(report, ensure_ascii=True))
+            return 0
+    finally:
+        data_integrity.DB_PATH = original_db_path
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1.0)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    raise SystemExit(run_e2e())

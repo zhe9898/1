@@ -1,0 +1,506 @@
+name: ZEN70 最大测压 (Maximum Stress Test)
+
+# 最高覆盖度测压：调度内核 + HTTP 负载 + 混沌 + 集成 + E2E
+# 仅手动触发（workflow_dispatch），防止常规 CI 超时。
+on:
+  workflow_dispatch:
+    inputs:
+      locust_users:
+        description: "Locust 最大并发用户数 (默认 1000)"
+        required: false
+        default: "1000"
+      locust_spawn_rate:
+        description: "Locust 每秒新增用户数 (默认 50)"
+        required: false
+        default: "50"
+      locust_run_time:
+        description: "Locust 运行时长 (默认 10m)"
+        required: false
+        default: "10m"
+      placement_nodes:
+        description: "PlacementSolver 节点数 (默认 5000)"
+        required: false
+        default: "5000"
+      placement_jobs:
+        description: "PlacementSolver 任务数 (默认 50000)"
+        required: false
+        default: "50000"
+      qa_rounds:
+        description: "全栈 QA 回归轮数 (默认 20)"
+        required: false
+        default: "20"
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  GATEWAY_URL: "http://localhost:8000"
+  FRONTEND_URL: "http://localhost:5173"
+  # CI-only test credentials (ZEN70_ENV="" = non-production).
+  JWT_SECRET_CURRENT: "ci-test-secret-32bytes!!!!!!!!!"
+  JWT_SECRET_PREVIOUS: "ci-test-prev-secret-32bytes!!!!"
+  ZEN70_ENV: ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 1: SRE 微内核 20 轮压力测试 (mock-based)
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  sre-microkernel-stress:
+    name: "① SRE 微内核压力测试 (20 轮 DLQ + Watchdog)"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+
+      - name: SRE stress tester — 20 轮 DLQ + Watchdog 生命周期
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/sre_stress_tester.py
+
+      - name: Upload SRE stress report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sre-microkernel-report
+          path: docs/SRE_STRESS_REPORT.md
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 2: PlacementSolver 极限规模压力测试 (无需运行服务)
+  # ─────────────────────────────────────────────────────────────────────────
+  placement-extreme-stress:
+    name: "② PlacementSolver 极限压测 (${{ github.event.inputs.placement_nodes || '5000' }} 节点 × ${{ github.event.inputs.placement_jobs || '50000' }} 任务)"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+
+      - name: PlacementSolver 极限压测
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PLACEMENT_STRESS_NODES: ${{ github.event.inputs.placement_nodes || '5000' }}
+          PLACEMENT_STRESS_JOBS: ${{ github.event.inputs.placement_jobs || '50000' }}
+          PLACEMENT_STRESS_CONCURRENCY: "16"
+          # 放宽时间门禁（规模扩大 5× 允许 25s）
+          PLACEMENT_STRESS_MAX_MS: "25000"
+          PLACEMENT_STRESS_MAX_MEM_MB: "1500"
+        run: python tests/performance/placement_stress.py
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 3: 调度器微基准测试 (pytest-benchmark, 最大轮次)
+  # ─────────────────────────────────────────────────────────────────────────
+  scheduler-benchmarks:
+    name: "③ 调度器微基准测试 (pytest-benchmark)"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend + benchmark dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+          pip install pytest-benchmark==5.1.0 pytest-timeout==2.4.0
+
+      - name: Run scheduler benchmarks (最大轮次)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          timeout 600s python -m pytest tests/performance/test_scheduler_bench.py \
+            -v --benchmark-only \
+            --benchmark-json=benchmark-results.json \
+            --benchmark-max-time=5 \
+            --benchmark-min-rounds=10 \
+            --benchmark-warmup=on \
+            --timeout=300 --timeout-method=thread || true
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: scheduler-benchmark-results
+          path: benchmark-results.json
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 4: 全栈 QA 回归测试 (full_system_20x_qa.py — N 轮 pytest tests/)
+  # ─────────────────────────────────────────────────────────────────────────
+  full-system-qa:
+    name: "④ 全栈 QA 回归测试 (${{ github.event.inputs.qa_rounds || '20' }} 轮)"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+          pip install pytest pytest-mock respx factory_boy psutil pytest-asyncio
+
+      - name: Full system 20× QA regression
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          POSTGRES_DSN: "postgresql+asyncpg://zen70:testpass@localhost:5432/zen70"
+        run: python scripts/full_system_20x_qa.py
+
+      - name: Upload full system QA report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: full-system-qa-report
+          path: docs/SRE_TRUE_20X_REPORT.md
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 5: 集成 + 混沌测试（依赖 live stack: Redis + PostgreSQL + Gateway）
+  # ─────────────────────────────────────────────────────────────────────────
+  integration-chaos:
+    name: "⑤ 集成 + 混沌测试 (live stack)"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Start test service stack
+        run: |
+          docker compose -f tests/docker-compose.yml up -d --build redis postgres gateway sentinel
+          echo "等待服务就绪..."
+
+      - name: Wait for gateway
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Gateway 已就绪 (尝试 $i/30)"
+              exit 0
+            fi
+            echo "等待 5s (尝试 $i/30)..."
+            sleep 5
+          done
+          docker compose -f tests/docker-compose.yml logs gateway
+          exit 1
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test dependencies
+        working-directory: backend
+        run: |
+          python -m pip install pip==26.0.1
+          python -m pip install -r requirements-core.txt
+          pip install pytest pytest-mock respx factory_boy psutil pytest-asyncio redis requests
+
+      - name: Run integration tests — API contracts
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BASE_URL: ${{ env.GATEWAY_URL }}
+          REDIS_HOST: localhost
+          REDIS_PORT: "6379"
+        run: |
+          python -m pytest tests/integration/test_api_contracts.py \
+            tests/integration/test_auth_flow.py \
+            tests/integration/test_middleware_chain.py \
+            tests/integration/test_advanced_contracts.py \
+            tests/integration/test_rls_runtime_enforcement.py \
+            -v --tb=short -q \
+            --junit-xml=/tmp/integration-results.xml || true
+
+      - name: Run chaos tests — Redis 断连降级
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          BASE_URL: ${{ env.GATEWAY_URL }}
+          REDIS_HOST: localhost
+          REDIS_PORT: "6379"
+        run: |
+          python -m pytest tests/integration/test_chaos_redis.py \
+            tests/integration/test_hardware_failure.py \
+            -v --tb=short -q \
+            --junit-xml=/tmp/chaos-results.xml || true
+
+      - name: Run repo-level hardening tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest \
+            tests/test_compliance_sre.py \
+            tests/test_repo_hardening.py \
+            tests/test_kernel_boundary_hardening.py \
+            tests/test_business_scheduler_hardening.py \
+            tests/test_observability_pipeline.py \
+            tests/test_backup_security.py \
+            tests/test_profile_surface_compaction.py \
+            tests/test_iac_security_posture.py \
+            tests/test_db_schema_migration_contract.py \
+            -v --tb=short -q \
+            --junit-xml=/tmp/hardening-results.xml || true
+
+      - name: Upload integration + chaos results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: integration-chaos-results
+          path: |
+            /tmp/integration-results.xml
+            /tmp/chaos-results.xml
+            /tmp/hardening-results.xml
+          if-no-files-found: ignore
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose -f tests/docker-compose.yml logs
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 6: Locust 极限 HTTP 负载 (1000 用户, 10 分钟, 双压测文件)
+  # ─────────────────────────────────────────────────────────────────────────
+  locust-extreme-load:
+    name: "⑥ Locust 极限 HTTP 负载 (${{ github.event.inputs.locust_users || '1000' }} 用户 × ${{ github.event.inputs.locust_run_time || '10m' }})"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Start test service stack
+        run: |
+          docker compose -f tests/docker-compose.yml up -d --build redis postgres gateway
+          echo "等待服务就绪..."
+
+      - name: Wait for gateway
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Gateway 已就绪 (尝试 $i/30)"
+              exit 0
+            fi
+            echo "等待 5s (尝试 $i/30)..."
+            sleep 5
+          done
+          docker compose -f tests/docker-compose.yml logs gateway
+          exit 1
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Locust
+        run: pip install locust==2.37.4
+
+      - name: "API 负载压测 (ZEN70ApiUser + ZEN70SchedulingUser)"
+        run: |
+          locust -f tests/performance/locustfile.py \
+            --headless \
+            -u ${{ github.event.inputs.locust_users || '1000' }} \
+            -r ${{ github.event.inputs.locust_spawn_rate || '50' }} \
+            --run-time ${{ github.event.inputs.locust_run_time || '10m' }} \
+            --host ${{ env.GATEWAY_URL }} \
+            --csv /tmp/locust-api-max \
+            --html /tmp/locust-api-max-report.html || true
+
+      - name: "调度路径压测 (SchedulerPullUser + JobSubmitUser + DiagnosticsUser)"
+        run: |
+          locust -f tests/performance/locustfile_scheduling.py \
+            --headless \
+            -u ${{ github.event.inputs.locust_users || '1000' }} \
+            -r ${{ github.event.inputs.locust_spawn_rate || '50' }} \
+            --run-time ${{ github.event.inputs.locust_run_time || '10m' }} \
+            --host ${{ env.GATEWAY_URL }} \
+            --csv /tmp/locust-scheduling-max \
+            --html /tmp/locust-scheduling-max-report.html || true
+
+      - name: Upload Locust extreme load results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: locust-extreme-load-results
+          path: |
+            /tmp/locust-api-max*.csv
+            /tmp/locust-api-max-report.html
+            /tmp/locust-scheduling-max*.csv
+            /tmp/locust-scheduling-max-report.html
+          if-no-files-found: ignore
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose -f tests/docker-compose.yml logs
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 7: Playwright E2E 全套 + 前端无错误验证
+  # ─────────────────────────────────────────────────────────────────────────
+  playwright-e2e:
+    name: "⑦ Playwright E2E 全套"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Start gateway service stack
+        run: |
+          docker compose -f tests/docker-compose.yml up -d --build redis postgres gateway
+          echo "等待服务就绪..."
+
+      - name: Wait for gateway
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Gateway 已就绪 (尝试 $i/30)"
+              exit 0
+            fi
+            echo "等待 5s (尝试 $i/30)..."
+            sleep 5
+          done
+          docker compose -f tests/docker-compose.yml logs gateway
+          exit 1
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Start frontend preview server
+        working-directory: frontend
+        run: |
+          npx vite preview --port 5173 --host 0.0.0.0 &
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:5173 > /dev/null 2>&1; then
+              echo "前端已就绪 (尝试 $i/15)"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Install Playwright + pytest-playwright
+        run: |
+          pip install pytest-playwright==0.7.0 pytest-timeout==2.4.0
+          cd frontend && npm install -D @playwright/test && npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E (全套 — 3 次重试)
+        env:
+          FRONTEND_URL: ${{ env.FRONTEND_URL }}
+          BASE_URL: ${{ env.GATEWAY_URL }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest tests/e2e/test_core_flows.py \
+            -v --tb=short \
+            --timeout=60 \
+            -m e2e \
+            --reruns=3 \
+            --junit-xml=/tmp/e2e-results.xml || true
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: playwright-e2e-results
+          path: /tmp/e2e-results.xml
+          if-no-files-found: ignore
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose -f tests/docker-compose.yml logs
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 8 (汇总): 打印各 Job 通过 / 失败状态
+  # ─────────────────────────────────────────────────────────────────────────
+  stress-summary:
+    name: "⑧ 最大测压汇总报告"
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    needs:
+      - sre-microkernel-stress
+      - placement-extreme-stress
+      - scheduler-benchmarks
+      - full-system-qa
+      - integration-chaos
+      - locust-extreme-load
+      - playwright-e2e
+    if: always()
+
+    steps:
+      - name: Print stress test summary
+        run: |
+          echo "======================================================"
+          echo " ZEN70 最大测压完成汇总"
+          echo "======================================================"
+          echo " ① SRE微内核压力测试:   ${{ needs.sre-microkernel-stress.result }}"
+          echo " ② PlacementSolver极限:  ${{ needs.placement-extreme-stress.result }}"
+          echo " ③ 调度器微基准:         ${{ needs.scheduler-benchmarks.result }}"
+          echo " ④ 全栈QA回归:           ${{ needs.full-system-qa.result }}"
+          echo " ⑤ 集成+混沌测试:        ${{ needs.integration-chaos.result }}"
+          echo " ⑥ Locust极限负载:       ${{ needs.locust-extreme-load.result }}"
+          echo " ⑦ Playwright E2E:       ${{ needs.playwright-e2e.result }}"
+          echo "======================================================"
+          # Fail summary job only if any required job actually failed (not skipped/cancelled)
+          if [[ \
+            "${{ needs.sre-microkernel-stress.result }}" == "failure" || \
+            "${{ needs.placement-extreme-stress.result }}" == "failure" || \
+            "${{ needs.scheduler-benchmarks.result }}" == "failure" || \
+            "${{ needs.full-system-qa.result }}" == "failure" || \
+            "${{ needs.integration-chaos.result }}" == "failure" || \
+            "${{ needs.locust-extreme-load.result }}" == "failure" || \
+            "${{ needs.playwright-e2e.result }}" == "failure" \
+          ]]; then
+            echo "❌ 一个或多个测压 Job 失败，请查看详细日志。"
+            exit 1
+          else
+            echo "✅ 全部测压 Job 完成（success / skipped / cancelled）。"
+          fi

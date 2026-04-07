@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# ZEN70 发布脚本 — 预检 → 模板同步 → manifest → tag → 镜像构建
+#
+# 用法: ./scripts/release.sh [版本号]
+#   版本号可选，未提供时从 git tag 自动递增 patch。
+#
+# 法典 §5.2:
+#   - 禁止人工打 Tag；必须通过本脚本或 CI 自动打 Tag
+#   - 遵循 Conventional Commits (feat: / fix:)
+#   - 构建签名镜像 (cosign)
+#
+# 依赖: git, docker, sha256sum, (可选) cosign, gh
+# ---------------------------------------------------------------------------
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+readonly ROOT=$(pwd)
+readonly SCRIPTS_TEMPLATES="$ROOT/scripts/templates"
+readonly DEPLOY_TEMPLATES="$ROOT/deploy/templates"
+readonly MANIFEST_FILE="templates.manifest"
+
+# ===========================================================================
+# 1. 预检
+# ===========================================================================
+
+check_workspace() {
+  echo "[预检] 工作区干净度..."
+  if ! git diff-index --quiet HEAD --; then
+    echo "[FATAL] Workspace is dirty! 必须提交所有本地更改后才能执行发布流程。"
+    echo "变更列表:"
+    git diff --stat
+    exit 1
+  fi
+  echo "  ✓ 工作区干净"
+}
+
+check_ci() {
+  echo "[预检] CI 状态..."
+  if command -v gh &>/dev/null; then
+    local conclusion
+    conclusion=$(gh run list --limit 1 --json conclusion --jq '.[0].conclusion' 2>/dev/null || echo "unknown")
+    if [[ "$conclusion" != "success" ]]; then
+      echo "  ⚠ 最近 CI 结论: $conclusion（非 success），请确认后继续"
+    else
+      echo "  ✓ CI 通过"
+    fi
+  else
+    echo "  ⚠ gh CLI 未安装，跳过 CI 检查"
+  fi
+}
+
+check_changelog() {
+  echo "[预检] CHANGELOG..."
+  if ! grep -q "## \[Unreleased\]" CHANGELOG.md 2>/dev/null; then
+    echo "  ⚠ CHANGELOG 中无 [Unreleased] 段"
+  else
+    echo "  ✓ CHANGELOG 包含 [Unreleased]"
+  fi
+}
+
+check_docker() {
+  echo "[预检] Docker..."
+  if ! command -v docker &>/dev/null; then
+    echo "[FATAL] docker 未安装"
+    exit 1
+  fi
+  echo "  ✓ Docker $(docker --version | head -1)"
+}
+
+# ===========================================================================
+# 2. 模板同步 (scripts/templates → deploy/templates)
+# ===========================================================================
+
+sync_templates() {
+  echo "[模板同步] scripts/templates → deploy/templates..."
+
+  if [[ ! -d "$SCRIPTS_TEMPLATES" ]]; then
+    echo "  ⚠ scripts/templates 不存在，跳过模板同步"
+    return 0
+  fi
+
+  # 确保目标目录存在
+  mkdir -p "$DEPLOY_TEMPLATES"
+
+  # rsync 精确同步（删除目标端多余文件）
+  if command -v rsync &>/dev/null; then
+    rsync -av --delete "$SCRIPTS_TEMPLATES/" "$DEPLOY_TEMPLATES/"
+  else
+    # fallback: cp + 清理
+    rm -rf "${DEPLOY_TEMPLATES:?}/"*
+    cp -r "$SCRIPTS_TEMPLATES/"* "$DEPLOY_TEMPLATES/"
+  fi
+
+  echo "  ✓ 模板同步完成"
+}
+
+# ===========================================================================
+# 3. SHA-256 Manifest 生成
+# ===========================================================================
+
+generate_manifest() {
+  echo "[Manifest] 生成 SHA-256 校验和..."
+
+  local manifest_targets=("$SCRIPTS_TEMPLATES" "$DEPLOY_TEMPLATES")
+
+  for dir in "${manifest_targets[@]}"; do
+    if [[ ! -d "$dir" ]]; then
+      echo "  ⚠ $dir 不存在,跳过"
+      continue
+    fi
+
+    local manifest_path="$dir/$MANIFEST_FILE"
+
+    # 进入目录生成相对路径的 checksum
+    (
+      cd "$dir"
+      # 排除旧 manifest 文件自身
+      find . -type f ! -name "$MANIFEST_FILE" -print0 \
+        | sort -z \
+        | xargs -0 sha256sum \
+        > "$MANIFEST_FILE"
+    )
+
+    local count
+    count=$(wc -l < "$dir/$MANIFEST_FILE")
+    echo "  ✓ $dir/$MANIFEST_FILE ($count 条记录)"
+  done
+}
+
+# ===========================================================================
+# 4. 版本推断
+# ===========================================================================
+
+infer_version() {
+  local current
+  current=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+  current=${current#v}
+  IFS='.' read -r ma mi pa <<< "$current"
+  echo "${ma}.${mi}.$((pa + 1))"
+}
+
+# ===========================================================================
+# 5. 镜像构建 + 签名
+# ===========================================================================
+
+build_and_sign() {
+  local tag="$1"
+
+  echo "[构建] Docker 镜像..."
+
+  # 读取 REGISTRY 配置
+  local registry="${REGISTRY_URL:-}"
+  if [[ -z "$registry" ]]; then
+    echo "  ⚠ REGISTRY_URL 未设置，使用本地构建"
+    registry="zen70-local"
+  fi
+
+  local image_name="$registry/zen70-gateway:$tag"
+
+  docker build \
+    -t "$image_name" \
+    -f "$ROOT/backend/Dockerfile" \
+    --label "zen70.version=$tag" \
+    --label "zen70.gc.keep=true" \
+    "$ROOT/backend"
+
+  echo "  ✓ 镜像构建完成: $image_name"
+
+  # cosign 签名（可选）
+  if command -v cosign &>/dev/null; then
+    echo "[签名] cosign..."
+    cosign sign --yes "$image_name"
+    echo "  ✓ 镜像已签名"
+  else
+    echo "  ⚠ cosign 未安装，跳过镜像签名（法典 §1.3 建议安装）"
+  fi
+}
+
+# ===========================================================================
+# 主流程
+# ===========================================================================
+
+main() {
+  local VERSION=${1:-$(infer_version)}
+  VERSION=${VERSION#v}
+  local TAG="v${VERSION}"
+
+  echo "═══════════════════════════════════════════"
+  echo "  ZEN70 Release $TAG"
+  echo "═══════════════════════════════════════════"
+
+  # Phase 1: 预检
+  check_workspace
+  check_ci
+  check_changelog
+  check_docker
+
+  # Phase 1.5: 代码级冒烟门禁 (法典 §5.2)
+  echo ""
+  echo "[Phase 1.5] 执行 Preflight Smoke Gate..."
+  if ! python3 scripts/preflight_smoke.py; then
+    echo "[FATAL] Preflight 门禁未通过，中止发布流程。"
+    exit 1
+  fi
+
+  # Phase 2: 模板同步 + Manifest
+  sync_templates
+  generate_manifest
+
+  # 确认
+  echo ""
+  echo "即将执行:"
+  echo "  1. 创建 git tag: $TAG"
+  echo "  2. 构建 Docker 镜像"
+  echo "  3. 签名（如有 cosign）"
+  echo ""
+  read -r -p "继续? [y/N] " resp
+  [[ "$resp" =~ ^[yY] ]] || exit 1
+
+  # Phase 3: Tag
+  git tag -a "$TAG" -m "Release $TAG"
+  echo "  ✓ Tag $TAG 已创建"
+
+  # Phase 4: 构建 + 签名
+  build_and_sign "$TAG"
+
+  # Phase 5: 部署后验证 — 强制门禁 (法典 §5.2-gate-hard)
+  # 如服务可达，则必须通过全部检查；服务不可达时使用 release_smoke_gate.py 分层判定。
+  echo ""
+  echo "[Phase 5] Post-Deploy 门禁验证（硬阻断）..."
+
+  local _postdeploy_rc=0
+
+  # Step 5a: release_smoke_gate.py — 分层退出码 (exit 0=pass, 1=critical-fail, 2=non-critical)
+  if python3 scripts/release_smoke_gate.py 2>/dev/null; then
+    echo "  ✓ Release Smoke Gate 通过"
+  else
+    _postdeploy_rc=$?
+    if [[ $_postdeploy_rc -eq 1 ]]; then
+      echo "[FATAL] Release Smoke Gate 关键检查未通过 (exit 1)，中止发布流程。"
+      # Rollback: remove the un-pushed tag
+      git tag -d "$TAG" 2>/dev/null || true
+      exit 1
+    elif [[ $_postdeploy_rc -eq 2 ]]; then
+      echo "  ⚠ Release Smoke Gate 非关键检查未通过 (exit 2)。"
+      echo "  如确需带伤发布，运行: POSTDEPLOY_FORCE=1 ./scripts/release.sh $TAG"
+      if [[ "${POSTDEPLOY_FORCE:-}" != "1" ]]; then
+        git tag -d "$TAG" 2>/dev/null || true
+        exit 1
+      fi
+      echo "  ⚠ POSTDEPLOY_FORCE=1 — 继续发布（已记录风险）"
+    fi
+  fi
+
+  # Step 5b: postdeploy_verify.py — 端点健康验证
+  if python3 scripts/postdeploy_verify.py 2>/dev/null; then
+    echo "  ✓ Post-Deploy 验证通过"
+  else
+    _postdeploy_rc=$?
+    if [[ $_postdeploy_rc -ne 0 ]]; then
+      echo "[FATAL] Post-Deploy 验证未通过 (exit $_postdeploy_rc)，中止发布流程。"
+      echo "  如服务未部署（纯镜像构建），运行: POSTDEPLOY_FORCE=1 ./scripts/release.sh $TAG"
+      if [[ "${POSTDEPLOY_FORCE:-}" != "1" ]]; then
+        git tag -d "$TAG" 2>/dev/null || true
+        exit 1
+      fi
+      echo "  ⚠ POSTDEPLOY_FORCE=1 — 跳过部署后验证（已记录风险）"
+    fi
+  fi
+
+  echo ""
+  echo "═══════════════════════════════════════════"
+  echo "  ✓ Release $TAG 完成"
+  echo "  推送: git push origin $TAG"
+  echo "═══════════════════════════════════════════"
+}
+
+main "$@"

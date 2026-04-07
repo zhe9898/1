@@ -1,0 +1,124 @@
+"""
+ZEN70 unified error contract helpers (Pydantic v2).
+
+Goals:
+- Single source of truth for `code/message/recovery_hint/details` schema.
+- Typed error codes via Enum (IDE autocomplete, no magic strings).
+- `raise zen(...)` everywhere (no hand-crafted HTTPException payloads).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from enum import Enum
+from typing import TypedDict, cast
+
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
+
+
+class ZenErrorDetailsDict(TypedDict, total=False):
+    """Shared details shape for IDE/type-checking (extensible)."""
+
+    request_id: str
+    timestamp_utc: str
+
+
+class ZenErrorDetails(BaseModel):
+    """Optional shared detail fields; services may extend via plain dict."""
+
+    request_id: str | None = Field(default=None, description="X-Request-ID")
+    timestamp_utc: str | None = Field(default=None, description="UTC ISO timestamp")
+
+
+class ZenErrorResponse(BaseModel):
+    """Canonical error envelope (always has all 4 fields)."""
+
+    code: str = Field(..., description="ZEN-xxx error code")
+    message: str = Field(..., description="human readable message")
+    recovery_hint: str = Field(default="", description="how to recover (UI hint)")
+    details: dict[str, object] = Field(default_factory=dict, description="additional fields for debugging/UI")
+
+
+class ZenSuccessResponse(BaseModel):
+    """Canonical success envelope (always has all 4 fields + data)."""
+
+    code: str = Field(default="ZEN-OK-0", description="success code")
+    message: str = Field(default="ok", description="human readable message")
+    recovery_hint: str = Field(default="", description="optional UI hint")
+    details: dict[str, object] = Field(default_factory=dict, description="additional fields for debugging/UI")
+    data: object = Field(default=None, description="payload")
+
+
+class ZenErrorCode(str, Enum):
+    """Common cross-service error codes (extend as needed)."""
+
+    AUTH_FORBIDDEN = "ZEN-AUTH-403"
+    AUTH_UNAUTHORIZED = "ZEN-AUTH-401"
+    BUS_REDIS_UNAVAILABLE = "ZEN-BUS-5030"
+    VALIDATION_BAD_REQUEST = "ZEN-VAL-4000"
+    INTERNAL_SERVER_ERROR = "ZEN-INT-5000"
+
+
+def _merge_details(
+    details: Mapping[str, object] | ZenErrorDetails | None,
+    *,
+    extra: Mapping[str, object] | None,
+) -> dict[str, object]:
+    base: dict[str, object] = {}
+    if details is not None:
+        if isinstance(details, BaseModel):
+            base.update(details.model_dump(exclude_none=True))
+        else:
+            base.update(dict(details))
+    if extra:
+        base.update(dict(extra))
+    return base
+
+
+def zen(
+    code: ZenErrorCode | str,
+    message: str,
+    status_code: int = 400,
+    *,
+    recovery_hint: str = "",
+    details: Mapping[str, object] | ZenErrorDetails | None = None,
+    extra_details: Mapping[str, object] | None = None,
+) -> HTTPException:
+    """
+    Build a FastAPI HTTPException with ZEN70 canonical error envelope.
+
+    Note on performance:
+    - model_dump happens only on error path; acceptable.
+    - global exception handler will preserve this dict without re-serializing to JSON string.
+    """
+
+    payload = ZenErrorResponse(
+        code=code.value if hasattr(code, "value") else str(code),
+        message=message,
+        recovery_hint=recovery_hint,
+        details=_merge_details(details, extra=extra_details),
+    ).model_dump(mode="json")
+    return HTTPException(status_code=status_code, detail=payload)
+
+
+def ok(
+    data: object,
+    *,
+    message: str = "ok",
+    code: str = "ZEN-OK-0",
+    recovery_hint: str = "",
+    details: Mapping[str, object] | ZenErrorDetails | None = None,
+    extra_details: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Build canonical success envelope for API responses."""
+    return cast(
+        dict[str, object],
+        ZenSuccessResponse(
+            code=code,
+            message=message,
+            recovery_hint=recovery_hint,
+            details=_merge_details(details, extra=extra_details),
+            data=data,
+        ).model_dump(mode="json"),
+    )

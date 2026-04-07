@@ -1,0 +1,7 @@
+# ZEN70 镜像 digest  manifest（法典 1.1 供应链）
+# 可选：置于 system.yaml 同目录，命名为 images.manifest
+# 格式：每行 image:tag sha256:digest
+# 启用后 bootstrap 会在 compose up 前拉取并校验 digest，不匹配时告警
+#
+# postgres:15-alpine sha256:xxx
+# redis:7-alpine sha256:yyy

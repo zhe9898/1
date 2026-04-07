@@ -1,0 +1,16 @@
+# ZEN70 阶段 1 基础设施基座依赖 (Python 3.11+)
+# bootstrap.py、compiler.py、verify.py 及 CI/CD 流水线共用
+# 使用方式: pip install -r requirements-infra.txt
+
+# 配置编译 (compiler.py)
+PyYAML==6.0.3
+Jinja2==3.1.6
+
+# Docker 操作、预检与验真 (bootstrap.py, verify.py)
+docker==7.1.0
+
+# 代码质检与自动化测试 (CI + 本地)
+flake8==7.3.0
+pytest==9.0.2
+pytest-cov==7.0.0
+pytest-asyncio==1.3.0

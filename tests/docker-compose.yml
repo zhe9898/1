@@ -1,0 +1,69 @@
+# ZEN70 集成测试环境：Redis、PostgreSQL、网关、探针、可选 Jellyfin
+# 从项目根目录启动: docker compose -f tests/docker-compose.yml up -d
+# 探针 MOUNT_POINTS 可配为 /mnt/test,,1；CONTAINER_MAP 在代码中为 /mnt/media -> zen70-jellyfin，/mnt/cctv -> zen70-frigate
+
+services:
+  redis:
+    image: redis:7-alpine@sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine@sha256:fceb6f86328c36f2438fae3b851b0cc57c4a7e69a58c866d9ce24281f2cf0c9c
+    environment:
+      POSTGRES_USER: zen70
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: zen70
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zen70"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.backend
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      POSTGRES_DSN: postgresql://zen70:testpass@postgres:5432/zen70
+      CORS_ORIGINS: "*"
+    ports: ["8000:8000"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  sentinel:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.backend
+    command: ["python", "backend/sentinel/topology_sentinel.py"]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      MOCK_HARDWARE: "true"
+      MOUNT_POINTS: ""
+      PROBE_INTERVAL: "5"
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # 可选：用于验证容器 pause/unpause（探针 CONTAINER_MAP 中 /mnt/media -> zen70-jellyfin）
+  jellyfin:
+    image: jellyfin/jellyfin:10.11.6@sha256:333b647716631443a43c7fabac4b0c46b4e2f036bad19547e00958f10f721b85
+    container_name: zen70-jellyfin
+    volumes:
+      - jellyfin_data:/config
+      - test_media:/media:ro
+    depends_on: [gateway]
+    profiles:
+      - with-jellyfin
+
+volumes:
+  jellyfin_data:
+  test_media:

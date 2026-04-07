@@ -1,0 +1,112 @@
+"""
+Unit test 公共 fixtures。
+所有 unit test 必须零外部 I/O（禁止真实 Redis/DB/文件系统）。
+"""
+
+from __future__ import annotations
+
+import os
+
+# ---------------------------------------------------------------------------
+# 模块级环境变量：在测试收集阶段设置，保证 WebAuthn 等模块可正常导入
+# ---------------------------------------------------------------------------
+os.environ.setdefault("DOMAIN", "localhost")
+
+from datetime import UTC, datetime, timedelta  # noqa: E402
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# 环境变量固定（防止测试泄漏到生产配置）
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """确保测试不读取宿主机的生产环境变量。"""
+    monkeypatch.setenv("ZEN70_ENV", "")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:5173")
+    monkeypatch.setenv("JWT_SECRET_CURRENT", TEST_SECRET_CURRENT)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    monkeypatch.delenv("PRODUCTION", raising=False)
+
+
+# ---------------------------------------------------------------------------
+# JWT fixtures
+# ---------------------------------------------------------------------------
+TEST_SECRET_CURRENT = "test-secret-current-32bytes!!!!!"
+TEST_SECRET_PREVIOUS = "test-secret-previous-32bytes!!!!"
+
+
+@pytest.fixture()
+def jwt_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """设置 JWT 测试环境变量并返回密钥字典。"""
+    monkeypatch.setenv("JWT_SECRET_CURRENT", TEST_SECRET_CURRENT)
+    monkeypatch.setenv("JWT_SECRET_PREVIOUS", TEST_SECRET_PREVIOUS)
+    monkeypatch.setenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+    return {
+        "current": TEST_SECRET_CURRENT,
+        "previous": TEST_SECRET_PREVIOUS,
+    }
+
+
+def make_token(
+    payload: dict[str, object] | None = None,
+    secret: str = TEST_SECRET_CURRENT,
+    expire_minutes: int = 15,
+) -> str:
+    """辅助函数：生成一个合法的 JWT。"""
+    import jwt as pyjwt
+
+    data = payload or {"sub": "test-user", "role": "admin", "tenant_id": "default"}
+    now = datetime.now(UTC)
+    data.update({"exp": now + timedelta(minutes=expire_minutes), "iat": now})
+    return pyjwt.encode(data, secret, algorithm="HS256")
+
+
+def make_expired_token(
+    secret: str = TEST_SECRET_CURRENT,
+) -> str:
+    """辅助函数：生成一个已过期的 JWT。"""
+    import jwt as pyjwt
+
+    now = datetime.now(UTC)
+    data = {
+        "sub": "test-user",
+        "role": "admin",
+        "exp": now - timedelta(minutes=5),
+        "iat": now - timedelta(minutes=20),
+    }
+    return pyjwt.encode(data, secret, algorithm="HS256")
+
+
+# ---------------------------------------------------------------------------
+# Mock Redis
+# ---------------------------------------------------------------------------
+@pytest.fixture()
+def mock_redis() -> MagicMock:
+    """返回一个 mock RedisClient，所有方法返回安全默认值。"""
+    client = MagicMock()
+    client.get = AsyncMock(return_value=None)
+    client.set = AsyncMock(return_value=True)
+    client.publish = AsyncMock(return_value=1)
+    client.hgetall = AsyncMock(return_value={})
+    client.close = AsyncMock()
+    client.ping = AsyncMock(return_value=True)
+    return client
+
+
+# ---------------------------------------------------------------------------
+# Mock DB Session
+# ---------------------------------------------------------------------------
+@pytest.fixture()
+def mock_db() -> AsyncMock:
+    """返回一个 mock AsyncSession。"""
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.close = AsyncMock()
+    session.refresh = AsyncMock()
+    session.add = MagicMock()
+    session.delete = AsyncMock()
+    return session
