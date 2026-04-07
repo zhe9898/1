@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
+from tests._repo_paths import repo_path
 
-
-DB_PATH = Path("backend/db.py")
-MIGRATION_PATH = Path("backend/alembic/versions/9f2c7a1d4e61_control_plane_schema_hardening.py")
-PUSH_MIGRATION_PATH = Path("backend/alembic/versions/c13c4b7d9a12_push_subscription_tenant_scope.py")
+DB_PATH = repo_path("backend", "db.py")
+MIGRATION_PATH = repo_path("backend", "alembic", "versions", "9f2c7a1d4e61_control_plane_schema_hardening.py")
+PUSH_MIGRATION_PATH = repo_path("backend", "alembic", "versions", "c13c4b7d9a12_push_subscription_tenant_scope.py")
 
 
 def test_db_runtime_no_longer_embeds_schema_hardening_ddl() -> None:

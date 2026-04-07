@@ -14,6 +14,7 @@ from backend.api.control_events import publish_control_event
 from backend.api.jobs.models import JobCreateRequest
 from backend.api.jobs.submission import submit_job
 from backend.core.errors import zen
+from backend.core.compatibility_adapter import normalize_persisted_status
 from backend.core.extension_sdk import bootstrap_extension_runtime, get_published_job_kind, get_published_workflow_template
 from backend.core.redis_client import CHANNEL_TRIGGER_EVENTS, RedisClient
 from backend.core.trigger_command_service import TriggerCommandService
@@ -101,15 +102,15 @@ def _delivery_event_payload(trigger: Trigger, delivery: TriggerDelivery) -> dict
         "trigger": {
             "trigger_id": trigger.trigger_id,
             "kind": trigger.kind,
-            "status": trigger.status,
-            "last_delivery_status": trigger.last_delivery_status,
+            "status": normalize_persisted_status("triggers.status", trigger.status),
+            "last_delivery_status": normalize_persisted_status("trigger_deliveries.status", trigger.last_delivery_status),
             "last_delivery_id": trigger.last_delivery_id,
             "last_delivery_target_kind": trigger.last_delivery_target_kind,
             "last_delivery_target_id": trigger.last_delivery_target_id,
         },
         "delivery": {
             "delivery_id": delivery.delivery_id,
-            "status": delivery.status,
+            "status": normalize_persisted_status("trigger_deliveries.status", delivery.status),
             "source_kind": delivery.source_kind,
             "target_kind": delivery.target_kind,
             "target_id": delivery.target_id,
@@ -240,7 +241,7 @@ async def _dispatch_workflow_template_target(
     snapshot = {
         "workflow_id": workflow.workflow_id,
         "name": workflow.name,
-        "status": workflow.status,
+        "status": normalize_persisted_status("workflows.status", workflow.status),
         "steps_count": len(workflow.steps or []),
     }
     return "workflow", workflow.workflow_id, snapshot, "workflow accepted"
@@ -258,7 +259,7 @@ async def fire_trigger(
     reason: str | None = None,
     idempotency_key: str | None = None,
 ) -> TriggerDelivery:
-    if trigger.status != "active":
+    if normalize_persisted_status("triggers.status", trigger.status) != "active":
         raise zen(
             "ZEN-TRIG-4091",
             "Trigger is not active",
@@ -381,8 +382,8 @@ async def fire_trigger(
             details={"trigger_id": trigger.trigger_id, "error": str(exc)},
         ) from exc
 
-    accepted_at = _utcnow()
-    TriggerCommandService.mark_delivery_accepted(
+    delivered_at = _utcnow()
+    TriggerCommandService.mark_delivery_delivered(
         trigger,
         delivery,
         target_kind=target_kind,
@@ -390,7 +391,7 @@ async def fire_trigger(
         target_snapshot=target_snapshot,
         message=message,
         fired_at=now,
-        accepted_at=accepted_at,
+        delivered_at=delivered_at,
     )
     await db.flush()
     await db.commit()

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+from backend.core.job_status import normalize_job_status
+
 if TYPE_CHECKING:
     from backend.models.job import Job
 
@@ -169,13 +171,13 @@ def get_job_type_stats(jobs: list[Job]) -> dict[str, dict[str, int]]:
         }
     """
     stats: dict[str, dict[str, int]] = {
-        JOB_TYPE_SCHEDULED: {"pending": 0, "leased": 0, "completed": 0, "failed": 0, "canceled": 0},
-        JOB_TYPE_BACKGROUND: {"pending": 0, "leased": 0, "completed": 0, "failed": 0, "canceled": 0},
+        JOB_TYPE_SCHEDULED: {"pending": 0, "leased": 0, "completed": 0, "failed": 0, "cancelled": 0},
+        JOB_TYPE_BACKGROUND: {"pending": 0, "leased": 0, "completed": 0, "failed": 0, "cancelled": 0},
     }
 
     for job in jobs:
         job_type = get_job_type(job)
-        status = job.status or "pending"
+        status = normalize_job_status(job.status) or "pending"
 
         if status in stats[job_type]:
             stats[job_type][status] += 1

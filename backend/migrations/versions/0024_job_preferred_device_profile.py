@@ -1,12 +1,11 @@
-"""Add preferred_device_profile to jobs table
+"""Add preferred_device_profile to jobs table."""
 
-Revision ID: 0024_job_preferred_device_profile
-Revises: 0023_software_evaluations_system_logs
-Create Date: 2026-04-04
-"""
+from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+
+from backend.core.migration_schema_guard import SchemaGuard
 
 revision = "0024_job_preferred_device_profile"
 down_revision = "0023_software_evaluations_system_logs"
@@ -15,8 +14,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("jobs", sa.Column("preferred_device_profile", sa.String(64), nullable=True))
+    guard = SchemaGuard(op.get_bind())
+    guard.add_column_if_missing("jobs", sa.Column("preferred_device_profile", sa.String(64), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("jobs", "preferred_device_profile")
+    inspector = sa.inspect(op.get_bind())
+    if inspector.has_table("jobs"):
+        op.drop_column("jobs", "preferred_device_profile")

@@ -1,8 +1,10 @@
-# ADR 0031：Dashboard 路由意图与过滤后的运维视图
+# ADR 0031: Dashboard 路由意图与过滤后的运维视图
 
-- **状态**: 已接受
-- **日期**: 2026-03-27
-- **范围**: Phase 3 dashboard 产品化与 drill-down 行为
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Dashboard 路由意图与过滤后的运维视图
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景
 

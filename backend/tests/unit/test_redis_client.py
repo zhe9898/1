@@ -322,7 +322,12 @@ class TestNodeRegistration:
     async def test_get_all_nodes_empty(self) -> None:
         """无节点时返回空字典。"""
         c = _make_connected_client()
-        c._redis.keys = AsyncMock(return_value=[])  # type: ignore[method-assign, union-attr]
+        async def _scan_iter(*args, **kwargs):  # type: ignore[no-untyped-def]
+            del args, kwargs
+            if False:
+                yield ""
+
+        c._redis.scan_iter = _scan_iter  # type: ignore[method-assign, union-attr]
         nodes = await c.get_all_nodes()
         assert nodes == {}
 

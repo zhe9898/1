@@ -34,7 +34,7 @@ async def check_node_quota(db: AsyncSession, tenant_id: str) -> None:
     count_result = await db.execute(
         select(func.count()).where(
             Node.tenant_id == tenant_id,
-            Node.enrollment_status.in_(("pending", "active")),
+            Node.enrollment_status.in_(("pending", "approved")),
         )
     )
     used = count_result.scalar() or 0
@@ -126,7 +126,7 @@ async def check_per_kind_quota(db: AsyncSession, tenant_id: str, kind: str) -> N
 async def get_quota_status(db: AsyncSession, tenant_id: str) -> dict[str, dict[str, int]]:
     """Return current usage vs limit for all quota types."""
     # Collect live counts
-    node_count = (await db.execute(select(func.count()).where(Node.tenant_id == tenant_id, Node.enrollment_status.in_(("pending", "active"))))).scalar() or 0
+    node_count = (await db.execute(select(func.count()).where(Node.tenant_id == tenant_id, Node.enrollment_status.in_(("pending", "approved"))))).scalar() or 0
 
     connector_count = (await db.execute(select(func.count()).where(Connector.tenant_id == tenant_id))).scalar() or 0
 

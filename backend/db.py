@@ -14,7 +14,7 @@ from collections.abc import AsyncGenerator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from backend.models import Base
+from backend.models.registry import load_canonical_model_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +93,10 @@ async def init_db() -> None:
     if _engine is None:
         return
 
+    metadata = load_canonical_model_metadata()
     async with _engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(metadata.create_all)
 
     from backend.core.rls import apply_rls_policies
 

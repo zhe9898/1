@@ -1,7 +1,10 @@
 # ADR 0021: Frontend API Path Constant Registry (Single Source of Truth)
 
-- **状态**: 已接受 (Accepted 2026-03-24) — _部分废弃 (v3.43: MEDIA / ASSETS / SCHEDULER / SCENES / ENERGY 域已下架)_
-- **前置依赖**: ADR 0009 (Contracts-driven Types), ADR 0010 (Unified Envelope), ADR 0015 (HTTP Client Enforcement)
+- Status: Accepted
+- Date: 2026-03-24
+- Scope: Frontend API Path Constant Registry (Single Source of Truth)
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景上下文
 

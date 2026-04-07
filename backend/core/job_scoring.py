@@ -131,7 +131,8 @@ def _device_profile_bonus(job: "Job", node: "SchedulerNodeSnapshot") -> int:
     preferred = getattr(job, "preferred_device_profile", None)
     if not preferred:
         return 0
-    node_profile = node.metadata_json.get("device_profile") if node.metadata_json else None
+    metadata = node.metadata_json if isinstance(node.metadata_json, dict) else {}
+    node_profile = metadata.get("device_profile") if metadata else None
     if not node_profile:
         return 0
     sw = _get_scoring_weights()

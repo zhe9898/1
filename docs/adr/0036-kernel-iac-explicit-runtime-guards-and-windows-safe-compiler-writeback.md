@@ -1,7 +1,10 @@
 # ADR 0036: Kernel IaC 显式运行守卫与 Windows 安全写回
 
-- 状态：Accepted
-- 日期：2026-03-27
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Kernel IaC 显式运行守卫与 Windows 安全写回
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

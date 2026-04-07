@@ -146,7 +146,9 @@ class JobResponse(BaseModel):
     attempt: int
     payload: dict[str, object]
     result: dict[str, object] | None
-    error_message: str | None
+    error_message: str | None = None
+    safe_error_code: str | None = None
+    safe_error_hint: str | None = None
     lease_seconds: int
     leased_until: datetime.datetime | None
     lease_state: str
@@ -193,7 +195,9 @@ class JobAttemptResponse(BaseModel):
     status: str
     status_view: StatusView
     score: int
-    error_message: str | None
+    error_message: str | None = None
+    safe_error_code: str | None = None
+    safe_error_hint: str | None = None
     result_summary: dict[str, object] | None
     created_at: datetime.datetime
     started_at: datetime.datetime | None
@@ -278,7 +282,7 @@ class JobTypeStatsItem(BaseModel):
     leased: int
     completed: int
     failed: int
-    canceled: int
+    cancelled: int
 
 
 class ConcurrentLimitInfo(BaseModel):

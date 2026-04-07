@@ -1,10 +1,10 @@
 # ADR 0001: 采用 Python 编写自有 IaC 编译器
 
-- **状态**: 接受
-- **日期**: 2026-03-15
+- Status: Accepted
+- Date: 2026-03-15
+- Scope: 采用 Python 编写自有 IaC 编译器
 
-## 1. 背景上下文
-ZEN70 系统的“配置即代码”(IaC) 和“全局初始化”(Bootstrap) 是保证集群多节点幂等分发的基石（法典 7 & 8）。在初期技术选型中，我们需要一种手段将上层的算力配置 (`system.yaml`) 渲染到底层的各种环境容器，并且能够在“物理断网”的冷启动场景下平稳运行。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 2. 决策选项
 1. **采用 Helm (Kubernetes 体系)**: 业界最成熟的做法，借助 values.yaml 进行高度模板化注入。

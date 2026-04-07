@@ -44,7 +44,7 @@ def _node(**overrides: object) -> Node:
         lease_version="job-lease.v1",
         auth_token_hash=None,
         auth_token_version=1,
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         capabilities=["connector.invoke"],
         metadata_json={},
@@ -133,7 +133,7 @@ async def test_console_overview_aggregates_attention_buckets() -> None:
                 _job(job_id="job-running", status="leased", leased_until=now + datetime.timedelta(seconds=20)),
                 _job(job_id="job-stale", status="leased", leased_until=now - datetime.timedelta(seconds=20)),
                 _job(job_id="job-failed", status="failed"),
-                _job(job_id="job-canceled", status="canceled"),
+                _job(job_id="job-cancelled", status="cancelled"),
                 _job(job_id="job-completed", status="completed"),
             ]
         ),
@@ -156,7 +156,7 @@ async def test_console_overview_aggregates_attention_buckets() -> None:
     assert response.jobs.running == 1
     assert response.jobs.stale == 1
     assert response.jobs.failed == 1
-    assert response.jobs.canceled == 1
+    assert response.jobs.cancelled == 1
     assert response.jobs.completed == 1
     assert response.jobs.high_priority_backlog == 1
     assert response.connectors.active == 1

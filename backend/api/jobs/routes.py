@@ -22,7 +22,7 @@ from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
 from .database import _get_job_by_id
-from .helpers import _matches_job_list_filters, _to_attempt_response, _to_response, _utcnow
+from .helpers import _matches_job_list_filters, _normalize_job_status_filter, _to_attempt_response, _to_response, _utcnow
 from .models import JobAttemptResponse, JobCreateRequest, JobResponse
 from .schemas import _resource_schema
 from .submission import submit_job
@@ -63,6 +63,7 @@ async def list_jobs(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[JobResponse]:
     tenant_id = str(current_user.get("tenant_id") or "default")
+    status_filter = _normalize_job_status_filter(status) if status else None
     query = select(Job).where(Job.tenant_id == tenant_id)
     if job_id:
         query = query.where(Job.job_id == job_id)
@@ -78,7 +79,7 @@ async def list_jobs(
         if _matches_job_list_filters(
             job,
             now=now,
-            status=status,
+            status=status_filter,
             lease_state=lease_state,
             priority_bucket=priority_bucket,
             target_executor=target_executor,

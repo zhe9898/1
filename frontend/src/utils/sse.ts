@@ -73,7 +73,6 @@ function parseFrame(frame: string): ParsedFrame | null {
 
 export interface SSEOptions {
   onFallbackOffline?: () => void;
-  getAccessToken?: () => string | null;
 }
 
 export function createSSE(
@@ -225,7 +224,6 @@ export function createSSE(
     if (closed || document.visibilityState === "hidden") {
       return;
     }
-    const accessToken = options.getAccessToken?.() ?? null;
 
     stopReconnectTimer();
     currentClientToken = crypto.randomUUID();
@@ -240,9 +238,6 @@ export function createSSE(
         Accept: "text/event-stream",
         "Cache-Control": "no-cache",
       };
-      if (accessToken) {
-        headers.Authorization = `Bearer ${accessToken}`;
-      }
       // eslint-disable-next-line zen70/no-bare-fetch -- SSE requires a streaming fetch with custom auth headers.
       const response = await fetch(sseUrl, {
         method: "GET",

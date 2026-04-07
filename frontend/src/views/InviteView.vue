@@ -110,6 +110,7 @@ import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { startRegistration, type PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser';
 import { useAuthStore } from '@/stores/auth';
+import type { AuthSessionResponse } from '@/stores/auth/sessionClaims';
 import { http } from '@/utils/http';
 import { AUTH } from '@/utils/api';
 import type { AxiosError } from 'axios';
@@ -166,13 +167,13 @@ async function bindDevice() {
     const credential = await startRegistration({ optionsJSON: beginData.options });
 
     // 3. 将注册结果发回服务器，完成物理绑定与 Token 销毁
-    const { data: completeData } = await http.post<{ access_token?: string }>(
+    const { data: completeData } = await http.post<AuthSessionResponse>(
       AUTH.inviteWebauthnComplete(token.value),
       { credential }
     );
 
     // 4. 保存登录态
-    authStore.setToken(completeData.access_token ?? null);
+    await authStore.acceptAuthenticatedSession(completeData);
     successMsg.value = '您的设备已通过最高级别安全认证！';
   } catch (err: unknown) {
     errorMsg.value = extractAxiosError(err, '由于安全原因，认证流程已中止。');
@@ -188,7 +189,7 @@ async function fallbackLogin() {
   processing.value = true;
   errorMsg.value = '';
   try {
-    const { data } = await http.post<{ access_token?: string }>(
+    const { data } = await http.post<AuthSessionResponse>(
       AUTH.inviteFallbackLogin(token.value),
       undefined,
       {
@@ -198,7 +199,7 @@ async function fallbackLogin() {
       }
     );
     // 保存登录态，降级无需硬件签名
-    authStore.setToken(data.access_token ?? null);
+    await authStore.acceptAuthenticatedSession(data);
     successMsg.value = '已通过降级模式免密登入系统。';
   } catch (err: unknown) {
     errorMsg.value = extractAxiosError(err, '降级登入失败。');

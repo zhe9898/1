@@ -85,8 +85,8 @@ class TestJWTDualTrackXNewToken:
         """
         用 PREVIOUS 密钥签发的 token，decode_token 应返回 new_token 非 None。
         """
-        test_current = "test-current-secret-32bytes!!!"
-        test_previous = "test-previous-secret-32bytes!!"
+        test_current = "test-current-secret-32bytes-123456"
+        test_previous = "test-previous-secret-32bytes-1234"
         token = self._create_token_with_secret(
             {"sub": "test_user", "role": "admin"}, test_previous
         )
@@ -118,7 +118,7 @@ class TestJWTDualTrackXNewToken:
         法典 1.6：用 CURRENT 密钥签发但已过 50% 寿命的 token，
         decode_token 应主动签发新 token。
         """
-        test_current = "test-current-secret-32bytes!!!"
+        test_current = "test-current-secret-32bytes-123456"
         token = self._create_half_expired_token(
             {"sub": "renew_user", "role": "geek"}, test_current
         )
@@ -144,7 +144,7 @@ class TestJWTDualTrackXNewToken:
         """完全无效的 token 应抛出 HTTPException 401 + ZEN-AUTH-401。"""
         from fastapi import HTTPException
 
-        test_current = "test-current-secret-32bytes!!!"
+        test_current = "test-current-secret-32bytes-123456"
         with patch.dict(os.environ, {
             "JWT_SECRET_CURRENT": test_current,
             "JWT_SECRET_PREVIOUS": "",

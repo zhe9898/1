@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import and_, func, literal, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.errors import zen
+from backend.core.job_concurrency_service import build_job_concurrency_window
 from backend.core.job_kind_registry import assert_job_submission_authorized, validate_job_payload
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
 from backend.core.rls import set_tenant_context
@@ -31,75 +30,8 @@ async def check_concurrent_limits(
     connector_id: str | None = None,
 ) -> None:
     """Check if creating a new job would exceed concurrent limits."""
-    from backend.core.job_type_separation import (
-        SCHEDULED_JOB_SOURCES,
-        format_concurrent_limit_error,
-        get_max_concurrent_limit,
-    )
-
-    if job_type == "scheduled":
-        source_filter = Job.source.in_(list(SCHEDULED_JOB_SOURCES))
-    else:
-        source_filter = ~Job.source.in_(list(SCHEDULED_JOB_SOURCES))
-
-    connector_count_expr = func.count().filter(and_(Job.tenant_id == tenant_id, Job.connector_id == connector_id)) if connector_id else literal(0)
-    counts_stmt = select(
-        func.public.zen70_global_leased_jobs_count(job_type).label("global_count"),
-        func.count().filter(Job.tenant_id == tenant_id).label("tenant_count"),
-        connector_count_expr.label("connector_count"),
-    ).where(
-        Job.status == "leased",
-        source_filter,
-    )
-    try:
-        counts_row = (await db.execute(counts_stmt)).one()
-        global_count = int(counts_row.global_count or 0)
-        tenant_count = int(counts_row.tenant_count or 0)
-        connector_count = int(counts_row.connector_count or 0)
-    except (SQLAlchemyError, OSError, RuntimeError, TypeError, ValueError) as exc:
-        raise zen(
-            "ZEN-JOB-5032",
-            "Global concurrent limit function is unavailable",
-            status_code=503,
-            recovery_hint="Apply the latest Alembic migrations before accepting job submissions",
-            details={"job_type": job_type, "migration_required": True},
-        ) from exc
-
-    global_limit = get_max_concurrent_limit(job_type, "global")
-    if global_count >= global_limit:
-        raise zen(
-            "ZEN-JOB-4096",
-            format_concurrent_limit_error(job_type, global_count, global_limit, "global"),
-            status_code=429,
-            recovery_hint="Wait for running jobs to complete or contact administrator",
-            details={"job_type": job_type, "current": global_count, "limit": global_limit},
-        )
-
-    tenant_limit = get_max_concurrent_limit(job_type, "per_tenant")
-    if tenant_count >= tenant_limit:
-        raise zen(
-            "ZEN-JOB-4097",
-            format_concurrent_limit_error(job_type, tenant_count, tenant_limit, "per_tenant"),
-            status_code=429,
-            recovery_hint="Wait for running jobs to complete or contact administrator",
-            details={"job_type": job_type, "tenant_id": tenant_id, "current": tenant_count, "limit": tenant_limit},
-        )
-
-    if connector_id:
-        connector_limit = get_max_concurrent_limit(job_type, "per_connector")
-        if connector_count >= connector_limit:
-            raise zen(
-                "ZEN-JOB-4098",
-                format_concurrent_limit_error(job_type, connector_count, connector_limit, "per_connector"),
-                status_code=429,
-                recovery_hint="Wait for running jobs to complete or contact administrator",
-                details={
-                    "job_type": job_type,
-                    "connector_id": connector_id,
-                    "current": connector_count,
-                    "limit": connector_limit,
-                },
-            )
+    concurrency_window = build_job_concurrency_window(db=db, tenant_id=tenant_id)
+    await concurrency_window.assert_capacity(job_type=job_type, connector_id=connector_id)
 
 
 async def submit_job(

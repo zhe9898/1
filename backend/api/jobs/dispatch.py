@@ -37,6 +37,7 @@ from backend.core.control_plane_state import (
 )
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.governance_facade import get_governance_facade
+from backend.core.job_concurrency_service import build_job_concurrency_window
 from backend.core.job_lifecycle_service import JobLifecycleService
 from backend.core.job_scheduler import (
     build_node_snapshot,
@@ -209,6 +210,7 @@ async def pull_jobs(  # noqa: C901
         profile=os.getenv("GATEWAY_PROFILE", "gateway-kernel"),
         raw_packs=os.getenv("GATEWAY_PACKS", ""),
     )
+    concurrency_window = build_job_concurrency_window(db=db, tenant_id=payload.tenant_id)
     tenant_policy = await SchedulingPolicyService.get(db, payload.tenant_id)
     _audit.context["policy_snapshot"] = {
         "policy_version": runtime_policy_snapshot.policy_version,
@@ -520,12 +522,17 @@ async def pull_jobs(  # noqa: C901
                     continue  # Another gateway instance is leasing this job
                 _acquired_locks.append(_lock_name)
             previous_attempt = await _get_current_attempt(db, job)
-            await LeaseService.expire_previous_attempt_if_needed(
-                db,
-                job=job,
-                now=now,
-                attempt=previous_attempt,
-            )
+            if job.status == "leased" and job.leased_until and job.leased_until < now:
+                await JobLifecycleService.expire_lease(
+                    db,
+                    job=job,
+                    attempt=previous_attempt,
+                    now=now,
+                )
+            concurrency_violation = await concurrency_window.check_capacity_for_job(job)
+            if concurrency_violation is not None:
+                _audit.record_rejection(job.job_id, concurrency_violation.audit_reason())
+                continue
             lease_grant = await LeaseService.grant_lease(
                 db,
                 job=job,
@@ -533,6 +540,7 @@ async def pull_jobs(  # noqa: C901
                 score=scored.score,
                 now=now,
             )
+            concurrency_window.note_lease_granted(job)
             await _append_log(
                 db,
                 job.job_id,

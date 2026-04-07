@@ -49,7 +49,7 @@ def _node(
         storage_mb=10000,
         reliability_score=0.95,
         last_seen_at=_utcnow() - datetime.timedelta(seconds=5),
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         drain_status="active",
         network_latency_ms=10,

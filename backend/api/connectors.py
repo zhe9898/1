@@ -32,6 +32,7 @@ from backend.core.connector_kind_registry import validate_connector_config
 from backend.core.errors import zen
 from backend.core.quota import check_connector_quota
 from backend.core.redis_client import CHANNEL_CONNECTOR_EVENTS, RedisClient
+from backend.core.security_redaction import sanitize_sensitive_data
 from backend.models.connector import Connector
 
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
@@ -140,7 +141,7 @@ async def upsert_connector(
             str(e),
             status_code=400,
             recovery_hint="Check config schema for connector kind or register the kind if it's new",
-            details={"kind": payload.kind, "config": payload.config},
+            details={"kind": payload.kind, "config": sanitize_sensitive_data(payload.config)},
         ) from e
     validated_endpoint = _validate_connector_endpoint(payload.endpoint, connector_id=payload.connector_id)
 

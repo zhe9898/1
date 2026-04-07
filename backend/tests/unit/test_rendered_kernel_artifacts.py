@@ -7,6 +7,8 @@ import yaml
 
 from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 KERNEL_SERVICES = {
     "caddy",
     "docker-proxy",
@@ -34,8 +36,8 @@ FORBIDDEN_KERNEL_SERVICES = {
 
 
 def test_render_manifest_matches_kernel_source_of_truth() -> None:
-    system_config = yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
-    manifest = json.loads(Path("render-manifest.json").read_text(encoding="utf-8"))
+    system_config = yaml.safe_load((REPO_ROOT / "system.yaml").read_text(encoding="utf-8"))
+    manifest = json.loads((REPO_ROOT / "render-manifest.json").read_text(encoding="utf-8"))
 
     assert system_config["deployment"]["product"] == DEFAULT_PRODUCT_NAME
     assert system_config["deployment"]["profile"] == "gateway-kernel"
@@ -51,8 +53,8 @@ def test_render_manifest_matches_kernel_source_of_truth() -> None:
 
 
 def test_rendered_docker_compose_stays_on_kernel_service_set() -> None:
-    compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
-    manifest = json.loads(Path("render-manifest.json").read_text(encoding="utf-8"))
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    manifest = json.loads((REPO_ROOT / "render-manifest.json").read_text(encoding="utf-8"))
 
     services = set((compose.get("services") or {}).keys())
     assert services == KERNEL_SERVICES
@@ -81,5 +83,5 @@ def test_rendered_docker_compose_stays_on_kernel_service_set() -> None:
     assert "./scripts:/app/scripts:ro" in sentinel_volumes
     assert "./iac:/app/iac:ro" in sentinel_volumes
     assert "./system.yaml:/app/system.yaml:ro" in sentinel_volumes
-    assert "./config:/app/config" in sentinel_volumes
+    assert "./config:/app/config:ro" in sentinel_volumes
     assert "./runtime/control-plane:/app/runtime/control-plane" in sentinel_volumes

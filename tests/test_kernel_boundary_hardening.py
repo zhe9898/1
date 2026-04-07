@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from backend.core.control_plane import load_control_plane_surfaces
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -35,12 +37,17 @@ def test_control_plane_surfaces_defined_in_backend():
         "Backend should define control-plane surfaces as constants"
     )
 
-    # Should have all 5 kernel surfaces
-    assert "gateway.capabilities" in control_plane
-    assert "gateway.nodes" in control_plane
-    assert "gateway.jobs" in control_plane
-    assert "gateway.connectors" in control_plane
-    assert "gateway.settings" in control_plane
+    surface_keys = {surface.surface_key for surface in load_control_plane_surfaces()}
+    assert surface_keys == {
+        "dashboard",
+        "nodes",
+        "jobs",
+        "connectors",
+        "triggers",
+        "reservations",
+        "evaluations",
+        "settings",
+    }
 
 
 def test_console_api_exposes_surfaces_endpoint():

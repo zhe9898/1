@@ -121,7 +121,7 @@ class TriggerCommandService:
         trigger.updated_at = failed_at
 
     @staticmethod
-    def mark_delivery_accepted(
+    def mark_delivery_delivered(
         trigger: Trigger,
         delivery: TriggerDelivery,
         *,
@@ -130,18 +130,18 @@ class TriggerCommandService:
         target_snapshot: dict[str, Any],
         message: str,
         fired_at: datetime.datetime,
-        accepted_at: datetime.datetime,
+        delivered_at: datetime.datetime,
     ) -> None:
-        delivery.status = "accepted"
+        delivery.status = canonicalize_status("trigger_deliveries.status", "delivered")
         delivery.target_kind = target_kind
         delivery.target_id = target_id
         delivery.target_snapshot = target_snapshot
         delivery.error_message = None
-        delivery.delivered_at = accepted_at
+        delivery.delivered_at = delivered_at
         trigger.last_fired_at = fired_at
-        trigger.last_delivery_status = "accepted"
+        trigger.last_delivery_status = canonicalize_status("trigger_deliveries.status", "delivered")
         trigger.last_delivery_message = message
         trigger.last_delivery_id = delivery.delivery_id
         trigger.last_delivery_target_kind = target_kind
         trigger.last_delivery_target_id = target_id
-        trigger.updated_at = accepted_at
+        trigger.updated_at = delivered_at

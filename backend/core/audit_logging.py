@@ -5,14 +5,66 @@ from __future__ import annotations
 import datetime
 import ipaddress
 import os
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.core.security_redaction import sanitize_sensitive_data
 from backend.models.audit_log import AuditLog
 
 if TYPE_CHECKING:
     from fastapi import Request
+
+
+def sanitize_audit_details(details: Mapping[str, object] | None) -> dict[str, object]:
+    if not isinstance(details, Mapping):
+        return {}
+    sanitized = sanitize_sensitive_data(details)
+    if not isinstance(sanitized, dict):
+        return {}
+    return sanitized
+
+
+async def write_audit_log(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    action: str,
+    result: str,
+    user_id: str | None = None,
+    username: str | None = None,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    details: Mapping[str, object] | None = None,
+) -> AuditLog:
+    """Create an audit log entry inside the caller transaction.
+
+    The caller owns commit/rollback, so business writes and audit writes can stay
+    in the same database transaction boundary.
+    """
+    log = AuditLog(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        username=username,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        result=result,
+        error_code=error_code,
+        error_message=error_message,
+        details=sanitize_audit_details(details),
+        created_at=datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.flush()
+    return log
 
 
 async def log_audit(
@@ -29,46 +81,23 @@ async def log_audit(
     user_agent: str | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
-    details: dict | None = None,
+    details: Mapping[str, object] | None = None,
 ) -> AuditLog:
-    """Create an audit log entry.
-
-    Args:
-        db: Database session
-        tenant_id: Tenant ID
-        action: Action performed (login, create_job, suspend_user, etc.)
-        result: Result of action (success, failure)
-        user_id: User ID (None for system actions)
-        username: Username
-        resource_type: Type of resource (user, job, node, etc.)
-        resource_id: ID of resource
-        ip_address: Client IP address
-        user_agent: Client user agent
-        error_code: Error code if failed
-        error_message: Error message if failed
-        details: Additional context
-
-    Returns:
-        Created audit log entry
-    """
-    log = AuditLog(
+    return await write_audit_log(
+        db,
         tenant_id=tenant_id,
+        action=action,
+        result=result,
         user_id=user_id,
         username=username,
-        action=action,
         resource_type=resource_type,
         resource_id=resource_id,
         ip_address=ip_address,
         user_agent=user_agent,
-        result=result,
         error_code=error_code,
         error_message=error_message,
-        details=details or {},
-        created_at=datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        details=details,
     )
-    db.add(log)
-    await db.flush()
-    return log
 
 
 def _is_trusted_proxy(source_ip: str | None) -> bool:

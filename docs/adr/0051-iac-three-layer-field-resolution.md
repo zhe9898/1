@@ -1,7 +1,10 @@
-# 0051. IaC 三层字段解析：system.yaml 优先、内置默认、全局兜底
+# ADR 0051: IaC 三层字段解析：system.yaml 优先、内置默认、全局兜底
 
-- 状态: 已采纳
-- 日期: 2026-04-04
+- Status: Accepted
+- Date: 2026-04-04
+- Scope: IaC 三层字段解析：system.yaml 优先、内置默认、全局兜底
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景上下文
 

@@ -39,12 +39,6 @@ class WebAuthnLoginCompleteRequest(BaseModel):
     credential: dict[str, object] = Field(..., description="Credential object from navigator.credentials.get()")
 
 
-class TokenResponse(BaseModel):
-    access_token: str = Field(..., description="JWT access token")
-    token_type: str = Field(default="bearer")
-    expires_in: int = Field(..., description="Token TTL in seconds")
-
-
 class AuthSessionResponse(BaseModel):
     authenticated: bool = False
     sub: str | None = None

@@ -29,7 +29,10 @@ async def test_bootstrap_commits_before_releasing_lock() -> None:
 
     redis.release_lock = _release_lock
 
-    with patch("backend.api.auth_shared.first_user_or_schema_unavailable", new=AsyncMock(return_value=None)):
+    with (
+        patch("backend.api.auth_shared.first_user_or_schema_unavailable", new=AsyncMock(return_value=None)),
+        patch("backend.api.auth_bootstrap.register_login_session", new=AsyncMock()),
+    ):
         response = await bootstrap(
             BootstrapRequest(username="admin", password="secret123", display_name="Admin"),
             MagicMock(),
@@ -37,7 +40,8 @@ async def test_bootstrap_commits_before_releasing_lock() -> None:
             redis=redis,
         )
 
-    assert response.token_type == "bearer"
+    assert response.authenticated is True
+    assert response.role == "admin"
     assert call_order == ["commit", "release"]
     redis.acquire_lock.assert_awaited_once()
     assert redis.acquire_lock.await_args.kwargs["ttl"] == BOOTSTRAP_LOCK_TTL_SECONDS

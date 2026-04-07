@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
+from backend.core.compatibility_adapter import normalize_persisted_status
 from backend.core.control_plane_state import (
     node_attention_reason,
     node_capacity_state,
@@ -40,17 +41,18 @@ from .nodes_models import (
 
 
 def _build_node_actions(node: Node) -> list[ControlAction]:
-    can_drain = node.enrollment_status == "active" and (node.drain_status or "active") == "active"
+    enrollment_status = normalize_persisted_status("nodes.enrollment_status", node.enrollment_status) or "pending"
+    can_drain = enrollment_status == "approved" and (node.drain_status or "active") == "active"
     can_undrain = (node.drain_status or "active") != "active"
-    can_rotate = node.enrollment_status != "revoked"
-    can_revoke = node.enrollment_status != "revoked"
+    can_rotate = enrollment_status != "rejected"
+    can_revoke = enrollment_status != "rejected"
     return [
         ControlAction(
             key="rotate_token",
             label="Rotate Token",
             endpoint=f"/v1/nodes/{node.node_id}/token",
             enabled=can_rotate,
-            reason=None if can_rotate else "Revoked nodes must be reprovisioned before rotating credentials",
+            reason=None if can_rotate else "Rejected nodes must be reprovisioned before rotating credentials",
             confirmation="Generate a new node token and invalidate the old one?",
         ),
         ControlAction(
@@ -58,7 +60,7 @@ def _build_node_actions(node: Node) -> list[ControlAction]:
             label="Revoke",
             endpoint=f"/v1/nodes/{node.node_id}/revoke",
             enabled=can_revoke,
-            reason=None if can_revoke else "Node is already revoked",
+            reason=None if can_revoke else "Node is already rejected",
             confirmation="Revoke this node and block it from pulling more work?",
         ),
         ControlAction(
@@ -69,7 +71,7 @@ def _build_node_actions(node: Node) -> list[ControlAction]:
             reason=(
                 None
                 if can_drain
-                else ("Node must be actively enrolled before it can be drained" if node.enrollment_status != "active" else "Node is already draining")
+                else ("Node must be approved before it can be drained" if enrollment_status != "approved" else "Node is already draining")
             ),
             confirmation="Stop assigning new jobs to this node?",
             fields=[optional_reason_field()],
@@ -88,6 +90,7 @@ def _build_node_actions(node: Node) -> list[ControlAction]:
 
 def _to_response(node: Node, *, active_lease_count: int = 0, now: datetime.datetime | None = None) -> NodeResponse:
     current_time = now or _utcnow()
+    enrollment_status = normalize_persisted_status("nodes.enrollment_status", node.enrollment_status) or "pending"
     max_concurrency = max(int(node.max_concurrency or 1), 1)
     drain_status = node.drain_status or "active"
     heartbeat_state = node_heartbeat_state(node.last_seen_at, current_time)
@@ -119,15 +122,15 @@ def _to_response(node: Node, *, active_lease_count: int = 0, now: datetime.datet
         capacity_state=capacity_state,
         capacity_state_view=StatusView(**node_capacity_state_view(capacity_state)),
         attention_reason=node_attention_reason(
-            enrollment_status=node.enrollment_status,
+            enrollment_status=enrollment_status,
             status=node.status,
             drain_status=drain_status,
             heartbeat_state=heartbeat_state,
             capacity_state=capacity_state,
             health_reason=node.health_reason,
         ),
-        enrollment_status=node.enrollment_status,
-        enrollment_status_view=StatusView(**node_enrollment_status_view(node.enrollment_status)),
+        enrollment_status=enrollment_status,
+        enrollment_status_view=StatusView(**node_enrollment_status_view(enrollment_status)),
         status=node.status,
         status_view=StatusView(**node_status_view(node.status)),
         capabilities=list(node.capabilities or []),
@@ -264,11 +267,12 @@ def _matches_node_list_filters(
     capacity_state: str | None,
     attention: str | None,
 ) -> bool:
+    normalized_enrollment_status = normalize_persisted_status("nodes.enrollment_status", node.enrollment_status) or "pending"
     node_drain = node.drain_status or "active"
     node_heartbeat = node_heartbeat_state(node.last_seen_at, now)
     node_capacity = node_capacity_state(active_lease_count, max(int(node.max_concurrency or 1), 1))
     attention_reason = node_attention_reason(
-        enrollment_status=node.enrollment_status,
+        enrollment_status=normalized_enrollment_status,
         status=node.status,
         drain_status=node_drain,
         heartbeat_state=node_heartbeat,
@@ -283,7 +287,7 @@ def _matches_node_list_filters(
         return False
     if zone and (node.zone or "") != zone:
         return False
-    if enrollment_status and node.enrollment_status != enrollment_status:
+    if enrollment_status and normalized_enrollment_status != enrollment_status:
         return False
     if drain_status and node_drain != drain_status:
         return False

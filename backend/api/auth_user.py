@@ -10,14 +10,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.api.auth_shared import bind_admin_scope, build_token_response_model, enforce_admin_scope
+from backend.api.auth_session_projection import build_authenticated_session_response
+from backend.api.auth_shared import bind_admin_scope, enforce_admin_scope
+from backend.api.auth_token_issue import issue_auth_token
 from backend.api.auth_cookies import set_auth_cookie
 from backend.api.deps import get_current_admin, get_current_user, get_current_user_optional, get_db, get_tenant_db
 from backend.api.models.auth import (
     AuthSessionResponse,
     AiRoutePreferenceRequest,
     CreateUserRequest,
-    TokenResponse,
     UserItem,
     UserListResponse,
 )
@@ -35,14 +36,14 @@ router = APIRouter()
 BCRYPT_ROUNDS = 12
 
 
-@router.patch("/me/ai-preference", response_model=TokenResponse)
+@router.patch("/me/ai-preference", response_model=AuthSessionResponse)
 async def update_ai_preference(
     req: AiRoutePreferenceRequest,
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_tenant_db),
     current_user: dict[str, str] = Depends(get_current_user),
-) -> TokenResponse:
+) -> AuthSessionResponse:
     """法典 M9.4: 调整用户的 AI 计算偏好，并在此刻立刻颁发新 JWT 使配置 0 延迟生效。"""
     if req.preference not in ("local", "cloud", "auto"):
         raise zen(CODE_BAD_REQUEST, "Invalid preference value", status.HTTP_400_BAD_REQUEST)
@@ -65,7 +66,7 @@ async def update_ai_preference(
         user.role,
     )
 
-    token_response = build_token_response_model(
+    issued_token = issue_auth_token(
         sub=str(user.id),
         username=user.username,
         role=user.role,
@@ -73,8 +74,16 @@ async def update_ai_preference(
         ai_route_preference=user.ai_route_preference,
         scopes=user_scopes,
     )
-    set_auth_cookie(response, token_response.access_token)
-    return token_response
+    set_auth_cookie(response, issued_token.access_token)
+    return build_authenticated_session_response(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        ai_route_preference=user.ai_route_preference,
+        scopes=user_scopes,
+        expires_in=issued_token.expires_in,
+    )
 
 
 @router.get("/session", response_model=AuthSessionResponse)

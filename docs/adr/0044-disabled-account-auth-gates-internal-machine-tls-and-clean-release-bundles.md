@@ -1,8 +1,10 @@
-# 0044 停用账号登录阻断、内置机器 TLS 与纯净发布包
+# ADR 0044: 停用账号登录阻断、内置机器 TLS 与纯净发布包
 
-## 状态
+- Status: Accepted
+- Date: Unknown
+- Scope: 停用账号登录阻断、内置机器 TLS 与纯净发布包
 
-已采纳
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 
@@ -112,4 +114,4 @@
 ## 后续
 
 - 若后续要把外部用户入口也统一为显式 TLS 合同，应在 Caddy 公网入口上继续收口，而不是回退机器通道默认值。
-- 若未来引入短期会话刷新机制，可继续把前端 token 暂存面再往内收，但不影响当前这轮基线。 
+- 若未来引入短期会话刷新机制，可继续把前端 token 暂存面再往内收，但不影响当前这轮基线。

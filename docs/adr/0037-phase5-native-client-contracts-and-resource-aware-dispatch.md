@@ -1,7 +1,10 @@
 # ADR 0037: Phase 5 原生客户端合同与资源感知异构调度
 
-- 状态：Accepted
-- 日期：2026-03-27
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Phase 5 原生客户端合同与资源感知异构调度
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

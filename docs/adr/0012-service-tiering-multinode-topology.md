@@ -1,9 +1,10 @@
 # ADR 0012: 服务分层、资源画像与算力联邦
 
-- **状态**: 提议
-- **日期**: 2026-03-22
+- Status: Proposed
+- Date: 2026-03-22
+- Scope: 服务分层、资源画像与算力联邦
 
-## 1. 背景上下文
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ### 1.1 底座吞噬算力
 
@@ -681,4 +682,3 @@ gantt
     照片向量检索                :p4, 2026-07, 2026-08
     场景联动 + 语音             :p5, 2026-09, 2026-12
 ```
-

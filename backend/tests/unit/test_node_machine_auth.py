@@ -39,7 +39,7 @@ def _node(**overrides: object) -> Node:
         lease_version="job-lease.v1",
         auth_token_hash="",
         auth_token_version=1,
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         capabilities=["connector.invoke"],
         metadata_json={"runtime": "go"},
@@ -93,10 +93,10 @@ async def test_authenticate_node_request_rejects_pending_node_for_job_callbacks(
 
 
 @pytest.mark.asyncio
-async def test_authenticate_node_request_rejects_revoked_node(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_authenticate_node_request_rejects_rejected_node(monkeypatch: pytest.MonkeyPatch) -> None:
     db = AsyncMock()
     db.execute.return_value = _scalar_result(
-        _node(enrollment_status="revoked", auth_token_hash=_hash_token(monkeypatch, "node-token")),
+        _node(enrollment_status="rejected", auth_token_hash=_hash_token(monkeypatch, "node-token")),
     )
 
     with pytest.raises(HTTPException) as exc:

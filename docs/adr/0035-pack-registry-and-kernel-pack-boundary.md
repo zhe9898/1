@@ -1,7 +1,10 @@
 # ADR 0035: Pack 注册表与 Kernel / Pack 边界收口
 
-- 状态：Accepted — _v3.43 更新：full-pack 已正式下架，gateway-full legacy preset 停止接受_
-- 日期：2026-03-27
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Pack 注册表与 Kernel / Pack 边界收口
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

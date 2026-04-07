@@ -22,7 +22,9 @@ from backend.models.user import User
 def _mock_request(client_ip: str = "192.168.1.10") -> MagicMock:
     request = MagicMock()
     request.state.request_id = "rid-auth-tenant"
+    request.state.webauthn_flow_session_id = "flow-session-tenant"
     request.client.host = client_ip
+    request.cookies = {}
     return request
 
 
@@ -148,6 +150,7 @@ async def test_pin_login_scopes_user_lookup_by_tenant() -> None:
 @pytest.mark.asyncio
 async def test_webauthn_login_begin_scopes_user_lookup_by_tenant() -> None:
     request = _mock_request("127.0.0.1")
+    response = MagicMock()
     redis = AsyncMock()
     redis.set_auth_challenge = AsyncMock(return_value=True)
 
@@ -173,11 +176,12 @@ async def test_webauthn_login_begin_scopes_user_lookup_by_tenant() -> None:
         await login_begin(
             WebAuthnLoginBeginRequest(username="shared-user", tenant_id="tenant-a"),
             request,
+            response,
             db=db,
             redis=redis,
         )
 
-    stmt = db.execute.await_args.args[0]
+    stmt = db.execute.await_args_list[0].args[0]
     rendered = _render_sql(stmt)
     assert "users.tenant_id" in rendered
     assert "users.username" in rendered
@@ -187,6 +191,7 @@ async def test_webauthn_login_begin_scopes_user_lookup_by_tenant() -> None:
 @pytest.mark.asyncio
 async def test_webauthn_login_begin_rejects_disabled_user() -> None:
     request = _mock_request("127.0.0.1")
+    response = MagicMock()
     redis = AsyncMock()
     redis.set_auth_challenge = AsyncMock(return_value=True)
 
@@ -212,6 +217,7 @@ async def test_webauthn_login_begin_rejects_disabled_user() -> None:
         await login_begin(
             WebAuthnLoginBeginRequest(username="shared-user", tenant_id="tenant-a"),
             request,
+            response,
             db=db,
             redis=redis,
         )

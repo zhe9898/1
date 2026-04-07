@@ -170,7 +170,7 @@ class WorkflowCommandService:
                     db=db,
                     redis=None,
                 )
-                ws.status = "pending"
+                ws.status = "running"
                 ws.job_id = submitted.job_id
                 ws.started_at = now
         workflow.updated_at = now

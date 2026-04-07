@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+from backend.tests.unit._repo_paths import repo_path
 from scripts.iac_core.lint import config_lint
 from scripts.iac_core.policy import evaluate_policy, load_default_policy
 
 
 def test_default_kernel_iac_declares_runtime_guards_explicitly() -> None:
-    lint_result = config_lint(Path("system.yaml"))
+    lint_result = config_lint(repo_path("system.yaml"))
 
     assert lint_result.warnings == []
 

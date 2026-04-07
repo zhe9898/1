@@ -71,9 +71,10 @@ export interface OverviewBucket {
   running: number;
   completed: number;
   failed: number;
+  cancelled: number;
   degraded: number;
   offline: number;
-  revoked: number;
+  rejected: number;
   attention: number;
   stale: number;
   high_priority_backlog: number;

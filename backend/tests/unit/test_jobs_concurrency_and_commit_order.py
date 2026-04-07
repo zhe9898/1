@@ -101,7 +101,7 @@ def _node(token_hash: str, **overrides: object) -> Node:
         lease_version="job-lease.v1",
         auth_token_hash=token_hash,
         auth_token_version=1,
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         capabilities=["connector.invoke"],
         metadata_json={"runtime": "go"},
@@ -137,6 +137,18 @@ def _attempt(**overrides: object) -> JobAttempt:
     return attempt
 
 
+class _FakeConcurrencyWindow:
+    async def assert_capacity(self, *, job_type: str, connector_id: str | None = None) -> None:
+        del job_type, connector_id
+
+    async def check_capacity_for_job(self, job: Job) -> None:
+        del job
+        return None
+
+    def note_lease_granted(self, job: Job) -> None:
+        del job
+
+
 @pytest.mark.asyncio
 async def test_check_concurrent_limits_uses_global_function() -> None:
     db = AsyncMock()
@@ -145,6 +157,8 @@ async def test_check_concurrent_limits_uses_global_function() -> None:
     def _execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
         del args, kwargs
         rendered = str(statement).lower()
+        if "pg_advisory_xact_lock" in rendered:
+            return MagicMock()
         if "zen70_global_leased_jobs_count" in rendered and "tenant_count" in rendered:
             return _row_result()
         return _scalar_result(None)
@@ -155,14 +169,22 @@ async def test_check_concurrent_limits_uses_global_function() -> None:
 
     rendered_calls = [str(call.args[0]).lower() for call in db.execute.await_args_list]
     assert any("zen70_global_leased_jobs_count" in sql for sql in rendered_calls)
-    assert len(rendered_calls) == 1
+    assert any("pg_advisory_xact_lock" in sql for sql in rendered_calls)
 
 
 @pytest.mark.asyncio
 async def test_check_concurrent_limits_returns_503_when_global_function_unavailable() -> None:
     db = AsyncMock()
     db.add = MagicMock()
-    db.execute.side_effect = RuntimeError("function missing")
+
+    def _execute_side_effect(statement: object, *args: object, **kwargs: object) -> MagicMock:
+        del args, kwargs
+        rendered = str(statement).lower()
+        if "pg_advisory_xact_lock" in rendered:
+            return MagicMock()
+        raise RuntimeError("function missing")
+
+    db.execute.side_effect = _execute_side_effect
 
     with pytest.raises(HTTPException) as exc:
         await check_concurrent_limits(db, "tenant-alpha", "scheduled")
@@ -326,8 +348,9 @@ async def test_pull_jobs_commits_then_publishes_then_releases_lock(monkeypatch: 
     monkeypatch.setattr("backend.api.jobs.dispatch._build_snapshots", lambda *a, **k: [])
     monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
     monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
-    monkeypatch.setattr("backend.api.jobs.dispatch.build_time_budgeted_placement_plan", lambda *a, **k: {})
+    monkeypatch.setattr("backend.api.jobs.dispatch.async_build_time_budgeted_placement_plan", AsyncMock(return_value={}))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
     monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
     monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
@@ -412,8 +435,9 @@ async def test_pull_jobs_releases_lock_on_exception(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("backend.api.jobs.dispatch._build_snapshots", lambda *a, **k: [])
     monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
     monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
-    monkeypatch.setattr("backend.api.jobs.dispatch.build_time_budgeted_placement_plan", lambda *a, **k: {})
+    monkeypatch.setattr("backend.api.jobs.dispatch.async_build_time_budgeted_placement_plan", AsyncMock(return_value={}))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
     monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
     monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 

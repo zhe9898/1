@@ -238,7 +238,7 @@ class TestRevocationChecks:
     @pytest.mark.asyncio
     @patch("backend.core.jwt._CURRENT", SECRET_A)
     @patch("backend.core.jwt._PREVIOUS", None)
-    async def test_half_life_token_without_jti_does_not_rotate(self) -> None:
+    async def test_half_life_token_without_jti_rotates_legacy_token(self) -> None:
         from backend.core.jwt import decode_token
 
         now = datetime.now(UTC)
@@ -257,4 +257,4 @@ class TestRevocationChecks:
         payload, new_token = await decode_token(token, redis_conn=_redis_allowing_tokens())
 
         assert payload["sub"] == "user1"
-        assert new_token is None
+        assert new_token is not None

@@ -1,8 +1,10 @@
 # ADR 0026: Control-Plane Worker Process Isolation
 
-- **Status**: Accepted
-- **Date**: 2026-03-27
-- **Scope**: API ingress boundary, control-plane worker deployment, sentinel sidecar supervision
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: API ingress boundary, control-plane worker deployment, sentinel sidecar supervision
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. Context
 

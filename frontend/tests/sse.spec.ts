@@ -31,7 +31,7 @@ describe("createSSE", () => {
     vi.useRealTimers();
   });
 
-  it("opens the event stream with an Authorization header", async () => {
+  it("opens the event stream with cookie credentials and no Authorization header", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(makeSSEStream([": heartbeat\n\n"]), {
@@ -45,7 +45,6 @@ describe("createSSE", () => {
       "https://api.example.test/v1/events",
       () => undefined,
       ["job:events"],
-      { getAccessToken: () => "jwt-token" },
     );
 
     await flushAsyncWork();
@@ -53,7 +52,7 @@ describe("createSSE", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer jwt-token");
+    expect(headers.Authorization).toBeUndefined();
     expect(headers.Accept).toBe("text/event-stream");
     expect(init.credentials).toBe("include");
 
@@ -81,7 +80,6 @@ describe("createSSE", () => {
       "https://api.example.test/v1/events",
       onEvent,
       ["job:events"],
-      { getAccessToken: () => "jwt-token" },
     );
 
     await flushAsyncWork();
@@ -108,7 +106,6 @@ describe("createSSE", () => {
       "https://api.example.test/v1/events",
       () => undefined,
       ["job:events"],
-      { getAccessToken: () => null },
     );
 
     await flushAsyncWork();

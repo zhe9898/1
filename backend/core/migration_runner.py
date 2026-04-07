@@ -13,10 +13,23 @@ from backend.core.migration_governance import (
     MigrationChain,
     ordered_migration_chains,
     runtime_managed_migration_chains,
+    validate_migration_governance,
 )
 
 _LOGGER = logging.getLogger("backend.migration_runner")
 UpgradeFn = Callable[[Config, str], object]
+
+
+class MigrationGovernanceError(RuntimeError):
+    """Raised when repository migration governance is unsafe to execute."""
+
+
+def assert_migration_governance_clean() -> None:
+    errors = validate_migration_governance()
+    if not errors:
+        return
+    details = "\n".join(f"- {error}" for error in errors)
+    raise MigrationGovernanceError(f"Migration governance validation failed:\n{details}")
 
 
 def build_alembic_config(chain: MigrationChain) -> Config:
@@ -76,5 +89,6 @@ def run_governed_migrations(
     revision: str = "head",
     upgrade_fn: UpgradeFn = command.upgrade,
 ) -> tuple[str, ...]:
+    assert_migration_governance_clean()
     chains = resolve_migration_chains(chain_keys, runtime_managed_only=runtime_managed_only)
     return upgrade_chains(chains, revision=revision, upgrade_fn=upgrade_fn)

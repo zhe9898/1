@@ -5,7 +5,7 @@ import datetime
 from sqlalchemy import JSON, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class Node(Base):

@@ -3,6 +3,9 @@
 **日期**: 2026-04-04
 **范围**: Runner-Agent Go 重写 + 控制面故障治理 + 调度器业务维度补全 + 扩展执行器 + PolicyStore
 
+> 说明：本文记录的是“调度与执行闭环”这条实现链，不代表整个 ZEN70 所有业务域都已全量打通。
+> 当本文与当前代码、测试或 ADR 冲突时，以代码、测试和 [adr/0052-code-backed-architecture-governance-registry.md](adr/0052-code-backed-architecture-governance-registry.md) 为准。
+
 ---
 
 ## 1. 变更总览

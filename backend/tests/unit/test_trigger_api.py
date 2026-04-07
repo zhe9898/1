@@ -173,6 +173,34 @@ async def test_upsert_trigger_persists_validated_contract() -> None:
 
 
 @pytest.mark.asyncio
+async def test_upsert_trigger_accepts_canonical_inactive_status() -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.execute.return_value = _scalar_result(None)
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    response = await upsert_trigger(
+        TriggerUpsertRequest(
+            trigger_id="ingest-legacy",
+            name="Legacy Trigger",
+            kind="manual",
+            status="inactive",
+            config={"allow_api_fire": True},
+            target={"target_kind": "job", "job_kind": "connector.invoke", "payload": {}},
+        ),
+        current_user={"sub": "admin", "username": "admin", "role": "admin", "tenant_id": "default"},
+        db=db,
+        redis=None,
+    )
+
+    created = db.add.call_args.args[0]
+    assert isinstance(created, Trigger)
+    assert created.status == "inactive"
+    assert response.status == "inactive"
+
+
+@pytest.mark.asyncio
 async def test_fire_trigger_dispatches_job_and_records_delivery() -> None:
     trigger = _make_trigger(
         target={"target_kind": "job", "job_kind": "connector.invoke", "payload": {"connector_id": "conn-1"}},
@@ -207,7 +235,7 @@ async def test_fire_trigger_dispatches_job_and_records_delivery() -> None:
             redis=None,
         )
 
-    assert response.status == "accepted"
+    assert response.status == "delivered"
     assert response.target_kind == "job"
     added_types = {type(call.args[0]) for call in db.add.call_args_list}
     assert TriggerDelivery in added_types
@@ -300,7 +328,7 @@ async def test_receive_trigger_webhook_accepts_timestamped_hmac_and_fires_trigge
         trigger_id="trigger-1",
         trigger_kind="webhook",
         source_kind="webhook",
-        status="accepted",
+        status="delivered",
         idempotency_key=None,
         actor="webhook",
         reason="webhook",
@@ -322,6 +350,6 @@ async def test_receive_trigger_webhook_accepts_timestamped_hmac_and_fires_trigge
     ):
         response = await receive_trigger_webhook("default", "trigger-1", request, db=db, redis=None)
 
-    assert response.status == "accepted"
+    assert response.status == "delivered"
     assert fire_trigger_mock.await_count == 1
     assert fire_trigger_mock.await_args.kwargs["input_payload"] == {"hello": "world"}

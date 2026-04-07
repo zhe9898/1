@@ -1,5 +1,11 @@
 # ADR 0019: Mypy Type Ignore Comments Policy (Strict Analysis)
 
+- Status: Accepted
+- Date: Unknown
+- Scope: Mypy Type Ignore Comments Policy (Strict Analysis)
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
+
 ## 背景
 
 在对 ZEN70 并发执行严苛的全栈 `mypy` 类型检查清理过程中（从 415 个错误降至 0 个），暴露出一个高隐蔽性的类型系统逃逸漏洞与误报陷阱：**双重注释遮挡（Double Comment Masking）**。

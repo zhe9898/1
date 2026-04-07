@@ -14,7 +14,7 @@ import os
 from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class FeatureFlag(Base):

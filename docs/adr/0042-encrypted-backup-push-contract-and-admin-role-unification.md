@@ -1,8 +1,10 @@
-# 0042 加密备份、Push 合同与管理权限统一
+# ADR 0042: 加密备份、Push 合同与管理权限统一
 
-## 状态
+- Status: Accepted
+- Date: Unknown
+- Scope: 加密备份、Push 合同与管理权限统一
 
-已采纳
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

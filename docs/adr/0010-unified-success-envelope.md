@@ -1,14 +1,10 @@
 # ADR 0010: Unified Response Envelope (Protocol-first)
 
-- **状态**: 已修订 (Amended 2026-03-24)
-- **前身**: 原始 ADR 0010 (2026-03 初版)
+- Status: Amended
+- Date: 2026-03-24
+- Scope: Unified Response Envelope (Protocol-first)
 
-## 背景
-
-ZEN70 需要让前端完全按协议动态渲染提示与操作建议，并且在"错误/熔断/降级/只读模式"等场景下保持一致的 UI 行为。过去只对错误响应做了统一契约（`code/message/recovery_hint/details`），但成功响应形状分散，导致：
-
-- 前端无法统一处理 `message`（例如弹出"已完成"提示）
-- 新增 API 容易产生不同风格返回体，增加维护成本
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

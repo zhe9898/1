@@ -8,6 +8,7 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import type { AuthSessionResponse } from "@/stores/auth/sessionClaims";
 import {
   startAuthentication,
   type PublicKeyCredentialRequestOptionsJSON,
@@ -68,12 +69,12 @@ export function useAuthFlow() {
     submitting.value = true;
     errorMsg.value = "";
     try {
-      const { data } = await http.post<{ access_token: string }>(AUTH.bootstrap, {
+      const { data } = await http.post<AuthSessionResponse>(AUTH.bootstrap, {
         username: bootForm.value.username,
         password: bootForm.value.password,
         display_name: bootForm.value.displayName || "Admin",
       });
-      auth.setToken(data.access_token);
+      await auth.acceptAuthenticatedSession(data);
       void router.push("/");
     } catch (err: unknown) {
       errorMsg.value = extractAxiosError(err, "初始化失败");
@@ -102,12 +103,12 @@ export function useAuthFlow() {
     try {
       const username = loginForm.value.username.trim();
       const tenantId = loginForm.value.tenantId.trim() || "default";
-      const { data } = await http.post<{ access_token: string }>(AUTH.passwordLogin, {
+      const { data } = await http.post<AuthSessionResponse>(AUTH.passwordLogin, {
         ...loginForm.value,
         tenant_id: tenantId,
         username,
       });
-      auth.setToken(data.access_token);
+      await auth.acceptAuthenticatedSession(data);
       loginAttemptCount = 0;
       void router.push("/");
     } catch (err: unknown) {
@@ -168,12 +169,12 @@ export function useAuthFlow() {
         optionsJSON: beginData.options,
       });
 
-      const { data: verifyData } = await http.post<{ access_token: string }>(
+      const { data: verifyData } = await http.post<AuthSessionResponse>(
         AUTH.webauthnLoginComplete,
         { tenant_id: tenantId, username, credential },
       );
 
-      auth.setToken(verifyData.access_token);
+      await auth.acceptAuthenticatedSession(verifyData);
       void router.push("/");
     } catch (err: unknown) {
       if (!errorMsg.value) {

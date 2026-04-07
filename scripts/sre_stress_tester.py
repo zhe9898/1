@@ -68,7 +68,7 @@ def run_stress_test() -> None:
             worker.redis.xack.assert_called_once()
 
             # === 测试2: Watchdog 看门狗生命周期验证 ===
-            from backend.alembic.env import _watchdog_thread
+            from backend.core.alembic_runtime import start_migration_lock_watchdog
 
             redis_mock = MagicMock()
             lock_mock = MagicMock()
@@ -76,8 +76,7 @@ def run_stress_test() -> None:
             stop_event = threading.Event()
 
             # 启动 watchdog
-            wd_thread = threading.Thread(target=_watchdog_thread, args=(redis_mock, lock_mock, stop_event))
-            wd_thread.start()
+            wd_thread = start_migration_lock_watchdog(redis_mock, lock_mock, stop_event)
 
             # 让它跳过等待直接运行
             time.sleep(0.01)

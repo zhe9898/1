@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from backend.api.main import app
 from backend.middleware import RequestIDMiddleware, _request_id_ctx, record_factory
+from backend.tests.unit._repo_paths import repo_path
 
 
 def test_request_id_middleware_is_registered_outermost() -> None:
@@ -24,6 +24,6 @@ def test_record_factory_backfills_request_id_from_context() -> None:
 
 
 def test_main_source_contains_no_known_mojibake_markers() -> None:
-    text = Path("backend/api/main.py").read_text(encoding="utf-8")
+    text = repo_path("backend", "api", "main.py").read_text(encoding="utf-8")
     for marker in ("闁", "濞", "婵", "鍐", "鍙", "鏉", "銆"):
         assert marker not in text

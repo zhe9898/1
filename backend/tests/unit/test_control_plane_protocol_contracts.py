@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -66,24 +64,16 @@ def _rows_result(values: list[tuple[object, object]]) -> MagicMock:
     return result
 
 
-def _control_plane_migration_text() -> str:
-    path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "9f2c7a1d4e61_control_plane_schema_hardening.py"
-    return path.read_text(encoding="utf-8")
+class _FakeConcurrencyWindow:
+    async def assert_capacity(self, *, job_type: str, connector_id: str | None = None) -> None:
+        del job_type, connector_id
 
+    async def check_capacity_for_job(self, job: Job) -> None:
+        del job
+        return None
 
-def _trigger_migration_text() -> str:
-    path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "b7c8d9e0f1a2_trigger_control_plane_tables.py"
-    return path.read_text(encoding="utf-8")
-
-
-def _queue_lane_migration_text() -> str:
-    path = Path(__file__).resolve().parents[3] / "backend" / "alembic" / "versions" / "e6f7a8b9c0d1_queue_lane_worker_pool_contracts.py"
-    return path.read_text(encoding="utf-8")
-
-
-def _contracts_metadata() -> dict[str, object]:
-    path = Path(__file__).resolve().parents[3] / "contracts" / "metadata.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    def note_lease_granted(self, job: Job) -> None:
+        del job
 
 
 def _job(**overrides: object) -> Job:
@@ -141,7 +131,7 @@ def _node(**overrides: object) -> Node:
         lease_version="job-lease.v1",
         auth_token_hash="$2b$04$placeholderplaceholderplaceholderplaceholderplaceho",
         auth_token_version=1,
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         capabilities=["connector.invoke"],
         metadata_json={"runtime": "go"},
@@ -321,6 +311,7 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
     monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
     monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
     monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
     monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
@@ -413,6 +404,7 @@ async def test_pull_jobs_attaches_scheduling_decision_and_policy_snapshot(monkey
     monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
     monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
     monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
     monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
@@ -526,7 +518,9 @@ async def test_fail_job_updates_current_lease(monkeypatch: pytest.MonkeyPatch) -
     )
 
     assert response.status == "failed"
-    assert response.error_message == "boom"
+    assert response.error_message is None
+    assert response.safe_error_code == "ZEN-JOB-PERMANENT"
+    assert response.safe_error_hint == "The job failed with a non-retryable error. Review audit or runner logs before retrying."
     assert response.status_view.key == "failed"
     assert leased.leased_until is None
     db.commit.assert_awaited_once()
@@ -574,7 +568,7 @@ async def test_register_node_persists_strong_contract_fields(monkeypatch: pytest
     assert response.protocol_version == "runner.v1"
     assert response.lease_version == "job-lease.v1"
     # ADR-0047 WP-P0: fresh registration must leave node in 'pending' awaiting admin approval.
-    # 'active' can only be reached via POST /api/v1/nodes/{node_id}/approve — never via register or heartbeat.
+    # 'approved' can only be reached via POST /api/v1/nodes/{node_id}/approve — never via register or heartbeat.
     assert response.enrollment_status == "pending"
     assert response.heartbeat_state == "fresh"
     assert response.capacity_state == "available"
@@ -585,7 +579,7 @@ async def test_register_node_persists_strong_contract_fields(monkeypatch: pytest
 
 @pytest.mark.asyncio
 async def test_heartbeat_updates_existing_node_contract_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    existing = _node(auth_token_hash=_hash_token(monkeypatch, "node-token"), enrollment_status="active")
+    existing = _node(auth_token_hash=_hash_token(monkeypatch, "node-token"), enrollment_status="approved")
     db = AsyncMock()
     db.add = MagicMock()
     db.execute.side_effect = [_scalar_result(existing), _rows_result([])]
@@ -621,7 +615,7 @@ async def test_heartbeat_updates_existing_node_contract_fields(monkeypatch: pyte
     assert response.worker_pools == ["batch", "interactive"]
     assert response.protocol_version == "runner.v2"
     assert response.lease_version == "job-lease.v2"
-    assert response.enrollment_status == "active"
+    assert response.enrollment_status == "approved"
     assert response.heartbeat_state == "fresh"
     assert response.capacity_state == "available"
     assert response.heartbeat_state_view.key == "fresh"
@@ -693,7 +687,7 @@ async def test_provision_node_issues_one_time_token(monkeypatch: pytest.MonkeyPa
 async def test_rotate_node_token_increments_version(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NODE_TOKEN_BCRYPT_ROUNDS", "4")
     monkeypatch.setenv("NODE_BOOTSTRAP_GATEWAY_BASE_URL", "https://gateway.example.invalid")
-    existing = _node(node_id="node-rotate", auth_token_version=2, enrollment_status="revoked", status="offline")
+    existing = _node(node_id="node-rotate", auth_token_version=2, enrollment_status="rejected", status="offline")
     db = AsyncMock()
     db.execute.return_value = _scalar_result(existing)
     db.flush = AsyncMock()
@@ -738,7 +732,7 @@ async def test_provision_node_emits_local_http_opt_in_for_loopback_gateway(monke
 
 @pytest.mark.asyncio
 async def test_revoke_node_clears_machine_credentials() -> None:
-    existing = _node(node_id="node-revoke", enrollment_status="active", status="online")
+    existing = _node(node_id="node-revoke", enrollment_status="approved", status="online")
     db = AsyncMock()
     db.execute.return_value = _scalar_result(existing)
     db.flush = AsyncMock()
@@ -746,9 +740,9 @@ async def test_revoke_node_clears_machine_credentials() -> None:
     response = await revoke_node("node-revoke", current_user={"role": "admin", "tenant_id": "default"}, db=db)
 
     assert response.node_id == "node-revoke"
-    assert response.enrollment_status == "revoked"
+    assert response.enrollment_status == "rejected"
     assert response.status == "offline"
-    assert response.enrollment_status_view.key == "revoked"
+    assert response.enrollment_status_view.key == "rejected"
     assert response.status_view.key == "offline"
     assert existing.auth_token_hash is None
 
@@ -768,87 +762,3 @@ async def test_get_node_machine_token_returns_credentials() -> None:
     )
 
     assert token == "node-secret"
-
-
-def test_control_plane_schema_migration_covers_node_and_job_protocol_columns() -> None:
-    rendered = _control_plane_migration_text()
-
-    assert "_ensure_jobs_schema" in rendered
-    assert '"idempotency_key"' in rendered
-    assert '"lease_token"' in rendered
-    assert '"attempt"' in rendered
-    assert '"priority"' in rendered
-    assert '"target_os"' in rendered
-    assert '"required_capabilities"' in rendered
-    assert "_ensure_nodes_schema" in rendered
-    assert '"executor"' in rendered
-    assert '"os"' in rendered
-    assert '"arch"' in rendered
-    assert '"protocol_version"' in rendered
-    assert '"lease_version"' in rendered
-    assert '"agent_version"' in rendered
-    assert '"max_concurrency"' in rendered
-    assert '"drain_status"' in rendered
-    assert '"health_reason"' in rendered
-    assert '"auth_token_hash"' in rendered
-    assert '"auth_token_version"' in rendered
-    assert '"enrollment_status"' in rendered
-    assert "_ensure_connectors_schema" in rendered
-    assert '"last_test_ok"' in rendered
-    assert '"last_test_status"' in rendered
-    assert '"last_test_message"' in rendered
-    assert '"last_invoke_status"' in rendered
-    assert '"last_invoke_message"' in rendered
-    assert '"last_invoke_job_id"' in rendered
-    assert "_ensure_job_attempts_schema" in rendered
-    assert '"ux_jobs_tenant_idempotency_key"' in rendered
-    assert '"ux_nodes_tenant_node_id"' in rendered
-
-
-def test_trigger_control_plane_migration_covers_trigger_tables() -> None:
-    rendered = _trigger_migration_text()
-
-    assert "_ensure_triggers_schema" in rendered
-    assert "_ensure_trigger_deliveries_schema" in rendered
-    assert '"triggers"' in rendered
-    assert '"trigger_deliveries"' in rendered
-    assert '"trigger_id"' in rendered
-    assert '"delivery_id"' in rendered
-    assert '"ux_triggers_tenant_trigger_id"' in rendered
-    assert '"ux_trigger_deliveries_tenant_trigger_idempotency"' in rendered
-
-
-def test_queue_lane_migration_covers_job_and_node_worker_contracts() -> None:
-    rendered = _queue_lane_migration_text()
-
-    assert "_ensure_job_queue_contract_schema" in rendered
-    assert "_ensure_node_worker_pool_schema" in rendered
-    assert '"queue_class"' in rendered
-    assert '"worker_pool"' in rendered
-    assert '"worker_pools"' in rendered
-    assert '"ix_jobs_queue_class"' in rendered
-    assert '"ix_jobs_worker_pool"' in rendered
-
-
-def test_contracts_metadata_indexes_trigger_contracts() -> None:
-    metadata = _contracts_metadata()
-    contracts = metadata["contracts"]
-    contracts_root = Path(__file__).resolve().parents[3] / "contracts"
-
-    assert "triggers" in contracts
-    assert "triggers/README.md" in contracts["triggers"]
-    assert "triggers/manual-trigger.example.json" in contracts["triggers"]
-    for relative_path in contracts["triggers"]:
-        assert (contracts_root / relative_path).exists()
-
-
-def test_contracts_metadata_indexes_reservation_contracts() -> None:
-    metadata = _contracts_metadata()
-    contracts = metadata["contracts"]
-    contracts_root = Path(__file__).resolve().parents[3] / "contracts"
-
-    assert "reservations" in contracts
-    assert "reservations/README.md" in contracts["reservations"]
-    assert "reservations/manual-reservation.example.json" in contracts["reservations"]
-    for relative_path in contracts["reservations"]:
-        assert (contracts_root / relative_path).exists()

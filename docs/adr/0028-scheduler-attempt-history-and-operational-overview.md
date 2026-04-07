@@ -1,8 +1,10 @@
 # ADR 0028: Scheduler Attempt History and Operational Overview
 
-- **Status**: Accepted
-- **Date**: 2026-03-27
-- **Scope**: Gateway job scheduling, retry policy, dashboard observability
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Gateway job scheduling, retry policy, dashboard observability
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. Context
 

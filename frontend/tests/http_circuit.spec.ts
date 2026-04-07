@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import MockAdapter from 'axios-mock-adapter';
-import { http, isCircuitOpen } from '../src/utils/http';
+import { http, isCircuitOpen, resetCircuit } from '../src/utils/http';
 import { setActivePinia, createPinia } from 'pinia';
+import { useAuthStore } from '../src/stores/auth';
 
 // Mock getRequestId to avoid external dependency issues
 vi.mock('../src/utils/requestId', () => ({
@@ -14,12 +15,14 @@ describe('HTTP Circuit Breaker (Rule 6.2.3)', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia());
+    resetCircuit();
     mock = new MockAdapter(http);
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     mock.restore();
+    resetCircuit();
     vi.useRealTimers();
   });
 
@@ -60,12 +63,14 @@ describe('HTTP Request Headers (CSRF & Identity)', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia());
+    resetCircuit();
     mock = new MockAdapter(http);
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     mock.restore();
+    resetCircuit();
     vi.useRealTimers();
   });
 
@@ -88,5 +93,24 @@ describe('HTTP Request Headers (CSRF & Identity)', () => {
     expect(request).toBeDefined();
     expect(request.headers?.['X-Request-ID']).toBe('test-req-id');
   });
-});
 
+  it('does not attach Authorization when auth state is cookie-primary', async () => {
+    const store = useAuthStore();
+    store.setSessionClaims({
+      sub: 'u1',
+      username: 'alice',
+      role: 'admin',
+      tenant_id: 'tenant-a',
+      scopes: [],
+      ai_route_preference: 'auto',
+      exp: Math.floor(Date.now() / 1000) + 60,
+    });
+    mock.onGet('/v1/nodes').reply(200, { data: [] });
+
+    await http.get('/v1/nodes');
+
+    const request = mock.history.get[0];
+    expect(request).toBeDefined();
+    expect(request.headers?.Authorization).toBeUndefined();
+  });
+});

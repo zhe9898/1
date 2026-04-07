@@ -1,14 +1,10 @@
-# ADR 0003：生产环境 JWT 密钥缺失时立即失败
+# ADR 0003: 生产环境 JWT 密钥缺失时立即失败
 
-**状态**：通过
+- Status: Accepted
+- Date: 2025-03-14
+- Scope: 生产环境 JWT 密钥缺失时立即失败
 
-**日期**：2025-03-14
-
-## 背景
-
-.cursorrules 规定「绝不在代码里写死 JWT 密钥或数据库密码，必须由点火脚本生成并注入 .env」。
-
-原实现：未配置环境变量时使用默认值 `"change-me-in-production"`，存在生产环境误用风险。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

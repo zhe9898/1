@@ -328,8 +328,8 @@ async def heartbeat_node(
     )
 
     # ADR-0047 WP-P0: heartbeat must not bypass enrollment approval.
-    # pending -> active must only happen through admin approval endpoint.
-    # revoked nodes must be reprovisioned and registered with a new token.
+    # pending -> approved must only happen through admin approval endpoint.
+    # rejected nodes must be reprovisioned and registered with a new token.
     if node.enrollment_status == "pending":
         raise zen(
             "ZEN-NODE-4031",
@@ -338,15 +338,15 @@ async def heartbeat_node(
             recovery_hint="Wait for an admin to approve this node via POST /api/v1/nodes/{node_id}/approve",
             details={"node_id": node.node_id, "enrollment_status": node.enrollment_status},
         )
-    if node.enrollment_status == "revoked":
+    if node.enrollment_status == "rejected":
         raise zen(
             "ZEN-NODE-4032",
-            "Revoked node cannot send heartbeats; provision and re-register with a new token",
+            "Rejected node cannot send heartbeats; provision and re-register with a new token",
             status_code=403,
             recovery_hint="Provision a new node token and re-register before sending heartbeats",
             details={"node_id": node.node_id, "enrollment_status": node.enrollment_status},
         )
-    # 鈹€鈹€ 浠?active 鑺傜偣鍙画娲伙紝enrollment_status 淇濇寔涓嶅彉 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # Approved nodes may continue heartbeating without mutating enrollment state.
 
     now = _utcnow()
     _apply_contract(node, payload, payload.status, now)

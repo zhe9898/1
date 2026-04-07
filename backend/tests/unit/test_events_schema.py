@@ -60,14 +60,14 @@ def test_trigger_event_payload_parses_delivery_snapshot() -> None:
             "trigger_id": "trigger-1",
             "kind": "manual",
             "status": "active",
-            "last_delivery_status": "accepted",
+            "last_delivery_status": "delivered",
             "last_delivery_id": "delivery-1",
             "last_delivery_target_kind": "job",
             "last_delivery_target_id": "job-1",
         },
         "delivery": {
             "delivery_id": "delivery-1",
-            "status": "accepted",
+            "status": "delivered",
             "source_kind": "manual",
             "target_kind": "job",
             "target_id": "job-1",
@@ -87,7 +87,7 @@ def test_trigger_event_payload_parses_delivery_snapshot() -> None:
 
 
 def test_trigger_event_payload_rejects_missing_trigger_snapshot() -> None:
-    payload = {"event_id": "evt-1", "action": "fired", "delivery": {"delivery_id": "delivery-1", "status": "accepted"}}
+    payload = {"event_id": "evt-1", "action": "fired", "delivery": {"delivery_id": "delivery-1", "status": "delivered"}}
 
     assert TriggerEventPayload.from_redis_message(payload) is None
 

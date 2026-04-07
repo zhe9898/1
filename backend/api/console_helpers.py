@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import StatusView
+from backend.core.compatibility_adapter import normalize_persisted_status
 from backend.core.control_plane import iter_control_plane_surfaces
 from backend.core.control_plane_state import (
     node_heartbeat_state,
@@ -19,6 +20,7 @@ from backend.core.control_plane_state import (
     tone_view,
 )
 from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, to_public_profile
+from backend.core.job_status import normalize_job_status
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.node import Node
@@ -72,10 +74,10 @@ class OverviewBucket(BaseModel):
     running: int = 0
     completed: int = 0
     failed: int = 0
-    canceled: int = 0
+    cancelled: int = 0
     degraded: int = 0
     offline: int = 0
-    revoked: int = 0
+    rejected: int = 0
     attention: int = 0
     stale: int = 0
     high_priority_backlog: int = 0
@@ -263,7 +265,7 @@ def count_label(value: int, suffix: str) -> str:
 
 
 def _node_detail_text(node_bucket: OverviewBucket) -> str:
-    return f"{node_bucket.pending} pending enrollment, {node_bucket.degraded} degraded, {node_bucket.offline} offline"
+    return f"{node_bucket.pending} pending enrollment, {node_bucket.rejected} rejected, {node_bucket.degraded} degraded, {node_bucket.offline} offline"
 
 
 def _job_detail_text(job_bucket: OverviewBucket) -> str:
@@ -355,6 +357,17 @@ def build_attention(
                 count=node_bucket.pending,
                 reason="Provisioned runners have not completed register/heartbeat yet.",
                 route=route_target("/nodes", enrollment_status="pending"),
+            )
+        )
+    if node_bucket.rejected:
+        items.append(
+            OverviewAttentionItem(
+                severity="warning",
+                severity_view=StatusView(**severity_view("warning")),
+                title="Nodes rejected by control plane",
+                count=node_bucket.rejected,
+                reason="Rejected runners must be reprovisioned before they can rejoin scheduling.",
+                route=route_target("/nodes", enrollment_status="rejected"),
             )
         )
     if job_bucket.high_priority_backlog:
@@ -455,11 +468,12 @@ def selector_summary(job: Job) -> list[str]:
 def build_node_overview_bucket(nodes: list[Node], now: datetime.datetime) -> OverviewBucket:
     bucket = OverviewBucket(total=len(nodes))
     for node in nodes:
+        enrollment_status = normalize_persisted_status("nodes.enrollment_status", node.enrollment_status) or "pending"
         drain_status = node.drain_status or "active"
         heartbeat_state = node_heartbeat_state(node.last_seen_at, now)
-        if node.enrollment_status == "revoked":
-            bucket.revoked += 1
-        elif node.enrollment_status == "pending":
+        if enrollment_status == "rejected":
+            bucket.rejected += 1
+        elif enrollment_status == "pending":
             bucket.pending += 1
         elif node.status != "online":
             bucket.offline += 1
@@ -467,30 +481,31 @@ def build_node_overview_bucket(nodes: list[Node], now: datetime.datetime) -> Ove
             bucket.degraded += 1
         else:
             bucket.active += 1
-    bucket.attention = bucket.pending + bucket.degraded + bucket.offline + bucket.revoked
+    bucket.attention = bucket.pending + bucket.degraded + bucket.offline + bucket.rejected
     return bucket
 
 
 def build_job_overview_bucket(jobs: list[Job], now: datetime.datetime) -> OverviewBucket:
     bucket = OverviewBucket(total=len(jobs))
     for job in jobs:
-        if job.status == "pending":
+        job_status = normalize_job_status(job.status) or str(job.status or "pending")
+        if job_status == "pending":
             bucket.pending += 1
             if int(job.priority or 0) >= 80:
                 bucket.high_priority_backlog += 1
             continue
-        if job.status == "leased":
+        if job_status == "leased":
             if job.leased_until and job.leased_until < now:
                 bucket.stale += 1
             else:
                 bucket.running += 1
             continue
-        if job.status == "completed":
+        if job_status == "completed":
             bucket.completed += 1
-        elif job.status == "failed":
+        elif job_status == "failed":
             bucket.failed += 1
-        elif job.status == "canceled":
-            bucket.canceled += 1
+        elif job_status == "cancelled":
+            bucket.cancelled += 1
     bucket.attention = bucket.failed + bucket.stale + bucket.high_priority_backlog
     return bucket
 

@@ -163,7 +163,6 @@ function isProvisionReceipt(value: unknown): value is NodeProvisionReceipt {
     bootstrapCommands !== null &&
     Object.values(bootstrapCommands as Record<string, unknown>).every((item) => typeof item === "string") &&
     Array.isArray(bootstrapNotes) &&
-    bootstrapNotes.every((item) => typeof item === "string") &&
     Array.isArray(bootstrapReceipts)
   );
 }
@@ -180,14 +179,43 @@ export const useNodesStore = defineStore("nodes", () => {
 
   const onlineCount = computed(() => items.value.filter((item) => item.status_view.key === "online").length);
 
-  function upsertNode(partial: Partial<NodeItem> & { node_id: string }): void {
+  function touchLastUpdatedAt(): void {
+    lastUpdatedAt.value = Math.max(Date.now(), lastUpdatedAt.value + 1);
+  }
+
+  function normalizeProvisionReceipt(receipt: NodeProvisionReceipt): NodeProvisionReceipt {
+    return {
+      ...receipt,
+      node: normalizeNode(receipt.node),
+      bootstrap_commands: { ...receipt.bootstrap_commands },
+      bootstrap_notes: Array.isArray(receipt.bootstrap_notes)
+        ? receipt.bootstrap_notes.filter((item): item is string => typeof item === "string")
+        : [],
+      bootstrap_receipts: Array.isArray(receipt.bootstrap_receipts)
+        ? receipt.bootstrap_receipts.filter(
+            (item): item is BootstrapReceipt =>
+              typeof item === "object" &&
+              typeof (item as { key?: unknown }).key === "string" &&
+              typeof (item as { label?: unknown }).label === "string" &&
+              typeof (item as { platform?: unknown }).platform === "string" &&
+              typeof (item as { kind?: unknown }).kind === "string" &&
+              typeof (item as { content?: unknown }).content === "string" &&
+              Array.isArray((item as { notes?: unknown[] }).notes)
+          )
+        : [],
+    };
+  }
+
+  function upsertNode(partial: Partial<NodeItem> & { node_id: string }): NodeItem {
+    const normalized = normalizeNode(partial);
     const index = items.value.findIndex((item) => item.node_id === partial.node_id);
     if (index >= 0) {
-      items.value[index] = { ...items.value[index], ...partial };
+      items.value[index] = normalizeNode({ ...items.value[index], ...partial });
     } else {
-      items.value.unshift(normalizeNode(partial));
+      items.value.unshift(normalized);
     }
-    lastUpdatedAt.value = Date.now();
+    touchLastUpdatedAt();
+    return index >= 0 ? items.value[index] : normalized;
   }
 
   function clearProvisionedSecret(): void {
@@ -211,7 +239,7 @@ export const useNodesStore = defineStore("nodes", () => {
     try {
       const { data } = await http.get<NodeItem[]>(NODES.list, { params: toListParams(query) });
       items.value = data.map((item) => normalizeNode(item));
-      lastUpdatedAt.value = Date.now();
+      touchLastUpdatedAt();
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : "Failed to load nodes";
     } finally {
@@ -222,8 +250,7 @@ export const useNodesStore = defineStore("nodes", () => {
   async function fetchNode(id: string): Promise<NodeItem | null> {
     try {
       const { data } = await http.get<NodeItem>(NODES.detail(id));
-      upsertNode(data);
-      return data;
+      return upsertNode(data);
     } catch {
       return null;
     }
@@ -238,26 +265,7 @@ export const useNodesStore = defineStore("nodes", () => {
         throw new Error("Node provisioning response is invalid");
       }
       upsertNode(data.node);
-      lastProvisioned.value = {
-        ...data,
-        node: normalizeNode(data.node),
-        bootstrap_commands: { ...data.bootstrap_commands },
-        bootstrap_notes: Array.isArray(data.bootstrap_notes)
-          ? data.bootstrap_notes.filter((item): item is string => typeof item === "string")
-          : [],
-        bootstrap_receipts: Array.isArray(data.bootstrap_receipts)
-          ? data.bootstrap_receipts.filter(
-              (item): item is BootstrapReceipt =>
-                typeof item === "object" &&
-                typeof (item as { key?: unknown }).key === "string" &&
-                typeof (item as { label?: unknown }).label === "string" &&
-                typeof (item as { platform?: unknown }).platform === "string" &&
-                typeof (item as { kind?: unknown }).kind === "string" &&
-                typeof (item as { content?: unknown }).content === "string" &&
-                Array.isArray((item as { notes?: unknown[] }).notes)
-            )
-          : [],
-      };
+      lastProvisioned.value = normalizeProvisionReceipt(data);
       return lastProvisioned.value;
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : "Failed to provision node";
@@ -285,30 +293,10 @@ export const useNodesStore = defineStore("nodes", () => {
       });
       if (isProvisionReceipt(data)) {
         upsertNode(data.node);
-        lastProvisioned.value = {
-          ...data,
-          node: normalizeNode(data.node),
-          bootstrap_commands: { ...data.bootstrap_commands },
-          bootstrap_notes: Array.isArray(data.bootstrap_notes)
-            ? data.bootstrap_notes.filter((item): item is string => typeof item === "string")
-            : [],
-          bootstrap_receipts: Array.isArray(data.bootstrap_receipts)
-            ? data.bootstrap_receipts.filter(
-                (item): item is BootstrapReceipt =>
-                  typeof item === "object" &&
-                  typeof (item as { key?: unknown }).key === "string" &&
-                  typeof (item as { label?: unknown }).label === "string" &&
-                  typeof (item as { platform?: unknown }).platform === "string" &&
-                  typeof (item as { kind?: unknown }).kind === "string" &&
-                  typeof (item as { content?: unknown }).content === "string" &&
-                  Array.isArray((item as { notes?: unknown[] }).notes)
-              )
-            : [],
-        };
+        lastProvisioned.value = normalizeProvisionReceipt(data);
         return lastProvisioned.value;
       }
-      upsertNode(data);
-      return data;
+      return upsertNode(data);
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : "Failed to update node";
       return null;
@@ -373,6 +361,7 @@ export const useNodesStore = defineStore("nodes", () => {
     lastProvisioned,
     lastUpdatedAt,
     onlineCount,
+    upsertNode,
     applyNodeEvent,
     clearProvisionedSecret,
     fetchSchema,

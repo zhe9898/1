@@ -515,73 +515,6 @@ class TestGovernanceFacadeTunerProxies:
         assert result == "binpack"
 
 
-class TestRecordTunerOutcome:
-    def test_records_success_outcome(self) -> None:
-        from backend.api.jobs.lifecycle import _record_tuner_outcome
-
-        with patch(
-            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
-        ) as mock_get:
-            mock_tuner = MagicMock()
-            mock_get.return_value = mock_tuner
-
-            job = MagicMock()
-            job.job_id = "job-42"
-            job.kind = "shell.exec"
-            job.scheduling_strategy = "spread"
-            job.tenant_id = "tenant-1"
-            job.retry_count = 0
-            job.started_at = _utcnow() - datetime.timedelta(seconds=5)
-
-            _record_tuner_outcome(job, node_id="node-1", success=True, now=_utcnow())
-
-        mock_tuner.record_outcome.assert_called_once()
-        signal = mock_tuner.record_outcome.call_args[0][0]
-        assert signal.job_id == "job-42"
-        assert signal.node_id == "node-1"
-        assert signal.success is True
-        assert signal.latency_ms == pytest.approx(5000.0, rel=0.01)
-
-    def test_records_failure_outcome(self) -> None:
-        from backend.api.jobs.lifecycle import _record_tuner_outcome
-
-        with patch(
-            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
-        ) as mock_get:
-            mock_tuner = MagicMock()
-            mock_get.return_value = mock_tuner
-
-            job = MagicMock()
-            job.job_id = "job-99"
-            job.kind = "connector.invoke"
-            job.scheduling_strategy = None
-            job.tenant_id = "default"
-            job.retry_count = 3
-            job.started_at = None
-
-            _record_tuner_outcome(job, node_id="n2", success=False, now=_utcnow())
-
-        signal = mock_tuner.record_outcome.call_args[0][0]
-        assert signal.success is False
-        assert signal.strategy == "spread"  # default fallback
-        assert signal.latency_ms == 0.0  # no started_at
-
-    def test_never_raises(self) -> None:
-        from backend.api.jobs.lifecycle import _record_tuner_outcome
-
-        with patch(
-            "backend.core.scheduler_auto_tune.get_scheduler_tuner",
-            side_effect=RuntimeError("boom"),
-        ):
-            # Must not raise
-            _record_tuner_outcome(
-                MagicMock(),
-                node_id="n1",
-                success=True,
-                now=_utcnow(),
-            )
-
-
 class TestScoringIntegration:
     def test_tuner_multiplier_applied_to_scoring(self) -> None:
         """Verify that score_job_for_node uses tuner adjustments."""
@@ -624,7 +557,7 @@ class TestScoringIntegration:
             storage_mb=100000,
             reliability_score=0.95,
             last_seen_at=_utcnow(),
-            enrollment_status="active",
+        enrollment_status="approved",
             status="online",
             drain_status="active",
             network_latency_ms=5,
@@ -720,7 +653,7 @@ class TestScoringIntegration:
             storage_mb=100000,
             reliability_score=0.90,
             last_seen_at=_utcnow(),
-            enrollment_status="active",
+        enrollment_status="approved",
             status="online",
             drain_status="active",
             network_latency_ms=5,
@@ -794,7 +727,7 @@ class TestScoringIntegration:
             storage_mb=100000,
             reliability_score=0.90,
             last_seen_at=_utcnow(),
-            enrollment_status="active",
+        enrollment_status="approved",
             status="online",
             drain_status="active",
             network_latency_ms=5,

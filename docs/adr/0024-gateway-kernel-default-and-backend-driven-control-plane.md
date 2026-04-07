@@ -1,8 +1,10 @@
 # ADR 0024: Gateway Kernel Default and Backend-Driven Control Plane
 
-- **Status**: Accepted
-- **Date**: 2026-03-26
-- **Scope**: Default release shape, control-plane contracts, frontend driving model
+- Status: Accepted
+- Date: 2026-03-26
+- Scope: Default release shape, control-plane contracts, frontend driving model
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. Context
 

@@ -1,8 +1,10 @@
-# ADR 0033：后端拥有的状态语义与 tone 展示合同
+# ADR 0033: 后端拥有的状态语义与 tone 展示合同
 
-- **状态**: 已接受
-- **日期**: 2026-03-27
-- **范围**: `Dashboard`、`Nodes`、`Jobs`、`Connectors` 的 Phase 3 状态展示闭环
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: 后端拥有的状态语义与 tone 展示合同
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景
 

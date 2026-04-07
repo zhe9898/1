@@ -1,7 +1,10 @@
 # ADR 0013: Redis 单点承压缓解与状态解耦策略 (SPOF Mitigation)
 
-## Status
-**Accepted**
+- Status: Accepted
+- Date: Unknown
+- Scope: Redis 单点承压缓解与状态解耦策略 (SPOF Mitigation)
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## Context
 在当前的 ZEN70 V2.0 架构中，Redis 承担了过于沉重的“超载中枢”角色（上帝组件）：

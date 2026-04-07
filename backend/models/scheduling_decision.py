@@ -19,7 +19,7 @@ import datetime
 from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class SchedulingDecision(Base):

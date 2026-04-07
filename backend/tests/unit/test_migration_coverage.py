@@ -1,12 +1,4 @@
-"""Validate that every SQLAlchemy model table has a corresponding Alembic migration.
-
-This test guards against the regression described in ADR-0007 where new models
-were added to backend/models/ without a matching migration script in
-backend/migrations/versions/, causing silent schema drift.
-
-The check is deliberately lightweight — it only parses AST/text, never connects
-to a database — so it runs in CI without any external services.
-"""
+"""Validate that model-backed schema evolution stays governed and traceable."""
 
 from __future__ import annotations
 
@@ -14,48 +6,20 @@ import ast
 import re
 from pathlib import Path
 
+from backend.core.migration_governance import (
+    APPLICATION_BASELINE_MODEL_TABLES,
+    APPROVED_LEGACY_MODEL_TABLE_CREATIONS,
+    collect_created_tables_by_chain,
+    collect_model_tables,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
-MODELS_DIR = REPO_ROOT / "backend" / "models"
 VERSIONS_DIR = REPO_ROOT / "backend" / "migrations" / "versions"
 ALEMBIC_VERSIONS_DIR = REPO_ROOT / "backend" / "alembic" / "versions"
 
-# Tables managed by migrations 0001–0005 (those files are absent from versions/
-# because they pre-date the tracked window, but the tables definitely exist in
-# the chain as evidenced by migration 0006 which alters them).
-_BASELINE_TABLES = frozenset(
-    {
-        "jobs",
-        "job_attempts",
-        "nodes",
-        "users",
-        "webauthn_credentials",
-        "push_subscriptions",
-    }
-)
-
-
-def _collect_model_tables() -> set[str]:
-    """Return every __tablename__ value declared across backend/models/*.py."""
-    tables: set[str] = set()
-    for path in MODELS_DIR.glob("*.py"):
-        if path.name == "__init__.py":
-            continue
-        source = path.read_text(encoding="utf-8")
-        try:
-            tree = ast.parse(source, filename=str(path))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "__tablename__":
-                        if isinstance(node.value, ast.Constant):
-                            tables.add(str(node.value.value))
-    return tables
-
 
 def _collect_migrated_tables() -> set[str]:
-    """Return every table name that appears in a create_table() call in any migration."""
+    """Return every table name created in the application migration chain."""
     tables: set[str] = set()
     pattern = re.compile(r'op\.create_table\(\s*["\'](\w+)["\']')
     for path in VERSIONS_DIR.glob("*.py"):
@@ -102,21 +66,21 @@ def _collect_revision_graph(versions_dir: Path) -> tuple[set[str], set[str]]:
 
 
 def test_all_model_tables_have_migrations() -> None:
-    """Every model table must either be in the baseline set or have an explicit migration."""
-    model_tables = _collect_model_tables()
+    """Every model table must be covered by the application chain or a tracked baseline."""
+    model_tables = collect_model_tables()
     migrated_tables = _collect_migrated_tables()
-    covered = migrated_tables | _BASELINE_TABLES
+    covered = migrated_tables | APPLICATION_BASELINE_MODEL_TABLES
 
     missing = model_tables - covered
     assert not missing, (
-        "The following tables have SQLAlchemy models but no migration:\n"
-        + "\n".join(f"  - {t}" for t in sorted(missing))
+        "The following tables have SQLAlchemy models but no application-chain coverage:\n"
+        + "\n".join(f"  - {table_name}" for table_name in sorted(missing))
         + "\n\nAdd an Alembic migration in backend/migrations/versions/ for each missing table."
     )
 
 
 def test_migration_chain_is_linear() -> None:
-    """Each migration (except the first) must reference exactly one predecessor."""
+    """Each application migration must reference a known predecessor."""
     down_revisions: dict[str, str | None] = {}
     for path in sorted(VERSIONS_DIR.glob("*.py")):
         source = path.read_text(encoding="utf-8")
@@ -128,16 +92,25 @@ def test_migration_chain_is_linear() -> None:
         down_revision = down_match.group(1) if down_match else None
         down_revisions[revision] = down_revision
 
-    # Every down_revision (except None for the first) must reference a known revision
-    # OR the baseline sentinel "0005".
     known = set(down_revisions.keys()) | {"0005"}
-    for revision, down in down_revisions.items():
-        if down is not None:
-            assert down in known, f"Migration '{revision}' references unknown predecessor '{down}'. " f"Ensure the migration chain is continuous."
+    for revision, down_revision in down_revisions.items():
+        if down_revision is not None:
+            assert down_revision in known, (
+                f"Migration '{revision}' references unknown predecessor '{down_revision}'. "
+                "Ensure the migration chain is continuous."
+            )
 
 
 def test_alembic_chain_has_single_head() -> None:
-    """Production Alembic chain should converge to a single head."""
+    """Legacy chain should still converge to a single head."""
     revisions, parent_refs = _collect_revision_graph(ALEMBIC_VERSIONS_DIR)
     heads = sorted(revisions - parent_refs)
     assert len(heads) == 1, f"Expected a single Alembic head, found {heads}"
+
+
+def test_legacy_model_table_creations_are_frozen_to_approved_historical_set() -> None:
+    """Legacy create_table coverage on model tables must not expand silently."""
+    created = collect_created_tables_by_chain()
+    legacy_created_model_tables = created["legacy"] & collect_model_tables()
+
+    assert legacy_created_model_tables == APPROVED_LEGACY_MODEL_TABLE_CREATIONS

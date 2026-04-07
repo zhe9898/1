@@ -1,14 +1,10 @@
-# 0047. 控制台与 Runner 回归密度补齐
+# ADR 0047: 控制台与 Runner 回归密度补齐
 
-- 状态: 已采纳
-- 日期: 2026-03-28
+- Status: Accepted
+- Date: 2026-03-28
+- Scope: 控制台与 Runner 回归密度补齐
 
-## 背景
-
-`Gateway Kernel` 的后端控制面已经具备较强的合同测试与单元测试，但前端控制台关键页面和 `runner-agent` 的 `api / heartbeat / jobs` 直测密度仍然偏低。这样会带来两个长期风险：
-
-- 控制台页面改动时，只靠少量渲染测试，无法稳定拦住动作链、过滤刷新和事件回流回归。
-- Runner 协议改动时，只靠 `service` 端到端测试，无法快速定位是 `client`、`heartbeat` 还是 `poller` 退化。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

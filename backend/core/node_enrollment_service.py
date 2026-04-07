@@ -20,7 +20,7 @@ class NodeEnrollmentService:
     def revoke(node: Node, *, now: datetime.datetime) -> None:
         node.auth_token_hash = None
         node.auth_token_version = int(node.auth_token_version or 0) + 1
-        node.enrollment_status = canonicalize_status("nodes.enrollment_status", "revoked")
+        node.enrollment_status = canonicalize_status("nodes.enrollment_status", "rejected")
         node.status = "offline"
         node.updated_at = now
 
@@ -46,12 +46,12 @@ class NodeEnrollmentService:
         now: datetime.datetime,
         cloud_auto_approved: bool,
     ) -> str:
-        event_action = "updated" if node.enrollment_status == "active" else "registered"
+        event_action = "updated" if node.enrollment_status == "approved" else "registered"
         _apply_contract(node, payload, "online", now)
-        if node.enrollment_status == "active":
-            node.enrollment_status = "active"
+        if node.enrollment_status == "approved":
+            node.enrollment_status = "approved"
         else:
-            node.enrollment_status = "active" if cloud_auto_approved else "pending"
+            node.enrollment_status = "approved" if cloud_auto_approved else "pending"
         node.drain_status = "active"
         node.health_reason = None
         if node.metadata_json:

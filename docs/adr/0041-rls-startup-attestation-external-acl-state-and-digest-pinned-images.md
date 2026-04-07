@@ -1,8 +1,10 @@
-# 0041. 启动期 RLS 证明、外置 ACL 状态与 digest 固定镜像
+# ADR 0041: 启动期 RLS 证明、外置 ACL 状态与 digest 固定镜像
 
-## 状态
+- Status: Accepted
+- Date: Unknown
+- Scope: 启动期 RLS 证明、外置 ACL 状态与 digest 固定镜像
 
-已采纳
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

@@ -1,11 +1,10 @@
-# 可选 Local LLM Agent（结构化意图 → switch:events）
+# ADR 0008: 可选 Local LLM Agent（结构化意图 → switch:events）
 
-- **状态**: 接受
-- **日期**: 2025-03-18
+- Status: Accepted
+- Date: 2025-03-18
+- Scope: 可选 Local LLM Agent（结构化意图 → switch:events）
 
-## 1. 背景上下文
-
-需要支持“本地大模型大脑”作为**可选功能**：用户或前端通过自然语言/结构化意图控制实体（如媒体、监控容器），且必须与现有架构一致——网关不直连 Docker，仅发布 `switch:events` 到 Redis，由探针消费并执行 Reconcile。能力需可配置关闭、可随 system.yaml 中 `switch_container_map` 扩展而自动扩展白名单。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 2. 决策选项
 

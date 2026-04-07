@@ -23,8 +23,11 @@ AGGREGATE_OWNERS: tuple[AggregateOwner, ...] = (
         owner_service="LeaseService",
         allowed_modules=("backend/core/lease_service.py",),
         owned_fields=(
+            "jobs.status",
             "jobs.attempt",
             "jobs.lease_token",
+            "jobs.leased_until",
+            "job_attempts.status",
             "job_attempts.lease_token",
             "job_attempts.scheduling_decision_id",
         ),

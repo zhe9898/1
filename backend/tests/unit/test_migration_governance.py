@@ -4,8 +4,10 @@ from pathlib import Path
 
 from backend.core.migration_governance import (
     APPROVED_CROSS_STREAM_TABLE_OVERLAPS,
+    APPROVED_LEGACY_MODEL_TABLE_CREATIONS,
     find_cross_stream_table_overlaps,
     find_unapproved_cross_stream_table_overlaps,
+    find_unapproved_legacy_model_table_creations,
     load_alembic_config_options,
     ordered_migration_chains,
     runtime_managed_migration_chains,
@@ -51,7 +53,12 @@ def test_alembic_configs_match_governed_version_tables() -> None:
 def test_runtime_managed_chain_set_is_explicit() -> None:
     managed = runtime_managed_migration_chains()
     assert managed
-    assert tuple(chain.key for chain in managed) == ("legacy",)
+    assert tuple(chain.key for chain in managed) == ("legacy", "application")
+
+
+def test_legacy_model_table_creations_are_fully_governed() -> None:
+    assert APPROVED_LEGACY_MODEL_TABLE_CREATIONS
+    assert find_unapproved_legacy_model_table_creations() == set()
 
 
 def test_update_engine_uses_governed_migration_runner() -> None:
@@ -63,3 +70,45 @@ def test_update_engine_uses_governed_migration_runner() -> None:
     assert '"--managed-only"' in source
     assert "lock_acquire_script" not in source
     assert '"-m", "alembic"' not in source
+
+
+def test_overlap_application_migrations_use_schema_guard() -> None:
+    root = Path(__file__).resolve().parents[3] / "backend" / "migrations" / "versions"
+    guarded = {
+        "0006_failure_taxonomy.py",
+        "0007_user_status.py",
+        "0015_tenants.py",
+        "0016_connectors.py",
+        "0018_job_logs.py",
+        "0019_scheduling_decisions_tenant_policies.py",
+        "0020_triggers.py",
+        "0022_memory_facts.py",
+        "0023_software_evaluations_system_logs.py",
+        "0024_job_preferred_device_profile.py",
+        "0025_webauthn_credential_transports.py",
+        "0026_dual_chain_reconciliation.py",
+        "0027_webauthn_challenge_store.py",
+        "0028_canonical_trigger_workflow_statuses.py",
+        "0029_canonical_job_statuses.py",
+        "0030_canonical_node_attempt_step_statuses.py",
+    }
+    for filename in guarded:
+        source = (root / filename).read_text(encoding="utf-8")
+        assert "SchemaGuard" in source
+
+
+def test_repo_does_not_import_migration_env_modules_outside_entrypoints() -> None:
+    root = Path(__file__).resolve().parents[3]
+    violations: list[str] = []
+    allowed = {
+        "backend/alembic/env.py",
+        "backend/migrations/env.py",
+    }
+    for path in root.rglob("*.py"):
+        rel = path.relative_to(root).as_posix()
+        if rel in allowed or "/tests/" in f"/{rel}" or "__pycache__" in rel:
+            continue
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        if "backend.alembic.env" in source or "backend.migrations.env" in source:
+            violations.append(rel)
+    assert violations == []

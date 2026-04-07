@@ -48,6 +48,7 @@ def test_profile_endpoint_reports_public_profile(monkeypatch) -> None:
         assert {item["pack_key"] for item in data["packs"]} == {
             "iot-pack",
             "ops-pack",
+            "media-pack",
             "health-pack",
             "vector-pack",
         }

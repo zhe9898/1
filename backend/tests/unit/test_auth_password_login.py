@@ -19,6 +19,8 @@ def _mock_redis():
 
 def _mock_db(user):
     db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
     result = MagicMock()
     result.scalar_one_or_none.return_value = user
     db.execute.return_value = result
@@ -48,7 +50,8 @@ async def test_password_login_success():
 
     resp = await password_login(req, request, response, db=db, redis=redis)
     assert resp is not None
-    assert resp.access_token is not None
+    assert resp.authenticated is True
+    assert resp.sub == "1"
 
 
 @pytest.mark.asyncio
@@ -73,7 +76,8 @@ async def test_password_login_accepts_bytes_hash():
     redis = _mock_redis()
 
     resp = await password_login(req, request, response, db=db, redis=redis)
-    assert resp.access_token is not None
+    assert resp.authenticated is True
+    assert resp.role == "admin"
 
 
 @pytest.mark.asyncio

@@ -5,11 +5,9 @@ from __future__ import annotations
 import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-class Base(DeclarativeBase):
-    """Declarative base for all models."""
+from backend.models.base import Base
 
 
 class User(Base):

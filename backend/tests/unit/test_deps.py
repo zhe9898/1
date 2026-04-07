@@ -25,17 +25,16 @@ class TestGetCurrentUser:
     async def test_valid_token_returns_payload(self) -> None:
         from backend.api.deps import get_current_user
 
-        cred = MagicMock()
-        cred.credentials = _token("alice", "admin")
         request = MagicMock()
-        request.cookies = {}
+        request.cookies = {"zen70_access_token": _token("alice", "admin")}
+        request.app.state.redis = None
         response = MagicMock()
         response.headers = {}
 
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=MagicMock(is_active=True, status="active"))))
 
-        result = await get_current_user(request, response, cred, db)
+        result = await get_current_user(request, response, None, db)
         assert result["sub"] == "alice"
         assert result["role"] == "admin"
 
@@ -73,10 +72,9 @@ class TestGetCurrentUser:
     async def test_disabled_user_token_is_rejected(self) -> None:
         from backend.api.deps import get_current_user
 
-        cred = MagicMock()
-        cred.credentials = _token("alice", "admin")
         request = MagicMock()
-        request.cookies = {}
+        request.cookies = {"zen70_access_token": _token("alice", "admin")}
+        request.app.state.redis = None
         response = MagicMock()
         response.headers = {}
 
@@ -84,13 +82,13 @@ class TestGetCurrentUser:
         db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=MagicMock(is_active=False, status="suspended"))))
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(request, response, cred, db)
+            await get_current_user(request, response, None, db)
         assert exc_info.value.status_code == 401
 
     @patch("backend.core.jwt._CURRENT", SECRET)
     @patch("backend.core.jwt._PREVIOUS", None)
     @pytest.mark.anyio
-    async def test_cookie_token_is_accepted_when_authorization_header_is_missing(self) -> None:
+    async def test_cookie_token_is_accepted(self) -> None:
         from backend.api.deps import get_current_user
 
         request = MagicMock()
@@ -104,6 +102,25 @@ class TestGetCurrentUser:
 
         result = await get_current_user(request, response, None, db)
         assert result["sub"] == "cookie-user"
+
+    @patch("backend.core.jwt._CURRENT", SECRET)
+    @patch("backend.core.jwt._PREVIOUS", None)
+    @pytest.mark.anyio
+    async def test_authorization_header_is_ignored_for_cookie_only_auth(self) -> None:
+        from backend.api.deps import get_current_user
+
+        cred = MagicMock()
+        cred.credentials = _token("header-user", "admin")
+        request = MagicMock()
+        request.cookies = {}
+        request.app.state.redis = None
+        response = MagicMock()
+        db = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(request, response, cred, db)
+
+        assert exc_info.value.status_code == 401
 
 
 class TestGetCurrentAdmin:
@@ -140,14 +157,13 @@ class TestGetCurrentUserOptional:
     async def test_valid_token_returns_payload(self) -> None:
         from backend.api.deps import get_current_user_optional
 
-        cred = MagicMock()
-        cred.credentials = _token("bob")
         request = MagicMock()
-        request.cookies = {}
+        request.cookies = {"zen70_access_token": _token("bob")}
+        request.app.state.redis = None
         response = MagicMock()
         response.headers = {}
 
-        result = await get_current_user_optional(request, response, cred)
+        result = await get_current_user_optional(request, response, None)
         assert result is not None
         assert result["sub"] == "bob"
 
@@ -167,29 +183,26 @@ class TestGetCurrentUserOptional:
     async def test_expired_token_returns_none(self) -> None:
         from backend.api.deps import get_current_user_optional
 
-        cred = MagicMock()
-        cred.credentials = _token(expired=True)
         request = MagicMock()
-        request.cookies = {}
+        request.cookies = {"zen70_access_token": _token(expired=True)}
+        request.app.state.redis = None
         response = MagicMock()
 
-        result = await get_current_user_optional(request, response, cred)
+        result = await get_current_user_optional(request, response, None)
         assert result is None
 
     @pytest.mark.anyio
     async def test_unexpected_decode_error_returns_none(self) -> None:
         from backend.api.deps import get_current_user_optional
 
-        cred = MagicMock()
-        cred.credentials = "bad-token"
         request = MagicMock()
-        request.cookies = {}
+        request.cookies = {"zen70_access_token": "bad-token"}
         request.app.state.redis = None
         response = MagicMock()
         response.headers = {}
 
         with patch("backend.api.deps.decode_token", new=AsyncMock(side_effect=RuntimeError("decoder exploded"))):
-            result = await get_current_user_optional(request, response, cred)
+            result = await get_current_user_optional(request, response, None)
 
         assert result is None
 
@@ -208,6 +221,23 @@ class TestGetCurrentUserOptional:
         result = await get_current_user_optional(request, response, None)
         assert result is not None
         assert result["sub"] == "cookie-optional"
+
+    @patch("backend.core.jwt._CURRENT", SECRET)
+    @patch("backend.core.jwt._PREVIOUS", None)
+    @pytest.mark.anyio
+    async def test_optional_auth_ignores_authorization_header_without_cookie(self) -> None:
+        from backend.api.deps import get_current_user_optional
+
+        cred = MagicMock()
+        cred.credentials = _token("header-only")
+        request = MagicMock()
+        request.cookies = {}
+        request.app.state.redis = None
+        response = MagicMock()
+        response.headers = {}
+
+        result = await get_current_user_optional(request, response, cred)
+        assert result is None
 
 
 class TestSettingsAndTenantDb:

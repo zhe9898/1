@@ -1,8 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from fastapi import Request
 
-from backend.core.audit_logging import extract_client_info
+from backend.core.audit_logging import extract_client_info, sanitize_audit_details, write_audit_log
 
 
 def _request(*, xff: str | None, client_host: str) -> Request:
@@ -42,3 +45,55 @@ def test_extract_client_info_uses_xff_when_proxy_is_trusted(monkeypatch) -> None
     ip, _ = extract_client_info(request)
 
     assert ip == "1.2.3.4"
+
+
+def test_sanitize_audit_details_redacts_recursive_sensitive_fields() -> None:
+    details = sanitize_audit_details(
+        {
+            "connector": {
+                "headers": {"x-api-key": "top-secret"},
+                "client_secret": "connector-secret",
+            },
+            "challenge": "raw-challenge",
+            "attempts": [{"refresh_token": "refresh-secret"}],
+            "safe": "visible",
+        }
+    )
+
+    assert details == {
+        "connector": {
+            "headers": {"x-api-key": "********"},
+            "client_secret": "********",
+        },
+        "challenge": "********",
+        "attempts": [{"refresh_token": "********"}],
+        "safe": "visible",
+    }
+
+
+@pytest.mark.asyncio
+async def test_write_audit_log_sanitizes_details_before_flush() -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    await write_audit_log(
+        db,
+        tenant_id="tenant-a",
+        action="connector.update",
+        result="success",
+        details={
+            "connector_id": "connector-a",
+            "headers": {"x-api-key": "top-secret"},
+            "password": "pw-secret",
+        },
+    )
+
+    logged = db.add.call_args.args[0]
+    assert logged.tenant_id == "tenant-a"
+    assert logged.details == {
+        "connector_id": "connector-a",
+        "headers": {"x-api-key": "********"},
+        "password": "********",
+    }
+    db.flush.assert_awaited_once()

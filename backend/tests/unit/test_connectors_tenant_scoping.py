@@ -18,6 +18,7 @@ from backend.api.connectors import test_connector as connector_test_endpoint
 from backend.api.connectors import (
     upsert_connector,
 )
+from backend.core.connector_secret_service import ConnectorSecretService
 from backend.models.connector import Connector
 
 
@@ -54,7 +55,7 @@ def _connector(**overrides: object) -> Connector:
 
 
 @pytest.mark.asyncio
-@patch("backend.api.connectors.validate_connector_config", return_value={})
+@patch("backend.api.connectors.validate_connector_config", return_value={"headers": {"x-api-key": "top-secret"}})
 @patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
 async def test_upsert_connector_scopes_lookup_to_current_tenant(_mock_quota: AsyncMock, _mock_validate: MagicMock) -> None:
     db = AsyncMock()
@@ -70,7 +71,7 @@ async def test_upsert_connector_scopes_lookup_to_current_tenant(_mock_quota: Asy
             status="configured",
             endpoint="https://example.test",
             profile="manual",
-            config={},
+            config={"headers": {"x-api-key": "top-secret"}},
         ),
         current_user={"sub": "admin", "tenant_id": "tenant-a"},
         db=db,
@@ -83,7 +84,11 @@ async def test_upsert_connector_scopes_lookup_to_current_tenant(_mock_quota: Asy
     assert "connectors.connector_id" in rendered
     created = db.add.call_args.args[0]
     assert created.tenant_id == "tenant-a"
+    assert created.config["format"] == ConnectorSecretService.ENVELOPE_FORMAT
+    assert created.config["masked"] == {"headers": {"x-api-key": "********"}}
+    assert "headers" not in created.config
     assert response.connector_id == "connector-a"
+    assert response.config == {"headers": {"x-api-key": "********"}}
 
 
 @pytest.mark.asyncio
@@ -208,3 +213,39 @@ async def test_upsert_connector_rejects_private_ip_endpoint(_mock_quota: AsyncMo
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail["code"] == "ZEN-CONN-4002"
+
+
+@pytest.mark.asyncio
+@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
+@patch("backend.api.connectors.validate_connector_config", side_effect=ValueError("invalid connector config"))
+async def test_upsert_connector_masks_sensitive_config_in_validation_error(
+    _mock_validate: MagicMock,
+    _mock_quota: AsyncMock,
+) -> None:
+    db = AsyncMock()
+    db.execute.return_value = _scalar_result(None)
+    db.flush = AsyncMock()
+    db.add = MagicMock()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await upsert_connector(
+            ConnectorUpsertRequest(
+                connector_id="connector-a",
+                name="Connector A",
+                kind="http",
+                status="configured",
+                endpoint="https://example.test",
+                profile="manual",
+                config={"headers": {"x-api-key": "top-secret"}, "client_secret": "raw-secret"},
+            ),
+            current_user={"sub": "admin", "tenant_id": "tenant-a"},
+            db=db,
+            redis=None,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "ZEN-CONN-4001"
+    assert exc_info.value.detail["details"]["config"] == {
+        "headers": {"x-api-key": "********"},
+        "client_secret": "********",
+    }

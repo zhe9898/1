@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 
+from backend.core.connector_secret_service import ConnectorSecretService
 from backend.models.connector import Connector
 
 
@@ -20,6 +21,13 @@ class ConnectorService:
         config: dict[str, object],
         now: datetime.datetime,
     ) -> tuple[Connector, str]:
+        sealed_config = ConnectorSecretService.seal_config(
+            config,
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            kind=kind,
+            profile=profile,
+        )
         if connector is None:
             connector = Connector(
                 tenant_id=tenant_id,
@@ -29,7 +37,7 @@ class ConnectorService:
                 status=status,
                 endpoint=endpoint,
                 profile=profile,
-                config=config,
+                config=sealed_config,
                 last_test_ok=None,
                 last_test_status=None,
                 last_test_message=None,
@@ -47,7 +55,7 @@ class ConnectorService:
         connector.status = status
         connector.endpoint = endpoint
         connector.profile = profile
-        connector.config = config
+        connector.config = sealed_config
         connector.updated_at = now
         return connector, "updated"
 

@@ -1,29 +1,69 @@
-# 架构决策记录 (ADR) 模板
+# ADR Template
 
-> **法典 8.1.4**: 任何涉及核心技术栈更迭、API 契约修改、硬件抽象层重构或偏离“建议级”规范的重大变更，必须在合并代码前，在此提交 Markdown 格式的 ADR 文档。
+- Status: Draft | Proposed | Accepted | Superseded | Rejected | Archived
+- Date: YYYY-MM-DD
+- Scope: Short description of the boundary affected by this ADR
 
-## 标题 (要求简明扼要，如：采用 Python 构建 IaC 编译器)
+## 1. Context
 
-- **状态**: [起草 | 提议 | 接受 | 否决 | 废弃]
-- **日期**: [YYYY-MM-DD]
+Describe the current repository reality that makes this decision necessary.
 
-## 1. 背景上下文
-[描述做出此决策的架构背景、现有瓶颈或为何遇到需要改变的业务诱因。]
+Prefer concrete evidence over aspiration:
 
-## 2. 决策选项
-[列出团队内所有考虑过的技术选型或者架构模式。]
-1. 方案 A: xxx
-2. 方案 B: xxx
-3. 方案 C: xxx
+- current code paths
+- existing runtime behavior
+- migration or compatibility pressure
+- operational or security risks
 
-## 3. 评估对比
-[客观分析各种方案的优缺点（Pros/Cons），可以涉及维护时间、学习成本、以及是否满足最高级容灾规范。]
-### 方案 A
-- **优势**: ...
-- **劣势**: ...
+If the decision is still only a proposal, say so explicitly.
 
-## 4. 最终决定
-[说明最终采用哪种方案，以及为什么选择它作为决议。]
+## 2. Decision
 
-## 5. 影响范围
-[此项变更对安全、部署脚本、下游对接甚至业务习惯的连带影响。是否需要开发对应数据迁移脚本。]
+State the decision in direct, testable language.
+
+Use flat bullets when needed:
+
+- what is now the accepted rule
+- what is explicitly not part of the rule
+- what remains compatibility-only
+
+## 3. Code Evidence
+
+List the repository locations that justify or enforce this ADR.
+
+- `path/to/file.py`
+- `path/to/file.ts`
+- `backend/tests/unit/test_example.py`
+
+If no code exists yet, the ADR must not claim the decision is already accepted.
+
+## 4. Consequences
+
+### Positive
+
+- What this ADR clarifies
+- What drift or risk it reduces
+
+### Tradeoffs
+
+- Migration cost
+- Compatibility cost
+- Follow-up work still required
+
+## 5. Follow-up
+
+Record the next actions needed to keep the ADR honest.
+
+- migrations still required
+- tests or gates still missing
+- future ADRs that would supersede this one
+
+## 6. Source-of-Truth Rule
+
+Repository truth is ordered as follows:
+
+1. implementation and exported code contracts
+2. tests and enforcement gates
+3. ADR text and design notes
+
+If ADR text conflicts with code, fix the code-backed contract first or downgrade the ADR status.

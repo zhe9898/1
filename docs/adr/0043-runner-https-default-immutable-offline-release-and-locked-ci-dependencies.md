@@ -1,7 +1,10 @@
 # ADR 0043: Runner HTTPS 默认值、不可变离线发行与锁定式 CI 依赖
 
-## 状态
-已采纳
+- Status: Accepted
+- Date: Unknown
+- Scope: Runner HTTPS 默认值、不可变离线发行与锁定式 CI 依赖
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 - `runner-agent` 过去默认使用 `http://127.0.0.1:8000`，并在每次机器调用时发送 `Authorization: Bearer <node_token>`。这在跨主机或误配到公网时会形成明文 Bearer 泄露面。

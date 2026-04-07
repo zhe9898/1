@@ -19,9 +19,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth_cookies import set_auth_cookie
-from backend.api.auth_shared import assert_user_active
+from backend.api.auth_session_projection import build_authenticated_session_response
+from backend.api.auth_shared import assert_user_active, register_login_session
+from backend.api.auth_token_issue import issue_auth_token
 from backend.api.deps import get_current_admin, get_db, get_redis
-from backend.api.models.auth import InviteCreateRequest, InviteResponse, WebAuthnRegisterBeginResponse, WebAuthnRegisterCompleteRequest
+from backend.api.models.auth import AuthSessionResponse, InviteCreateRequest, InviteResponse, WebAuthnRegisterBeginResponse, WebAuthnRegisterCompleteRequest
 from backend.core.auth_helpers import (
     CHALLENGE_TTL,
     CODE_BAD_REQUEST,
@@ -36,10 +38,15 @@ from backend.core.auth_helpers import (
     origin_from_request,
     request_id,
     require_db_redis,
-    token_response,
     zen,
 )
 from backend.core.redis_client import RedisClient
+from backend.core.webauthn_challenge_store import WebAuthnChallengeStore
+from backend.core.webauthn_flow_session import (
+    clear_webauthn_flow_session,
+    ensure_webauthn_flow_session,
+    require_webauthn_flow_session,
+)
 from backend.models.user import User, WebAuthnCredential
 
 try:
@@ -52,8 +59,6 @@ router = APIRouter()
 
 INVITE_TOKEN_PREFIX = "zen70:invite:"
 INVITE_TOKEN_LOCK_PREFIX = "zen70:invite-lock:"
-INVITE_BEGIN_SESSION_PREFIX = "zen70:invite-begin:"
-INVITE_BEGIN_LOCK_PREFIX = "zen70:invite-begin-lock:"
 INVITE_FALLBACK_CONFIRM_VALUE = "degrade-login"
 
 
@@ -131,65 +136,6 @@ async def _validate_invite_token(redis: RedisClient, token: str) -> dict[str, ob
     return dict(payload)
 
 
-async def _get_invite_begin_session(redis: RedisClient, token: str) -> dict[str, object] | None:
-    session_key = f"{INVITE_BEGIN_SESSION_PREFIX}{token}"
-    raw_session = await redis.get(session_key)
-    if not raw_session:
-        return None
-    try:
-        payload = json.loads(raw_session)
-    except json.JSONDecodeError:
-        await redis.delete(session_key)
-        return None
-    if not isinstance(payload, dict):
-        await redis.delete(session_key)
-        return None
-    options = payload.get("options")
-    challenge_b64 = payload.get("challenge_b64")
-    if not isinstance(options, dict) or not isinstance(challenge_b64, str) or not challenge_b64.strip():
-        await redis.delete(session_key)
-        return None
-    return {"options": options, "challenge_b64": challenge_b64}
-
-
-async def _clear_invite_begin_session(redis: RedisClient, token: str) -> None:
-    await redis.delete(f"{INVITE_BEGIN_SESSION_PREFIX}{token}")
-
-
-async def _get_or_create_invite_begin_session(redis: RedisClient, token: str, user: User) -> dict[str, object]:
-    cached_session = await _get_invite_begin_session(redis, token)
-    if cached_session is not None:
-        return cached_session
-
-    lock_key = f"{INVITE_BEGIN_LOCK_PREFIX}{token}"
-    lock_acquired = await redis.acquire_lock(lock_key, ttl=10)
-    if not lock_acquired:
-        cached_session = await _get_invite_begin_session(redis, token)
-        if cached_session is not None:
-            return cached_session
-        raise zen("ZEN-AUTH-4093", "Invite registration begin is already in progress", status_code=409, recovery_hint="Retry after a moment")
-    try:
-        cached_session = await _get_invite_begin_session(redis, token)
-        if cached_session is not None:
-            return cached_session
-
-        user_id_bytes = str(user.id).encode("utf-8")
-        _, challenge_b64, options_json_str = generate_registration_challenge(
-            username=user.username,
-            display_name=user.display_name or user.username,
-            user_id=user_id_bytes,
-        )
-        challenge_payload = json.dumps({"user_id": user.id, "username": user.username, "tenant_id": user.tenant_id, "flow": "register"})
-        if not await redis.set_auth_challenge(challenge_b64, challenge_payload, ttl=CHALLENGE_TTL):
-            raise zen(CODE_SERVER_ERROR, "Failed to store challenge", status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        session_payload = {"challenge_b64": challenge_b64, "options": json.loads(options_json_str)}
-        await redis.setex(f"{INVITE_BEGIN_SESSION_PREFIX}{token}", CHALLENGE_TTL, json.dumps(session_payload))
-        return session_payload
-    finally:
-        await redis.release_lock(lock_key)
-
-
 @router.post("/invites", response_model=InviteResponse)
 async def create_invite(
     req: InviteCreateRequest,
@@ -223,6 +169,7 @@ async def create_invite(
 async def invite_webauthn_register_begin(
     token: str,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
 ) -> WebAuthnRegisterBeginResponse:
@@ -236,11 +183,27 @@ async def invite_webauthn_register_begin(
     if not user:
         raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
     assert_user_active(user, flow="invite_webauthn_register_begin", rid="invite-register", username=user.username)
-    session_payload = await _get_or_create_invite_begin_session(redis, token, user)
-    return WebAuthnRegisterBeginResponse(options=dict(session_payload["options"]))
+    session_id = ensure_webauthn_flow_session(response, request, ttl_seconds=CHALLENGE_TTL)
+    user_id_bytes = str(user.id).encode("utf-8")
+    _, options = await WebAuthnChallengeStore.get_or_create(
+        db,
+        redis,
+        session_id=session_id,
+        user_id=str(user.id),
+        tenant_id=user.tenant_id,
+        flow="invite_register",
+        ttl_seconds=CHALLENGE_TTL,
+        options_builder=lambda challenge: generate_registration_challenge(
+            username=user.username,
+            display_name=user.display_name or user.username,
+            user_id=user_id_bytes,
+            challenge=challenge,
+        ),
+    )
+    return WebAuthnRegisterBeginResponse(options=options)
 
 
-@router.post("/invites/{token}/webauthn/register/complete")
+@router.post("/invites/{token}/webauthn/register/complete", response_model=AuthSessionResponse)
 async def invite_webauthn_register_complete(
     token: str,
     req: WebAuthnRegisterCompleteRequest,
@@ -248,7 +211,7 @@ async def invite_webauthn_register_complete(
     response: Response,
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
-) -> dict[str, object]:
+) -> AuthSessionResponse:
     """Invite link: complete WebAuthn registration and consume token."""
     require_db_redis(db, redis)
 
@@ -267,20 +230,29 @@ async def invite_webauthn_register_complete(
         username=user.username,
         client_ip_str=client_ip(request),
     )
+    session_id = require_webauthn_flow_session(request)
 
     try:
-        challenge_b64, _data = await consume_challenge(redis, req.credential, "register", username=user.username)
+        challenge = await WebAuthnChallengeStore.consume(
+            db,
+            redis,
+            credential=req.credential,
+            expected_flow="invite_register",
+            expected_session_id=session_id,
+            expected_user_id=str(user.id),
+            expected_tenant_id=user.tenant_id,
+        )
         origin = origin_from_request(request)
         verification = verify_registration(
             credential=req.credential,
-            expected_challenge=expected_challenge_bytes(challenge_b64),
+            expected_challenge=expected_challenge_bytes(challenge.challenge_id),
             origin=origin,
         )
     except HTTPException:
-        await _clear_invite_begin_session(redis, token)
+        clear_webauthn_flow_session(response)
         raise
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
-        await _clear_invite_begin_session(redis, token)
+        clear_webauthn_flow_session(response)
         raise zen(
             "ZEN-AUTH-4002",
             f"WebAuthn verification failed: {exc}",
@@ -290,7 +262,7 @@ async def invite_webauthn_register_complete(
 
     # Step 2: Consume token only after successful WebAuthn verification
     await _consume_invite_token(redis, token)
-    await _clear_invite_begin_session(redis, token)
+    clear_webauthn_flow_session(response)
 
     cred_id_b64 = bytes_to_base64url(verification.credential_id)  # type: ignore[attr-defined]
     raw_dev = req.credential.get("deviceName") or (req.credential.get("response") or {}).get("deviceName")  # type: ignore[attr-defined]
@@ -312,17 +284,37 @@ async def invite_webauthn_register_complete(
         user.role,
     )
 
-    body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
-    set_auth_cookie(response, str(body["access_token"]))
-    return {
-        "status": "ok",
-        "message": "WebAuthn credential registered and invite consumed",
-        "access_token": body["access_token"],
-        "token_type": body["token_type"],
-    }
+    issued_token = issue_auth_token(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        ai_route_preference=user.ai_route_preference or "auto",
+        scopes=user_scopes,
+    )
+    await register_login_session(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        username=user.username,
+        access_token=issued_token.access_token,
+        ip_address=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        auth_method="invite_webauthn",
+    )
+    set_auth_cookie(response, issued_token.access_token)
+    return build_authenticated_session_response(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        scopes=user_scopes,
+        ai_route_preference=user.ai_route_preference or "auto",
+        expires_in=issued_token.expires_in,
+    )
 
 
-@router.post("/invites/{token}/fallback/login")
+@router.post("/invites/{token}/fallback/login", response_model=AuthSessionResponse)
 async def invite_fallback_login(
     token: str,
     request: Request,
@@ -331,7 +323,7 @@ async def invite_fallback_login(
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
     current_admin: dict[str, str] = Depends(get_current_admin),
-) -> dict[str, object]:
+) -> AuthSessionResponse:
     """Invite link: fallback login with admin confirmation required.
 
     Security: requires admin authentication to prevent invite link leak → account takeover.
@@ -359,12 +351,32 @@ async def invite_fallback_login(
         user.role,
     )
 
-    body = token_response(sub=str(user.id), username=user.username, role=user.role, tenant_id=user.tenant_id, scopes=user_scopes)
     log_auth("invite_fallback_login", True, rid, username=user.username, client_ip_str=cip, detail="degraded_access_confirmed")
-    set_auth_cookie(response, str(body["access_token"]))
-    return {
-        "status": "ok",
-        "message": "Fallback login succeeded and invite consumed",
-        "access_token": body["access_token"],
-        "token_type": body["token_type"],
-    }
+    issued_token = issue_auth_token(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        ai_route_preference=user.ai_route_preference or "auto",
+        scopes=user_scopes,
+    )
+    await register_login_session(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        username=user.username,
+        access_token=issued_token.access_token,
+        ip_address=cip,
+        user_agent=request.headers.get("user-agent"),
+        auth_method="invite_fallback",
+    )
+    set_auth_cookie(response, issued_token.access_token)
+    return build_authenticated_session_response(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        scopes=user_scopes,
+        ai_route_preference=user.ai_route_preference or "auto",
+        expires_in=issued_token.expires_in,
+    )

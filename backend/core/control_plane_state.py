@@ -3,6 +3,9 @@ from __future__ import annotations
 import datetime
 from typing import TypedDict
 
+from backend.core.compatibility_adapter import normalize_persisted_status
+from backend.core.job_status import normalize_job_like_status
+
 NODE_STALE_AFTER_SECONDS = 45
 
 
@@ -14,6 +17,14 @@ class StatusViewSpec(TypedDict):
 
 def _view(key: str, label: str, tone: str) -> StatusViewSpec:
     return {"key": key, "label": label, "tone": tone}
+
+
+def _normalize_node_enrollment_status(enrollment_status: str) -> str:
+    normalized = str(enrollment_status or "").strip().lower() or "pending"
+    try:
+        return normalize_persisted_status("nodes.enrollment_status", normalized) or "pending"
+    except ValueError:
+        return normalized
 
 
 def node_heartbeat_state(last_seen_at: datetime.datetime, now: datetime.datetime) -> str:
@@ -62,13 +73,13 @@ def node_status_view(status: str) -> StatusViewSpec:
 
 
 def node_enrollment_status_view(enrollment_status: str) -> StatusViewSpec:
-    normalized = enrollment_status.strip().lower() or "pending"
-    if normalized == "active":
-        return _view("active", "Active", "success")
+    normalized = _normalize_node_enrollment_status(enrollment_status)
+    if normalized == "approved":
+        return _view("approved", "Approved", "success")
     if normalized == "pending":
         return _view("pending", "Pending", "warning")
-    if normalized == "revoked":
-        return _view("revoked", "Revoked", "danger")
+    if normalized == "rejected":
+        return _view("rejected", "Rejected", "danger")
     return _view(normalized, normalized.title(), "neutral")
 
 
@@ -100,14 +111,14 @@ def node_capacity_state_view(capacity_state: str) -> StatusViewSpec:
 
 
 def job_status_view(status: str) -> StatusViewSpec:
-    normalized = status.strip().lower() or "pending"
+    normalized = normalize_job_like_status(status, fallback="pending")
     if normalized in {"leased", "running"}:
         return _view("running", "Running", "warning")
     if normalized == "completed":
         return _view("completed", "Completed", "success")
-    if normalized == "canceled":
-        return _view("canceled", "Canceled", "neutral")
-    if normalized in {"failed", "expired"}:
+    if normalized == "cancelled":
+        return _view("cancelled", "Cancelled", "neutral")
+    if normalized in {"failed", "timeout"}:
         return _view("failed", "Failed", "danger")
     return _view("pending", "Pending", "neutral")
 
@@ -143,9 +154,10 @@ def node_attention_reason(
     capacity_state: str,
     health_reason: str | None,
 ) -> str | None:
-    if enrollment_status == "revoked":
-        return "node revoked by control plane"
-    if enrollment_status == "pending":
+    normalized_enrollment_status = _normalize_node_enrollment_status(enrollment_status)
+    if normalized_enrollment_status == "rejected":
+        return "node rejected by control plane"
+    if normalized_enrollment_status == "pending":
         return "waiting for initial register or heartbeat"
     if status != "online":
         return f"node reported status={status}"
@@ -180,15 +192,18 @@ def job_attention_reason(
     leased_until: datetime.datetime | None,
     now: datetime.datetime,
 ) -> str | None:
-    lease_state = job_lease_state(status=status, leased_until=leased_until, now=now)
+    normalized_status = normalize_job_like_status(status, fallback="pending")
+    lease_state = job_lease_state(status=normalized_status, leased_until=leased_until, now=now)
     if lease_state == "stale":
         return "lease expired before completion"
-    if status == "failed":
+    if normalized_status == "failed":
         return "terminal failure needs retry or triage"
-    if status == "canceled":
-        return "job canceled by operator"
-    if status == "pending" and priority >= 80:
+    if normalized_status == "timeout":
+        return "job exceeded its execution window"
+    if normalized_status == "cancelled":
+        return "job cancelled by operator"
+    if normalized_status == "pending" and priority >= 80:
         return "high-priority backlog waiting for placement"
-    if status == "pending":
+    if normalized_status == "pending":
         return "waiting for an eligible runner"
     return None

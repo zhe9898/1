@@ -1,7 +1,10 @@
-# 0048. Health Pack MVP Skeleton 与 Pack 成熟度合同
+# ADR 0048: Health Pack MVP Skeleton 与 Pack 成熟度合同
 
-- 状态: 已采纳 — _v3.43 更新：`full-pack` 已从注册表移除；`delivery_stage=compatibility-only` 条目不再存在_
-- 日期: 2026-03-28
+- Status: Accepted
+- Date: 2026-03-28
+- Scope: Health Pack MVP Skeleton 与 Pack 成熟度合同
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

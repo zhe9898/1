@@ -132,7 +132,7 @@ class TriggerEventDeliverySnapshot(BaseModel):
 
     delivery_id: str = Field(..., description="Trigger delivery ID")
 
-    status: str = Field(..., description="dispatching | accepted | failed")
+    status: str = Field(..., description="dispatching | delivered | failed | retrying")
 
     source_kind: str | None = None
 

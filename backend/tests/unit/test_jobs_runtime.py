@@ -56,7 +56,7 @@ def _noop_result() -> MagicMock:
     return MagicMock()
 
 
-def _node(*, token_hash: str, enrollment_status: str = "active", **overrides: object) -> Node:
+def _node(*, token_hash: str, enrollment_status: str = "approved", **overrides: object) -> Node:
     now = _utcnow()
     node = Node(
         tenant_id="default",
@@ -295,7 +295,7 @@ async def test_renew_job_lease_extends_deadline(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
-async def test_cancel_job_marks_job_canceled() -> None:
+async def test_cancel_job_marks_job_cancelled() -> None:
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
@@ -311,9 +311,9 @@ async def test_cancel_job_marks_job_canceled() -> None:
         redis=None,
     )
 
-    assert response.status == "canceled"
-    assert attempt.status == "canceled"
-    assert response.attention_reason == "job canceled by operator"
+    assert response.status == "cancelled"
+    assert attempt.status == "cancelled"
+    assert response.attention_reason == "job cancelled by operator"
     assert "for update" in str(db.execute.await_args_list[0].args[0]).lower()
 
 

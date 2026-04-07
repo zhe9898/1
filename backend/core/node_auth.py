@@ -62,7 +62,7 @@ async def authenticate_node_request(
             recovery_hint="Provision a node token from the control plane and retry registration",
         )
 
-    if node.enrollment_status == "revoked":
+    if node.enrollment_status == "rejected":
         raise zen(
             "ZEN-NODE-4010",
             "Invalid node credentials",
@@ -70,7 +70,7 @@ async def authenticate_node_request(
             recovery_hint="Re-provision the node from the control plane before reconnecting",
         )
 
-    if require_active and node.enrollment_status != "active":
+    if require_active and node.enrollment_status != "approved":
         raise zen(
             "ZEN-NODE-4030",
             "Node enrollment is not active",

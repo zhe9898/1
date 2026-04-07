@@ -1,8 +1,10 @@
-# 0039 租户作用域管理、控制面复合唯一键与可复现发布输入
+# ADR 0039: 租户作用域管理、控制面复合唯一键与可复现发布输入
 
-## 状态
+- Status: Accepted
+- Date: Unknown
+- Scope: 租户作用域管理、控制面复合唯一键与可复现发布输入
 
-已采纳
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

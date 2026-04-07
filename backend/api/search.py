@@ -1,13 +1,10 @@
-"""
-ZEN70 Vector Search Router — semantic search across memory_facts and assets.
-
-Part of the vector-pack runtime surface. Gated behind ``GATEWAY_PACKS``
-containing ``vector-pack``.
-"""
+"""Semantic and keyword search across memory facts and assets."""
 
 from __future__ import annotations
 
 import logging
+import math
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -28,27 +25,44 @@ def _escape_like_term(term: str) -> str:
     return escaped
 
 
-# ---------------------------------------------------------------------------
-# Request / Response schemas
-# ---------------------------------------------------------------------------
+def _coerce_vector(raw: Any) -> list[float] | None:
+    if isinstance(raw, (list, tuple)):
+        try:
+            return [float(value) for value in raw]
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _user_claim(user: Any, key: str) -> str:
+    if isinstance(user, dict):
+        return str(user.get(key) or "")
+    return str(getattr(user, key, "") or "")
+
+
+def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
+    if len(left) != len(right) or not left:
+        return 0.0
+    numerator = sum(a * b for a, b in zip(left, right, strict=False))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return numerator / (left_norm * right_norm)
 
 
 class SemanticSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
-    scope: str = Field(
-        "all",
-        description="Search scope: 'memory', 'assets', or 'all'",
-        pattern="^(memory|assets|all)$",
-    )
+    scope: str = Field("all", pattern="^(memory|assets|all)$")
     limit: int = Field(20, ge=1, le=100)
 
 
 class SearchHit(BaseModel):
     id: str
-    source: str  # "memory" | "asset"
+    source: str
     text: str
     score: float
-    meta: dict[str, Any] = {}
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class SemanticSearchResponse(BaseModel):
@@ -58,13 +72,7 @@ class SemanticSearchResponse(BaseModel):
     model_available: bool
 
 
-# ---------------------------------------------------------------------------
-# Embedding helper — reuses existing ai_worker model lazily
-# ---------------------------------------------------------------------------
-
-
 def _encode_query(query_text: str) -> list[float] | None:
-    """Encode text to 384-dim vector using the shared sentence-transformer model."""
     try:
         from backend.workers.ai_worker import HAS_MODEL, get_model
 
@@ -78,9 +86,77 @@ def _encode_query(query_text: str) -> list[float] | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+async def _memory_semantic_search(
+    db: AsyncSession,
+    query_vector: Sequence[float],
+    user: Any,
+    limit: int,
+) -> list[SearchHit]:
+    candidate_limit = min(max(limit * 20, 100), 500)
+    sql = text(
+        """
+        SELECT id::text, text, vec384
+        FROM memory_facts
+        WHERE tenant_id = :tid
+          AND user_sub = :uid
+          AND deprecated = false
+          AND vec384 IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT :lim
+        """
+    )
+    rows = (
+        await db.execute(
+            sql,
+            {"tid": _user_claim(user, "tenant_id"), "uid": _user_claim(user, "sub"), "lim": candidate_limit},
+        )
+    ).all()
+
+    hits: list[SearchHit] = []
+    for row in rows:
+        stored_vector = _coerce_vector(row[2])
+        if stored_vector is None:
+            continue
+        score = _cosine_similarity(query_vector, stored_vector)
+        hits.append(
+            SearchHit(
+                id=row[0],
+                source="memory",
+                text=row[1] or "",
+                score=round(score, 4),
+            )
+        )
+
+    hits.sort(key=lambda hit: hit.score, reverse=True)
+    return hits[:limit]
+
+
+async def _memory_keyword_search(
+    db: AsyncSession,
+    query_text: str,
+    user: Any,
+    limit: int,
+) -> list[SearchHit]:
+    pattern = f"%{_escape_like_term(query_text)}%"
+    sql = text(
+        """
+        SELECT id::text, text
+        FROM memory_facts
+        WHERE tenant_id = :tid
+          AND user_sub = :uid
+          AND deprecated = false
+          AND text ILIKE :pat ESCAPE '\\'
+        ORDER BY created_at DESC
+        LIMIT :lim
+        """
+    )
+    rows = (
+        await db.execute(
+            sql,
+            {"tid": _user_claim(user, "tenant_id"), "uid": _user_claim(user, "sub"), "pat": pattern, "lim": limit},
+        )
+    ).all()
+    return [SearchHit(id=row[0], source="memory", text=row[1] or "", score=0.5) for row in rows]
 
 
 @router.post("/semantic", response_model=SemanticSearchResponse)
@@ -89,55 +165,24 @@ async def semantic_search(
     db: AsyncSession = Depends(get_tenant_db),
     user: Any = Depends(get_current_user),
 ) -> SemanticSearchResponse:
-    """Semantic similarity search across memory facts and/or assets."""
-
-    vec = _encode_query(body.query)
-
-    if vec is None:
-        # Model not available — fall back to keyword ILIKE search
+    query_vector = _encode_query(body.query)
+    if query_vector is None:
         return await _keyword_fallback(db, body, user)
 
     hits: list[SearchHit] = []
-    vec_literal = "[" + ",".join(str(v) for v in vec) + "]"
-
     if body.scope in ("memory", "all"):
-        sql = text("""
-            SELECT id::text, fact_text, 1 - (text_embedding <=> :vec ::vector(384)) AS score
-            FROM memory_facts
-            WHERE tenant_id = :tid
-              AND user_sub = :uid
-              AND deprecated = false
-              AND text_embedding IS NOT NULL
-            ORDER BY text_embedding <=> :vec ::vector(384)
-            LIMIT :lim
-            """)
-        rows = (
-            await db.execute(
-                sql,
-                {"vec": vec_literal, "tid": user.tenant_id, "uid": user.sub, "lim": body.limit},
-            )
-        ).all()
-        for row in rows:
-            hits.append(
-                SearchHit(
-                    id=row[0],
-                    source="memory",
-                    text=row[1],
-                    score=round(float(row[2]), 4),
-                )
-            )
+        memory_hits = await _memory_semantic_search(db, query_vector, user, body.limit)
+        if memory_hits:
+            hits.extend(memory_hits)
+        else:
+            hits.extend(await _memory_keyword_search(db, body.query, user, body.limit))
 
     if body.scope in ("assets", "all"):
-        # Assets don't have text embeddings; use keyword match on label + ai_tags
-        asset_hits = await _asset_keyword_search(db, body.query, user, body.limit)
-        hits.extend(asset_hits)
+        hits.extend(await _asset_keyword_search(db, body.query, user, body.limit))
 
-    # Sort all hits by score descending, trim to limit
-    hits.sort(key=lambda h: h.score, reverse=True)
-    hits = hits[: body.limit]
-
+    hits.sort(key=lambda hit: hit.score, reverse=True)
     return SemanticSearchResponse(
-        hits=hits,
+        hits=hits[: body.limit],
         query=body.query,
         scope=body.scope,
         model_available=True,
@@ -151,14 +196,8 @@ async def search_assets(
     db: AsyncSession = Depends(get_tenant_db),
     user: Any = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Keyword search across assets (label, ai_tags, original_filename)."""
     hits = await _asset_keyword_search(db, q, user, limit)
-    return {"hits": [h.model_dump() for h in hits], "query": q, "count": len(hits)}
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+    return {"hits": [hit.model_dump() for hit in hits], "query": q, "count": len(hits)}
 
 
 async def _keyword_fallback(
@@ -166,23 +205,10 @@ async def _keyword_fallback(
     body: SemanticSearchRequest,
     user: Any,
 ) -> SemanticSearchResponse:
-    """Text-only ILIKE fallback when embedding model is unavailable."""
     hits: list[SearchHit] = []
-    pattern = f"%{_escape_like_term(body.query)}%"
 
     if body.scope in ("memory", "all"):
-        sql = text("""
-            SELECT id::text, fact_text
-            FROM memory_facts
-            WHERE tenant_id = :tid AND user_sub = :uid
-              AND deprecated = false
-              AND fact_text ILIKE :pat ESCAPE '\\'
-            ORDER BY created_at DESC
-            LIMIT :lim
-            """)
-        rows = (await db.execute(sql, {"tid": user.tenant_id, "uid": user.sub, "pat": pattern, "lim": body.limit})).all()
-        for row in rows:
-            hits.append(SearchHit(id=row[0], source="memory", text=row[1], score=0.5))
+        hits.extend(await _memory_keyword_search(db, body.query, user, body.limit))
 
     if body.scope in ("assets", "all"):
         hits.extend(await _asset_keyword_search(db, body.query, user, body.limit))
@@ -201,29 +227,31 @@ async def _asset_keyword_search(
     user: Any,
     limit: int,
 ) -> list[SearchHit]:
-    """ILIKE search across asset metadata fields."""
     pattern = f"%{_escape_like_term(query_text)}%"
-    sql = text("""
+    sql = text(
+        """
         SELECT id::text, COALESCE(label, original_filename, file_path) AS display,
                asset_type, ai_tags
         FROM assets
         WHERE tenant_id = :tid
           AND is_deleted = false
-          AND (label ILIKE :pat ESCAPE '\\' OR original_filename ILIKE :pat ESCAPE '\\'
-               OR ai_tags::text ILIKE :pat ESCAPE '\\')
+          AND (
+            label ILIKE :pat ESCAPE '\\'
+            OR original_filename ILIKE :pat ESCAPE '\\'
+            OR ai_tags::text ILIKE :pat ESCAPE '\\'
+          )
         ORDER BY created_at DESC
         LIMIT :lim
-        """)
-    rows = (await db.execute(sql, {"tid": user.tenant_id, "pat": pattern, "lim": limit})).all()
-    hits: list[SearchHit] = []
-    for row in rows:
-        hits.append(
-            SearchHit(
-                id=row[0],
-                source="asset",
-                text=row[1] or "",
-                score=0.4,
-                meta={"asset_type": row[2], "ai_tags": row[3]},
-            )
+        """
+    )
+    rows = (await db.execute(sql, {"tid": _user_claim(user, "tenant_id"), "pat": pattern, "lim": limit})).all()
+    return [
+        SearchHit(
+            id=row[0],
+            source="asset",
+            text=row[1] or "",
+            score=0.4,
+            meta={"asset_type": row[2], "ai_tags": row[3]},
         )
-    return hits
+        for row in rows
+    ]

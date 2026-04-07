@@ -92,11 +92,8 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession | None = Depends(get_db_optional),
 ) -> dict[str, object]:
-    access_token = ""
-    if credentials and credentials.credentials:
-        access_token = credentials.credentials
-    else:
-        access_token = get_auth_cookie_token(request) or ""
+    del credentials
+    access_token = get_auth_cookie_token(request) or ""
     if not access_token:
         raise zen("ZEN-AUTH-401", "Missing or invalid token", status_code=401)
 
@@ -107,7 +104,6 @@ async def get_current_user(
         raise zen("ZEN-BUS-5030", "Database unavailable for token subject validation", status_code=503)
     await _assert_token_subject_active(db, payload)
     if new_token:
-        response.headers["X-New-Token"] = new_token
         set_auth_cookie(response, new_token)
     return payload
 
@@ -253,11 +249,8 @@ async def get_current_user_optional(
     response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> dict | None:
-    access_token = ""
-    if credentials and credentials.credentials:
-        access_token = credentials.credentials
-    else:
-        access_token = get_auth_cookie_token(request) or ""
+    del credentials
+    access_token = get_auth_cookie_token(request) or ""
     if not access_token:
         return None
     try:
@@ -265,7 +258,6 @@ async def get_current_user_optional(
         redis_conn = getattr(redis_client, "redis", None) if redis_client else None
         payload, new_token = await decode_token(access_token, redis_conn=redis_conn)
         if new_token:
-            response.headers["X-New-Token"] = new_token
             set_auth_cookie(response, new_token)
         return payload
     except Exception as exc:

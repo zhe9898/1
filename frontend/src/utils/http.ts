@@ -2,9 +2,7 @@
  */
 import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { getRequestId } from "./requestId";
-import { useAuthStore } from "@/stores/auth";
 import { AGENT } from "@/utils/api";
-import { decodePayload, isWellFormedJwt } from "@/utils/jwt";
 import { logError, logInfo, logWarn } from "@/utils/logger";
 
 const baseURL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
@@ -48,10 +46,6 @@ export function unwrapSuccessEnvelope(body: unknown, maxDepth = SUCCESS_ENVELOPE
   return current;
 }
 
-function isAcceptableRefreshToken(value: unknown): value is string {
-  return typeof value === "string" && isWellFormedJwt(value) && decodePayload(value) !== null;
-}
-
 export const http: AxiosInstance = axios.create({
   baseURL,
   timeout: 10000,
@@ -69,8 +63,6 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // img/script tags, so this header acts as a lightweight CSRF token for same-origin
   // verification on the backend (browsers only send it for XHR/fetch requests).
   config.headers["X-Requested-With"] = "XMLHttpRequest";
-  const token = useAuthStore().token;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
 
   // Attach idempotency keys for AI proxy writes.
   const path = `${config.baseURL ?? ""}${config.url ?? ""}`;
@@ -92,18 +84,9 @@ http.interceptors.response.use(
 
     // Unwrap success envelopes emitted by the gateway middleware.
     r.data = unwrapSuccessEnvelope(r.data);
-
-    const newToken: unknown = r.headers["x-new-token"];
-    if (isAcceptableRefreshToken(newToken)) {
-      useAuthStore().setToken(newToken);
-    }
     return r;
   },
   (err: AxiosError) => {
-    const newToken: unknown = err.response?.headers["x-new-token"];
-    if (isAcceptableRefreshToken(newToken)) {
-      useAuthStore().setToken(newToken);
-    }
     if (err.response && (err.response.status === 503 || err.response.status === 504)) {
       if (!_circuitOpen) {
         _circuitOpen = true;

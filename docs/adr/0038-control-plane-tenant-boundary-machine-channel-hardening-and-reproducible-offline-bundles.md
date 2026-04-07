@@ -1,7 +1,10 @@
-# 0038. 控制面租户边界、机器通道边缘防线与离线包可重现性
+# ADR 0038: 控制面租户边界、机器通道边缘防线与离线包可重现性
 
-- 状态: Accepted
-- 日期: 2026-03-27
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: 控制面租户边界、机器通道边缘防线与离线包可重现性
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

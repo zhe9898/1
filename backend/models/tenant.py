@@ -15,7 +15,7 @@ from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class Tenant(Base):

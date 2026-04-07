@@ -1,12 +1,10 @@
-# ADR 0004：结构化日志采用自实现 JsonFormatter
+# ADR 0004: 结构化日志采用自实现 JsonFormatter
 
-**状态**：通过
+- Status: Accepted
+- Date: 2025-03-14
+- Scope: 结构化日志采用自实现 JsonFormatter
 
-**日期**：2025-03-14
-
-## 背景
-
-.cursorrules 要求「后端所有业务日志必须输出为 JSON 格式」，建议使用 structlog 便于 Loki 解析。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

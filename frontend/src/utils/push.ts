@@ -46,7 +46,7 @@ export async function initWebPush(): Promise<boolean> {
     let subscription = await registration.pushManager.getSubscription();
 
     if (!subscription) {
-      // ADR 0015: http 实例自带熔断器 + X-Request-ID + Bearer Token
+      // ADR 0015: http 实例自带熔断器 + X-Request-ID + cookie-backed session auth
       if (isCircuitOpen()) {
         logWarn("Circuit Breaker OPEN: Web Push 注册延迟");
         return false;

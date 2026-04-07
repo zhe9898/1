@@ -115,6 +115,11 @@ def _image_inputs_changed_from_diff(diff_output: str) -> bool:
     return bool(changed & tracked_inputs)
 
 
+def _requirements_changed_from_diff(diff_output: str) -> bool:
+    changed = _parse_changed_files(diff_output)
+    return REQUIREMENTS.relative_to(PROJECT_ROOT).as_posix() in changed
+
+
 def _needs_image_rebuild_from_hashes(
     pre_requirements_hash: str,
     pre_dockerfile_hash: str,

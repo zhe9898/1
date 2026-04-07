@@ -178,7 +178,7 @@ async def evaluate_node_offline_rules(db: AsyncSession, tenant_id: str) -> list[
         nodes_result = await db.execute(
             select(Node).where(
                 Node.tenant_id == tenant_id,
-                Node.enrollment_status == "active",
+                Node.enrollment_status == "approved",
                 Node.last_seen_at < cutoff,
                 Node.status != "offline",
             )

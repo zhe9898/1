@@ -1,8 +1,10 @@
 # ADR 0025: Control-Plane Node and Job Contract Hardening
 
-- **Status**: Accepted
-- **Date**: 2026-03-26
-- **Scope**: Gateway control-plane protocol, runner contract, schema hardening
+- Status: Accepted
+- Date: 2026-03-26
+- Scope: Gateway control-plane protocol, runner contract, schema hardening
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. Context
 

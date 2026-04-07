@@ -1,10 +1,10 @@
-# 0007: M8 家族信标采用纯 SSE 与原生 SQLAlchemy (Native Family Board via SSE & RLS)
+# ADR 0007: M8 家族信标采用纯 SSE 与原生 SQLAlchemy (Native Family Board via SSE & RLS)
 
-- **状态**: 接受
-- **日期**: 2026-03-17
+- Status: Accepted
+- Date: 2026-03-17
+- Scope: M8 家族信标采用纯 SSE 与原生 SQLAlchemy (Native Family Board via SSE & RLS)
 
-## 1. 背景上下文
-为了填补 ZEN70 核心体系中缺乏的多端信息协同与“留言板”特性，我们引入了 Feature M8 家族信标。开发过程中，需要评估技术选型以最低的代码代价和最高的运行效能支持瀑布流留言及实时双向交互推送。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 2. 决策选项
 1. **方案 A**: 部署由 Next.js / Node 编写的外部第三方独立协同套件。

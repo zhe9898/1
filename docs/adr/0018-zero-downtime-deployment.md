@@ -1,11 +1,10 @@
-# 0018: 零停机滚动部署与容器名冲突自愈 (Zero-Downtime Deployment & Conflict Healing)
+# ADR 0018: 零停机滚动部署与容器名冲突自愈 (Zero-Downtime Deployment & Conflict Healing)
 
-- **状态**: 接受
-- **日期**: 2026-03-23
+- Status: Accepted
+- Date: 2026-03-23
+- Scope: 零停机滚动部署与容器名冲突自愈 (Zero-Downtime Deployment & Conflict Healing)
 
-## 1. 背景上下文
-在先前的版本中，为了解决 `docker compose up` 期间由于不同 Project Name 遗留容器导致的 `container name "zen70-xxx" is already in use` 冲突，部署脚本采用了暴力的 `docker rm -f $(docker ps -aq --filter name=zen70-)` 方案。
-这种“先杀光后拉起”的模式会导致全栈服务产生哪怕是 10-30 秒的物理停机时间，严重违反了系统高可用（HA）要求以及零停机滚动升级的原则。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 2. 决策选项
 1. **方案 A**: 维持原样，容忍每次部署短暂停机。

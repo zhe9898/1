@@ -1,13 +1,10 @@
 # ADR 0022: Tiered Release Smoke Gate (分层发布冒烟门禁)
 
-- **状态**: 已接受 (Accepted 2026-03-25)
-- **影响域**: CI/CD, 部署验证, 架构守门 (SRE)
+- Status: Accepted
+- Date: 2026-03-25
+- Scope: Tiered Release Smoke Gate (分层发布冒烟门禁)
 
-## 背景
-
-在 ZEN70 架构的演进中，我们发现纯粹的“非黑即白 (0 或 1)” 验收测试会导致不可接受的发布阻塞。系统中存在严格的 **Critical** 路径（如认证、网关健康、基础能力发现），以及允许功能降级的 **Non-Critical** 路径（如媒体刮削状态、SSE 实时推送）。
-
-如果在发布预检 (`release.sh` 之前) 或部署后验证 (`postdeploy_verify.py`) 中，若 Non-Critical 路径波动（例如网络延迟导致 SSE 握手偶现超时）就直接阻断发布 (exit 1)，会导致极高的运维摩擦与错误的警报疲劳。同时，旧版的探针只检查 Redis 存活，忽略了 PostgreSQL 的宕机，导致放行了实际上已有严重隐患的构建。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

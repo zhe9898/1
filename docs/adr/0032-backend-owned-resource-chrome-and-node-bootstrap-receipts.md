@@ -1,8 +1,10 @@
-# ADR 0032：后端拥有的资源页文案与节点启动回执
+# ADR 0032: 后端拥有的资源页文案与节点启动回执
 
-- **状态**: 已接受
-- **日期**: 2026-03-27
-- **范围**: `Nodes`、`Jobs`、`Connectors` 的 Phase 3 资源产品化
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: 后端拥有的资源页文案与节点启动回执
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景
 

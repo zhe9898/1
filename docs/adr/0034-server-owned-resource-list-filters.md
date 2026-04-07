@@ -1,8 +1,10 @@
-# ADR 0034：服务端拥有的资源列表过滤合同
+# ADR 0034: 服务端拥有的资源列表过滤合同
 
-- **状态**: 已接受
-- **日期**: 2026-03-27
-- **范围**: `Nodes`、`Jobs`、`Connectors` 的 Phase 3 列表视图与 dashboard drill-down
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: 服务端拥有的资源列表过滤合同
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景
 

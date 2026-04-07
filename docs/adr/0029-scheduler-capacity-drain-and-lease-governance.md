@@ -1,8 +1,10 @@
 # ADR 0029: Scheduler Capacity, Drain, and Lease Governance
 
-- **Status**: Accepted
-- **Date**: 2026-03-27
-- **Scope**: Node fleet governance, lease lifecycle, control-plane operator actions
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Node fleet governance, lease lifecycle, control-plane operator actions
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. Context
 

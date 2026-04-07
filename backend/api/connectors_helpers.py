@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.action_contracts import ControlAction, ControlActionField
 from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse, StatusView
+from backend.core.connector_secret_service import ConnectorSecretService
 from backend.core.control_plane_state import connector_status_view
 from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.connector import Connector
@@ -93,7 +94,7 @@ def _to_response(connector: Connector) -> ConnectorResponse:
         status_view=StatusView(**connector_status_view(status)),
         endpoint=connector.endpoint,
         profile=connector.profile,
-        config=dict(connector.config or {}),
+        config=ConnectorSecretService.masked_view(connector.config),
         last_test_ok=connector.last_test_ok,
         last_test_status=connector.last_test_status,
         last_test_message=connector.last_test_message,

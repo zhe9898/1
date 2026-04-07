@@ -635,6 +635,7 @@ deployment:
   available_packs:
   - iot-pack
   - ops-pack
+  - media-pack
   - health-pack
   - vector-pack
   platform: auto

@@ -1,8 +1,10 @@
 # ADR 0040: 登录前租户合同、临时编译 secrets 治理与全仓不可变 workflow
 
-## 状态
+- Status: Accepted
+- Date: Unknown
+- Scope: 登录前租户合同、临时编译 secrets 治理与全仓不可变 workflow
 
-已接受
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

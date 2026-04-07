@@ -23,7 +23,8 @@ import datetime
 import math
 from typing import TYPE_CHECKING
 
-from backend.core.scheduling_constraints import (  # noqa: F401 – re-export
+from backend.core.job_status import normalize_job_status
+from backend.core.scheduling_constraints import (  # noqa: F401 — re-export
     ConnectorCoolingGate,
     DeadlineExpiryGate,
     DependencyGate,
@@ -227,17 +228,19 @@ def estimate_job_completion_time(
 
     Returns: Estimated completion time, or None if cannot estimate
     """
-    if job.status == "completed":
+    normalized_status = normalize_job_status(job.status) or "pending"
+
+    if normalized_status == "completed":
         return job.completed_at
 
-    if job.status == "failed" or job.status == "canceled":
+    if normalized_status in {"failed", "cancelled"}:
         return None
 
     estimated_duration = getattr(job, "estimated_duration_s", None)
     if not estimated_duration:
         return None
 
-    if job.status == "leased" and job.started_at:
+    if normalized_status == "leased" and job.started_at:
         # Job is running, estimate based on remaining time
         elapsed = (now - job.started_at).total_seconds()
         remaining = max(0, estimated_duration - elapsed)

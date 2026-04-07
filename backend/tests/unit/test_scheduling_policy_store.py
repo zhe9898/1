@@ -62,7 +62,7 @@ def _make_node_snapshot(**overrides):
         storage_mb=100000,
         reliability_score=0.95,
         last_seen_at=_utcnow(),
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         drain_status="active",
         network_latency_ms=5,
@@ -72,7 +72,7 @@ def _make_node_snapshot(**overrides):
         current_power_watts=200,
         thermal_state="normal",
         cloud_connectivity="online",
-        metadata_json="{}",
+        metadata_json={},
     )
     defaults.update(overrides)
     return SchedulerNodeSnapshot(**defaults)

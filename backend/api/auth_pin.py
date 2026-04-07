@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.auth_shared import assert_user_active, build_token_response_model, hash_pin, register_login_session, request_tenant_id
+from backend.api.auth_session_projection import build_authenticated_session_response
+from backend.api.auth_shared import assert_user_active, hash_pin, register_login_session, request_tenant_id
+from backend.api.auth_token_issue import issue_auth_token
 from backend.api.auth_cookies import set_auth_cookie
 from backend.api.deps import get_current_user, get_db, get_redis
-from backend.api.models.auth import PinLoginRequest, PinSetRequest, TokenResponse
+from backend.api.models.auth import AuthSessionResponse, PinLoginRequest, PinSetRequest
 from backend.core.auth_helpers import (
     CODE_BAD_REQUEST,
     CODE_DB_UNAVAILABLE,
@@ -46,14 +48,14 @@ def _pin_lockout_window_text() -> str:
     return f"{seconds} 秒"
 
 
-@router.post("/pin/login", response_model=TokenResponse)
+@router.post("/pin/login", response_model=AuthSessionResponse)
 async def pin_login(
     req: PinLoginRequest,
     request: Request,
     response: Response,
     db: AsyncSession | None = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
-) -> TokenResponse:
+) -> AuthSessionResponse:
     require_db_redis(db, redis)
     assert db is not None  # noqa: S101
     rid, cip = request_id(request), client_ip(request)
@@ -81,7 +83,6 @@ async def pin_login(
 
     if not user or not user.pin_hash:
         await _handle_failure("invalid_user_or_no_pin")
-        return build_token_response_model("0", "", "")  # unreachable
 
     assert user is not None and user.pin_hash is not None  # noqa: S101
     assert_user_active(user, flow="pin_login", rid=rid, username=req.username, client_ip_str=cip)
@@ -89,7 +90,6 @@ async def pin_login(
     pin_hash_bytes = user.pin_hash.encode("utf-8") if isinstance(user.pin_hash, str) else user.pin_hash
     if not bcrypt.checkpw(pin_bytes, pin_hash_bytes):
         await _handle_failure("wrong_pin")
-        return build_token_response_model("0", "", "")  # unreachable
 
     await redis.delete(f"{PIN_RATE_LIMIT_KEY}{cip}")
     await redis.delete(freeze_key)
@@ -101,7 +101,7 @@ async def pin_login(
         await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
         user.role,
     )
-    resp = build_token_response_model(
+    issued_token = issue_auth_token(
         str(user.id),
         user.username,
         user.role,
@@ -114,13 +114,21 @@ async def pin_login(
         tenant_id=user.tenant_id,
         user_id=str(user.id),
         username=user.username,
-        access_token=resp.access_token,
+        access_token=issued_token.access_token,
         ip_address=cip,
         user_agent=request.headers.get("user-agent"),
         auth_method="pin",
     )
-    set_auth_cookie(response, resp.access_token)
-    return resp
+    set_auth_cookie(response, issued_token.access_token)
+    return build_authenticated_session_response(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        ai_route_preference=user.ai_route_preference or "auto",
+        scopes=user_scopes,
+        expires_in=issued_token.expires_in,
+    )
 
 
 @router.post("/pin/set")

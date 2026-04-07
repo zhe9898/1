@@ -91,3 +91,37 @@ def assert_budgeted_payload(payload: dict[str, Any], *, budget_bytes: int = MAX_
     size = measured_payload_size(payload)
     if size > budget_bytes:
         raise ValueError(f"Payload exceeds extension budget ({size}>{budget_bytes} bytes)")
+
+
+def export_extension_budget_contract() -> dict[str, object]:
+    phase_defaults: dict[str, dict[str, int]] = {}
+    for phase in (
+        "queue_sort",
+        "pre_filter",
+        "filter",
+        "post_filter",
+        "score",
+        "reserve",
+        "permit",
+        "pre_bind",
+        "bind",
+        "post_bind",
+    ):
+        budget = _phase_default_budget(phase)
+        phase_defaults[phase] = {
+            "execution_budget_ms": budget.execution_budget_ms,
+            "payload_limit_bytes": budget.payload_limit_bytes,
+            "audit_details_limit_bytes": budget.audit_details_limit_bytes,
+            "external_call_limit": budget.external_call_limit,
+        }
+    return {
+        "sync_execution_budget_ms": SYNC_PLUGIN_BUDGET_MS,
+        "async_execution_budget_ms": ASYNC_PLUGIN_BUDGET_MS,
+        "payload_limit_bytes": MAX_PLUGIN_PAYLOAD_BYTES,
+        "audit_details_limit_bytes": MAX_AUDIT_DETAILS_BYTES,
+        "sync_external_call_limit": MAX_SYNC_EXTERNAL_CALLS,
+        "async_external_call_limit": MAX_ASYNC_EXTERNAL_CALLS,
+        "max_plugins_per_phase": MAX_PLUGINS_PER_PHASE,
+        "max_plugins_total": MAX_PLUGINS_TOTAL,
+        "phase_defaults": phase_defaults,
+    }

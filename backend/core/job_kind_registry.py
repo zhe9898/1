@@ -4,7 +4,6 @@ Provides schema registration and validation for job payloads, plus shared
 submission policy metadata so privileged runner kinds can be gated in one
 place instead of per-endpoint.
 """
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -20,7 +19,6 @@ from backend.core.security_policy import (
     normalize_nonempty_string as _shared_normalize_nonempty_string,
     normalize_public_network_url as _shared_normalize_public_network_url,
 )
-
 # ============================================================================
 # Job Kind Registry
 # ============================================================================
@@ -33,6 +31,8 @@ JOB_WRITE_SCOPE = "write:jobs"
 JOB_ADMIN_SCOPE = "admin:jobs"
 _ADMIN_ROLES = frozenset({"admin", "superadmin"})
 _SAFE_JOB_KINDS = frozenset({"noop"})
+
+
 def _job_metadata(*, requires_admin: bool, risk: str) -> dict[str, Any]:
     return {
         "source": "core",
@@ -40,8 +40,6 @@ def _job_metadata(*, requires_admin: bool, risk: str) -> dict[str, Any]:
         "required_scope": JOB_ADMIN_SCOPE if requires_admin else JOB_WRITE_SCOPE,
         "risk": risk,
     }
-
-
 def _has_admin_role(current_user: Mapping[str, object]) -> bool:
     return str(current_user.get("role") or "").strip().lower() in _ADMIN_ROLES
 

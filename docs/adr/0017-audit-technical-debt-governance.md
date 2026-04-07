@@ -1,6 +1,10 @@
 # ADR 0017: 全量审计技术债治理与优先级决策
 
-> **法典 8.1.4**: 任何涉及核心技术栈更迭、API 契约修改、硬件抽象层重构或偏离"建议级"规范的重大变更，必须在合并代码前，在此提交 Markdown 格式的 ADR 文档。
+- Status: Accepted
+- Date: 2026-03-22
+- Scope: 全量审计技术债治理与优先级决策
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 全量深度审计——技术债识别、评级与治理路线
 

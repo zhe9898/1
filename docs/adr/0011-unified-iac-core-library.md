@@ -1,7 +1,10 @@
 # ADR 0011: 统一 IaC 编译器核心库与模板事实来源
 
-- **状态**: 接受
-- **日期**: 2026-03-21
+- Status: Accepted
+- Date: 2026-03-21
+- Scope: 统一 IaC 编译器核心库与模板事实来源
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景上下文
 

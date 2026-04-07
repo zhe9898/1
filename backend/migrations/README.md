@@ -21,6 +21,8 @@ model-backed control-plane evolution.
 - It is not allowed to silently take ownership of new application tables.
 - The canonical owner for overlapping control-plane tables is the application
   chain unless the governance manifest says otherwise.
-- Runtime deployment currently executes only chains marked `runtime_managed`
-  through `python -m backend.scripts.migrate --managed-only`; this application
-  chain stays manual until historical overlap reconciliation is complete.
+- Runtime deployment executes both governed chains in order through
+  `python -m backend.scripts.migrate --managed-only`.
+- The application chain contains the guarded overlap migrations and the final
+  `0026_dual_chain_reconciliation` fence, so legacy-first databases can now be
+  brought forward without duplicate-table failures.

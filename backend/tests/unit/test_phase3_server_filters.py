@@ -84,7 +84,7 @@ def _node(**overrides: object) -> Node:
         lease_version="job-lease.v1",
         auth_token_hash=None,
         auth_token_version=1,
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         capabilities=["connector.invoke"],
         metadata_json={},

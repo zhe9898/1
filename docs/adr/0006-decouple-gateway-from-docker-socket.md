@@ -1,10 +1,10 @@
-# 0006: 网关与底层物理探针彻底解耦 (Gateway Decoupling via Pub/Sub)
+# ADR 0006: 网关与底层物理探针彻底解耦 (Gateway Decoupling via Pub/Sub)
 
-- **状态**: 接受
-- **日期**: 2026-03-17
+- Status: Accepted
+- Date: 2026-03-17
+- Scope: 网关与底层物理探针彻底解耦 (Gateway Decoupling via Pub/Sub)
 
-## 1. 背景上下文
-在 V2.0 之前的架构设计中，FastAPI 网关存在直接使用 `subprocess.run` 和 `docker.sock` 代理执行物理容器熔断指令（docker pause/kill）的代码残留。这违反了《法典 1.1：宿主机完全解耦》与《法典 1.2：容器最高安全级》中关于 `read_only: true` 和 `cap_drop: ALL` 的沙箱容器原则，存在 API 被注入进而提权逃逸攻击宿主机的严重隐患。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 2. 决策选项
 1. **方案 A**: 维持原样，继续在 FastAPI 网关内依赖 Docker Socket Proxy 发起控制。

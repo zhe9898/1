@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 import yaml
 
+from backend.tests.unit._repo_paths import repo_path
 from scripts.iac_core.loader import prepare_services
 
 
 def _load_system_config() -> dict[str, Any]:
-    return yaml.safe_load(Path("system.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load(repo_path("system.yaml").read_text(encoding="utf-8"))
 
 
 def _render_services(profile: str, overrides: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:

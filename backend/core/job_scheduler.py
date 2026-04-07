@@ -146,7 +146,7 @@ def build_node_snapshot(node: Node, *, active_lease_count: int, reliability_scor
 
 
 def is_node_eligible(node: SchedulerNodeSnapshot, now: datetime.datetime) -> bool:
-    if node.enrollment_status != "active":
+    if node.enrollment_status != "approved":
         return False
     if node.status != "online":
         return False
@@ -185,7 +185,7 @@ def node_blockers_for_job(  # noqa: C901
     accepted_kinds: set[str] | None = None,
 ) -> list[str]:
     blockers: list[str] = []
-    if node.enrollment_status != "active":
+    if node.enrollment_status != "approved":
         blockers.append(f"enrollment={node.enrollment_status}")
     if node.status != "online":
         blockers.append(f"status={node.status}")
@@ -280,6 +280,9 @@ def select_jobs_for_node(  # noqa: C901
         return []
     total_active_nodes = len(active_nodes)
     _active_jobs = active_jobs_on_node or []
+    from backend.core.backfill_scheduling import BackfillEvaluator, get_reservation_manager
+
+    backfill_gate = BackfillEvaluator(get_reservation_manager())
 
     # ── Phase A: Cheap pre-filter → compatible candidates ─────────────────
     compatible: list[Job] = []
@@ -299,6 +302,9 @@ def select_jobs_for_node(  # noqa: C901
         if not compat:
             continue
         if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
+            continue
+        can_backfill, _reason = backfill_gate.can_backfill(job, node, now=now)
+        if not can_backfill:
             continue
         compatible.append(job)
 

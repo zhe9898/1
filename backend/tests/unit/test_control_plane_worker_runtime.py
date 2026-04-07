@@ -12,7 +12,8 @@ from backend.workers.control_plane_worker import _worker_factories, run
 
 
 def test_worker_factories_support_all_and_named_modes() -> None:
-    assert set(_worker_factories("all")) == {"bitrot", "health-probe", "data-retention"}
+    assert set(_worker_factories("all")) == {"attempt-expiration", "bitrot", "health-probe", "data-retention"}
+    assert set(_worker_factories("attempt-expiration")) == {"attempt-expiration"}
     assert set(_worker_factories("bitrot")) == {"bitrot"}
     assert set(_worker_factories("health-probe")) == {"health-probe"}
     assert set(_worker_factories("data-retention")) == {"data-retention"}
@@ -36,8 +37,26 @@ def test_control_plane_supervisor_child_commands() -> None:
 @pytest.mark.asyncio
 async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() -> None:
     handlers: dict[signal.Signals, object] = {}
-    started = {"bitrot": asyncio.Event(), "health-probe": asyncio.Event(), "data-retention": asyncio.Event()}
-    cancelled = {"bitrot": asyncio.Event(), "health-probe": asyncio.Event(), "data-retention": asyncio.Event()}
+    started = {
+        "attempt-expiration": asyncio.Event(),
+        "bitrot": asyncio.Event(),
+        "health-probe": asyncio.Event(),
+        "data-retention": asyncio.Event(),
+    }
+    cancelled = {
+        "attempt-expiration": asyncio.Event(),
+        "bitrot": asyncio.Event(),
+        "health-probe": asyncio.Event(),
+        "data-retention": asyncio.Event(),
+    }
+
+    async def fake_attempt_expiration_worker() -> None:
+        started["attempt-expiration"].set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled["attempt-expiration"].set()
+            raise
 
     async def fake_bitrot_worker() -> None:
         started["bitrot"].set()
@@ -76,6 +95,7 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
 
     with (
         patch("backend.workers.control_plane_worker.connect_redis_with_retry", new=AsyncMock(return_value=redis_client)),
+        patch("backend.workers.control_plane_worker.attempt_expiration_worker", new=fake_attempt_expiration_worker),
         patch("backend.workers.control_plane_worker.bitrot_worker", new=fake_bitrot_worker),
         patch("backend.workers.control_plane_worker.health_probe_worker", new=fake_health_probe_worker),
         patch("backend.workers.control_plane_worker.data_retention_worker", new=fake_data_retention_worker),
@@ -83,6 +103,7 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
         patch("backend.workers.control_plane_worker.signal.signal", side_effect=fake_signal),
     ):
         task = asyncio.create_task(run("all"))
+        await asyncio.wait_for(started["attempt-expiration"].wait(), timeout=1)
         await asyncio.wait_for(started["bitrot"].wait(), timeout=1)
         await asyncio.wait_for(started["health-probe"].wait(), timeout=1)
         await asyncio.wait_for(started["data-retention"].wait(), timeout=1)
@@ -92,6 +113,7 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
         await asyncio.wait_for(task, timeout=1)
 
     redis_client.close.assert_awaited_once()
+    assert cancelled["attempt-expiration"].is_set()
     assert cancelled["bitrot"].is_set()
     assert cancelled["health-probe"].is_set()
     assert cancelled["data-retention"].is_set()

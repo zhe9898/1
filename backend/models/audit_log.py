@@ -7,7 +7,7 @@ import datetime
 from sqlalchemy import JSON, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class AuditLog(Base):

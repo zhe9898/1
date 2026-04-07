@@ -3,7 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import MockAdapter from "axios-mock-adapter";
 import { createPinia, setActivePinia } from "pinia";
 
-import { http } from "../src/utils/http";
+import { http, resetCircuit } from "../src/utils/http";
 import { useNodesStore } from "../src/stores/nodes";
 import type { NodeItem, NodeProvisionReceipt, BootstrapReceipt } from "../src/stores/nodes";
 import type { ControlAction } from "../src/types/controlPlane";
@@ -51,8 +51,8 @@ function makeNode(overrides: Partial<NodeItem> = {}): NodeItem {
     capacity_state: "available",
     capacity_state_view: makeStatusView("available", "Available"),
     attention_reason: null,
-    enrollment_status: "enrolled",
-    enrollment_status_view: makeStatusView("enrolled", "Enrolled"),
+    enrollment_status: "approved",
+    enrollment_status_view: makeStatusView("approved", "Approved"),
     status: "online",
     status_view: makeStatusView("online", "Online"),
     capabilities: [],
@@ -106,11 +106,13 @@ describe("useNodesStore", () => {
 
   beforeEach(() => {
     setActivePinia(createPinia());
+    resetCircuit();
     mock = new MockAdapter(http);
   });
 
   afterEach(() => {
     mock.restore();
+    resetCircuit();
   });
 
   // ---- initial state ----

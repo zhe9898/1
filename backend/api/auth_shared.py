@@ -1,5 +1,5 @@
 """
-ZEN70 Auth Shared - 共享辅助函数（所有 auth 子模块使用）
+ZEN70 Auth Shared - shared helpers used across auth modules.
 """
 
 from __future__ import annotations
@@ -16,26 +16,12 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import is_superadmin_role
-from backend.api.models.auth import TokenResponse
-from backend.core.auth_helpers import (
-    CODE_DB_UNAVAILABLE,
-    CODE_FORBIDDEN,
-    log_auth,
-)
-from backend.core.auth_helpers import token_response as _token_response_impl
-from backend.core.auth_helpers import (
-    zen,
-)
+from backend.core.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, log_auth, zen
 from backend.core.jwt import get_access_token_expire_seconds
 from backend.core.rls import set_tenant_context as _set_tenant_context_impl
 from backend.models.user import User
 
 _logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# 可测试间接层：测试通过 patch backend.api.auth.token_response / set_tenant_context
-# 以下函数透过 sys.modules 查找 backend.api.auth 命名空间，保证 mock 生效
-# ---------------------------------------------------------------------------
 
 
 def _auth_mod() -> object:  # noqa: ANN202
@@ -43,45 +29,13 @@ def _auth_mod() -> object:  # noqa: ANN202
     if mod is not None:
         return mod
 
-    # 模块尚未加载时回退到实现
     class _Fallback:
-        token_response = staticmethod(_token_response_impl)
         set_tenant_context = staticmethod(_set_tenant_context_impl)
 
     return _Fallback()
 
 
 BCRYPT_ROUNDS = 12
-
-
-def build_token_response_model(
-    sub: str,
-    username: str,
-    role: str = "user",
-    *,
-    tenant_id: str = "default",
-    ai_route_preference: str = "auto",
-    scopes: list[str] | None = None,
-) -> TokenResponse:
-    """统一构造 TokenResponse 模型。"""
-    token_kwargs: dict[str, object] = {
-        "tenant_id": tenant_id,
-        "ai_route_preference": ai_route_preference,
-    }
-    # Keep backward-compatible call shape when scopes are absent.
-    if scopes is not None:
-        token_kwargs["scopes"] = scopes
-    body = _auth_mod().token_response(  # type: ignore[attr-defined]
-        sub,
-        username,
-        role,
-        **token_kwargs,
-    )
-    return TokenResponse(
-        access_token=str(body["access_token"]),
-        token_type=str(body["token_type"]),
-        expires_in=int(body["expires_in"]),
-    )
 
 
 def hash_pin(pin: str) -> str:
@@ -104,11 +58,15 @@ def assert_user_active(
     if user.is_active:
         return
     log_auth(flow, False, rid, username=username or user.username, client_ip_str=client_ip_str, detail="inactive_user")
-    raise zen(CODE_FORBIDDEN, "Account is disabled", status.HTTP_403_FORBIDDEN, recovery_hint="Contact your tenant administrator to reactivate this account")
+    raise zen(
+        CODE_FORBIDDEN,
+        "Account is disabled",
+        status.HTTP_403_FORBIDDEN,
+        recovery_hint="Contact your tenant administrator to reactivate this account",
+    )
 
 
 async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
-    """读取首个用户；若 schema 未初始化则返回显式 503。"""
     try:
         result = await db.execute(select(User).limit(1))
         return result.scalar_one_or_none()
@@ -125,7 +83,6 @@ async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
 
 
 async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> str | None:
-    """租户管理员默认绑定自身租户；保留 superadmin 的全局治理口。"""
     if is_superadmin_role(current_admin):
         return None
     tenant_id = str(current_admin.get("tenant_id") or "default")
@@ -145,11 +102,7 @@ def enforce_admin_scope(current_admin: dict[str, str], tenant_id: str, *, action
         )
 
 
-# ── Session/Token Lifecycle Helpers ──────────────────────────────────
-
-
 def extract_jti_from_token(access_token: str) -> str | None:
-    """Extract jti claim from a JWT without verification (payload is base64)."""
     try:
         parts = access_token.split(".")
         if len(parts) != 3:
@@ -176,11 +129,6 @@ async def register_login_session(
     user_agent: str | None,
     auth_method: str,
 ) -> None:
-    """Create a session record after successful login (best-effort).
-
-    Connects the JWT jti to a trackable session so that session
-    revocation can also blacklist the corresponding token.
-    """
     jti = extract_jti_from_token(access_token)
     if not jti:
         return

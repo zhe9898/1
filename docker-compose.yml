@@ -101,7 +101,7 @@ services:
     - --maxmemory
     - 800mb
     - --maxmemory-policy
-    - allkeys-lru
+    - volatile-lru
     - --aclfile
     - /etc/redis/users.acl
     networks:

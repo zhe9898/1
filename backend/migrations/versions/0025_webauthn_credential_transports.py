@@ -1,12 +1,11 @@
-"""Add transports to WebAuthn credentials
+"""Add transports to WebAuthn credentials."""
 
-Revision ID: 0025_webauthn_credential_transports
-Revises: 0024_job_preferred_device_profile
-Create Date: 2026-04-06
-"""
+from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+
+from backend.core.migration_schema_guard import SchemaGuard
 
 revision = "0025_webauthn_credential_transports"
 down_revision = "0024_job_preferred_device_profile"
@@ -15,8 +14,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("webauthn_credentials", sa.Column("transports", sa.JSON(), nullable=True))
+    guard = SchemaGuard(op.get_bind())
+    guard.add_column_if_missing("webauthn_credentials", sa.Column("transports", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("webauthn_credentials", "transports")
+    inspector = sa.inspect(op.get_bind())
+    if inspector.has_table("webauthn_credentials"):
+        op.drop_column("webauthn_credentials", "transports")

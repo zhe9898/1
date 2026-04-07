@@ -1,7 +1,10 @@
 # ADR 0015: 统一 HTTP 调用与拦截器强制管控网络逃逸保护
 
-## 状态
-已接受 (2026-03-22)
+- Status: Accepted
+- Date: 2026-03-22
+- Scope: 统一 HTTP 调用与拦截器强制管控网络逃逸保护
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 在前端契约审计中发现 `auth.ts` 在修改 AI 偏好时，违规使用原生 `fetch` 绕过了全局封装的 Axios `http` 实例。这种网络逃逸行为导致：

@@ -215,13 +215,7 @@ async def _issue_rotated_token(
     ttl_seconds: int,
 ) -> str | None:
     old_jti = payload.get("jti")
-    if old_jti is None:
-        logging.getLogger("zen70.jwt").warning(
-            "token rotation skipped because prior token has no jti claim: sub=%s",
-            payload.get("sub"),
-        )
-        return None
-    if not await _blacklist_jti(redis_conn, old_jti, ttl_seconds):
+    if old_jti is not None and not await _blacklist_jti(redis_conn, old_jti, ttl_seconds):
         logging.getLogger("zen70.jwt").warning(
             "token rotation skipped because prior jti could not be blacklisted: jti=%s ttl=%ds",
             old_jti,

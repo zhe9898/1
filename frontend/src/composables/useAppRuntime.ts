@@ -7,7 +7,6 @@ import { createSSE } from "@/utils/sse";
 import type { HardwareEvent, SSEEvent, SwitchEvent } from "@/types/sse";
 
 interface AuthState {
-  token: string | null;
   isAdmin: boolean;
   isAuthenticated: boolean;
   identityKey: string | null;
@@ -78,7 +77,6 @@ export function useAppRuntime({
         onFallbackOffline: () => {
           capsStore.isOffline = true;
         },
-        getAccessToken: () => auth.token,
       },
     );
   }

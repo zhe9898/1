@@ -39,7 +39,7 @@ class LeaseService:
             return
         if not job.leased_until or job.leased_until >= now:
             return
-        attempt.status = "expired"
+        attempt.status = "timeout"
         attempt.error_message = "lease expired before completion"
         attempt.completed_at = now
         attempt.updated_at = now
@@ -167,3 +167,24 @@ class LeaseService:
             job.attempt = 0
         job.updated_at = now
         await db.flush()
+
+
+def export_lease_service_contract() -> dict[str, object]:
+    return {
+        "entrypoint": "backend.core.lease_service.LeaseService",
+        "owned_fields": [
+            "jobs.status",
+            "jobs.attempt",
+            "jobs.lease_token",
+            "jobs.leased_until",
+            "job_attempts.status",
+            "job_attempts.lease_token",
+            "job_attempts.scheduling_decision_id",
+        ],
+        "grant_method": "grant_lease",
+        "renew_method": "renew_lease",
+        "release_method": "clear_active_lease",
+        "recovery_method": "reset_lease_projection",
+        "rotates_lease_token_on_renew": True,
+        "decision_link_field": "job_attempts.scheduling_decision_id",
+    }

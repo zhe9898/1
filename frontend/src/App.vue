@@ -21,7 +21,7 @@
       <div class="flex-none gap-2">
         <!-- 可选能力状态条：网页开关驱动（capabilities 协议闭环） -->
         <div
-          v-if="auth.token"
+          v-if="auth.isAuthenticated"
           class="btn btn-sm btn-ghost pointer-events-none"
         >
           <span class="mr-2 text-xs opacity-60">{{ profileBadge }}</span>
@@ -86,7 +86,7 @@
           @change="handleWallpaperUpload"
         >
         <div
-          v-if="auth.token && !auth.isElder && !auth.isChild"
+          v-if="auth.isAuthenticated && !auth.isElder && !auth.isChild"
           class="dropdown dropdown-end"
         >
           <label
@@ -257,7 +257,7 @@ interface NavItem {
 }
 
 const protocolNavItems = computed<NavItem[]>(() => {
-  if (!auth.token || !consoleStore.hasMenu) return [];
+  if (!auth.isAuthenticated || !consoleStore.hasMenu) return [];
   return consoleStore.menu.map((item) => ({
     to: item.route_path,
     label: item.label,

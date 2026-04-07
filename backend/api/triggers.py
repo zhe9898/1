@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.deps import _bind_tenant_db, get_current_admin, get_db, get_redis, get_tenant_db
-from backend.core.compatibility_adapter import canonicalize_status
+from backend.core.compatibility_adapter import canonicalize_status, normalize_persisted_status
 from backend.core.errors import zen
 from backend.core.redis_client import CHANNEL_TRIGGER_EVENTS, RedisClient
 from backend.core.trigger_kind_registry import (
@@ -47,7 +47,7 @@ class TriggerUpsertRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     description: str | None = None
     kind: str = Field(..., min_length=1, max_length=64)
-    status: Literal["active", "paused"] = "active"
+    status: str = Field(default="active", min_length=1, max_length=32)
     config: dict[str, Any] = Field(default_factory=dict)
     input_defaults: dict[str, Any] = Field(default_factory=dict)
     target: dict[str, Any] = Field(default_factory=dict)
@@ -113,12 +113,12 @@ def _to_trigger_response(trigger: Trigger) -> TriggerResponse:
         name=trigger.name,
         description=trigger.description,
         kind=trigger.kind,
-        status=trigger.status,
+        status=normalize_persisted_status("triggers.status", trigger.status) or "active",
         config=dict(trigger.config or {}),
         input_defaults=dict(trigger.input_defaults or {}),
         target=dict(trigger.target or {}),
         last_fired_at=trigger.last_fired_at,
-        last_delivery_status=trigger.last_delivery_status,
+        last_delivery_status=normalize_persisted_status("trigger_deliveries.status", trigger.last_delivery_status),
         last_delivery_message=trigger.last_delivery_message,
         last_delivery_id=trigger.last_delivery_id,
         last_delivery_target_kind=trigger.last_delivery_target_kind,
@@ -137,7 +137,7 @@ def _to_delivery_response(delivery: TriggerDelivery) -> TriggerDeliveryResponse:
         trigger_id=delivery.trigger_id,
         trigger_kind=delivery.trigger_kind,
         source_kind=delivery.source_kind,
-        status=delivery.status,
+        status=normalize_persisted_status("trigger_deliveries.status", delivery.status) or "dispatching",
         idempotency_key=delivery.idempotency_key,
         actor=delivery.actor,
         reason=delivery.reason,
@@ -348,7 +348,7 @@ async def pause_trigger(
     actor = str(current_user.get("sub") or current_user.get("username") or "unknown")
     trigger = await _get_trigger_for_tenant(db, tenant_id, trigger_id)
     now = _utcnow()
-    TriggerCommandService.set_status(trigger, status="paused", actor=actor, now=now, reason=payload.reason)
+    TriggerCommandService.set_status(trigger, status="inactive", actor=actor, now=now, reason=payload.reason)
     await db.flush()
     response = _to_trigger_response(trigger)
     await db.commit()

@@ -6,6 +6,11 @@ import type { ResourceSchema } from "@/types/backendUi";
 import type { ControlAction, StatusView } from "@/types/controlPlane";
 import type { JobControlEvent } from "@/types/sse";
 import { normalizeStatusView } from "@/utils/statusView";
+import {
+  normalizeJobAttemptStatusValue,
+  normalizeJobStatusValue,
+  normalizeJobStatusView,
+} from "@/stores/jobs/status";
 
 export interface JobItem {
   job_id: string;
@@ -33,7 +38,8 @@ export interface JobItem {
   attempt: number;
   payload: Record<string, unknown>;
   result: Record<string, unknown> | null;
-  error_message: string | null;
+  safe_error_code: string | null;
+  safe_error_hint: string | null;
   lease_seconds: number;
   leased_until: string | null;
   lease_state: string;
@@ -54,7 +60,8 @@ export interface JobAttemptItem {
   status: string;
   status_view: StatusView;
   score: number;
-  error_message: string | null;
+  safe_error_code: string | null;
+  safe_error_hint: string | null;
   result_summary: Record<string, unknown> | null;
   created_at: string;
   started_at: string | null;
@@ -132,12 +139,12 @@ function toListParams(query: Record<string, unknown> = {}): Record<string, strin
 }
 
 function normalizeJob(partial: Partial<JobItem> & { job_id: string }): JobItem {
+  const status = normalizeJobStatusValue(partial.status, "unknown");
   return {
     job_id: partial.job_id,
     kind: partial.kind ?? "unknown",
-    status: partial.status ?? "unknown",
-    status_view:
-      partial.status_view ?? normalizeStatusView(null, partial.status ?? "unknown", partial.status ?? "Unknown"),
+    status,
+    status_view: normalizeJobStatusView(partial.status_view, status),
     node_id: partial.node_id ?? null,
     connector_id: partial.connector_id ?? null,
     idempotency_key: partial.idempotency_key ?? null,
@@ -159,7 +166,8 @@ function normalizeJob(partial: Partial<JobItem> & { job_id: string }): JobItem {
     attempt: partial.attempt ?? 0,
     payload: partial.payload ?? {},
     result: partial.result ?? null,
-    error_message: partial.error_message ?? null,
+    safe_error_code: partial.safe_error_code ?? null,
+    safe_error_hint: partial.safe_error_hint ?? null,
     lease_seconds: partial.lease_seconds ?? 30,
     leased_until: partial.leased_until ?? null,
     lease_state: partial.lease_state ?? "none",
@@ -174,17 +182,18 @@ function normalizeJob(partial: Partial<JobItem> & { job_id: string }): JobItem {
 }
 
 function normalizeJobAttempt(partial: Partial<JobAttemptItem> & { attempt_id: string; job_id: string; node_id: string }): JobAttemptItem {
+  const status = normalizeJobAttemptStatusValue(partial.status, "unknown");
   return {
     attempt_id: partial.attempt_id,
     job_id: partial.job_id,
     node_id: partial.node_id,
     lease_token: partial.lease_token ?? "",
     attempt_no: partial.attempt_no ?? 0,
-    status: partial.status ?? "unknown",
-    status_view:
-      partial.status_view ?? normalizeStatusView(null, partial.status ?? "unknown", partial.status ?? "Unknown"),
+    status,
+    status_view: normalizeJobStatusView(partial.status_view, status),
     score: partial.score ?? 0,
-    error_message: partial.error_message ?? null,
+    safe_error_code: partial.safe_error_code ?? null,
+    safe_error_hint: partial.safe_error_hint ?? null,
     result_summary: partial.result_summary ?? null,
     created_at: partial.created_at ?? new Date().toISOString(),
     started_at: partial.started_at ?? null,
@@ -447,6 +456,7 @@ export const useJobsStore = defineStore("jobs", () => {
     error,
     lastUpdatedAt,
     pendingCount,
+    upsertJob,
     applyJobEvent,
     fetchJobs,
     fetchSchema,

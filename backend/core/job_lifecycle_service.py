@@ -4,12 +4,44 @@ import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.core.job_status import canonicalize_job_attempt_status_input, canonicalize_job_status_input
 from backend.core.lease_service import LeaseService
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
 
 class JobLifecycleService:
+    @staticmethod
+    async def expire_lease(
+        db: AsyncSession,
+        *,
+        job: Job,
+        attempt: JobAttempt | None,
+        now: datetime.datetime,
+        error_message: str = "lease expired before completion",
+    ) -> None:
+        if attempt is None:
+            await LeaseService.reset_lease_projection(db, job=job, now=now)
+        else:
+            await LeaseService.clear_active_lease(
+                db,
+                job=job,
+                attempt=attempt,
+                now=now,
+                attempt_status=canonicalize_job_attempt_status_input("timeout"),
+                attempt_error=error_message,
+            )
+        job.status = canonicalize_job_status_input("pending")
+        job.node_id = None
+        job.retry_at = None
+        job.result = None
+        job.error_message = error_message
+        job.failure_category = "lease_timeout"
+        job.started_at = None
+        job.completed_at = None
+        job.updated_at = now
+        await db.flush()
+
     @staticmethod
     async def complete_job(
         db: AsyncSession,
@@ -100,10 +132,10 @@ class JobLifecycleService:
             job=job,
             attempt=attempt,
             now=now,
-            attempt_status="canceled" if attempt is not None else None,
+            attempt_status=canonicalize_job_attempt_status_input("cancelled") if attempt is not None else None,
             attempt_error=reason,
         )
-        job.status = "canceled"
+        job.status = canonicalize_job_status_input("cancelled")
         job.error_message = reason
         job.completed_at = now
         await db.flush()
@@ -183,7 +215,7 @@ class JobLifecycleService:
             job=job,
             attempt=attempt,
             now=now,
-            attempt_status="canceled" if attempt is not None else None,
+            attempt_status=canonicalize_job_attempt_status_input("cancelled") if attempt is not None else None,
             attempt_error=reason,
         )
         job.status = "pending"

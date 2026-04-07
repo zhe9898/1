@@ -1,8 +1,10 @@
-# ADR 0030：后端驱动的资源表单与动作对话框
+# ADR 0030: 后端驱动的资源表单与动作对话框
 
-- **状态**: 已接受
-- **日期**: 2026-03-27
-- **范围**: `Nodes`、`Jobs`、`Connectors` 的 Phase 3 控制台产品化
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: 后端驱动的资源表单与动作对话框
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景
 

@@ -2,12 +2,12 @@
 ADR-0047 WP-P0: Node State Machine Tests
 
 Verifies that the enrollment_status state machine is closed:
-  pending  → active only via POST /api/v1/nodes/{node_id}/approve (admin action)
-  active   → heartbeat continues normally
-  revoked  → heartbeat rejected with 403 ZEN-NODE-4032
+  pending   → approved only via POST /api/v1/nodes/{node_id}/approve (admin action)
+  approved  → heartbeat continues normally
+  rejected  → heartbeat rejected with 403 ZEN-NODE-4032
 
 These tests guard against the previously-confirmed bypass where
-heartbeat_node() unconditionally set enrollment_status = "active".
+heartbeat_node() unconditionally set enrollment_status = "approved".
 """
 
 from __future__ import annotations
@@ -118,16 +118,16 @@ async def test_heartbeat_pending_node_returns_403(monkeypatch: pytest.MonkeyPatc
     assert node.enrollment_status == "pending"
 
 
-def test_heartbeat_revoked_node_returns_403() -> None:
-    """ADR-0047 WP-P0: Defense-in-depth — verify the revoked gate exists in heartbeat_node source.
+def test_heartbeat_rejected_node_returns_403() -> None:
+    """ADR-0047 WP-P0: Defense-in-depth — verify the rejected gate exists in heartbeat_node source.
 
     Architecture note on why this is a source audit (not a runtime test):
-    - authenticate_node_request() (node_auth.py:65-71) rejects revoked nodes with 401
+    - authenticate_node_request() (node_auth.py:65-71) rejects rejected nodes with 401
       BEFORE the heartbeat function body runs. This is the primary auth layer.
-    - The `enrollment_status == 'revoked'` check inside heartbeat_node() is defense-in-depth:
-      it catches edge cases where a valid token hash exists despite revoked status
+    - The `enrollment_status == 'rejected'` check inside heartbeat_node() is defense-in-depth:
+      it catches edge cases where a valid token hash exists despite rejected status
       (e.g., token rotation race condition before the auth layer was reached).
-    - Since authenticate_node_request is always called first and always raises 401 for revoked,
+    - Since authenticate_node_request is always called first and always raises 401 for rejected,
       the 403 gate inside heartbeat_node cannot be exercised via normal mock paths.
     - This test audits the source code to confirm the defensive gate is present and correct.
     """
@@ -136,20 +136,20 @@ def test_heartbeat_revoked_node_returns_403() -> None:
     from backend.api.nodes import heartbeat_node
 
     source = inspect.getsource(heartbeat_node)
-    # Verify the defense-in-depth revoked gate exists
-    assert 'enrollment_status == "revoked"' in source, (
-        "ADR-0047: heartbeat_node MUST contain a revoked enrollment_status gate " "(defense-in-depth against race conditions / partial revocation)"
+    # Verify the defense-in-depth rejected gate exists
+    assert 'enrollment_status == "rejected"' in source, (
+        "ADR-0047: heartbeat_node MUST contain a rejected enrollment_status gate " "(defense-in-depth against race conditions / partial revocation)"
     )
-    assert "ZEN-NODE-4032" in source, "ADR-0047: revoked gate must raise ZEN-NODE-4032"
-    assert "status_code=403" in source, "ADR-0047: revoked gate must return 403 Forbidden"
+    assert "ZEN-NODE-4032" in source, "ADR-0047: rejected gate must raise ZEN-NODE-4032"
+    assert "status_code=403" in source, "ADR-0047: rejected gate must return 403 Forbidden"
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_active_node_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ADR-0047 WP-P0: active node heartbeat proceeds normally, status stays active."""
+async def test_heartbeat_approved_node_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADR-0047 WP-P0: approved node heartbeat proceeds normally, status stays approved."""
     monkeypatch.setenv("NODE_TOKEN_BCRYPT_ROUNDS", "4")
     token_hash = hash_node_token("node-token")
-    node = _node(enrollment_status="active", token_hash=token_hash)
+    node = _node(enrollment_status="approved", token_hash=token_hash)
 
     db = AsyncMock()
     db.flush = AsyncMock()
@@ -165,13 +165,13 @@ async def test_heartbeat_active_node_succeeds(monkeypatch: pytest.MonkeyPatch) -
         node_token="node-token",
     )
 
-    assert response.enrollment_status == "active"
-    assert node.enrollment_status == "active"
+    assert response.enrollment_status == "approved"
+    assert node.enrollment_status == "approved"
 
 
 @pytest.mark.asyncio
 async def test_pending_node_enrollment_status_not_mutated_on_403(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Regression: heartbeat must never silently flip pending → active even on error paths."""
+    """Regression: heartbeat must never silently flip pending → approved even on error paths."""
     monkeypatch.setenv("NODE_TOKEN_BCRYPT_ROUNDS", "4")
     token_hash = hash_node_token("node-token")
     node = _node(enrollment_status="pending", token_hash=token_hash)

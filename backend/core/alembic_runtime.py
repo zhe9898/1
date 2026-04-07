@@ -65,9 +65,9 @@ def prepare_alembic_environment(env_file: str | Path) -> tuple[Any, Any]:
     if postgres_dsn:
         config.set_main_option("sqlalchemy.url", postgres_dsn)
 
-    from backend.models.user import Base
+    from backend.models.registry import load_canonical_model_metadata
 
-    return config, Base.metadata
+    return config, load_canonical_model_metadata()
 
 
 def _alembic_context_options(config: Any) -> dict[str, Any]:
@@ -123,6 +123,13 @@ def _watchdog_thread(redis_client: Any, lock: Any, stop_event: threading.Event) 
         stop_event.wait(10)
 
 
+def start_migration_lock_watchdog(redis_client: Any, lock: Any, stop_event: threading.Event) -> threading.Thread:
+    """Start the migration-lock watchdog thread and return the live thread."""
+    watchdog = threading.Thread(target=_watchdog_thread, args=(redis_client, lock, stop_event), daemon=True)
+    watchdog.start()
+    return watchdog
+
+
 def _acquire_migration_lock() -> tuple[Any, Any, threading.Event, threading.Thread] | None:
     try:
         import redis
@@ -156,8 +163,7 @@ def _acquire_migration_lock() -> tuple[Any, Any, threading.Event, threading.Thre
             )
 
         stop_event = threading.Event()
-        watchdog = threading.Thread(target=_watchdog_thread, args=(redis_client, lock, stop_event), daemon=True)
-        watchdog.start()
+        watchdog = start_migration_lock_watchdog(redis_client, lock, stop_event)
         _MIGRATION_LOGGER.info(
             "migration lock acquired [%s] key=%s ttl=%ds",
             _LOCK_IDENTITY,

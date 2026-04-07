@@ -1,7 +1,10 @@
-# 0050. Runner 扩展任务类型与 AcceptedKinds 调度
+# ADR 0050: Runner 扩展任务类型与 AcceptedKinds 调度
 
-- 状态: 已采纳
-- 日期: 2026-04-04
+- Status: Accepted
+- Date: 2026-04-04
+- Scope: Runner 扩展任务类型与 AcceptedKinds 调度
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景上下文
 

@@ -1,44 +1,106 @@
-# ADR 0046: Kernel-only Runtime Surface and Compatibility Retirement
+# ADR 0046: Kernel-Only Runtime Surface and Compatibility Retirement
 
-## 状态
+- Status: Accepted
+- Date: 2026-04-07
+- Scope: Runtime profile exposure, legacy profile compatibility, compiler entrypoint, and configuration entrypoint cleanup
 
-已采纳
+## 1. Context
 
-## 背景
+The repository has already converged on `gateway-kernel` as the primary runtime surface, but compatibility inputs still exist for migration and pack selection.
 
-`ZEN70 Gateway Kernel` 已经收口为默认产品定义，但仓库里仍存在三类容易误导运维和后续开发的兼容层：
+Current repository evidence:
 
-1. `gateway-iot / gateway-ops / gateway-full / gateway / full` 这类历史 profile 名仍作为输入存在，容易被误读成正式运行时 profile。
-2. `deploy/config-compiler.py` 仍像一份并列的编译器入口，削弱了 `scripts/compiler.py` 作为唯一事实源的表达。
-3. `config/system.yaml` 作为旧配置入口长期与根 `system.yaml` 并列存在，容易制造“双真源”错觉。
+- Runtime profile normalization collapses legacy aliases back to `gateway-kernel`.
+  - `backend/core/gateway_profile.py`
+  - `backend/core/pack_registry.py`
+  - `backend/tests/unit/test_gateway_profiles.py`
+- The default public/control-plane surface is kernel-first, while optional surfaces are enabled by explicit pack selection.
+  - `backend/core/gateway_profile.py`
+  - `backend/api/main.py`
+- `deploy/config-compiler.py` is now a wrapper that forwards to the canonical compiler.
+  - `deploy/config-compiler.py`
+  - `scripts/compiler.py`
+  - `tests/test_repo_hardening.py`
+- The repository has one formal configuration root: `system.yaml`.
+  - `E:/1.0/1/system.yaml`
+- `config/system.yaml` is not part of the current repository surface and is explicitly blocked from official bundle/repo paths.
+  - `tests/test_repo_hardening.py`
+  - `scripts/validate_offline_bundle.py`
+  - `.github/workflows/build_offline_v2_9.yml`
 
-这些问题不会立刻打坏运行时，但会持续放大运维成本、文档歧义和兼容层维护债。
+The old version of this ADR correctly identified the direction, but its text had become unreadable and no longer served as a reliable contract artifact.
 
-## 决策
+## 2. Decision
 
-1. 公开运行时 profile surface 固定为 `gateway-kernel`。
-2. `gateway-iot / gateway-ops / gateway-full / gateway / full` 只保留为 legacy compatibility input。
-3. legacy 输入只能在规范化阶段展开为 `packs`，不得再作为正式产品名、公开 API profile、OpenAPI profile 或发布口径出现。
-4. `deploy/config-compiler.py` 收口为对 `scripts/compiler.py` 的兼容 wrapper，不再携带独立编译逻辑。
-5. 根 `system.yaml` 是唯一正式配置入口；旧 `config/system.yaml` 从仓库正式 surface 中移除。
-6. 离线包和仓库门禁继续禁止 `config/system.yaml` 回流正式交付面。
+ZEN70 exposes one primary runtime profile surface:
 
-## 影响
+- primary runtime profile: `gateway-kernel`
 
-### 正向
+The following values remain compatibility-only inputs:
 
-- 运行时、打包、文档、OpenAPI 和控制台口径统一为 `gateway-kernel + packs`
-- 运维不再需要判断“哪个 profile/哪个 system.yaml 才是真的”
-- 兼容层边界更清晰，后续可以按版本退场
+- `gateway`
+- `gateway-core`
+- `safe-kernel`
+- `gateway-iot`
+- `gateway-ops`
+- pack aliases such as `iot-pack`
 
-### 代价
+Compatibility inputs may still expand into pack selections, router selections, or image targets, but they are not separate product identities.
 
-- legacy profile 名仍需在迁移和 bootstrap 解析层保留一段时间
-- 文档与测试必须明确标注“兼容输入 != 正式产品面”
+Additional rules:
 
-## 护栏
+- official runtime/profile documentation must speak in terms of `gateway-kernel` plus explicit packs
+- `deploy/config-compiler.py` is only a compatibility wrapper around `scripts/compiler.py`
+- root `system.yaml` is the only formal configuration entrypoint for the repository surface
+- `config/system.yaml` must remain excluded from official repo and offline-bundle surfaces
 
-- 正式 UI 和 API 只能暴露 `gateway-kernel`
-- legacy profile 名只允许出现在兼容解析逻辑、兼容测试和迁移说明中
-- 仓库与离线包校验必须阻止 `config/system.yaml` 回流
-- `deploy/config-compiler.py` 只能保留 wrapper 语义，不得再次演化为第二套编译器
+## 3. Code Evidence
+
+Primary implementation:
+
+- `backend/core/gateway_profile.py`
+- `backend/core/pack_registry.py`
+- `backend/api/main.py`
+- `scripts/compiler.py`
+- `deploy/config-compiler.py`
+
+Primary enforcement:
+
+- `backend/tests/unit/test_gateway_profiles.py`
+- `backend/tests/unit/test_architecture_governance_gates.py`
+- `tests/test_profile_surface_compaction.py`
+- `tests/test_repo_hardening.py`
+
+Supporting evidence:
+
+- `system.yaml`
+- `scripts/validate_offline_bundle.py`
+- `.github/workflows/build_offline_v2_9.yml`
+
+## 4. Consequences
+
+### Positive
+
+- Runtime documentation, compiler invocation, and release shape all converge on one kernel-first story.
+- Legacy profile names remain usable for migration without being mistaken for first-class runtime identities.
+- The configuration entrypoint is explicit and testable.
+
+### Tradeoffs
+
+- Legacy aliases still exist in normalization and pack-resolution code, so they must be documented as compatibility-only rather than silently assumed gone.
+- Some tooling and docs still mention historical profile names because they describe migration behavior or image targets.
+- Compatibility retirement is a process, not a single delete.
+
+## 5. Follow-up
+
+- Any future removal of `gateway-iot` or `gateway-ops` compatibility inputs must be reflected in `pack_registry`, tests, and this ADR.
+- If a second official config root is ever introduced, this ADR must be superseded rather than informally bypassed.
+- Compiler/operator docs outside `docs/adr` should continue to be cleaned so they do not imply `config/system.yaml` is still an official repo entrypoint.
+
+## 6. Source-of-Truth Rule
+
+For runtime surface and config-entrypoint questions, repository truth is:
+
+1. `gateway_profile` / `pack_registry` / compiler implementation
+2. repo hardening and profile tests
+3. this ADR

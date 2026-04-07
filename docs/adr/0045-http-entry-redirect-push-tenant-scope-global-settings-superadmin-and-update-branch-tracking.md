@@ -1,8 +1,10 @@
 # ADR 0045: HTTP 入口重定向、Push 租户作用域、全局设置超管化与更新分支跟踪
 
-## 状态
+- Status: Accepted
+- Date: Unknown
+- Scope: HTTP 入口重定向、Push 租户作用域、全局设置超管化与更新分支跟踪
 
-已采纳
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 背景
 

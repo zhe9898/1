@@ -50,7 +50,8 @@ function makeJob(overrides: Partial<JobItem> = {}): JobItem {
     attempt: 0,
     payload: {},
     result: null,
-    error_message: null,
+    safe_error_code: null,
+    safe_error_hint: null,
     lease_seconds: 30,
     leased_until: null,
     lease_state: "none",
@@ -74,7 +75,8 @@ function makeAttempt(overrides: Partial<JobAttemptItem> = {}): JobAttemptItem {
     status: "completed",
     status_view: makeStatusView("completed", "Completed"),
     score: 100,
-    error_message: null,
+    safe_error_code: null,
+    safe_error_hint: null,
     result_summary: null,
     created_at: "2025-01-01T00:00:00Z",
     started_at: "2025-01-01T00:00:01Z",
@@ -158,6 +160,18 @@ describe("useJobsStore", () => {
     expect(job.required_capabilities).toEqual([]);
     expect(job.timeout_seconds).toBe(300);
     expect(job.lease_state).toBe("none");
+  });
+
+  it("upsertJob preserves canonical cancelled status", () => {
+    const store = useJobsStore();
+    store.upsertJob({
+      job_id: "job-legacy",
+      status: "cancelled",
+      status_view: makeStatusView("cancelled", "Cancelled"),
+    });
+    expect(store.items[0].status).toBe("cancelled");
+    expect(store.items[0].status_view.key).toBe("cancelled");
+    expect(store.items[0].status_view.label).toBe("Cancelled");
   });
 
   it("upsertJob prepends: newer jobs appear first", () => {

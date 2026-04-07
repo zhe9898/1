@@ -31,6 +31,7 @@ class ApprovedTableOverlap:
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_MODELS_DIR = _PROJECT_ROOT / "backend" / "models"
 
 MIGRATION_CHAINS: Final[tuple[MigrationChain, ...]] = (
     MigrationChain(
@@ -52,18 +53,52 @@ MIGRATION_CHAINS: Final[tuple[MigrationChain, ...]] = (
         versions_dir=_PROJECT_ROOT / "backend" / "migrations" / "versions",
         version_table="alembic_version_application",
         execution_order=20,
-        runtime_managed=False,
-        description="Authoritative application-schema chain for model-backed control-plane evolution and new work.",
+        runtime_managed=True,
+        description="Authoritative application-schema chain for model-backed control-plane evolution and dual-chain reconciliation.",
     ),
 )
 
 MIGRATION_CHAINS_BY_KEY: Final[dict[str, MigrationChain]] = {chain.key: chain for chain in MIGRATION_CHAINS}
 
+APPLICATION_BASELINE_MODEL_TABLES: Final[frozenset[str]] = frozenset(
+    {
+        "job_attempts",
+        "jobs",
+        "nodes",
+        "push_subscriptions",
+        "users",
+        "webauthn_credentials",
+    }
+)
+
+APPROVED_LEGACY_MODEL_TABLE_CREATIONS: Final[frozenset[str]] = frozenset(
+    {
+        "job_attempts",
+        "memory_facts",
+        "scheduling_decisions",
+        "software_evaluations",
+        "tenant_scheduling_policies",
+        "tenants",
+        "trigger_deliveries",
+        "triggers",
+    }
+)
+
 APPROVED_CROSS_STREAM_TABLE_OVERLAPS: Final[dict[str, ApprovedTableOverlap]] = {
+    "connectors": ApprovedTableOverlap(
+        table_name="connectors",
+        canonical_chain="application",
+        rationale="Connector registry schema now evolves through the application chain after legacy tenant hardening.",
+    ),
     "job_attempts": ApprovedTableOverlap(
         table_name="job_attempts",
         canonical_chain="application",
         rationale="Future queue/scheduler evolution belongs to the application chain; legacy overlap is historical hardening debt.",
+    ),
+    "job_logs": ApprovedTableOverlap(
+        table_name="job_logs",
+        canonical_chain="application",
+        rationale="Job log retention and FK semantics are owned by the application chain.",
     ),
     "jobs": ApprovedTableOverlap(
         table_name="jobs",
@@ -73,7 +108,12 @@ APPROVED_CROSS_STREAM_TABLE_OVERLAPS: Final[dict[str, ApprovedTableOverlap]] = {
     "memory_facts": ApprovedTableOverlap(
         table_name="memory_facts",
         canonical_chain="application",
-        rationale="The current SQLAlchemy model matches the application-chain ARRAY(Float) storage contract.",
+        rationale="Memory facts now reconcile to the application-chain text/vec384 contract while legacy vector columns remain historical compatibility debt.",
+    ),
+    "nodes": ApprovedTableOverlap(
+        table_name="nodes",
+        canonical_chain="application",
+        rationale="Node control-plane shape is owned by the application chain after legacy tenant hardening.",
     ),
     "scheduling_decisions": ApprovedTableOverlap(
         table_name="scheduling_decisions",
@@ -120,14 +160,26 @@ APPROVED_CROSS_STREAM_TABLE_OVERLAPS: Final[dict[str, ApprovedTableOverlap]] = {
 _TABLE_TOUCHING_OPERATIONS: Final[frozenset[str]] = frozenset(
     {
         "add_column",
+        "add_column_if_missing",
+        "_add_column_if_missing",
         "alter_column",
+        "create_foreign_key_if_missing",
+        "_create_foreign_key_if_missing",
         "create_foreign_key",
         "create_index",
+        "create_index_if_missing",
+        "_create_index_if_missing",
         "create_table",
+        "create_unique_constraint_if_missing",
+        "_create_unique_constraint_if_missing",
         "create_unique_constraint",
         "drop_column",
         "drop_constraint",
         "drop_index",
+        "drop_index_if_exists",
+        "_drop_index_if_exists",
+        "drop_unique_constraint_if_exists",
+        "_drop_unique_constraint_if_exists",
     }
 )
 
@@ -173,24 +225,52 @@ def _extract_touched_tables(path: Path) -> set[str]:
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if not isinstance(func, ast.Attribute):
+        if isinstance(func, ast.Attribute):
+            func_name = func.attr
+            owner_name = func.value.id if isinstance(func.value, ast.Name) else None
+        elif isinstance(func, ast.Name):
+            func_name = func.id
+            owner_name = None
+        else:
             continue
-        if not isinstance(func.value, ast.Name) or func.value.id != "op":
+        if func_name not in _TABLE_TOUCHING_OPERATIONS:
             continue
-        if func.attr not in _TABLE_TOUCHING_OPERATIONS:
+        if owner_name not in {None, "op"} and func_name in {"create_table", "create_index", "create_unique_constraint", "create_foreign_key"}:
             continue
 
-        if func.attr == "create_table":
+        if func_name == "create_table":
             if node.args:
                 table_name = _literal(node.args[0])
                 if isinstance(table_name, str):
                     tables.add(table_name)
             continue
 
-        table_arg_index = 1 if func.attr in {"create_index", "drop_index", "create_foreign_key"} else 0
+        table_arg_index = 1 if func_name in {"create_index", "drop_index", "create_foreign_key"} else 0
         if len(node.args) <= table_arg_index:
             continue
         table_name = _literal(node.args[table_arg_index])
+        if isinstance(table_name, str):
+            tables.add(table_name)
+
+    return tables
+
+
+def _extract_created_tables(path: Path) -> set[str]:
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    tables: set[str] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "create_table":
+            continue
+        if not isinstance(func.value, ast.Name) or func.value.id != "op":
+            continue
+        if not node.args:
+            continue
+        table_name = _literal(node.args[0])
         if isinstance(table_name, str):
             tables.add(table_name)
 
@@ -205,6 +285,43 @@ def collect_table_touches_by_chain() -> dict[str, set[str]]:
             chain_tables.update(_extract_touched_tables(path))
         touched[chain.key] = chain_tables
     return touched
+
+
+def collect_created_tables_by_chain() -> dict[str, set[str]]:
+    created: dict[str, set[str]] = {}
+    for chain in ordered_migration_chains():
+        chain_tables: set[str] = set()
+        for path in iter_migration_files(chain):
+            chain_tables.update(_extract_created_tables(path))
+        created[chain.key] = chain_tables
+    return created
+
+
+def collect_model_tables() -> set[str]:
+    tables: set[str] = set()
+    for path in _MODELS_DIR.glob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        source = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__tablename__":
+                    value = _literal(node.value)
+                    if isinstance(value, str):
+                        tables.add(value)
+    return tables
+
+
+def find_unapproved_legacy_model_table_creations() -> set[str]:
+    created_tables = collect_created_tables_by_chain()
+    legacy_tables = created_tables.get("legacy", set())
+    return (legacy_tables & collect_model_tables()) - APPROVED_LEGACY_MODEL_TABLE_CREATIONS
 
 
 def find_cross_stream_table_overlaps() -> dict[str, tuple[str, ...]]:
@@ -265,6 +382,12 @@ def validate_migration_governance() -> list[str]:
 
     for table_name, chain_keys in find_unapproved_cross_stream_table_overlaps().items():
         errors.append(f"unapproved cross-stream overlap: {table_name} touched by {', '.join(chain_keys)}")
+
+    forbidden_legacy_model_tables = sorted(find_unapproved_legacy_model_table_creations())
+    if forbidden_legacy_model_tables:
+        errors.append(
+            "legacy chain created unexpected model-backed tables: " + ", ".join(forbidden_legacy_model_tables)
+        )
 
     for table_name, approved in APPROVED_CROSS_STREAM_TABLE_OVERLAPS.items():
         if table_name not in overlaps:

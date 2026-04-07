@@ -99,7 +99,7 @@ def _node(**overrides: object) -> Node:
         drain_until=None,
         auth_token_hash=None,
         auth_token_version=1,
-        enrollment_status="active",
+        enrollment_status="approved",
         status="online",
         capabilities=["connector.invoke"],
         accepted_kinds=["connector.invoke"],

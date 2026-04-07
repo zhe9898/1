@@ -1,8 +1,10 @@
 # ADR 0027: Node Machine Token Authentication
 
-- **Status**: Accepted
-- **Date**: 2026-03-27
-- **Scope**: Gateway public exposure, runner enrollment, node/job machine channel
+- Status: Accepted
+- Date: 2026-03-27
+- Scope: Gateway public exposure, runner enrollment, node/job machine channel
+
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. Context
 

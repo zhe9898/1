@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class SystemLog(Base):

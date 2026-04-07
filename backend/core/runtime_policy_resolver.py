@@ -64,3 +64,14 @@ def get_runtime_policy_resolver() -> RuntimePolicyResolver:
     if _resolver is None:
         _resolver = RuntimePolicyResolver()
     return _resolver
+
+
+def export_runtime_policy_contract() -> dict[str, object]:
+    return {
+        "entrypoint": "backend.core.runtime_policy_resolver.RuntimePolicyResolver",
+        "policy_store_entrypoint": "backend.core.scheduling_policy_store.get_policy_store",
+        "profile_normalizer": "backend.core.gateway_profile.normalize_gateway_profile",
+        "runtime_pack_resolver": "backend.core.gateway_profile.resolve_runtime_pack_keys",
+        "router_gate_method": "router_enabled",
+        "snapshot_method": "snapshot",
+    }

@@ -11,10 +11,12 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.auth_shared import assert_user_active, build_token_response_model, register_login_session, request_tenant_id
+from backend.api.auth_session_projection import build_authenticated_session_response
+from backend.api.auth_shared import assert_user_active, register_login_session, request_tenant_id
+from backend.api.auth_token_issue import issue_auth_token
 from backend.api.auth_cookies import set_auth_cookie
 from backend.api.deps import get_db, get_redis
-from backend.api.models.auth import PasswordLoginRequest, TokenResponse
+from backend.api.models.auth import AuthSessionResponse, PasswordLoginRequest
 from backend.core.auth_helpers import (
     CODE_BAD_REQUEST,
     CODE_TOO_MANY,
@@ -46,14 +48,14 @@ def _coerce_password_hash_bytes(password_hash: object) -> bytes | None:
     return None
 
 
-@router.post("/password/login", response_model=TokenResponse)
+@router.post("/password/login", response_model=AuthSessionResponse)
 async def password_login(
     req: PasswordLoginRequest,
     request: Request,
     response: Response,
     db: AsyncSession | None = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
-) -> TokenResponse:
+) -> AuthSessionResponse:
     """标准密码登录通道，防爆破，依赖 tenant 和 role。"""
     require_db_redis(db, redis)
     assert db is not None  # noqa: S101
@@ -127,7 +129,7 @@ async def password_login(
         user.role,
     )
 
-    resp = build_token_response_model(
+    issued_token = issue_auth_token(
         str(user.id),
         user.username,
         user.role,
@@ -140,10 +142,18 @@ async def password_login(
         tenant_id=user.tenant_id,
         user_id=str(user.id),
         username=user.username,
-        access_token=resp.access_token,
+        access_token=issued_token.access_token,
         ip_address=cip,
         user_agent=request.headers.get("user-agent"),
         auth_method="password",
     )
-    set_auth_cookie(response, resp.access_token)
-    return resp
+    set_auth_cookie(response, issued_token.access_token)
+    return build_authenticated_session_response(
+        sub=str(user.id),
+        username=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        ai_route_preference=user.ai_route_preference,
+        scopes=user_scopes,
+        expires_in=issued_token.expires_in,
+    )

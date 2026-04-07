@@ -7,7 +7,7 @@ import datetime
 from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.user import Base
+from backend.models.base import Base
 
 
 class Workflow(Base):
@@ -47,7 +47,7 @@ class Workflow(Base):
     steps: Mapped[list] = mapped_column(JSON, nullable=False)
     # DAG step definitions (see docstring)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
-    # pending | running | completed | failed | canceled
+    # pending | running | completed | failed | cancelled
     context: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # Shared context passed between steps (outputs of completed steps)
     created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -83,7 +83,7 @@ class WorkflowStep(Base):
     job_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     # The Job dispatched for this step
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="waiting", index=True)
-    # waiting | pending | running | completed | failed | skipped
+    # waiting | running | completed | failed | skipped
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)

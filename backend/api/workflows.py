@@ -8,7 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_machine_tenant_db, get_node_machine_token, get_tenant_db
-from backend.core.compatibility_adapter import canonicalize_status
+from backend.core.compatibility_adapter import canonicalize_status, normalize_persisted_status
 from backend.core.errors import zen
 from backend.core.job_kind_registry import validate_job_payload
 from backend.core.node_auth import authenticate_node_request
@@ -110,7 +110,7 @@ def _to_response(wf: Workflow) -> WorkflowResponse:
         workflow_id=wf.workflow_id,
         name=wf.name,
         description=wf.description,
-        status=wf.status,
+        status=normalize_persisted_status("workflows.status", wf.status) or "pending",
         steps_count=len(wf.steps),
         created_by=wf.created_by,
         created_at=wf.created_at.isoformat(),
@@ -222,7 +222,7 @@ async def start_workflow(
         StepStatus(
             step_id=ws.step_id,
             job_id=ws.job_id,
-            status=ws.status,
+            status=normalize_persisted_status("workflow_steps.status", ws.status) or "waiting",
             result=ws.result,
             error_message=ws.error_message,
             started_at=ws.started_at.isoformat() if ws.started_at else None,
@@ -276,7 +276,7 @@ async def get_workflow(
         StepStatus(
             step_id=ws.step_id,
             job_id=ws.job_id,
-            status=ws.status,
+            status=normalize_persisted_status("workflow_steps.status", ws.status) or "waiting",
             result=ws.result,
             error_message=ws.error_message,
             started_at=ws.started_at.isoformat() if ws.started_at else None,

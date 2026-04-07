@@ -1,12 +1,10 @@
-# ADR 0005：探针使用 redis-py 作为 Redis 客户端
+# ADR 0005: 探针使用 redis-py 作为 Redis 客户端
 
-**状态**：通过
+- Status: Accepted
+- Date: 2025-03-14
+- Scope: 探针使用 redis-py 作为 Redis 客户端
 
-**日期**：2025-03-14
-
-## 背景
-
-.cursorrules 禁止事项规定「探针引入第三方库，仅允许标准库」。探针需与 Redis 通信实现状态机更新与事件发布，而 Python 标准库不包含 Redis 协议实现。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

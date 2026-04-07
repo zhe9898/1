@@ -276,12 +276,20 @@
                 v-if="job.result"
                 class="mt-2 whitespace-pre-wrap break-all rounded-xl bg-base-100 p-3 text-xs"
               >{{ formatObject(job.result) }}</pre>
-              <p
-                v-else-if="job.error_message"
-                class="mt-2 text-sm text-error"
+              <div
+                v-else-if="job.safe_error_code"
+                class="mt-2 rounded-xl border border-error/30 bg-error/5 p-3 text-sm"
               >
-                {{ job.error_message }}
-              </p>
+                <p class="font-medium text-error">
+                  {{ job.safe_error_code }}
+                </p>
+                <p
+                  v-if="job.safe_error_hint"
+                  class="mt-1 text-base-content/80"
+                >
+                  {{ job.safe_error_hint }}
+                </p>
+              </div>
               <p
                 v-else
                 class="mt-2 text-sm text-base-content/60"
@@ -350,12 +358,20 @@
                       <p>Completed: {{ formatTs(attempt.completed_at) }}</p>
                     </div>
                   </div>
-                  <p
-                    v-if="attempt.error_message"
-                    class="mt-3 text-sm text-error"
+                  <div
+                    v-if="attempt.safe_error_code"
+                    class="mt-3 rounded-xl border border-error/30 bg-error/5 p-3 text-sm"
                   >
-                    {{ attempt.error_message }}
-                  </p>
+                    <p class="font-medium text-error">
+                      {{ attempt.safe_error_code }}
+                    </p>
+                    <p
+                      v-if="attempt.safe_error_hint"
+                      class="mt-1 text-base-content/80"
+                    >
+                      {{ attempt.safe_error_hint }}
+                    </p>
+                  </div>
                   <pre
                     v-else-if="attempt.result_summary"
                     class="mt-3 whitespace-pre-wrap break-all rounded-xl bg-base-200/60 p-3 text-xs"

@@ -1,12 +1,10 @@
-# ADR 0002：探针通过 Docker CLI 与 DOCKER_HOST 寻址 Docker
+# ADR 0002: 探针通过 Docker CLI 与 DOCKER_HOST 寻址 Docker
 
-**状态**：通过
+- Status: Accepted
+- Date: 2025-03-14
+- Scope: 探针通过 Docker CLI 与 DOCKER_HOST 寻址 Docker
 
-**日期**：2025-03-14
-
-## 背景
-
-.cursorrules 规定「所有业务容器与探针调用 Docker 时，必须通过读取 DOCKER_HOST 环境变量进行 TCP 寻址；禁止直接挂载 sock」。
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 决策
 

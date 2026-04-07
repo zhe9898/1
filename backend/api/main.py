@@ -211,6 +211,7 @@ async def lifespan(app: FastAPI) -> object:
 
                 async with _async_session_factory() as session:
                     await get_governance_facade().save_tuner_state(session)
+                    await session.commit()
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
                 logger.warning("Failed to persist scheduler tuner weights on shutdown: %s", exc, exc_info=True)
 
@@ -275,7 +276,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key"],
-    expose_headers=["X-Request-ID", "X-New-Token", "X-Process-Time"],
+    expose_headers=["X-Request-ID", "X-Process-Time"],
 )
 
 

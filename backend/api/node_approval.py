@@ -1,7 +1,4 @@
-"""Node approval workflow API endpoints.
-
-Implements pending → approved → active enrollment lifecycle.
-"""
+"""Node approval workflow API endpoints."""
 
 from __future__ import annotations
 
@@ -91,16 +88,16 @@ async def approve_node(
 ) -> NodeApprovalResponse:
     """Approve a pending node (admin only).
 
-    Transitions: pending → active
+    Transitions: pending → approved
     Once approved the node can receive and execute jobs.
     """
     tenant_id = current_user["tenant_id"]
     node = await _get_node(db, tenant_id, node_id)
 
-    if node.enrollment_status == "active":
-        raise zen("ZEN-NODE-4091", "Node is already active", status_code=409)
-    if node.enrollment_status == "revoked":
-        raise zen("ZEN-NODE-4091", "Cannot approve a revoked node", status_code=409)
+    if node.enrollment_status == "approved":
+        raise zen("ZEN-NODE-4091", "Node is already approved", status_code=409)
+    if node.enrollment_status == "rejected":
+        raise zen("ZEN-NODE-4091", "Cannot approve a rejected node", status_code=409)
 
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     NodeEnrollmentService.approve(
@@ -132,14 +129,14 @@ async def reject_node(
 ) -> NodeApprovalResponse:
     """Reject and revoke a pending node (admin only).
 
-    Transitions: pending → revoked
+    Transitions: pending → rejected
     Rejected nodes cannot register again with the same node_id.
     """
     tenant_id = current_user["tenant_id"]
     node = await _get_node(db, tenant_id, node_id)
 
-    if node.enrollment_status == "revoked":
-        raise zen("ZEN-NODE-4091", "Node is already revoked", status_code=409)
+    if node.enrollment_status == "rejected":
+        raise zen("ZEN-NODE-4091", "Node is already rejected", status_code=409)
 
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     NodeEnrollmentService.reject(

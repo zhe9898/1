@@ -1,11 +1,10 @@
 # ADR 0016: Client-Token-in-URL 与 Redis SETEX 实现 SSE 心跳超时机制
 
-> **法典 8.1.4**: 任何涉及核心技术栈更迭、API 契约修改、硬件抽象层重构或偏离“建议级”规范的重大变更，必须在合并代码前，在此提交 Markdown 格式的 ADR 文档。
+- Status: Accepted
+- Date: 2026-03-22
+- Scope: Client-Token-in-URL 与 Redis SETEX 实现 SSE 心跳超时机制
 
-## Client-Token-in-URL & Redis SETEX for SSE Heartbeat
-
-- **状态**: 接受
-- **日期**: 2026-03-22
+> Source of truth: code and tests override ADR text. See ADR 0052 when documentation and implementation diverge.
 
 ## 1. 背景上下文
 

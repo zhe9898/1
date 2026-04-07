@@ -1,143 +1,65 @@
 # ZEN70 Gateway Kernel
 
-分布式任务调度与控制面内核，提供节点注册、任务派发、连接器管理和后端驱动控制台。
+ZEN70 当前以 `Gateway Kernel` 为正式运行时形态，提供控制面 API、调度治理、连接器管理、节点注册、执行面协同和后端驱动控制台。
 
----
-
-## 快速启动
+## 快速开始
 
 ```bash
-# 启动 Web 图形化安装向导
 python start_installer.py
 ```
 
-访问 `http://127.0.0.1:8080` 开启安装向导。
+安装向导默认监听 `http://127.0.0.1:8080`。
 
-**前置要求**：Docker 已安装且 Daemon 运行中。
-
----
-
-## 核心定位
-
-- **产品名称**：ZEN70 Gateway Kernel
-- **默认 Profile**：gateway-kernel
-- **核心能力**：
-  - 节点注册与心跳管理
-  - 任务队列与调度
-  - 连接器注册与调用
-  - 后端驱动控制台
-  - Pack 扩展合同层
-
----
-
-## 默认服务（7个）
-
-| 服务 | 说明 |
-|------|------|
-| `caddy` | 反向代理与 TLS 终结 |
-| `postgres` | 持久化存储（pgvector） |
-| `redis` | 缓存与会话 |
-| `gateway` | 控制面 API（FastAPI） |
-| `runner-agent` | Go 任务执行器 |
-| `sentinel` | 拓扑监控与路由协调 |
-| `docker-proxy` | Docker Socket 代理 |
-
----
-
-## 默认控制面（5个页面）
-
-| 页面 | 路由 | 说明 |
-|------|------|------|
-| Dashboard | `/` | 控制面概览 |
-| Nodes | `/nodes` | 节点舰队管理 |
-| Jobs | `/jobs` | 任务队列与调度 |
-| Connectors | `/connectors` | 连接器注册与调用 |
-| Settings | `/settings` | 系统设置（管理员） |
-
----
-
-## Pack 扩展系统
-
-Gateway Kernel 通过 Pack 系统提供扩展能力，但 **Pack 实现不在默认内核中**：
-
-| Pack | 说明 | 交付阶段 |
-|------|------|----------|
-| `iot-pack` | IoT 设备接入、场景、调度 | runtime-present |
-| `ops-pack` | 可观测性与能耗监控 | runtime-present |
-| `health-pack` | 健康数据采集（原生客户端） | mvp-skeleton |
-| `vector-pack` | 向量检索与语义搜索 | contract-only |
-
-Pack 通过 `system.yaml` 的 `deployment.packs` 字段启用。
-
-**重要**：Pack declaration = capability contract，不等于默认内核自动加载其路由。
-
----
-
-## 目录结构
-
-| 目录 | 说明 |
-|------|------|
-| `backend/` | FastAPI 控制面 API |
-| `frontend/` | Vue 3 后端驱动控制台 |
-| `runner-agent/` | Go 任务执行器 |
-| `scripts/` | 部署与编译脚本 |
-| `config/` | IaC 运行时产物（Caddyfile 等编译输出） |
-| `docs/` | 架构与文档 |
-
----
-
-## 快速命令
+命令行编译与部署：
 
 ```bash
-# Web 图形化安装
-python start_installer.py
-
-# 命令行部署
+python scripts/compiler.py system.yaml -o . --dry-run
 python scripts/bootstrap.py
-
-# 系统诊断
-./zen70-doctor.sh
-
-# 编译配置（dry-run）
-python scripts/compiler.py --dry-run
 ```
 
----
+## 当前架构结论
 
-## 架构原则
+- 正式 runtime surface 只有 `gateway-kernel`。
+- `gateway`、`gateway-core`、`gateway-iot`、`gateway-ops` 是兼容输入或 pack preset，不是新的正式产品面。
+- 根 [system.yaml](system.yaml) 是声明式部署事实源；运行时调度策略读取统一经由 `PolicyStore + RuntimePolicyResolver`。
+- 控制台采用 backend-driven + cookie-primary 边界：HTTP 和 SSE 默认走 cookie，前端只保留会话 claims，不长期持有 bearer token。
+- 执行面由 Go `runner-agent` 驱动，节点能力以 `AcceptedKinds` 和机器身份链表达，而不是按硬件型号硬编码。
+- Pack 表达能力合同，不等于默认内核自动加载对应路由或服务。
 
-- **IaC 唯一事实源**：所有配置收束于根目录 `system.yaml`
-- **调度策略唯一入口**：所有调度配置通过 `PolicyStore` 单例消费（ADR 0049）
-- **后端驱动控制台**：前端无独立业务逻辑
-- **协议闭环**：能力通过 `/api/v1/capabilities` 暴露
-- **硬件解耦**：通过能力标签和 `AcceptedKinds` 调度，而非硬件型号
-- **Pack 分层**：业务能力不回流默认 Kernel
-- **三层字段解析**：IaC 编译器对每个字段采用 system.yaml 优先 → 内置默认 → 全局兜底（ADR 0051）
+## 代码优先原则
 
----
+文档不是第一事实源。仓库真相顺序为：
 
-## 文档索引
+1. 实现代码与导出的契约
+2. 测试与门禁
+3. ADR 与说明文档
 
-完整文档见 [docs/INDEX.md](docs/INDEX.md)：
+当文档与代码冲突时，以 [docs/adr/0052-code-backed-architecture-governance-registry.md](docs/adr/0052-code-backed-architecture-governance-registry.md) 和对应实现为准。
 
-- [架构设计](docs/ZEN70_Architecture_V2.md)
-- [扩展指南](docs/EXTENSIBILITY.md)
-- [Kernel 发版清单](docs/kernel-release-checklist.md)
-- [控制面路线图](docs/control-plane-phase-roadmap.md)
-- [ADR 索引](docs/adr/README.md)
+## 目录
 
----
+- [backend](backend) FastAPI 控制面、服务层、调度治理与安全边界
+- [frontend](frontend) Vue 控制台，消费后端协议与 cookie 会话
+- [runner-agent](runner-agent) Go 执行面、任务轮询、续租与结果上报
+- [scripts](scripts) IaC 编译、部署与仓库治理脚本
+- [docs](docs) 当前文档入口与 ADR
 
-## Git 推送说明
+## 文档入口
 
-- 禁止硬编码本机路径
-- 生成文件已在 `.gitignore` 中排除
-- 使用 `pathlib.Path` 处理路径
+从 [docs/INDEX.md](docs/INDEX.md) 开始。高频入口：
 
----
+- [docs/INDEX.md](docs/INDEX.md) 当前文档索引
+- [docs/adr/README.md](docs/adr/README.md) ADR 索引
+- [docs/control-plane-phase-roadmap.md](docs/control-plane-phase-roadmap.md) 控制面与执行面阶段路线
+- [docs/pack-matrix.md](docs/pack-matrix.md) Pack 交付阶段与边界
+- [docs/profile-matrix.md](docs/profile-matrix.md) Profile 与兼容输入
+- [docs/protocol-matrix.md](docs/protocol-matrix.md) 核心协议矩阵
+- [docs/EXTENSIBILITY.md](docs/EXTENSIBILITY.md) 扩展边界与守卫
+- [docs/kernel-release-checklist.md](docs/kernel-release-checklist.md) 发版与仓库硬化检查
 
-## PR 审查清单
+## 提交前自检
 
-- [ ] 硬件零硬编码（能力标签调度）
-- [ ] IaC 隔离断崖（system.yaml 唯一源）
-- [ ] 协议驱动 UI（后端驱动渲染）
+- 不要把旧 profile 或 `full-pack` 重新写回正式产品叙事。
+- 不要在运行时代码里直接解析并缓存 `system.yaml` 做策略判断。
+- 不要把 bearer token、secret 或后端原始错误直接暴露到前端。
+- 不要让 route / worker / sentinel 直接写核心聚合状态字段。
