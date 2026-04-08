@@ -37,6 +37,17 @@ class RedisKVAdapter(AsyncRedisComponent):
             self.logger.error("kv.setex failed for %s: %s", key, exc, exc_info=True)
             return None
 
+    async def set_if_absent(self, key: str, value: str | bytes | int | float, *, ttl_seconds: int) -> bool | None:
+        connection = await self._connection()
+        if connection is None:
+            return None
+        try:
+            result = await connection.set(key, value, nx=True, ex=ttl_seconds)
+            return True if result is True else False
+        except REDIS_OPERATION_ERRORS as exc:
+            self.logger.error("kv.set_if_absent failed for %s: %s", key, exc, exc_info=True)
+            return None
+
     async def delete(self, *keys: str) -> int:
         connection = await self._connection()
         if connection is None:

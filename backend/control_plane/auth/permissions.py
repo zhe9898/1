@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.control_plane.auth.role_claims import has_admin_role_value
 from backend.kernel.contracts.errors import zen
 from backend.models.permission import Permission
 from backend.models.user import User
@@ -54,9 +55,8 @@ def filter_valid_scopes(scopes: list[str] | tuple[str, ...] | set[str] | None) -
 
 
 def hydrate_scopes_for_role(scopes: list[str] | tuple[str, ...] | set[str] | None, role: str | None) -> list[str]:
-    normalized_role = (role or "").strip().lower()
     effective_scopes = set(filter_valid_scopes(scopes))
-    if normalized_role in {"admin", "superadmin"}:
+    if has_admin_role_value(role):
         effective_scopes.update(ALLOWED_SCOPES)
     return sorted(effective_scopes)
 

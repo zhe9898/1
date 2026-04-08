@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ALLOWED_ROLES = Literal["admin", "family", "geek", "child", "elder", "guest"]
+ALLOWED_ROLES = Literal["superadmin", "admin", "family", "geek", "child", "elder", "guest", "user"]
 PIN_LENGTH = 8
 
 

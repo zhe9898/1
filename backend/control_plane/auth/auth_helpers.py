@@ -17,6 +17,7 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 
 from backend.control_plane.auth.jwt import create_access_token, get_access_token_expire_seconds
 from backend.control_plane.auth.permissions import filter_valid_scopes
+from backend.control_plane.auth.role_claims import normalize_ai_route_preference, normalize_role_name
 from backend.kernel.contracts.errors import ZenErrorCode, zen
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.client import RedisClient
@@ -102,12 +103,14 @@ def token_response(
 ) -> dict[str, str | int]:
     """Sanitized legacy docstring."""
     sanitized_scopes = filter_valid_scopes(scopes)
+    normalized_role = normalize_role_name(role)
+    normalized_ai_route_preference = normalize_ai_route_preference(ai_route_preference)
     data: dict[str, object] = {
         "sub": str(sub),
         "username": username,
-        "role": role,
+        "role": normalized_role,
         "tenant_id": tenant_id,
-        "ai_route_preference": ai_route_preference,
+        "ai_route_preference": normalized_ai_route_preference,
         "scopes": sanitized_scopes,
     }
     access_token = create_access_token(data=data)

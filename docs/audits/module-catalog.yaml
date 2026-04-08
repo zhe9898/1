@@ -407,7 +407,6 @@ modules:
       - frontend/vitest.config.ts
       - iac/**
       - installer/**
-      - package.json
       - placement-solver/go.mod
       - placement-solver/go.sum
       - pyproject.toml

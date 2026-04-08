@@ -223,7 +223,7 @@ scopes:
 
   - scope_id: M5-config-deploy
     module: M5
-    path: .github/workflows/** + backend/{.coveragerc,Dockerfile,alembic.ini,migrations.ini,mypy.ini,requirements-*.txt,run.sh} + backend/scripts/** + config/** + deploy/** + docker-compose.yml + frontend/{README.md,eslint-plugin-zen70.js,eslint.config.js,index.html,package-lock.json,package.json,postcss.config.js,public/**,tailwind.config.js,tsconfig*.json,vite.config.ts,vitest.config.ts} + iac/** + installer/** + package.json + pyproject.toml + pytest.ini + render-manifest.json + requirements-infra.txt + runner-agent/{Dockerfile,go.mod,go.sum} + scripts/** + start_installer.py + system.yaml + tests/{Dockerfile.backend,Dockerfile.test,docker-compose.yml} + zen70-doctor.sh + zen70_start.* + zen70_stop.*
+    path: .github/workflows/** + backend/{.coveragerc,Dockerfile,alembic.ini,migrations.ini,mypy.ini,requirements-*.txt,run.sh} + backend/scripts/** + config/** + deploy/** + docker-compose.yml + frontend/{README.md,eslint-plugin-zen70.js,eslint.config.js,index.html,package-lock.json,package.json,postcss.config.js,public/**,tailwind.config.js,tsconfig*.json,vite.config.ts,vitest.config.ts} + iac/** + installer/** + pyproject.toml + pytest.ini + render-manifest.json + requirements-infra.txt + runner-agent/{Dockerfile,go.mod,go.sum} + scripts/** + start_installer.py + system.yaml + tests/{Dockerfile.backend,Dockerfile.test,docker-compose.yml} + zen70-doctor.sh + zen70_start.* + zen70_stop.*
     runtime_role: Build, packaging, offline bundle generation, deployment templates, CI gates, and environment bootstrap.
     upstream: release inputs, operator environment values, and CI configuration.
     downstream: runtime manifests, deployment topology, and test and build behavior.

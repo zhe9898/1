@@ -15,7 +15,12 @@ vi.mock("@/utils/http", () => ({
 }));
 
 import { useAuthStore } from "../src/stores/auth";
-import type { AuthSessionResponse, SessionClaims } from "../src/stores/auth/sessionClaims";
+import {
+  normalizeAiRoutePreference,
+  normalizeRole,
+  type AuthSessionResponse,
+  type SessionClaims,
+} from "../src/stores/auth/sessionClaims";
 import { AUTH } from "../src/utils/api";
 
 function makeClaims(overrides: Partial<SessionClaims> = {}): SessionClaims {
@@ -81,6 +86,13 @@ describe("auth contract alignment", () => {
     store.setSessionClaims(makeClaims({ role: "guest" }));
     expect(store.role).toBe("guest");
     expect(store.isAdmin).toBe(false);
+  });
+
+  it("normalizes legacy role aliases and invalid AI route preferences", () => {
+    expect(normalizeRole("family_child")).toBe("child");
+    expect(normalizeRole("长辈")).toBe("elder");
+    expect(normalizeAiRoutePreference("edge")).toBe("auto");
+    expect(normalizeAiRoutePreference("cloud")).toBe("cloud");
   });
 
   it("keeps cookie-primary auth state in memory only and never persists tokens to web storage", () => {

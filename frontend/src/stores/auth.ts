@@ -7,6 +7,7 @@ import { AUTH } from "@/utils/api";
 import { http } from "@/utils/http";
 import {
   claimsFromSessionResponse,
+  normalizeAiRoutePreference,
   normalizeRole,
   sessionClaimsToPayload,
   type AuthPayload,
@@ -32,7 +33,7 @@ export const useAuthStore = defineStore("auth", () => {
 
   const aiRoutePreference = computed<string>(() => {
     const payload = sessionPayload.value;
-    return typeof payload?.ai_route_preference === "string" ? payload.ai_route_preference : "auto";
+    return normalizeAiRoutePreference(typeof payload?.ai_route_preference === "string" ? payload.ai_route_preference : null);
   });
 
   const isAdmin = computed(() => {

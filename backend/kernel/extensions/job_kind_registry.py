@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from backend.control_plane.auth.access_policy import has_admin_role
 from backend.kernel.contracts.errors import zen
 from backend.kernel.extensions.alert_actions import normalize_alert_action
 from backend.platform.security.normalization import normalize_local_filesystem_path as _shared_normalize_local_filesystem_path
@@ -29,7 +30,6 @@ _JOB_KIND_METADATA_REGISTRY: dict[str, dict[str, Any]] = {}
 
 JOB_WRITE_SCOPE = "write:jobs"
 JOB_ADMIN_SCOPE = "admin:jobs"
-_ADMIN_ROLES = frozenset({"admin", "superadmin"})
 _SAFE_JOB_KINDS = frozenset({"noop"})
 
 
@@ -40,10 +40,6 @@ def _job_metadata(*, requires_admin: bool, risk: str) -> dict[str, Any]:
         "required_scope": JOB_ADMIN_SCOPE if requires_admin else JOB_WRITE_SCOPE,
         "risk": risk,
     }
-
-
-def _has_admin_role(current_user: Mapping[str, object]) -> bool:
-    return str(current_user.get("role") or "").strip().lower() in _ADMIN_ROLES
 
 
 def _normalized_scopes(current_user: Mapping[str, object]) -> set[str]:
@@ -66,7 +62,7 @@ def get_job_submission_policy(kind: str) -> dict[str, Any]:
 def assert_job_submission_authorized(kind: str, current_user: Mapping[str, object]) -> None:
     policy = get_job_submission_policy(kind)
     required_scope = str(policy["required_scope"]).strip().lower()
-    if policy["requires_admin"] and not _has_admin_role(current_user):
+    if policy["requires_admin"] and not has_admin_role(current_user):
         raise zen(
             "ZEN-JOB-4031",
             f"Job kind '{kind}' requires admin privileges",
@@ -74,7 +70,7 @@ def assert_job_submission_authorized(kind: str, current_user: Mapping[str, objec
             recovery_hint="Use an admin account for privileged runner job kinds",
             details={"kind": kind, "required_scope": required_scope, "risk": policy.get("risk")},
         )
-    if _has_admin_role(current_user):
+    if has_admin_role(current_user):
         return
     if required_scope not in _normalized_scopes(current_user):
         raise zen(

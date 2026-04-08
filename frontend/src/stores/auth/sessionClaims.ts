@@ -1,4 +1,5 @@
 export type Role = "superadmin" | "admin" | "geek" | "family" | "child" | "elder" | "guest" | "user";
+export type AiRoutePreference = "auto" | "local" | "cloud";
 
 export interface AuthSessionResponse {
   authenticated: boolean;
@@ -17,7 +18,7 @@ export interface SessionClaims {
   role: string | null;
   tenant_id: string | null;
   scopes: string[];
-  ai_route_preference: string;
+  ai_route_preference: AiRoutePreference;
   exp: number | null;
 }
 
@@ -36,11 +37,18 @@ export function normalizeRole(rawRole: string | null | undefined): Role {
   if (role === "superadmin") return "superadmin";
   if (role === "admin") return "admin";
   if (role === "geek") return "geek";
-  if (role === "elder" || role === "family_elder") return "elder";
+  if (role === "elder" || role === "family_elder" || role === "长辈") return "elder";
   if (role === "family") return "family";
-  if (role === "child" || role === "family_child") return "child";
+  if (role === "child" || role === "family_child" || role === "kid" || role === "儿童") return "child";
   if (role === "guest") return "guest";
   return "user";
+}
+
+export function normalizeAiRoutePreference(rawPreference: string | null | undefined): AiRoutePreference {
+  const preference = (rawPreference ?? "auto").toLowerCase();
+  if (preference === "local") return "local";
+  if (preference === "cloud") return "cloud";
+  return "auto";
 }
 
 function normalizeScopes(rawScopes: unknown): string[] {
@@ -63,10 +71,7 @@ export function extractSessionClaims(source: AuthPayload | null): SessionClaims 
     role: typeof source.role === "string" ? source.role : null,
     tenant_id: typeof source.tenant_id === "string" ? source.tenant_id : null,
     scopes: normalizeScopes(source.scopes),
-    ai_route_preference:
-      typeof source.ai_route_preference === "string" && source.ai_route_preference.length > 0
-        ? source.ai_route_preference
-        : "auto",
+    ai_route_preference: normalizeAiRoutePreference(typeof source.ai_route_preference === "string" ? source.ai_route_preference : null),
     exp: typeof source.exp === "number" && Number.isFinite(source.exp) ? source.exp : null,
   };
 }

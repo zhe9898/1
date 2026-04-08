@@ -1,6 +1,4 @@
-"""
-ZEN70 Auth User - 账号管理（列表、创建、AI 偏好、吊销凭证）
-"""
+"""User management and session projection endpoints."""
 
 from __future__ import annotations
 
@@ -15,20 +13,10 @@ from backend.api.auth_session_projection import build_authenticated_session_resp
 from backend.api.auth_shared import bind_admin_scope, enforce_admin_scope
 from backend.api.auth_token_issue import issue_auth_token
 from backend.api.deps import get_current_admin, get_current_user, get_current_user_optional, get_db, get_tenant_db
-from backend.api.models.auth import (
-    AiRoutePreferenceRequest,
-    AuthSessionResponse,
-    CreateUserRequest,
-    UserItem,
-    UserListResponse,
-)
-from backend.control_plane.auth.auth_helpers import (
-    CODE_BAD_REQUEST,
-    CODE_NOT_FOUND,
-    log_auth,
-    request_id,
-    zen,
-)
+from backend.api.models.auth import AiRoutePreferenceRequest, AuthSessionResponse, CreateUserRequest, UserItem, UserListResponse
+from backend.control_plane.auth.auth_helpers import CODE_BAD_REQUEST, CODE_NOT_FOUND, log_auth, request_id, zen
+from backend.control_plane.auth.permissions import filter_valid_scopes
+from backend.control_plane.auth.role_claims import normalize_ai_route_preference, normalize_role_name
 from backend.models.user import User, WebAuthnCredential
 
 router = APIRouter()
@@ -44,8 +32,10 @@ async def update_ai_preference(
     db: AsyncSession = Depends(get_tenant_db),
     current_user: dict[str, str] = Depends(get_current_user),
 ) -> AuthSessionResponse:
-    """法典 M9.4: 调整用户的 AI 计算偏好，并在此刻立刻颁发新 JWT 使配置 0 延迟生效。"""
-    if req.preference not in ("local", "cloud", "auto"):
+    """Update the caller's AI route preference and re-issue the session token immediately."""
+    raw_preference = req.preference.strip().lower()
+    normalized_preference = normalize_ai_route_preference(raw_preference)
+    if normalized_preference != raw_preference:
         raise zen(CODE_BAD_REQUEST, "Invalid preference value", status.HTTP_400_BAD_REQUEST)
 
     username = current_user.get("username")
@@ -55,10 +45,11 @@ async def update_ai_preference(
     if not user:
         raise zen(CODE_NOT_FOUND, "User not found", status.HTTP_404_NOT_FOUND)
 
-    user.ai_route_preference = req.preference
+    user.ai_route_preference = normalized_preference
     await db.flush()
     await db.commit()
-    log_auth("ai_preference_update", True, request_id(request), username=username, detail=f"changed_to_{req.preference}")
+    log_auth("ai_preference_update", True, request_id(request), username=username, detail=f"changed_to_{normalized_preference}")
+
     from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 
     user_scopes = hydrate_scopes_for_role(
@@ -92,17 +83,17 @@ async def get_auth_session(
 ) -> AuthSessionResponse:
     if not current_user:
         return AuthSessionResponse(authenticated=False)
-    raw_scopes = current_user.get("scopes", [])
-    scopes = raw_scopes if isinstance(raw_scopes, list) else []
+
     raw_exp = current_user.get("exp")
+    raw_scopes = current_user.get("scopes")
     return AuthSessionResponse(
         authenticated=True,
         sub=str(current_user.get("sub") or "") or None,
         username=str(current_user.get("username") or "") or None,
-        role=str(current_user.get("role") or "") or None,
+        role=normalize_role_name(current_user.get("role"), fallback="user"),
         tenant_id=str(current_user.get("tenant_id") or "") or None,
-        scopes=[str(scope) for scope in scopes if isinstance(scope, str)],
-        ai_route_preference=str(current_user.get("ai_route_preference") or "auto"),
+        scopes=filter_valid_scopes(raw_scopes if isinstance(raw_scopes, (list, tuple, set)) else None),
+        ai_route_preference=normalize_ai_route_preference(current_user.get("ai_route_preference")),
         exp=raw_exp if isinstance(raw_exp, int) and not isinstance(raw_exp, bool) else None,
     )
 
@@ -112,7 +103,7 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_admin: dict[str, str] = Depends(get_current_admin),
 ) -> UserListResponse:
-    """列出所有系统用户及其 WebAuthn 设备"""
+    """List tenant-scoped users together with their registered WebAuthn credentials."""
     scope_tenant_id = await bind_admin_scope(db, current_admin)
     stmt = select(User).options(selectinload(User.credentials))
     if scope_tenant_id is not None:
@@ -121,18 +112,18 @@ async def list_users(
     users = result.scalars().all()
 
     user_items = []
-    for u in users:
-        creds = [{"id": c.credential_id, "name": c.device_name, "created_at": str(c.created_at)} for c in u.credentials]
+    for user in users:
+        credentials = [{"id": cred.credential_id, "name": cred.device_name, "created_at": str(cred.created_at)} for cred in user.credentials]
         user_items.append(
             UserItem(
-                id=u.id,
-                username=u.username,
-                display_name=u.display_name,
-                role=u.role,
-                tenant_id=u.tenant_id,
-                is_active=u.is_active,
-                has_password=bool(u.password_hash),
-                webauthn_credentials=creds,
+                id=user.id,
+                username=user.username,
+                display_name=user.display_name,
+                role=normalize_role_name(user.role),
+                tenant_id=user.tenant_id,
+                is_active=user.is_active,
+                has_password=bool(user.password_hash),
+                webauthn_credentials=credentials,
             )
         )
     return UserListResponse(users=user_items)
@@ -144,7 +135,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_admin: dict[str, str] = Depends(get_current_admin),
 ) -> UserItem:
-    """管理员强制后台创建账号"""
+    """Create a tenant-scoped user from the control plane."""
     await bind_admin_scope(db, current_admin)
     enforce_admin_scope(current_admin, req.tenant_id, action="create users")
     result = await db.execute(select(User).where(User.tenant_id == req.tenant_id, User.username == req.username))
@@ -152,7 +143,13 @@ async def create_user(
         raise zen(CODE_BAD_REQUEST, "Username already exists", status.HTTP_400_BAD_REQUEST)
 
     hashed_pw = bcrypt.hashpw(req.password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
-    user = User(username=req.username, display_name=req.display_name, role=req.role, password_hash=hashed_pw, tenant_id=req.tenant_id)
+    user = User(
+        username=req.username,
+        display_name=req.display_name,
+        role=normalize_role_name(req.role),
+        password_hash=hashed_pw,
+        tenant_id=req.tenant_id,
+    )
     db.add(user)
     await db.flush()
 
@@ -160,7 +157,7 @@ async def create_user(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
-        role=user.role,
+        role=normalize_role_name(user.role),
         tenant_id=user.tenant_id,
         is_active=user.is_active,
         has_password=True,
@@ -174,7 +171,7 @@ async def revoke_credential(
     db: AsyncSession = Depends(get_db),
     current_admin: dict[str, str] = Depends(get_current_admin),
 ) -> dict[str, str]:
-    """吊销（删除）某个指纹/面容设备凭证防丢"""
+    """Revoke a single WebAuthn credential."""
     scope_tenant_id = await bind_admin_scope(db, current_admin)
     stmt = select(WebAuthnCredential, User).join(User, User.id == WebAuthnCredential.user_id).where(WebAuthnCredential.credential_id == credential_id)
     if scope_tenant_id is not None:
@@ -183,7 +180,7 @@ async def revoke_credential(
     row = result.first()
     if row is None:
         raise zen(CODE_NOT_FOUND, "Credential not found", status.HTTP_404_NOT_FOUND)
-    cred, _user = row
-    await db.delete(cred)
+    credential, _user = row
+    await db.delete(credential)
     await db.flush()
     return {"status": "ok", "message": "Credential revoked successfully"}

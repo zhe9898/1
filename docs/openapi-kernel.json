@@ -675,7 +675,7 @@
           "auth"
         ],
         "summary": "Update Ai Preference",
-        "description": "法典 M9.4: 调整用户的 AI 计算偏好，并在此刻立刻颁发新 JWT 使配置 0 延迟生效。",
+        "description": "Update the caller's AI route preference and re-issue the session token immediately.",
         "operationId": "update_ai_preference_api_v1_auth_me_ai_preference_patch",
         "requestBody": {
           "content": {
@@ -748,7 +748,7 @@
           "auth"
         ],
         "summary": "List Users",
-        "description": "列出所有系统用户及其 WebAuthn 设备",
+        "description": "List tenant-scoped users together with their registered WebAuthn credentials.",
         "operationId": "list_users_api_v1_auth_users_get",
         "responses": {
           "200": {
@@ -773,7 +773,7 @@
           "auth"
         ],
         "summary": "Create User",
-        "description": "管理员强制后台创建账号",
+        "description": "Create a tenant-scoped user from the control plane.",
         "operationId": "create_user_api_v1_auth_users_post",
         "requestBody": {
           "content": {
@@ -820,7 +820,7 @@
           "auth"
         ],
         "summary": "Revoke Credential",
-        "description": "吊销（删除）某个指纹/面容设备凭证防丢",
+        "description": "Revoke a single WebAuthn credential.",
         "operationId": "revoke_credential_api_v1_auth_credentials__credential_id__delete",
         "security": [
           {
@@ -9412,12 +9412,14 @@
           "role": {
             "type": "string",
             "enum": [
+              "superadmin",
               "admin",
               "family",
               "geek",
               "child",
               "elder",
-              "guest"
+              "guest",
+              "user"
             ],
             "title": "Role",
             "description": "Role",

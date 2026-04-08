@@ -2,20 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from backend.control_plane.auth.role_claims import ADMIN_ROLES, SUPERADMIN_ROLE, current_user_role
 from backend.kernel.contracts.errors import zen
-
-ADMIN_ROLES = frozenset({"admin", "superadmin"})
-SUPERADMIN_ROLE = "superadmin"
 
 
 def has_admin_role(current_user: Mapping[str, object] | None) -> bool:
-    role = str((current_user or {}).get("role") or "").strip().lower()
-    return role in ADMIN_ROLES
+    return current_user_role(current_user, fallback="") in ADMIN_ROLES
 
 
 def is_superadmin_role(current_user: Mapping[str, object] | None) -> bool:
-    role = str((current_user or {}).get("role") or "").strip().lower()
-    return role == SUPERADMIN_ROLE
+    return current_user_role(current_user, fallback="") == SUPERADMIN_ROLE
 
 
 def require_admin_role(current_user: dict[str, object]) -> dict[str, object]:

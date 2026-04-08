@@ -1,35 +1,28 @@
-#!/usr/bin/env python3
-#
-# ZEN70 通用 AI 路由代理 (Universal AI Reverse Proxy)。
-#
-# 1. 零硬编码: AI_BACKEND_URL 全局动态注入，兼容 Ollama/vLLM/OpenAI-like 接口。
-# 2. 并发脑裂锁 (法典 3.5): 强制依赖 X-Idempotency-Key 进行 Redis 级别悲观锁定。
-# 3. 多模态推断 8s 极刑断崖 (法典 4.0): asyncio.wait_for 强制超时释放池化连接。
+"""Gateway AI proxy with centralized prompt and route policy."""
+
+from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-from typing import Any
+from collections.abc import AsyncIterator, Mapping
+from typing import cast
 
 import httpx
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 
-# Remove circular import
-# from .main import ... — BR-4: 已迁移至 backend.capabilities
+from backend.control_plane.auth.ai_policy import apply_prompt_override, resolve_ai_proxy_policy
+from backend.control_plane.auth.jwt import decode_token
 
-# 从环境变量中读取底层真实的 AI 集群地址，法典要求完全解耦，绝不写死 `ollama:11434`
 AI_BACKEND_URL = os.getenv("AI_BACKEND_URL", "").rstrip("/")
 if not AI_BACKEND_URL:
     logging.warning("AI_BACKEND_URL is not set. AI router will return 503 errors if accessed.")
 
-
-MULTIMODAL_TIMEOUT_SECONDS = 30.0  # 法典 4.0 显存熔断极刑 (放宽至30s以适配本地LlaVA等视觉大模型)
+MULTIMODAL_TIMEOUT_SECONDS = 30.0
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 
-# 实例化全局单例的高性能长连接池 (防 FD 泄露)
 http_client = httpx.AsyncClient(
     limits=httpx.Limits(max_keepalive_connections=50, max_connections=100),
     timeout=httpx.Timeout(connect=2.0, read=None, write=None, pool=2.0),
@@ -37,165 +30,111 @@ http_client = httpx.AsyncClient(
 
 
 async def check_idempotency_lock(request: Request, idempotency_key: str) -> bool:
-    """法典 3.5: 幂等性锁。若 Redis 中存在相同 Key，立刻返回 False 阻止执行。"""
-    redis_cli = getattr(request.app.state, "redis", None)
-    if not redis_cli:
-        # 若 Redis 死机，这里可降级放行，或者严酷拒绝（ZEN70 默认保底层可用性，所以放行或报错均可）
-        # 出于防显存打爆的极高安全诉求，我们在没有锁保障时允许执行，但在前端 503 大闸已经兜底
+    """Acquire a bounded Redis idempotency lock for heavy AI requests."""
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
         return True
 
     try:
         lock_key = f"zen70:ai:idemp:{idempotency_key}"
-        is_acquired = await redis_cli.set(lock_key, "1", nx=True, ex=60)
-        if is_acquired is None:
+        acquired = cast("bool | None", await redis_client.kv.set_if_absent(lock_key, "1", ttl_seconds=60))
+        if acquired is None:
             return True
-        return bool(is_acquired)
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-        logging.error("Failed to check idempotency lock: %s", e)
+        return bool(acquired)
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+        logging.error("Failed to check idempotency lock: %s", exc)
         return True
 
 
-def _apply_child_override(body_json: dict) -> bytes:
-    if "messages" in body_json:
-        system_msg = {
-            "role": "system",
-            "content": (
-                "你现在是一个温柔且耐心的家庭启蒙老师。你必须以简单易懂、像童话故事一样生动的方式回答问题。"
-                "你只能回答科学、教育、自然界的问题。如果遇到不适合儿童的成人话题、暴力血腥或恐怖内容，"
-                "你必须委婉且坚决地拒绝回答。你的语气必须充满爱心。"
-            ),
-        }
-        body_json["messages"].insert(0, system_msg)
-    return json.dumps(body_json).encode("utf-8")
+async def _decode_current_user(request: Request) -> Mapping[str, object]:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {}
+
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return {}
+
+    try:
+        redis_client = getattr(request.app.state, "redis", None)
+        payload, _ = await decode_token(token, redis_conn=redis_client.kv if redis_client else None)
+        return payload
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+        logging.getLogger("zen70.ai_router").debug("AI router token decode failed: %s", exc)
+        return {}
 
 
-def _apply_elder_override(body_json: dict) -> bytes:
-    if "messages" in body_json:
-        system_msg = {
-            "role": "system",
-            "content": (
-                "你是一个智能家居意图解析核心。请分析用户的自然语言请求，并返回纯 JSON 格式的设备控制指令，"
-                "不要包含任何闲聊和解释代码块。\n当前可用设备：\n- light_living_1 (客厅主灯)\n"
-                "- light_bedroom_1 (卧室床头灯)\n- curtain_1 (落地窗帘)\n\n"
-                '可用 action: "ON", "OFF", "OPEN", "CLOSED"\n\n'
-                '示例输入: "有点黑，帮我把客厅的灯打开"\n示例输出: {"device_id": "light_living_1", "action": "ON"}\n'
-                '如果你无法意图解析或者设备不存在，请返回 {"error": "unrecognized_command"}'
-            ),
-        }
-        body_json["messages"].insert(0, system_msg)
-        body_json["response_format"] = {"type": "json_object"}
-    return json.dumps(body_json).encode("utf-8")
-
-
-async def _apply_role_prompt_override(
+async def _apply_proxy_policy(
     request: Request,
+    *,
     path: str,
     content: bytes,
     headers: dict[str, str],
     public_cloud_url: str,
     public_cloud_key: str,
 ) -> tuple[str, bytes]:
-    """根据 JWT Role 动态覆写 Prompt 大闸，返回 (new_target_url_if_any, new_content)。"""
-    from backend.control_plane.auth.jwt import decode_token
+    current_user = await _decode_current_user(request)
+    policy = resolve_ai_proxy_policy(current_user, method=request.method, path=path)
 
-    new_target_url = ""
-    try:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            try:
-                user_data, _ = await decode_token(token)
-            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
-                logging.debug("AI router token decode failed: %s", exc)
-                user_data: dict[str, Any] = {}  # type: ignore[no-redef]
+    target_url = ""
+    if policy.route_preference == "cloud" and public_cloud_url and public_cloud_key:
+        target_url = f"{public_cloud_url}/{path}"
+        headers["authorization"] = f"Bearer {public_cloud_key}"
+        headers.pop("host", None)
 
-            # 云端变轨
-            route_pref = user_data.get("ai_route_preference", "auto")
-            if route_pref == "cloud" and public_cloud_key:
-                new_target_url = f"{public_cloud_url}/{path}"
-                headers["authorization"] = f"Bearer {public_cloud_key}"
-                headers.pop("host", None)
+    if policy.prompt_override is not None:
+        content = apply_prompt_override(content, policy.prompt_override)
+        headers["content-length"] = str(len(content))
 
-            # 身份覆盖
-            role = user_data.get("role")
-            if request.method == "POST" and "chat/completions" in path:
-                if role in ("儿童", "child", "family_child", "kid"):
-                    body_json = json.loads(content)
-                    content = _apply_child_override(body_json)
-                    headers["content-length"] = str(len(content))
-                elif role in ("长辈", "elder", "family_elder"):
-                    body_json = json.loads(content)
-                    content = _apply_elder_override(body_json)
-                    headers["content-length"] = str(len(content))
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-        logging.getLogger("zen70.ai_router").warning("AI 拦截器运行失败 (Prompt Override Error): %s", e, exc_info=True)
-    return new_target_url, content
+    return target_url, content
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def universal_ai_proxy(
     request: Request,
     path: str,
-    x_idempotency_key: str = Header(None, description="防并发脑裂幂等性UUID (仅对重型推送有效)"),
-    # 按架构法纪：禁止任何硬编码能力标签。必须由调用方明示此请求需要的硬件算力能力。
+    x_idempotency_key: str = Header(None, description="Optional idempotency key for heavy AI requests"),
     x_capability_target: str = Header(
         ...,
         alias="X-Capability-Target",
-        description="目标软硬件能力要求(例如 ai_vision, gpu_nvenc_v1)",
+        description="Requested compute capability target, such as ai_vision or gpu_nvenc_v1",
     ),
 ) -> StreamingResponse:
-    """
-    通用代理所有发往 /api/v1/ai/xxx 的请求。
-    完美对接 OpenAI 标准格式的 Payload 转发给底层的 Ollama / vLLM。
-    """
-
     from backend.capabilities import get_capabilities_matrix, raise_503_if_pending
     from backend.kernel.contracts.errors import zen as _zen
 
-    # 1. 探针硬件状态拦截 (法典 2.3.2)
     matrix = await get_capabilities_matrix(request)
     raise_503_if_pending(x_capability_target, matrix)
 
-    # 2. 并发幂等拦截防重触发 (法典 3.5)
-    # 对于推断接口 (尤其是 POST /chat/completions) 强制校验幂等性。
     if request.method in ("POST", "PUT") and x_idempotency_key:
         lock_acquired = await check_idempotency_lock(request, x_idempotency_key)
         if not lock_acquired:
             raise _zen(
                 "ZEN-AI-4090",
-                "任务已在处理队列中，严禁重复提交并发请求",
+                "An identical AI request is already in flight",
                 status_code=409,
-                recovery_hint="请等待结果返回，若彻底挂死请强制刷新页面重建上下文",
+                recovery_hint="Wait for the original response or generate a new idempotency key",
                 details={"idempotency_key": x_idempotency_key},
             )
 
-    # 组装底层真实请求 URL
     target_url = f"{AI_BACKEND_URL}/{path}"
-
-    # 代理 Headers，并清理掉 FastAPI 注入的 Host，防止底层由于 Host 不符报错
     headers = dict(request.headers)
     headers.pop("host", None)
-
-    # 提取内容
     content = await request.body()
 
-    # ---------------------------------------------------------
-    # 拦截并覆写 Prompt: 儿童启蒙模式大闸 (Family Companion Phase)
-    # ---------------------------------------------------------
     public_cloud_url = os.getenv("EXTERNAL_OPENAI_URL", "").rstrip("/")
     public_cloud_key = os.getenv("EXTERNAL_OPENAI_KEY", "")
-    new_url, content = await _apply_role_prompt_override(
+    override_url, content = await _apply_proxy_policy(
         request,
-        path,
-        content,
-        headers,
-        public_cloud_url,
-        public_cloud_key,
+        path=path,
+        content=content,
+        headers=headers,
+        public_cloud_url=public_cloud_url,
+        public_cloud_key=public_cloud_key,
     )
-    if new_url:
-        target_url = new_url
+    if override_url:
+        target_url = override_url
 
-    # 构建转发闭包，以便用于 asyncio.wait_for 包装
     async def _forward_request() -> StreamingResponse:
         req = http_client.build_request(
             method=request.method,
@@ -203,10 +142,9 @@ async def universal_ai_proxy(
             headers=headers,
             content=content,
         )
-        # 流式传输透传
         resp = await http_client.send(req, stream=True)
 
-        async def stream_generator():  # type: ignore[no-untyped-def]
+        async def stream_generator() -> AsyncIterator[bytes]:
             try:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
@@ -219,32 +157,30 @@ async def universal_ai_proxy(
             headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")},
         )
 
-    # 3. 法典 4.0 显存防刷极刑 (8s Guillotine 大闸)
-    # 无论后端计算多沉重，只要超过 8s 直接斩断，并从网关抛出优雅降级。
     try:
-        result_response = await asyncio.wait_for(_forward_request(), timeout=MULTIMODAL_TIMEOUT_SECONDS)
-        return result_response
+        return await asyncio.wait_for(_forward_request(), timeout=MULTIMODAL_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        # 法典 1.56: 优雅返回 HTTP 206 Partial Content (纯文本强制截断)，防止前端流式聊天组件抛红
-        fallback_msg = f"\n\n[ZEN70: 算力引擎已触及 {MULTIMODAL_TIMEOUT_SECONDS}s 热熔断极刑，由于服务器负载过高，余下部分被截断以保护内存。]"
 
-        async def fallback_stream():  # type: ignore[no-untyped-def]
-            yield fallback_msg.encode("utf-8")
+        async def fallback_stream() -> AsyncIterator[bytes]:
+            yield (
+                f"\n\n[ZEN70: AI proxy request timed out after {MULTIMODAL_TIMEOUT_SECONDS:.0f}s. "
+                "The response stream was cut short to protect runtime capacity.]"
+            ).encode("utf-8")
 
         return StreamingResponse(fallback_stream(), status_code=206, media_type="text/plain")
     except httpx.ConnectError:
         raise _zen(
             "ZEN-AI-5002",
-            "无法连接到底层 AI 推理集群",
+            "Unable to reach the backing AI runtime",
             status_code=502,
-            recovery_hint="请检查 Docker 内部网络 (backend_net) 或容器存活状态",
+            recovery_hint="Check the backend AI network path and container health",
             details={"target_url": target_url},
         )
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         raise _zen(
             "ZEN-AI-5000",
-            "AI 网关代理服务内部异常",
+            "AI gateway proxy failed",
             status_code=500,
-            recovery_hint="请通过 X-Request-ID 查询 Loki 详细日志",
-            details={"error": str(e)},
+            recovery_hint="Inspect the request logs with the active request ID",
+            details={"error": str(exc)},
         )

@@ -49,3 +49,29 @@ def test_auth_session_reports_cookie_backed_identity_claims() -> None:
     assert data["role"] == "admin"
     assert data["tenant_id"] == "tenant-a"
     assert data["scopes"] == ["write:jobs"]
+
+
+def test_auth_session_normalizes_role_aliases_and_invalid_ai_preference() -> None:
+    async def override_get_current_user_optional() -> dict | None:
+        return {
+            "sub": "user-8",
+            "username": "bob",
+            "role": "family_child",
+            "tenant_id": "tenant-b",
+            "scopes": ["write:jobs", "invalid:scope"],
+            "ai_route_preference": "edge",
+            "exp": 1_800_000_000,
+        }
+
+    app.dependency_overrides[get_current_user_optional] = override_get_current_user_optional
+    try:
+        client = TestClient(app)
+        response = client.get("/api/v1/auth/session")
+    finally:
+        app.dependency_overrides.pop(get_current_user_optional, None)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["role"] == "child"
+    assert data["scopes"] == ["write:jobs"]
+    assert data["ai_route_preference"] == "auto"

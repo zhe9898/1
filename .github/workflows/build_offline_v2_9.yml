@@ -16,7 +16,6 @@ on:
       - "installer/**"
       - "contracts/**"
       - "system.yaml"
-      - "package.json"
       - "pyproject.toml"
       - "requirements-infra.txt"
       - ".github/workflows/build_offline_v2_9.yml"
