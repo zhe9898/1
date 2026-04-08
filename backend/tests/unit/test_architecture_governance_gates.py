@@ -6,24 +6,24 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.kernel.contracts.status import export_status_compatibility_rules
 from backend.kernel.capabilities.registry import capability_keys
+from backend.kernel.contracts.status import export_status_compatibility_rules
 from backend.kernel.execution.fault_isolation import export_fault_isolation_contract
-from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry, unique_owner_service_map
-from backend.kernel.governance.architecture_rules import (
-    export_architecture_governance_rules,
-    export_architecture_governance_snapshot,
-)
+from backend.kernel.execution.lease_service import export_lease_service_contract
 from backend.kernel.extensions.extension_guard import (
     assert_budgeted_payload,
     export_extension_budget_contract,
     validate_extension_manifest_contract,
     validate_scheduling_profile_budget,
 )
-from backend.kernel.execution.lease_service import export_lease_service_contract
+from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry, unique_owner_service_map
+from backend.kernel.governance.architecture_rules import (
+    export_architecture_governance_rules,
+    export_architecture_governance_snapshot,
+)
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
-from backend.kernel.surfaces.registry import export_surface_registry
 from backend.kernel.scheduling.scheduling_framework import SchedulingProfile
+from backend.kernel.surfaces.registry import export_surface_registry
 
 ROOT = Path(__file__).resolve().parents[3]
 BACKEND_ROOT = ROOT / "backend"
@@ -359,10 +359,7 @@ def test_architecture_governance_registry_is_code_backed_and_exportable() -> Non
     assert rules["A1"]["maturity"] == "enforced"
     assert rules["A6"]["maturity"] == "enforced"
     assert "surface_registry" in snapshot["entrypoints"]
-    assert (
-        snapshot["entrypoints"]["aggregate_owner_registry"]
-        == "backend.kernel.governance.aggregate_owner_registry.export_aggregate_owner_registry"
-    )
+    assert snapshot["entrypoints"]["aggregate_owner_registry"] == "backend.kernel.governance.aggregate_owner_registry.export_aggregate_owner_registry"
     assert snapshot["registries"]["surface_registry"] == export_surface_registry()
     assert snapshot["registries"]["fault_isolation_contract"] == export_fault_isolation_contract()
     assert snapshot["registries"]["aggregate_owner_registry"] == export_aggregate_owner_registry()

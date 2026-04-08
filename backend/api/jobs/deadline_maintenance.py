@@ -10,10 +10,10 @@ from threading import Lock
 from sqlalchemy import select
 
 from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
-from backend.platform.redis.client import RedisClient
-from backend.platform.db.rls import set_tenant_context
 from backend.kernel.policy.policy_store import get_policy_store
 from backend.models.job import Job
+from backend.platform.db.rls import set_tenant_context
+from backend.platform.redis.client import RedisClient
 
 from .database import _append_log, move_to_dead_letter_queue
 

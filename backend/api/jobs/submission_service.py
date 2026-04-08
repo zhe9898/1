@@ -9,12 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.control_events import publish_control_event
 from backend.kernel.contracts.errors import zen
 from backend.kernel.execution.job_concurrency_service import build_job_concurrency_window
-from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
-from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
-from backend.platform.db.rls import set_tenant_context
-from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract
 from backend.kernel.extensions.job_kind_registry import assert_job_submission_authorized, validate_job_payload
+from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract
 from backend.models.job import Job
+from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
+from backend.platform.db.rls import set_tenant_context
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 
 from .database import _append_log, _get_job_by_idempotency_key, _job_definition_matches
 from .helpers import _normalize_idempotency_key, _to_response, _utcnow

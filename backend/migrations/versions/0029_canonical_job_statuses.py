@@ -27,4 +27,3 @@ def downgrade() -> None:
         op.execute(sa.text("UPDATE jobs SET status = 'canceled' WHERE status = 'cancelled'"))
     if guard.has_table("job_attempts"):
         op.execute(sa.text("UPDATE job_attempts SET status = 'canceled' WHERE status = 'cancelled'"))
-

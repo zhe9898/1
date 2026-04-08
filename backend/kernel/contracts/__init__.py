@@ -18,6 +18,7 @@ from backend.kernel.contracts.protocol_version import (
     validate_lease_version,
     validate_protocol_version,
 )
+from backend.kernel.contracts.runtime_version import DEFAULT_RUNTIME_VERSION, get_runtime_version
 from backend.kernel.contracts.status import (
     StatusContract,
     canonicalize_status,
@@ -27,7 +28,6 @@ from backend.kernel.contracts.status import (
     get_status_rule,
     normalize_persisted_status,
 )
-from backend.kernel.contracts.runtime_version import DEFAULT_RUNTIME_VERSION, get_runtime_version
 
 __all__ = (
     "CURRENT_LEASE_VERSION",

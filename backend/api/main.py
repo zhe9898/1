@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import signal as signal
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
 import backend.control_plane.app.health as _health_module
 import backend.control_plane.app.lifespan as _lifespan_module
-
 from backend.api.deps import get_settings
 from backend.control_plane.app.entrypoint import app
 from backend.control_plane.app.factory import _API_STABILITY_TAGS
@@ -38,7 +38,7 @@ async def health_check(request: Any) -> Any:
 
 
 @asynccontextmanager
-async def lifespan(app_instance: Any) -> object:
+async def lifespan(app_instance: Any) -> AsyncIterator[None]:
     original_connect_redis = _lifespan_module.connect_redis_with_retry
     original_signal = _lifespan_module.signal
     try:

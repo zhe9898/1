@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Final
 
 from backend.kernel.packs.presets import requested_pack_keys as resolve_requested_pack_keys
-from backend.kernel.topology.pack_selection import (
-    resolve_gateway_image_target as resolve_pack_registry_gateway_image_target,
-)
+from backend.kernel.topology.pack_selection import resolve_gateway_image_target as resolve_pack_registry_gateway_image_target
 from backend.kernel.topology.pack_selection import resolve_pack_keys as resolve_effective_pack_keys
-from backend.kernel.topology.pack_selection import selected_router_names
+from backend.kernel.topology.pack_selection import (
+    selected_router_names,
+)
 
 CORE_ROUTER_NAMES: Final[tuple[str, ...]] = (
     "routes",

@@ -66,4 +66,3 @@ def downgrade() -> None:
         return
     op.drop_index("ix_tenants_is_active", "tenants")
     op.drop_table("tenants")
-

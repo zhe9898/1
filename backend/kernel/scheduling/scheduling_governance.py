@@ -266,4 +266,3 @@ async def get_all_scheduling_flags(db: AsyncSession) -> dict[str, bool]:
     merged = dict(_SCHEDULING_FLAG_DEFAULTS)
     merged.update(db_flags)
     return merged
-

@@ -86,7 +86,7 @@ TARGET_BACKEND_DOMAINS: Final[tuple[DomainBlueprint, ...]] = (
             SubdomainBlueprint("topology", ("Topology snapshots", "Pack placement", "Router admission inputs")),
             SubdomainBlueprint("scheduling", ("Quota, scoring, solver, and reservation behavior",)),
             SubdomainBlueprint("execution", ("Job lifecycle", "Attempts", "Lease ownership", "Fault isolation")),
-            SubdomainBlueprint("extensions", ("Connector, trigger, workflow, and runner-facing extension contracts")),
+            SubdomainBlueprint("extensions", ("Connector, trigger, workflow, and runner-facing extension contracts",)),
             SubdomainBlueprint("governance", ("Architecture rules", "Aggregate ownership", "Status contracts")),
             SubdomainBlueprint("contracts", ("Permissions", "Status", "Error contracts")),
         ),

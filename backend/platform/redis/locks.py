@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 from backend.platform.redis.constants import KEY_LOCK_PREFIX
 
 

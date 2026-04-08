@@ -112,4 +112,3 @@ def test_repo_does_not_import_migration_env_modules_outside_entrypoints() -> Non
         if "backend.alembic.env" in source or "backend.migrations.env" in source:
             violations.append(rel)
     assert violations == []
-

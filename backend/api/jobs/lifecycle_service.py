@@ -8,14 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.kernel.contracts.errors import zen
-from backend.kernel.scheduling.failure_control_plane import get_failure_control_plane
-from backend.platform.redis.client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
 from backend.kernel.execution.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
 from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
 from backend.kernel.execution.job_status import normalize_job_status
 from backend.kernel.execution.lease_service import LeaseService
 from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager
+from backend.kernel.scheduling.failure_control_plane import get_failure_control_plane
 from backend.kernel.topology.node_auth import authenticate_node_request
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
 
 from .auto_tune_feedback import log_tuner_feedback_failure, record_job_outcome_for_tuner
 from .database import (
@@ -142,7 +142,7 @@ async def _authenticate_and_load_callback_job(
     node_token: str,
     deps: JobLifecycleDependencies,
     lock_job: bool,
-) -> tuple[Any, Any]:
+) -> Any:
     await deps.authenticate_node_request(
         db,
         payload.node_id,

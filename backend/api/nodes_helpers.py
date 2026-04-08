@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
-from backend.kernel.contracts.status import normalize_persisted_status
 from backend.control_plane.console.state_views import (
     node_attention_reason,
     node_capacity_state,
@@ -27,9 +26,10 @@ from backend.control_plane.console.state_views import (
     node_status_view,
 )
 from backend.kernel.contracts.errors import zen
-from backend.kernel.topology.node_auth import generate_node_token, hash_node_token
 from backend.kernel.contracts.protocol_version import validate_lease_version, validate_protocol_version
+from backend.kernel.contracts.status import normalize_persisted_status
 from backend.kernel.scheduling.worker_pool import infer_node_worker_pools
+from backend.kernel.topology.node_auth import generate_node_token, hash_node_token
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -337,4 +337,3 @@ def _provision_token(node: Node) -> tuple[str, int]:
     node.auth_token_hash = hash_node_token(token)
     node.auth_token_version = next_version
     return token, next_version
-

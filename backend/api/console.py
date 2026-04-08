@@ -56,8 +56,8 @@ from backend.control_plane.console.state_views import (
     node_status_view,
     tone_view,
 )
-from backend.kernel.scheduling.job_scheduler import build_node_snapshot, count_eligible_nodes_for_job, node_blockers_for_job
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.scheduling.job_scheduler import build_node_snapshot, count_eligible_nodes_for_job, node_blockers_for_job
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
@@ -367,4 +367,3 @@ async def get_console_diagnostics(
         ),
         generated_at=now,
     )
-

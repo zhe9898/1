@@ -68,16 +68,14 @@ def _connect_baseline_db() -> sqlite3.Connection:
 
 def init_baseline_db() -> None:
     with _connect_baseline_db() as conn:
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS file_hashes (
                 filepath TEXT PRIMARY KEY,
                 sha256 TEXT NOT NULL,
                 last_checked REAL NOT NULL,
                 size INTEGER NOT NULL
             )
-            """
-        )
+            """)
         conn.commit()
 
 

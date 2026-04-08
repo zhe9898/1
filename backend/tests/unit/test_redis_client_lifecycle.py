@@ -14,7 +14,7 @@ class TestConnectClose:
         mock_redis_instance = AsyncMock()
         mock_redis_instance.ping = AsyncMock(return_value=True)
 
-        with patch("backend.platform.redis.client.redis") as mock_redis_module:
+        with patch("backend.platform.redis.client._redis_asyncio") as mock_redis_module:
             mock_redis_module.Redis = MagicMock(return_value=mock_redis_instance)
             await client.connect()
             _, kwargs = mock_redis_module.Redis.call_args
@@ -28,7 +28,7 @@ class TestConnectClose:
         mock_redis_instance = AsyncMock()
         mock_redis_instance.ping = AsyncMock(side_effect=OSError("refused"))
 
-        with patch("backend.platform.redis.client.redis") as mock_redis_module:
+        with patch("backend.platform.redis.client._redis_asyncio") as mock_redis_module:
             mock_redis_module.Redis = MagicMock(return_value=mock_redis_instance)
             with pytest.raises(OSError, match="refused"):
                 await client.connect()

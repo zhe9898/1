@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 try:
     import redis.asyncio as _redis_asyncio
-    from redis.asyncio import Redis as _AsyncRedis
 except ImportError:
     _redis_asyncio = None  # type: ignore[assignment]
-    _AsyncRedis = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis as AsyncRedis
+else:
+    AsyncRedis = Any
 
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis._shared import retry_once
@@ -77,7 +80,7 @@ class RedisClient:
         self.db = db if db is not None else int(os.getenv("REDIS_DB", "0"))
         self.max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "256"))
         self.logger = get_logger("redis_client", request_id)
-        self._redis: _AsyncRedis | None = None
+        self._redis: AsyncRedis | None = None
 
         self.kv = RedisKVAdapter(self)
         self.locks = RedisLockAdapter(self)
@@ -135,7 +138,7 @@ class RedisClient:
             self.logger.debug("Redis ping failed: %s", exc)
             return False
 
-    async def _require_connection(self) -> _AsyncRedis | None:
+    async def _require_connection(self) -> AsyncRedis | None:
         return self._redis
 
     async def _retry_once(self, coro: Any, fallback: Any, op_name: str = "op") -> Any:

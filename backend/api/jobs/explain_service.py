@@ -15,12 +15,12 @@ from backend.control_plane.console.state_views import (
     node_status_view,
 )
 from backend.kernel.scheduling.failure_control_plane import get_failure_control_plane
-from backend.kernel.scheduling.scheduling_governance import get_all_scheduling_flags
 from backend.kernel.scheduling.job_scheduler import (
     count_eligible_nodes_for_job,
     node_blockers_for_job,
     score_job_for_node,
 )
+from backend.kernel.scheduling.scheduling_governance import get_all_scheduling_flags
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
@@ -189,4 +189,3 @@ async def explain_job_details(
         decisions=decisions,
         governance=governance,
     )
-

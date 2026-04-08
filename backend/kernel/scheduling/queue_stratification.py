@@ -552,4 +552,3 @@ def get_fair_scheduler() -> GlobalFairScheduler:
     if _fair_scheduler is None:
         _fair_scheduler = GlobalFairScheduler()
     return _fair_scheduler
-

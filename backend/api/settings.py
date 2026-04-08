@@ -13,15 +13,15 @@ from backend.api.deps import get_current_user, get_db, get_redis
 from backend.api.deps import get_settings as get_runtime_settings
 from backend.control_plane.auth.access_policy import require_superadmin_role
 from backend.kernel.contracts.errors import zen
-from backend.kernel.policy.feature_flag_service import FeatureFlagService
-from backend.platform.redis.client import RedisClient
 from backend.kernel.packs.registry import available_pack_definitions
+from backend.kernel.policy.feature_flag_service import FeatureFlagService
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
-from backend.models.feature_flag import DEFAULT_CONFIGS, DEFAULT_FLAGS, FeatureFlag, SystemConfig
 from backend.kernel.topology.profile_selection import (
     normalize_gateway_pack_keys,
     resolve_runtime_pack_keys,
 )
+from backend.models.feature_flag import DEFAULT_CONFIGS, DEFAULT_FLAGS, FeatureFlag, SystemConfig
+from backend.platform.redis.client import RedisClient
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 logger = logging.getLogger("zen70.settings")
@@ -462,4 +462,3 @@ async def system_info(
     require_superadmin_role(current_user)
     version = get_runtime_version()
     return {"status": "ok", "version": version}
-

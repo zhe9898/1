@@ -27,8 +27,8 @@ from backend.control_plane.auth.auth_helpers import (
     require_db_redis,
     zen,
 )
-from backend.platform.redis.client import RedisClient
 from backend.models.user import User
+from backend.platform.redis.client import RedisClient
 
 router = APIRouter()
 

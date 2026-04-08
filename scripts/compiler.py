@@ -560,7 +560,8 @@ def main() -> None:
             _dry_run_diff(output_dir, dc_out, env_out, tmp_dc, tmp_env)
             sys.exit(0)
 
-        # 妫板嫭顥呴柅姘崇箖閿涘苯鐤勯弬钘夊斧鐎涙劖娴涢幑銏犵殱缂?        _replace_text_artifact(tmp_dc, output_dir / "docker-compose.yml")
+        # Persist validated compose/env artifacts only after validation succeeds.
+        _replace_text_artifact(tmp_dc, output_dir / "docker-compose.yml")
         _replace_text_artifact(tmp_env, output_dir / ".env")
         env_path = output_dir / ".env"
 

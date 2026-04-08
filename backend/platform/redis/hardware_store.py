@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 from backend.platform.redis.constants import CHANNEL_HARDWARE_EVENTS, KEY_HW_PREFIX
 from backend.platform.redis.serialization import as_redis_hset_mapping
 from backend.platform.redis.types import HardwareState

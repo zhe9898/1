@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+
 from fastapi import Request
 from pydantic import BaseModel, Field
 
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
+from backend.kernel.contracts.errors import zen
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
 from backend.platform.redis.client import RedisClient
 from backend.platform.redis.runtime import redis_sdk_available
@@ -153,3 +155,20 @@ def build_public_capability_matrix(
             reason=surface.description,
         )
     return matrix
+
+
+def raise_503_if_pending(capability_key: str | None, matrix: dict[str, CapabilityItem]) -> None:
+    if not capability_key:
+        return
+    capability = matrix.get(capability_key)
+    if capability is None:
+        return
+    if capability.status != "pending_maintenance":
+        return
+    raise zen(
+        "ZEN-CAP-5030",
+        f"Capability '{capability_key}' is temporarily unavailable during maintenance",
+        status_code=503,
+        recovery_hint="Retry after the maintenance window completes or choose a different capability target.",
+        details={"capability": capability_key, "status": capability.status, "reason": capability.reason or ""},
+    )

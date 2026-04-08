@@ -28,6 +28,11 @@ CORE_SERVICES: tuple[str, ...] = (
     "docker-proxy",
     "runner-agent",
 )
+PROFILE_ALIASES: dict[str, str] = {
+    "gateway-kernel": "gateway-kernel",
+    "gateway-iot": "gateway-kernel",
+    "gateway-ops": "gateway-kernel",
+}
 
 
 def normalize_profile(raw_profile: object) -> str:

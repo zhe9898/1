@@ -17,14 +17,14 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import cast
 
-from backend.platform.security.normalization import normalize_metric_integer
 from backend.platform.redis import SyncRedisClient
+from backend.platform.security.normalization import normalize_metric_integer
 from backend.sentinel.sentinel_helpers import (
-    DEFAULT_PENDING_TTL,
     DISK_CRITICAL_THRESHOLD,
     REDIS_CHANNEL_EVENTS,
     REDIS_CHANNEL_MELTDOWN,
@@ -69,7 +69,7 @@ class TopologySentinel:
         #     7.2.1:                   ?(Stop-Pulling)
         self.is_zombie = False
         self.redis_timeout_count = 0
-        self.max_redis_timeouts = settings.max_redis_timeouts  #     6 * 5s = 30s
+        self.max_redis_timeouts = settings.max_redis_timeouts  # 6 * 5s = 30s
 
         # Cache the last desired state so zombie/offline mode can reconcile safely.
         self._cached_desired: set[str] = set()
@@ -152,12 +152,7 @@ class TopologySentinel:
             return False
 
     def _get_actual_running_containers(self) -> set[str]:
-        """
-        Observe:              'running'       Docker          ?
-                ocker API `/containers/json`             exited     ?            paused              ?State == 'running'    ?paused
-                                            ?            ?filters={"status":["running"]}     ?Docker Engine          ?        """
-        #           ?Docker API filter        ?running     ?        import urllib.parse
-
+        """Return the set of currently running container names via the Docker API."""
         filter_json = json.dumps({"status": ["running"]})
         query_path = f"/containers/json?filters={urllib.parse.quote(filter_json)}"
         status_code, data = _docker_api_get(query_path)
@@ -185,7 +180,7 @@ class TopologySentinel:
         -          docker stop -t 10
         - action: 'stop' | 'start'
 
-                ombie mode             Docker API     ?socket       Redis   ?        """
+                ombie mode             Docker API     ?socket       Redis   ?"""
         import urllib.parse
 
         encoded_name = urllib.parse.quote(container_name, safe="")
@@ -230,10 +225,7 @@ class TopologySentinel:
     DISK_TAINT_AFFECTED: set[str] = {"zen70-jellyfin", "zen70-frigate", "zen70-promtail"}
 
     def _check_disk_usage(self) -> None:
-        """
-            3.3          ? ?5%           ?(disk_taint) ?
-                           pause                    ?_reconcile_loop
-                 /Thrashing         ?self.has_disk_taint = True    ?        _compute_desired_containers()                       ?OFF ?            _reconcile_loop                      ?        """
+        """Inject or clear the disk taint based on root filesystem utilization."""
         try:
             usage = shutil.disk_usage("/")
         except OSError:
@@ -308,7 +300,7 @@ class TopologySentinel:
            (Taint)
         1. GPU         ?          ?OFF
         2.        ? ?DISK_TAINT_AFFECTED           I/O        OFF
-        3.          ?switch_expected  ?       ?        """
+        3.          ?switch_expected  ?       ?"""
         switch_map = self._get_switch_map()
         gpu_taints = self._get_gpu_taints()
 
@@ -356,7 +348,7 @@ class TopologySentinel:
 
                   (Offline Autonomy):
         zombie mode
-                           ?Redis     ?        """
+                           ?Redis     ?"""
         if self.is_zombie:
             self._reconcile_loop_offline()
             return
@@ -406,7 +398,7 @@ class TopologySentinel:
                    ombie mode                          ?
             ?        -     _cached_desired / _cached_managed       ?Redis           ?        -
         -     start/stop       Redis
-        -           Docker API       socket       Redis ?        """
+        -           Docker API       socket       Redis ?"""
         if not self._cached_managed:
             return
 
@@ -574,8 +566,8 @@ class TopologySentinel:
             self._process_mount_online(mount, cur_state)
 
     def _handle_mount(self, mount: MountPoint) -> None:
-        """                                               ?Reconcile ?
-                ombie mode                   I/O       ?Redis         ?        """
+        """?Reconcile ?
+        ombie mode                   I/O       ?Redis         ?"""
         if not self.is_zombie and not self._redis_ok():
             return
         exists: bool
@@ -649,7 +641,7 @@ class TopologySentinel:
                 logger.error("Reconcile loop crashed: %s", e, exc_info=True)
 
     def _process_switch_event_message(self, data: str | bytes) -> None:
-        """       switch:events                ?Redis"""
+        """switch:events                ?Redis"""
         if isinstance(data, bytes):
             data = data.decode("utf-8")
         try:
@@ -731,7 +723,7 @@ class TopologySentinel:
     def _evict_zombie_tasks(self) -> None:
         """
         K3s       ?(Eviction & Tombstones):           15     Worker    ,
-                              (Tombstone),           ?        """
+                              (Tombstone),           ?"""
         r = self._redis
         if not self._redis_ok() or r is None:
             return
@@ -833,4 +825,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

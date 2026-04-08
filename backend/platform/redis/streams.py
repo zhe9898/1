@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 
 
 class RedisStreamAdapter(AsyncRedisComponent):
@@ -24,7 +24,8 @@ class RedisStreamAdapter(AsyncRedisComponent):
         if approximate is not None:
             kwargs["approximate"] = approximate
         try:
-            return await connection.xadd(stream, fields, **kwargs)
+            message_id = await connection.xadd(stream, fields, **kwargs)
+            return None if message_id is None else str(message_id)
         except REDIS_OPERATION_ERRORS as exc:
             self.logger.error("streams.xadd failed for %s: %s", stream, exc, exc_info=True)
             return None

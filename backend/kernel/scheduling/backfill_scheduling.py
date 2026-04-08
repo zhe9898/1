@@ -35,7 +35,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
@@ -778,4 +778,3 @@ def reset_reservation_manager() -> None:
     """Reset singleton (for tests)."""
     global _reservation_manager
     _reservation_manager = None
-

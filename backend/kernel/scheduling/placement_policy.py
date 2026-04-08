@@ -431,4 +431,3 @@ def reload_placement_policies() -> CompositePlacementPolicy:
     global _placement_policy
     _placement_policy = load_placement_policies()
     return _placement_policy
-

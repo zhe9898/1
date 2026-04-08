@@ -4,7 +4,7 @@ import json
 import time
 from typing import cast
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 from backend.platform.redis.constants import KEY_NODE_PREFIX
 from backend.platform.redis.serialization import as_redis_hset_mapping, node_to_redis, redis_to_node
 from backend.platform.redis.types import NodeInfo
@@ -57,7 +57,8 @@ class RedisNodeStore(AsyncRedisComponent):
             self.logger.error("nodes.get_all failed: %s", exc, exc_info=True)
             return {}
 
-        node_ids = [key[len(KEY_NODE_PREFIX) :] for key in keys]
+        prefix_length = len(KEY_NODE_PREFIX)
+        node_ids = [key[prefix_length:] for key in keys]
         out: dict[str, NodeInfo] = {}
         for node_id, data in zip(node_ids, results):
             if not data:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from backend.kernel.governance.domain_blueprint import (
     EXTERNAL_RUNTIME_INVARIANTS,
     PRIORITY_SPLITS,
     TARGET_BACKEND_DOMAINS,
     export_backend_domain_blueprint,
 )
-from pathlib import Path
 
 
 def test_domain_blueprint_locks_three_target_domains() -> None:
@@ -28,9 +29,7 @@ def test_external_invariants_preserve_public_surface_and_policy_chain() -> None:
     assert "gateway-kernel" in invariants["kernel_only_runtime_surface"].statement
     assert "backend-driven" in invariants["backend_driven_control_plane"].statement
     assert "PolicyStore plus RuntimePolicyResolver" in invariants["runtime_policy_single_source"].statement
-    assert "capability -> surface -> policy -> service contract -> execution contract" in invariants[
-        "extensions_follow_contract_chain"
-    ].statement
+    assert "capability -> surface -> policy -> service contract -> execution contract" in invariants["extensions_follow_contract_chain"].statement
 
 
 def test_control_plane_split_is_explicitly_three_way() -> None:
@@ -49,11 +48,7 @@ def test_control_plane_split_is_explicitly_three_way() -> None:
 def test_blueprint_targets_do_not_reintroduce_backend_core() -> None:
     exported = export_backend_domain_blueprint()
 
-    target_paths = [
-        path
-        for split in exported["priority_splits"]
-        for path in split["target_modules"]
-    ]
+    target_paths = [path for split in exported["priority_splits"] for path in split["target_modules"]]
     assert target_paths
     assert all(not path.startswith("backend/core/") for path in target_paths)
 
@@ -83,12 +78,8 @@ def test_pack_and_profile_splits_are_completed() -> None:
 
 
 def test_governance_splits_are_completed() -> None:
-    architecture_split = next(
-        item for item in PRIORITY_SPLITS if item.current_module == "backend/core/architecture_governance.py"
-    )
-    owner_split = next(
-        item for item in PRIORITY_SPLITS if item.current_module == "backend/core/aggregate_owner_registry.py"
-    )
+    architecture_split = next(item for item in PRIORITY_SPLITS if item.current_module == "backend/core/architecture_governance.py")
+    owner_split = next(item for item in PRIORITY_SPLITS if item.current_module == "backend/core/aggregate_owner_registry.py")
 
     assert architecture_split.status == "completed"
     assert architecture_split.target_modules == ("backend/kernel/governance/architecture_rules.py",)

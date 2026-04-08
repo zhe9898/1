@@ -4,7 +4,7 @@ import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
 from backend.kernel.policy.types import SchedulingPolicy
 
@@ -45,7 +45,7 @@ def load_policy_bootstrap(path: str) -> SchedulingPolicyBootstrap:
 
 
 def parse_policy_mapping(raw: Mapping[str, Any]) -> SchedulingPolicy:
-    return _build_dataclass_instance(SchedulingPolicy, raw)
+    return cast(SchedulingPolicy, _build_dataclass_instance(SchedulingPolicy, raw))
 
 
 def _build_dataclass_instance(cls: type[Any], raw: Mapping[str, Any]) -> Any:
@@ -67,35 +67,64 @@ def _coerce_value(value: Any, annotation: Any) -> Any:
         return _coerce_union(value, get_args(annotation))
 
     if is_dataclass(annotation):
-        if not isinstance(value, Mapping):
-            raise TypeError(f"expected mapping for {annotation}, got {type(value).__name__}")
-        return _build_dataclass_instance(annotation, value)
+        return _coerce_dataclass(value, annotation)
 
+    container_value = _coerce_container_value(value, annotation, origin)
+    if container_value is not _UNHANDLED:
+        return container_value
+
+    scalar_value = _coerce_scalar_value(value, annotation)
+    if scalar_value is not _UNHANDLED:
+        return scalar_value
+
+    return value
+
+
+_UNHANDLED = object()
+
+
+def _coerce_dataclass(value: Any, annotation: Any) -> Any:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"expected mapping for {annotation}, got {type(value).__name__}")
+    return _build_dataclass_instance(annotation, value)
+
+
+def _coerce_container_value(value: Any, annotation: Any, origin: Any) -> Any:
     if origin is dict:
-        key_type, value_type = get_args(annotation) or (Any, Any)
-        if not isinstance(value, Mapping):
-            raise TypeError(f"expected mapping for {annotation}, got {type(value).__name__}")
-        return {
-            _coerce_value(raw_key, key_type): _coerce_value(raw_value, value_type)
-            for raw_key, raw_value in value.items()
-        }
-
+        return _coerce_dict(value, annotation)
     if origin is list:
-        item_type = (get_args(annotation) or (Any,))[0]
-        if not isinstance(value, list):
-            raise TypeError(f"expected list for {annotation}, got {type(value).__name__}")
-        return [_coerce_value(item, item_type) for item in value]
-
+        return _coerce_list(value, annotation)
     if origin is tuple:
-        if not isinstance(value, (list, tuple)):
-            raise TypeError(f"expected list/tuple for {annotation}, got {type(value).__name__}")
-        item_types = get_args(annotation)
-        if len(item_types) == 2 and item_types[1] is Ellipsis:
-            return tuple(_coerce_value(item, item_types[0]) for item in value)
-        if item_types and len(value) != len(item_types):
-            raise ValueError(f"tuple arity mismatch for {annotation}: expected {len(item_types)}, got {len(value)}")
-        return tuple(_coerce_value(item, item_type) for item, item_type in zip(value, item_types or ()))
+        return _coerce_tuple(value, annotation)
+    return _UNHANDLED
 
+
+def _coerce_dict(value: Any, annotation: Any) -> dict[Any, Any]:
+    key_type, value_type = get_args(annotation) or (Any, Any)
+    if not isinstance(value, Mapping):
+        raise TypeError(f"expected mapping for {annotation}, got {type(value).__name__}")
+    return {_coerce_value(raw_key, key_type): _coerce_value(raw_value, value_type) for raw_key, raw_value in value.items()}
+
+
+def _coerce_list(value: Any, annotation: Any) -> list[Any]:
+    item_type = (get_args(annotation) or (Any,))[0]
+    if not isinstance(value, list):
+        raise TypeError(f"expected list for {annotation}, got {type(value).__name__}")
+    return [_coerce_value(item, item_type) for item in value]
+
+
+def _coerce_tuple(value: Any, annotation: Any) -> tuple[Any, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"expected list/tuple for {annotation}, got {type(value).__name__}")
+    item_types = get_args(annotation)
+    if len(item_types) == 2 and item_types[1] is Ellipsis:
+        return tuple(_coerce_value(item, item_types[0]) for item in value)
+    if item_types and len(value) != len(item_types):
+        raise ValueError(f"tuple arity mismatch for {annotation}: expected {len(item_types)}, got {len(value)}")
+    return tuple(_coerce_value(item, item_type) for item, item_type in zip(value, item_types or ()))
+
+
+def _coerce_scalar_value(value: Any, annotation: Any) -> Any:
     if annotation is bool:
         return _coerce_bool(value)
     if annotation is int:
@@ -104,8 +133,7 @@ def _coerce_value(value: Any, annotation: Any) -> Any:
         return float(value)
     if annotation is str:
         return str(value)
-
-    return value
+    return _UNHANDLED
 
 
 def _coerce_union(value: Any, variants: tuple[Any, ...]) -> Any:

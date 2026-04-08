@@ -24,6 +24,12 @@ import math
 from typing import TYPE_CHECKING
 
 from backend.kernel.execution.job_status import normalize_job_status
+from backend.kernel.policy.types import (
+    BatchScoringConfig,
+    PreemptionPolicy,
+    PriorityBoostConfig,
+    SLARiskConfig,
+)
 from backend.kernel.scheduling.scheduling_constraints import (  # noqa: F401 鈥?re-export
     ConnectorCoolingGate,
     DeadlineExpiryGate,
@@ -35,12 +41,6 @@ from backend.kernel.scheduling.scheduling_constraints import (  # noqa: F401 鈥
     SchedulingEngine,
     TenantFairShareGate,
     get_scheduling_engine,
-)
-from backend.kernel.policy.types import (
-    BatchScoringConfig,
-    PreemptionPolicy,
-    PriorityBoostConfig,
-    SLARiskConfig,
 )
 
 if TYPE_CHECKING:
@@ -371,4 +371,3 @@ def find_preemption_candidates(
                 break  # one eviction per urgent job
 
     return results
-

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import httpx
 
-from backend.platform.security.normalization import normalize_loopback_control_url
 from backend.platform.redis.client import RedisClient
+from backend.platform.security.normalization import normalize_loopback_control_url
 
 logging.basicConfig(
     level=logging.INFO,
@@ -104,9 +104,9 @@ class RoutingOperator:
             ],
             cwd=str(self.project_root),
             check=True,
+            timeout=120,
             capture_output=True,
             text=True,
-            timeout=120,
         )
         logger.info("[Operator] Compiler rendered updated Caddyfile")
 

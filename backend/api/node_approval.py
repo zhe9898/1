@@ -13,8 +13,8 @@ from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_redis, get_tenant_db
 from backend.kernel.contracts.errors import zen
 from backend.kernel.topology.node_enrollment_service import NodeEnrollmentService
-from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
+from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["node-approval"])
 

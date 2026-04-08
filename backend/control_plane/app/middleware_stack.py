@@ -6,8 +6,8 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
-from backend.platform.logging.structured import get_logger
 from backend.middleware import global_readonly_lock, limit_request_body
+from backend.platform.logging.structured import get_logger
 
 logger = get_logger("api")
 

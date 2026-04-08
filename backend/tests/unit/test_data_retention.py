@@ -147,4 +147,3 @@ class TestConstants:
         assert "cancelled" in TERMINAL_STATUSES
         assert "pending" not in TERMINAL_STATUSES
         assert "leased" not in TERMINAL_STATUSES
-

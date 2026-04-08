@@ -15,11 +15,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import is_superadmin_role
+from backend.control_plane.auth.access_policy import is_superadmin_role
 from backend.control_plane.auth.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, log_auth, zen
 from backend.control_plane.auth.jwt import get_access_token_expire_seconds
-from backend.platform.db.rls import set_tenant_context as _set_tenant_context_impl
 from backend.models.user import User
+from backend.platform.db.rls import set_tenant_context as _set_tenant_context_impl
 
 _logger = logging.getLogger(__name__)
 

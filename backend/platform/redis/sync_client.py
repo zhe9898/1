@@ -215,7 +215,8 @@ class SyncRedisStreamAdapter(SyncRedisComponent):
         if connection is None:
             return None
         try:
-            return connection.xadd(stream, fields, **kwargs)
+            message_id = connection.xadd(stream, fields, **kwargs)
+            return None if message_id is None else str(message_id)
         except REDIS_OPERATION_ERRORS as exc:
             self.logger.error("sync streams.xadd failed for %s: %s", stream, exc, exc_info=True)
             return None

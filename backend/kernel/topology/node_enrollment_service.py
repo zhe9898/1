@@ -79,4 +79,3 @@ class NodeEnrollmentService:
         meta["rejection_reason"] = reason or "rejected by admin"
         node.metadata_json = meta
         node.updated_at = now
-

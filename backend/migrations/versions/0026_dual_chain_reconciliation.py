@@ -185,4 +185,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """This migration is intentionally irreversible."""
-

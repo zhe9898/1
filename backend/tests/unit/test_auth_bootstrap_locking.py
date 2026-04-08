@@ -21,13 +21,13 @@ async def test_bootstrap_commits_before_releasing_lock() -> None:
     db.commit.side_effect = _commit
 
     redis = SimpleNamespace()
-    redis.acquire_lock = AsyncMock(return_value=True)
+    redis.locks = SimpleNamespace(acquire=AsyncMock(return_value=True))
 
     async def _release_lock(_name: str) -> bool:
         call_order.append("release")
         return True
 
-    redis.release_lock = _release_lock
+    redis.locks.release = _release_lock
 
     with (
         patch("backend.api.auth_shared.first_user_or_schema_unavailable", new=AsyncMock(return_value=None)),
@@ -43,5 +43,5 @@ async def test_bootstrap_commits_before_releasing_lock() -> None:
     assert response.authenticated is True
     assert response.role == "admin"
     assert call_order == ["commit", "release"]
-    redis.acquire_lock.assert_awaited_once()
-    assert redis.acquire_lock.await_args.kwargs["ttl"] == BOOTSTRAP_LOCK_TTL_SECONDS
+    redis.locks.acquire.assert_awaited_once()
+    assert redis.locks.acquire.await_args.kwargs["ttl"] == BOOTSTRAP_LOCK_TTL_SECONDS

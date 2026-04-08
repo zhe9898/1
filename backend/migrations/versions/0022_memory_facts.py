@@ -87,4 +87,3 @@ def downgrade() -> None:
     op.drop_index("ix_memory_facts_user_sub", "memory_facts")
     op.drop_index("ix_memory_facts_tenant_id", "memory_facts")
     op.drop_table("memory_facts")
-

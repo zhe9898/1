@@ -18,6 +18,7 @@ from backend.api.deps import (
     get_tenant_db,
 )
 from backend.platform.redis.client import RedisClient
+
 from .explain_service import (
     build_default_explain_job_dependencies,
     explain_job_details,

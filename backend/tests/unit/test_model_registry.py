@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from backend.platform.db.migration_governance import collect_model_tables
 from backend.models import CANONICAL_MODEL_MODULES, load_canonical_model_metadata
+from backend.platform.db.migration_governance import collect_model_tables
 
 
 def test_registry_declares_every_model_module() -> None:
@@ -18,4 +18,3 @@ def test_canonical_metadata_covers_every_model_table() -> None:
     metadata = load_canonical_model_metadata()
 
     assert set(metadata.tables) == collect_model_tables()
-

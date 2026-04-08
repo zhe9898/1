@@ -94,12 +94,10 @@ class BaseModelProvider(ABC):
         self.base_url = url.rstrip("/")
 
     @abstractmethod
-    async def list_models(self) -> list[dict[str, object]]:
-        ...
+    async def list_models(self) -> list[dict[str, object]]: ...
 
     @abstractmethod
-    async def health(self) -> dict[str, object]:
-        ...
+    async def health(self) -> dict[str, object]: ...
 
     async def chat(self, model: str, messages: list, **kwargs: object) -> dict[str, object]:
         del model, messages, kwargs

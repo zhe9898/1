@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.kernel.contracts.errors import zen
 from backend.control_plane.auth.sessions import revoke_all_user_sessions
+from backend.kernel.contracts.errors import zen
 from backend.models.user import User
 
 if TYPE_CHECKING:

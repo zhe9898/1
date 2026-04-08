@@ -100,4 +100,3 @@ async def test_activate_user_scopes_lookup_to_tenant() -> None:
     assert updated.is_active is True
     rendered = str(db.execute.await_args.args[0])
     assert "users.tenant_id" in rendered
-

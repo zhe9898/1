@@ -85,9 +85,7 @@ class SystemGuardian:
         while True:
             temp = self.fetch_cpu_temperature()
             if temp > self.temperature_threshold:
-                message = (
-                    f"CPU temperature reached {temp:.1f}C, entering emergency readonly and workload degradation mode"
-                )
+                message = f"CPU temperature reached {temp:.1f}C, entering emergency readonly and workload degradation mode"
                 await self.emit_critical_alert("Thermal emergency", message)
                 await self.lock_api_gateway()
                 await self.pause_heavy_containers()
@@ -101,4 +99,3 @@ if __name__ == "__main__":
     guardian = SystemGuardian()
     asyncio.run(guardian.emit_critical_alert("Guardian self-test", "Thermal guardian booted"))
     asyncio.run(guardian.pause_heavy_containers())
-

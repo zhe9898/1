@@ -97,4 +97,3 @@ async def test_write_audit_log_sanitizes_details_before_flush() -> None:
         "password": "********",
     }
     db.flush.assert_awaited_once()
-

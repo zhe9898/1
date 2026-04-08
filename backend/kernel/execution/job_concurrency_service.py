@@ -9,8 +9,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from backend.kernel.contracts.errors import zen
 from backend.kernel.execution.job_type_separation import SCHEDULED_JOB_SOURCES, get_job_type, get_max_concurrent_limit
-from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
 from backend.models.job import Job
+from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
 
 
 def _source_filter(job_type: str) -> ColumnElement[bool]:

@@ -39,7 +39,6 @@ from backend.control_plane.auth.auth_helpers import (
     require_db_redis,
     zen,
 )
-from backend.platform.redis.client import RedisClient
 from backend.control_plane.auth.webauthn_challenge_store import WebAuthnChallengeStore
 from backend.control_plane.auth.webauthn_flow_session import (
     clear_webauthn_flow_session,
@@ -47,6 +46,7 @@ from backend.control_plane.auth.webauthn_flow_session import (
     require_webauthn_flow_session,
 )
 from backend.models.user import User, WebAuthnCredential
+from backend.platform.redis.client import RedisClient
 
 try:
     from backend.control_plane.auth.webauthn import generate_registration_challenge, verify_registration

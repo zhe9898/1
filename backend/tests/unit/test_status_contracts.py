@@ -59,4 +59,3 @@ def test_workflow_step_pending_legacy_value_normalizes_to_waiting() -> None:
         canonicalize_transport_status("workflow_steps.status", "pending")
     with pytest.raises(ValueError):
         normalize_persisted_status("workflow_steps.status", "pending")
-

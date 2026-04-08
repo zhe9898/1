@@ -8,12 +8,13 @@ from collections.abc import Callable, Coroutine
 
 from backend.api.deps import get_settings
 from backend.background_tasks import bitrot_worker, data_retention_worker, health_probe_worker
+from backend.platform.redis.client import RedisClient
 from backend.platform.redis.runtime import connect_redis_with_retry
 from backend.workers.attempt_expiration_worker import attempt_expiration_worker
 
 logger = logging.getLogger("zen70.control-worker")
 
-WorkerFactory = Callable[[object | None], Coroutine[object, object, None]]
+WorkerFactory = Callable[[RedisClient | None], Coroutine[object, object, None]]
 
 
 def _worker_factories(worker: str) -> dict[str, WorkerFactory]:

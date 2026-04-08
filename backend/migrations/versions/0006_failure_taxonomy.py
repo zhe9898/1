@@ -42,4 +42,3 @@ def downgrade() -> None:
         op.drop_column("jobs", "attempt_count")
         op.drop_index("idx_jobs_failure_category", "jobs")
         op.drop_column("jobs", "failure_category")
-

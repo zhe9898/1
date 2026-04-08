@@ -412,4 +412,3 @@ def select_jobs_for_node(  # noqa: C901
     scored = _get_pp().rerank(scored, node)
 
     return scored[: min(limit, available_slots)]
-

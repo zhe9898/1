@@ -145,4 +145,3 @@ class TriggerCommandService:
         trigger.last_delivery_target_kind = target_kind
         trigger.last_delivery_target_id = target_id
         trigger.updated_at = delivered_at
-

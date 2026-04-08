@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 
 
 class RedisKVAdapter(AsyncRedisComponent):

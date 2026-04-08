@@ -4,16 +4,35 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from typing import Any, Protocol, TypeVar
 
+REDIS_OPERATION_ERRORS: tuple[type[BaseException], ...]
+
 try:
     from redis.exceptions import RedisError
 except ImportError:  # pragma: no cover - redis may be absent in minimal test envs
 
-    class RedisError(OSError):
+    class RedisFallbackOperationError(OSError):
         pass
+
+    REDIS_OPERATION_ERRORS = (
+        OSError,
+        ValueError,
+        KeyError,
+        RuntimeError,
+        TypeError,
+        RedisFallbackOperationError,
+    )
+else:
+    REDIS_OPERATION_ERRORS = (
+        OSError,
+        ValueError,
+        KeyError,
+        RuntimeError,
+        TypeError,
+        RedisError,
+    )
 
 
 _T = TypeVar("_T")
-REDIS_OPERATION_ERRORS = (OSError, ValueError, KeyError, RuntimeError, TypeError, RedisError)
 
 
 class AsyncRedisOwner(Protocol):

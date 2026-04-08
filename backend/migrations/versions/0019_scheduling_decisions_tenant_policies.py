@@ -113,4 +113,3 @@ def downgrade() -> None:
         op.drop_index("ix_scheduling_decisions_node_id", "scheduling_decisions")
         op.drop_index("ix_scheduling_decisions_tenant_id", "scheduling_decisions")
         op.drop_table("scheduling_decisions")
-

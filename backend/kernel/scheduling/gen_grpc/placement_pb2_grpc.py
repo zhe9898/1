@@ -148,4 +148,3 @@ class PlacementSolver(object):
             metadata,
             _registered_method=True,
         )
-

@@ -7,8 +7,8 @@ from fastapi import FastAPI, Request
 from backend.api.deps import get_settings
 from backend.api.models import HealthResponse
 from backend.control_plane.app.lifespan import check_postgres_async
-from backend.platform.redis.client import RedisClient
 from backend.kernel.contracts.runtime_version import get_runtime_version
+from backend.platform.redis.client import RedisClient
 
 
 async def health_check(request: Request) -> HealthResponse:

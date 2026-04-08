@@ -28,13 +28,13 @@ from backend.api import settings as settings_router
 from backend.api import triggers as triggers_router
 from backend.api import user_management as user_management_router
 from backend.api import workflows as workflows_router
-from backend.platform.logging.structured import get_logger
 from backend.kernel.packs.registry import get_pack_definition
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
+from backend.kernel.topology.profile_selection import get_enabled_router_names as resolve_enabled_router_names
 from backend.kernel.topology.profile_selection import (
-    get_enabled_router_names as resolve_enabled_router_names,
+    normalize_gateway_pack_keys,
 )
-from backend.kernel.topology.profile_selection import normalize_gateway_pack_keys
+from backend.platform.logging.structured import get_logger
 
 logger = get_logger("api")
 

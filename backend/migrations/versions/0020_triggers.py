@@ -176,4 +176,3 @@ def downgrade() -> None:
         op.drop_index("ix_triggers_trigger_id", "triggers")
         op.drop_index("ix_triggers_tenant_id", "triggers")
         op.drop_table("triggers")
-

@@ -92,4 +92,3 @@ def run_governed_migrations(
     assert_migration_governance_clean()
     chains = resolve_migration_chains(chain_keys, runtime_managed_only=runtime_managed_only)
     return upgrade_chains(chains, revision=revision, upgrade_fn=upgrade_fn)
-

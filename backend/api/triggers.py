@@ -13,9 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.deps import _bind_tenant_db, get_current_admin, get_db, get_redis, get_tenant_db
-from backend.kernel.contracts.status import canonicalize_status, normalize_persisted_status
 from backend.kernel.contracts.errors import zen
-from backend.platform.redis.client import CHANNEL_TRIGGER_EVENTS, RedisClient
+from backend.kernel.contracts.status import canonicalize_status, normalize_persisted_status
 from backend.kernel.extensions.trigger_command_service import TriggerCommandService
 from backend.kernel.extensions.trigger_kind_registry import (
     ManualTriggerConfig,
@@ -25,8 +24,9 @@ from backend.kernel.extensions.trigger_kind_registry import (
     validate_trigger_config,
 )
 from backend.kernel.extensions.trigger_service import fire_trigger, validate_trigger_target_contract
-from backend.platform.http.webhooks import verify_timestamped_hmac_sha256
 from backend.models.trigger import Trigger, TriggerDelivery
+from backend.platform.http.webhooks import verify_timestamped_hmac_sha256
+from backend.platform.redis.client import CHANNEL_TRIGGER_EVENTS, RedisClient
 
 router = APIRouter(prefix="/api/v1/triggers", tags=["triggers"])
 
@@ -487,4 +487,3 @@ async def receive_trigger_webhook(
         idempotency_key=request.headers.get(webhook_config.idempotency_header),
     )
     return _to_delivery_response(delivery)
-

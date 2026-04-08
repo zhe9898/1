@@ -1327,4 +1327,3 @@ class TestConsoleSplit:
         assert router.prefix == "/api/v1/console"
         assert callable(get_console_overview)
         assert callable(get_console_diagnostics)
-

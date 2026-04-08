@@ -30,10 +30,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Kernel/Surface relation constraint",
         priority="P0",
         maturity="enforced",
-        summary=(
-            "Control-plane surfaces are defined in backend code and "
-            "validated against the kernel capability registry before export."
-        ),
+        summary=("Control-plane surfaces are defined in backend code and " "validated against the kernel capability registry before export."),
         enforcement_layers=("kernel", "control_plane", "tests"),
         source_modules=("backend.kernel.surfaces.registry", "backend.kernel.capabilities.registry"),
         gate_tests=(
@@ -155,9 +152,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P0",
         maturity="enforced",
         summary=(
-            "Aggregate ownership is declared in a dedicated registry that "
-            "maps each aggregate root to one owner service and its "
-            "controlled modules."
+            "Aggregate ownership is declared in a dedicated registry that " "maps each aggregate root to one owner service and its " "controlled modules."
         ),
         enforcement_layers=("kernel", "tests"),
         source_modules=("backend.kernel.governance.aggregate_owner_registry",),

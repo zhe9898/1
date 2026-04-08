@@ -53,8 +53,8 @@ async def lifespan(app: FastAPI) -> object:
     logger.info("Starting API server")
 
     from backend.control_plane.auth.jwt import assert_jwt_runtime_ready
-    from backend.platform.db.rls import assert_rls_ready, validate_rls_runtime_mode
     from backend.db import _async_session_factory
+    from backend.platform.db.rls import assert_rls_ready, validate_rls_runtime_mode
 
     assert_jwt_runtime_ready()
     validate_rls_runtime_mode()

@@ -14,6 +14,7 @@ from pathlib import Path
 import httpx
 
 from backend.kernel.contracts.events_schema import build_switch_event
+from backend.platform.redis.client import RedisClient
 from backend.platform.redis.constants import CHANNEL_SWITCH_EVENTS
 from backend.shared_state import service_liveness_fails, service_readiness
 
@@ -80,15 +81,13 @@ async def data_retention_worker() -> None:
 def _init_bitrot_db() -> None:
     conn = sqlite3.connect(BITROT_DB_PATH)
     try:
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS file_hashes (
                 filepath TEXT PRIMARY KEY,
                 sha256 TEXT NOT NULL,
                 last_checked REAL NOT NULL
             )
-            """
-        )
+            """)
         conn.commit()
     finally:
         conn.close()
@@ -121,10 +120,7 @@ def _scan_and_hash_file(filepath: Path, db_path: Path) -> str | None:
                     (str(filepath), file_hash, now),
                 )
             elif row[0] != file_hash:
-                return (
-                    "重大警告 critical_bitrot_detected: "
-                    f"file={filepath} baseline_hash={row[0]} current_hash={file_hash}"
-                )
+                return "重大警告 critical_bitrot_detected: " f"file={filepath} baseline_hash={row[0]} current_hash={file_hash}"
             else:
                 cursor.execute(
                     "UPDATE file_hashes SET last_checked = ? WHERE filepath = ?",
@@ -176,7 +172,7 @@ async def bitrot_worker() -> None:
             await asyncio.sleep(backoff)
 
 
-async def health_probe_worker(app_redis: object = None) -> None:
+async def health_probe_worker(app_redis: RedisClient | None = None) -> None:
     await asyncio.sleep(5)
     restart_count = 0
     while True:

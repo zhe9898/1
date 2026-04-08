@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_redis, get_tenant_db
-from backend.platform.redis.client import RedisClient
 from backend.control_plane.admin.user_lifecycle import activate_user, delete_user, suspend_user
 from backend.models.user import User
+from backend.platform.redis.client import RedisClient
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -103,4 +103,3 @@ async def delete_user_endpoint(
     """
     user = await delete_user(db, redis, tenant_id=current_user["tenant_id"], user_id=user_id)
     return _to_response(user)
-

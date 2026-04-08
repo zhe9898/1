@@ -68,4 +68,3 @@ def test_run_governed_migrations_fails_fast_when_governance_is_invalid(monkeypat
 
     with pytest.raises(MigrationGovernanceError, match="broken overlap policy"):
         run_governed_migrations(upgrade_fn=lambda *_args: None)
-

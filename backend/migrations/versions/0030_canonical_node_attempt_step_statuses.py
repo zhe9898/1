@@ -33,4 +33,3 @@ def downgrade() -> None:
         op.execute(sa.text("UPDATE job_attempts SET status = 'expired' WHERE status = 'timeout'"))
     if guard.has_table("workflow_steps"):
         op.execute(sa.text("UPDATE workflow_steps SET status = 'pending' WHERE status = 'waiting'"))
-

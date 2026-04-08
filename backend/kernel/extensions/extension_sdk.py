@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.kernel.contracts.runtime_version import get_runtime_version
 from backend.kernel.extensions.connector_kind_registry import (
     HttpConnectorConfig,
     MqttConnectorConfig,
@@ -61,7 +62,6 @@ from backend.kernel.extensions.job_kind_registry import (
     register_job_kind,
     unregister_job_kind,
 )
-from backend.kernel.contracts.runtime_version import get_runtime_version
 from backend.kernel.extensions.workflow_template_registry import (
     get_workflow_template_info,
     list_workflow_templates,

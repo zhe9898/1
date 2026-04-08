@@ -9,7 +9,6 @@ from typing import Any, Protocol
 import jwt
 from fastapi import status
 
-
 from backend.kernel.contracts.errors import zen
 from backend.platform.redis._shared import REDIS_OPERATION_ERRORS
 
@@ -36,7 +35,7 @@ if _IS_PROD and not _CURRENT:
 
 
 class RedisBlacklistStore(Protocol):
-    async def set(self, key: str, value: str, ex: int) -> Any: ...
+    async def set(self, key: str, value: str | bytes | int | float, **kwargs: Any) -> Any: ...
 
     async def get(self, key: str) -> Any: ...
 

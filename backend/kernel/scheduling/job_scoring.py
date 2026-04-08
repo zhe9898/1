@@ -12,8 +12,8 @@ import hashlib
 import math
 from typing import TYPE_CHECKING
 
-from backend.kernel.scheduling.business_scheduling import calculate_sla_breach_risk
 from backend.kernel.policy.types import NodeFreshnessPolicy, ScoringWeights
+from backend.kernel.scheduling.business_scheduling import calculate_sla_breach_risk
 from backend.kernel.scheduling.scheduling_strategies import (
     SchedulingStrategy,
     calculate_anti_affinity_penalty,
@@ -275,4 +275,3 @@ def score_job_for_node(
     total, breakdown = _pp.adjust_score(job, node, total, breakdown)
 
     return total, breakdown
-

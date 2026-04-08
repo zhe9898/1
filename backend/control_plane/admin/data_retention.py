@@ -27,12 +27,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.platform.db.rls import set_tenant_context
 from backend.models.audit_log import AuditLog
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.scheduling_decision import SchedulingDecision
 from backend.models.tenant import Tenant
+from backend.platform.db.rls import set_tenant_context
 
 logger = logging.getLogger(__name__)
 

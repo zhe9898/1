@@ -423,4 +423,3 @@ async def async_build_time_budgeted_placement_plan(
         decision_context["assignments"] = len(plan)
         decision_context["reason"] = str(decision_context.get("result", "planned" if plan else "no_assignments"))
     return plan
-

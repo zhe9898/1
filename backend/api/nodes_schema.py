@@ -244,11 +244,29 @@ def _build_bootstrap_commands(node: Node, node_token: str) -> dict[str, str]:
 
 def _bootstrap_notes() -> list[str]:
     return [
-        "Replace <gateway-base-url> with the externally reachable gateway base URL. The runner appends the /api/v1/... control-plane paths itself.",
-        "The machine channel requires HTTPS by default. Only local development may opt into http://127.0.0.1... together with RUNNER_ALLOW_INSECURE_HTTP=true.",
-        "Keep RUNNER_TENANT_ID alongside the node token so the machine channel is scoped to the tenant context before authentication completes.",
-        "The node token is one-time display material and should only be stored on the target host or native client. It will not be shown again after this response closes.",
+        ("Replace <gateway-base-url> with the externally reachable gateway base URL. " "The runner appends the /api/v1/... control-plane paths itself."),
+        (
+            "The machine channel requires HTTPS by default. Only local development may opt "
+            "into http://127.0.0.1... together with RUNNER_ALLOW_INSECURE_HTTP=true."
+        ),
+        ("Keep RUNNER_TENANT_ID alongside the node token so the machine channel is scoped " "to the tenant context before authentication completes."),
+        (
+            "The node token is one-time display material and should only be stored on the "
+            "target host or native client. It will not be shown again after this response closes."
+        ),
     ]
+
+
+IOS_NATIVE_NOTES = [
+    "Embed this JSON into the iOS native client configuration so HealthKit, " "notifications, and local device bridges reuse the control-plane contract."
+]
+
+ANDROID_NATIVE_NOTES = [
+    (
+        "Embed this JSON into the Android native client configuration so Health Connect, "
+        "notifications, and local device bridges reuse the control-plane contract."
+    )
+]
 
 
 def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapReceipt]:
@@ -306,7 +324,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                         f'  "zone": "{native_common["zone"]}"\n'
                         "}"
                     ),
-                    notes=["Embed this JSON into the iOS native client configuration so HealthKit, notifications, and local device bridges reuse the control-plane contract."],
+                    notes=IOS_NATIVE_NOTES,
                 )
             )
         if node.os in {"android", "unknown"} or node.executor == "kotlin-native" or node.node_type == "native-client":
@@ -327,7 +345,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                         f'  "zone": "{native_common["zone"]}"\n'
                         "}"
                     ),
-                    notes=["Embed this JSON into the Android native client configuration so Health Connect, notifications, and local device bridges reuse the control-plane contract."],
+                    notes=ANDROID_NATIVE_NOTES,
                 )
             )
     return receipts

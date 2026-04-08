@@ -112,4 +112,3 @@ async def write_auto_tune_audit_log(
             extra_details=extra_details,
         ),
     )
-

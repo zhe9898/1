@@ -65,4 +65,3 @@ async def set_quota_endpoint(
     used, limit = data["used"], data["limit"]
     pct = round(used / limit * 100, 1) if limit > 0 else 0.0
     return QuotaStatusItem(resource_type=payload.resource_type, used=used, limit=limit, pct=pct)
-

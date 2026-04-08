@@ -57,4 +57,3 @@ def downgrade() -> None:
     op.drop_index("ix_job_logs_job_id", "job_logs")
     op.drop_index("ix_job_logs_tenant_id", "job_logs")
     op.drop_table("job_logs")
-

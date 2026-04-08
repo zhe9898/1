@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_tenant_db
 from backend.kernel.contracts.errors import zen
-from backend.platform.security.normalization import normalize_webpush_endpoint
 from backend.models.user import PushSubscription
+from backend.platform.security.normalization import normalize_webpush_endpoint
 
 router = APIRouter()
 logger = logging.getLogger("zen70.push")

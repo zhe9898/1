@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_current_user, get_redis, get_tenant_db
 from backend.kernel.contracts.errors import zen
-from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 from backend.models.job import Job
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 
 from .database import _append_log, _get_job_by_id_for_update
 from .helpers import _utcnow

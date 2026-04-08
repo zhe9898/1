@@ -56,8 +56,8 @@ from backend.control_plane.auth.webauthn_flow_session import (
 check_webauthn_rate_limit = _auth_helpers.check_webauthn_rate_limit
 credential_id_to_base64url = _auth_helpers.credential_id_to_base64url
 expected_challenge_bytes = _auth_helpers.expected_challenge_bytes
-from backend.platform.redis.client import RedisClient  # noqa: E402
 from backend.models.user import User, WebAuthnCredential  # noqa: E402
+from backend.platform.redis.client import RedisClient  # noqa: E402
 
 try:
     from backend.control_plane.auth.webauthn import (

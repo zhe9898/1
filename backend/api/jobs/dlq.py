@@ -8,8 +8,8 @@ from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_redis, get_tenant_db
 from backend.kernel.contracts.errors import zen
 from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
-from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 from backend.models.job import Job
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 
 from .database import _append_log, _get_job_by_id, _get_job_by_id_for_update, remove_from_dead_letter_queue
 from .helpers import _to_response, _utcnow

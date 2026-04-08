@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 
 
 class RedisPubSubSession:

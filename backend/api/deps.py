@@ -14,21 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth_cookies import get_auth_cookie_token, set_auth_cookie
-from backend.kernel.contracts.errors import zen
+from backend.control_plane.auth.access_policy import require_admin_role
 from backend.control_plane.auth.jwt import decode_token
-from backend.kernel.topology.node_auth import authenticate_node_request
-from backend.platform.redis.client import RedisClient
-from backend.platform.db.rls import assert_rls_ready, set_tenant_context
-from backend.control_plane.auth.access_policy import (
-    ADMIN_ROLES,
-    SUPERADMIN_ROLE,
-    has_admin_role,
-    is_superadmin_role,
-    require_admin_role,
-    require_superadmin_role,
-)
 from backend.db import get_db_session
+from backend.kernel.contracts.errors import zen
+from backend.kernel.topology.node_auth import authenticate_node_request
 from backend.models.user import User
+from backend.platform.db.rls import assert_rls_ready, set_tenant_context
+from backend.platform.redis.client import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +203,7 @@ async def get_machine_tenant_db(
     request.state.machine_tenant_id = authoritative_tenant_id
     request.state.machine_node_id = normalized_node_id
     return await _bind_tenant_db(db, authoritative_tenant_id)
+
 
 async def get_current_admin(
     current_user: dict[str, object] = Depends(get_current_user),

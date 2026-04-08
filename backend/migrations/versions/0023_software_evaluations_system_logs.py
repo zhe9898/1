@@ -97,4 +97,3 @@ def downgrade() -> None:
         op.drop_index("ix_software_evaluations_evaluation_id", "software_evaluations")
         op.drop_index("ix_software_evaluations_tenant_id", "software_evaluations")
         op.drop_table("software_evaluations")
-

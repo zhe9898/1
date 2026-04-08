@@ -12,8 +12,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-from backend.kernel.extensions.alert_actions import normalize_alert_action
 from backend.kernel.contracts.errors import zen
+from backend.kernel.extensions.alert_actions import normalize_alert_action
 from backend.platform.security.normalization import normalize_local_filesystem_path as _shared_normalize_local_filesystem_path
 from backend.platform.security.normalization import normalize_managed_uri as _shared_normalize_managed_uri
 from backend.platform.security.normalization import normalize_nonempty_string as _shared_normalize_nonempty_string

@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.platform.logging.redaction import sanitize_sensitive_data
 from backend.models.audit_log import AuditLog
+from backend.platform.logging.redaction import sanitize_sensitive_data
 
 if TYPE_CHECKING:
     from fastapi import Request

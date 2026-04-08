@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -9,9 +10,10 @@ from backend.api.agent import AgentActionItem, AgentActRequest, agent_act
 
 @pytest.mark.asyncio
 async def test_agent_act_relies_on_set_switch_single_publish_path() -> None:
-    redis = AsyncMock()
-    redis.set_switch = AsyncMock(return_value=True)
-    redis.publish = AsyncMock()
+    redis = SimpleNamespace(
+        switches=SimpleNamespace(set=AsyncMock(return_value=True)),
+        pubsub=SimpleNamespace(publish=AsyncMock()),
+    )
 
     with (
         patch("backend.api.agent._agent_enabled", return_value=True),
@@ -30,11 +32,11 @@ async def test_agent_act_relies_on_set_switch_single_publish_path() -> None:
             current_user={"sub": "admin-1", "role": "admin", "tenant_id": "default"},
         )
 
-    redis.set_switch.assert_awaited_once_with(
+    redis.switches.set.assert_awaited_once_with(
         "media",
         "OFF",
         reason="test",
         updated_by="agent:admin-1",
     )
-    redis.publish.assert_not_called()
+    redis.pubsub.publish.assert_not_called()
     assert response.results[0].ok is True

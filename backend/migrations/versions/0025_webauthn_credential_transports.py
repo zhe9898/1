@@ -22,4 +22,3 @@ def downgrade() -> None:
     inspector = sa.inspect(op.get_bind())
     if inspector.has_table("webauthn_credentials"):
         op.drop_column("webauthn_credentials", "transports")
-

@@ -22,6 +22,8 @@ from backend.api.models import CapabilityResponse
 from backend.capabilities import build_public_capability_matrix
 from backend.control_plane.auth.access_policy import has_admin_role
 from backend.kernel.contracts.errors import zen
+from backend.kernel.profiles.public_profile import normalize_gateway_profile
+from backend.platform.logging.structured import get_logger
 from backend.platform.redis.client import (
     CHANNEL_CONNECTOR_EVENTS,
     CHANNEL_JOB_EVENTS,
@@ -30,8 +32,6 @@ from backend.platform.redis.client import (
     CHANNEL_TRIGGER_EVENTS,
     RedisClient,
 )
-from backend.platform.logging.structured import get_logger
-from backend.kernel.profiles.public_profile import normalize_gateway_profile
 
 logger = get_logger("api.routes", None)
 
@@ -61,7 +61,7 @@ async def get_capabilities(
     """
     鏉╂柨娲栬ぐ鎾冲閹碘偓閺堝婀囬崝陇鍏橀崝娑栤偓?
     濞夋洖鍚€ 2.3.1閿涙矮绶甸崜宥囶伂 v-for 閸斻劍鈧焦瑕嗛弻鎾扁偓?    濞夋洖鍚€ 3.2.5閿涙瓓edis 婢惰精浠堥弮鎯扮箲閸?All-OFF 閻晠妯€楠炶泛鐢?X-ZEN70-Bus-Status: not-ready閵?
-    娣囶喖顦查敍姘閸?redis is None 閺冩儼绻戦崶鐐碘敄 {}閿涘苯顕遍懛鏉戝缁?閺嗗倹妫ら懗钘夊閺佺増宓?閵?    閻滄澘婀挧?capabilities.get_capabilities_matrix()閿涘edis 娑撳秴褰查悽銊︽閸ョ偤鈧偓 ALL_OFF_MATRIX閵?    """
+    娣囶喖顦查敍姘閸?redis is None 閺冩儼绻戦崶鐐碘敄 {}閿涘苯顕遍懛鏉戝缁?閺嗗倹妫ら懗钘夊閺佺増宓?閵?    閻滄澘婀挧?capabilities.get_capabilities_matrix()閿涘edis 娑撳秴褰查悽銊︽閸ョ偤鈧偓 ALL_OFF_MATRIX閵?"""
     del request
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
     is_admin = has_admin_role(current_user)
@@ -254,13 +254,17 @@ async def sse_events(
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
 
-    # 绾喖鐣?connection_id閿涙矮绱崗鍫滃▏閻劌澧犵粩顖涘絹娓氭稓娈?client_token閿涘苯鎯侀崚娆忔倵缁旑垰鍘规惔鏇犳晸閹?    conn_id: str
+    # Reuse a validated client token when available so reconnects keep the same
+    # ping lease; otherwise mint a fresh connection id.
+    conn_id: str
     if client_token and _UUID_RE.match(client_token):
         conn_id = client_token
     else:
         conn_id = str(uuid.uuid4())
 
-    # 閸?Redis 娑擃厽鏁為崘灞藉灥婵?Ping 閺冨爼妫块幋绛圭礄SETEX 45s TTL閿?    ping_key = f"{SSE_PING_KEY_PREFIX}{conn_id}"
+    # Register the ping lease before streaming so timeout checks have a stable
+    # source of truth even if the client disconnects during setup.
+    ping_key = f"{SSE_PING_KEY_PREFIX}{conn_id}"
     try:
         await redis.kv.setex(ping_key, SSE_PING_TTL, _next_sse_ping_deadline())
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:

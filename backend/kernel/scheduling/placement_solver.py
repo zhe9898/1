@@ -35,8 +35,8 @@ from backend.kernel.scheduling.scheduling_candidates import (
 from backend.models.job import Job
 
 if TYPE_CHECKING:
-    from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
     from backend.kernel.policy.types import SolverConfig
+    from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -623,4 +623,3 @@ def build_time_budgeted_placement_plan(
         decision_context["assignments"] = len(plan)
         decision_context["reason"] = str(decision_context.get("result", "planned" if plan else "no_assignments"))
     return plan
-

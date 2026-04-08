@@ -34,5 +34,5 @@ def test_request_id_has_single_http_owner() -> None:
     middleware_stack_text = repo_path("backend", "control_plane", "app", "middleware_stack.py").read_text(encoding="utf-8")
 
     assert "add_request_id_and_log" not in main_text
-    assert "response.headers[\"X-Request-ID\"]" not in middleware_stack_text
+    assert 'response.headers["X-Request-ID"]' not in middleware_stack_text
     assert "uuid.uuid4()" not in middleware_stack_text

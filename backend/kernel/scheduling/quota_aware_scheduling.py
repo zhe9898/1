@@ -339,4 +339,3 @@ def build_quota_accounts(
             accounts[tid] = ResourceQuotaAccount(tenant_id=tid, limit=limit)
 
     return accounts
-

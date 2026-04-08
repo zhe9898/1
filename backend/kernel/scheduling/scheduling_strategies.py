@@ -256,4 +256,3 @@ def calculate_anti_affinity_penalty(
             return _get_strategy_config().anti_affinity_penalty
 
     return 0
-

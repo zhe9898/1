@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 from collections.abc import Mapping
 
@@ -8,11 +9,7 @@ from backend.platform.redis.client import RedisClient
 
 
 def redis_sdk_available() -> bool:
-    try:
-        import redis.asyncio  # type: ignore[import-untyped, unused-ignore]
-    except ImportError:
-        return False
-    return True
+    return importlib.util.find_spec("redis.asyncio") is not None
 
 
 def _int_setting(settings: Mapping[str, object], key: str, default: int) -> int:

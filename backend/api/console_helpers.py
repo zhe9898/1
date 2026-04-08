@@ -13,12 +13,12 @@ from pydantic import BaseModel, Field
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import StatusView
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
-from backend.kernel.contracts.status import normalize_persisted_status
 from backend.control_plane.console.state_views import (
     node_heartbeat_state,
     severity_view,
     tone_view,
 )
+from backend.kernel.contracts.status import normalize_persisted_status
 from backend.kernel.execution.job_status import normalize_job_status
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, to_public_profile
 from backend.models.connector import Connector
@@ -226,7 +226,7 @@ class ControlPlaneSurfacesResponse(BaseModel):
     surfaces: list[ControlPlaneSurfaceResponse] = Field(default_factory=list)
 
 
-# 閳光偓閳光偓 Pure helper functions 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
+# Pure helper functions
 
 
 def build_menu_response(runtime_profile: str, *, is_admin: bool) -> ConsoleMenuResponse:
@@ -523,4 +523,3 @@ def build_connector_overview_bucket(connectors: list[Connector]) -> OverviewBuck
             bucket.degraded += 1
     bucket.attention = bucket.pending + bucket.degraded + bucket.failed
     return bucket
-

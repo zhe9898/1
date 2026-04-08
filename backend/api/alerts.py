@@ -8,9 +8,9 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_current_user, get_tenant_db
+from backend.kernel.contracts.errors import zen
 from backend.kernel.extensions.alert_actions import AlertActionModel, normalize_alert_action
 from backend.kernel.extensions.alerting import run_alert_evaluation
-from backend.kernel.contracts.errors import zen
 from backend.models.alert import Alert, AlertRule
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
@@ -215,4 +215,3 @@ async def trigger_evaluation(
     """Manually trigger alert evaluation for this tenant (admin only)."""
     fired = await run_alert_evaluation(db, current_user["tenant_id"])
     return {"status": "ok", "fired": len(fired), "alerts": [_alert_to_response(a) for a in fired]}
-

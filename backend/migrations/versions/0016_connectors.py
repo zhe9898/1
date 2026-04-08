@@ -81,4 +81,3 @@ def downgrade() -> None:
     op.drop_index("ix_connectors_connector_id", "connectors")
     op.drop_index("ix_connectors_tenant_id", "connectors")
     op.drop_table("connectors")
-

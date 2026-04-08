@@ -33,4 +33,3 @@ def downgrade() -> None:
         op.execute(sa.text("UPDATE trigger_deliveries SET status = 'accepted' WHERE status = 'delivered'"))
     if guard.has_table("workflows"):
         op.execute(sa.text("UPDATE workflows SET status = 'canceled' WHERE status = 'cancelled'"))
-

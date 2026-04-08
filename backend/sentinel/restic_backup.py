@@ -10,13 +10,13 @@ from pathlib import Path
 
 import psutil
 
+from backend.platform.http.webhooks import post_public_webhook
 from backend.platform.security.normalization import (
     default_restic_allowed_roots,
     parse_allowed_roots,
     resolve_path_within_roots,
     split_csv_values,
 )
-from backend.platform.http.webhooks import post_public_webhook
 
 logger = logging.getLogger("zen70.sentinel.restic_backup")
 _GPU_UTILIZATION_PATTERN = re.compile(r"^nvidia_gpu_utilization(?:\{[^}]*\})?\s+([0-9]+(?:\.[0-9]+)?)\s*$")
@@ -172,4 +172,3 @@ if __name__ == "__main__":
         aws_access_key_id=ak,  # type: ignore[arg-type]
         aws_secret_access_key=sk,  # type: ignore[arg-type]
     )
-

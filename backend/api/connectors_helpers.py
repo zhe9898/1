@@ -13,8 +13,8 @@ from pydantic import BaseModel, Field
 
 from backend.api.action_contracts import ControlAction, ControlActionField
 from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse, StatusView
-from backend.kernel.extensions.connector_secret_service import ConnectorSecretService
 from backend.control_plane.console.state_views import connector_status_view
+from backend.kernel.extensions.connector_secret_service import ConnectorSecretService
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.connector import Connector
 
@@ -81,7 +81,7 @@ class ConnectorTestResponse(BaseModel):
     checked_at: datetime.datetime
 
 
-# 閳光偓閳光偓 Helper functions 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
+# Helper functions
 
 
 def _to_response(connector: Connector) -> ConnectorResponse:
@@ -284,4 +284,3 @@ def _resource_schema() -> ResourceSchemaResponse:
             ),
         ],
     )
-

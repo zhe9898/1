@@ -237,4 +237,3 @@ def calculate_retry_delay_seconds(
         delay = base_delay * (2 ** min(retry_count, _gps().active.retry.max_exponent))
 
     return int(min(delay, max_delay))
-

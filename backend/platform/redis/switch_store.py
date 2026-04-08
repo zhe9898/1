@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 
-from backend.platform.redis._shared import AsyncRedisComponent, REDIS_OPERATION_ERRORS
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 from backend.platform.redis.constants import CHANNEL_SWITCH_EVENTS, KEY_SWITCH_PREFIX
 from backend.platform.redis.serialization import as_redis_hset_mapping
 from backend.platform.redis.types import SwitchState
@@ -50,10 +50,11 @@ class RedisSwitchStore(AsyncRedisComponent):
             return {}
 
         out: dict[str, SwitchState] = {}
+        prefix_length = len(KEY_SWITCH_PREFIX)
         for key, data in zip(keys, results):
             if not data:
                 continue
-            name = key[len(KEY_SWITCH_PREFIX) :] if key.startswith(KEY_SWITCH_PREFIX) else key.split(":")[-1]
+            name = key[prefix_length:] if key.startswith(KEY_SWITCH_PREFIX) else key.split(":")[-1]
             out[name] = {
                 "state": data.get("state", ""),
                 "reason": data.get("reason"),

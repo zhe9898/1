@@ -27,13 +27,13 @@ from backend.api.deps import get_current_admin, get_current_user, get_redis, get
 from backend.api.jobs.models import JobCreateRequest
 from backend.api.jobs.submission_service import submit_job
 from backend.api.ui_contracts import ResourceSchemaResponse
+from backend.kernel.contracts.errors import zen
 from backend.kernel.extensions.connector_kind_registry import validate_connector_config
 from backend.kernel.extensions.connector_service import ConnectorService
-from backend.kernel.contracts.errors import zen
 from backend.kernel.scheduling.quota_service import check_connector_quota
+from backend.models.connector import Connector
 from backend.platform.logging.redaction import sanitize_sensitive_data
 from backend.platform.redis.client import CHANNEL_CONNECTOR_EVENTS, RedisClient
-from backend.models.connector import Connector
 
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
 _ALLOWED_CONNECTOR_ENDPOINT_SCHEMES = frozenset({"http", "https", "mqtt", "tcp"})
@@ -321,4 +321,3 @@ async def test_connector(
         },
     )
     return response
-

@@ -271,4 +271,3 @@ def get_executor_registry() -> ExecutorRegistry:
     if _registry is None:
         _registry = ExecutorRegistry()
     return _registry
-

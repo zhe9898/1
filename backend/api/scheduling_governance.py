@@ -18,7 +18,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_tenant_db
-from backend.kernel.topology.executor_registry import get_executor_registry
 from backend.kernel.scheduling.placement_policy import get_placement_policy
 from backend.kernel.scheduling.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
@@ -34,6 +33,7 @@ from backend.kernel.scheduling.scheduling_governance import (
     set_scheduling_feature,
     upsert_tenant_policy,
 )
+from backend.kernel.topology.executor_registry import get_executor_registry
 from backend.models.scheduling_decision import SchedulingDecision
 from backend.models.tenant_scheduling_policy import TenantSchedulingPolicy
 

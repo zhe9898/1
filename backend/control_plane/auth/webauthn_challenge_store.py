@@ -12,8 +12,8 @@ from webauthn.helpers import base64url_to_bytes
 
 from backend.control_plane.auth.auth_helpers import CODE_BAD_REQUEST, CODE_SERVER_ERROR, CODE_UNAUTHORIZED, get_challenge_from_credential
 from backend.kernel.contracts.errors import zen
-from backend.platform.redis.client import RedisClient
 from backend.models.webauthn_challenge import WebAuthnChallenge
+from backend.platform.redis.client import RedisClient
 
 ChallengeOptionsBuilder = Callable[[bytes | None], tuple[bytes, str, str]]
 

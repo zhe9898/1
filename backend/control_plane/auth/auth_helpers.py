@@ -15,9 +15,9 @@ from fastapi import Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 
-from backend.kernel.contracts.errors import ZenErrorCode, zen
 from backend.control_plane.auth.jwt import create_access_token, get_access_token_expire_seconds
 from backend.control_plane.auth.permissions import filter_valid_scopes
+from backend.kernel.contracts.errors import ZenErrorCode, zen
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.client import RedisClient
 
@@ -190,7 +190,7 @@ async def consume_challenge(
     username: str | None = None,
 ) -> tuple[str, dict[str, object]]:
     """
-    浠?Redis 涓娆℃у彇鍥炲苟鏍￠獙鎸戞垬锛涙牎楠?flow锛堝強鍙?username锛夈?    杩斿洖 (challenge_base64url, payload_dict)銆?    澶辫触鐩存帴 raise HTTPException銆?    """
+    浠?Redis 涓娆℃у彇鍥炲苟鏍￠獙鎸戞垬锛涙牎楠?flow锛堝強鍙?username锛夈?    杩斿洖 (challenge_base64url, payload_dict)銆?    澶辫触鐩存帴 raise HTTPException銆?"""
     challenge_b64 = get_challenge_from_credential(credential)
     if not challenge_b64:
         raise zen(
@@ -295,7 +295,7 @@ async def check_webauthn_rate_limit(
     request_id_str: str,
 ) -> None:
     """
-    WebAuthn 鎺ュ彛闄愭祦锛氭寜 IP 婊戝姩绐楀彛锛岃秴闄愭姏 429銆?    Redis 涓嶅彲鐢ㄦ椂鏀捐锛堢敱鏋佸垜瓒呮椂鍏滃簳锛夛紝閬垮厤闄愭祦鏁呴殰闃诲璁よ瘉銆?    """
+    WebAuthn 鎺ュ彛闄愭祦锛氭寜 IP 婊戝姩绐楀彛锛岃秴闄愭姏 429銆?    Redis 涓嶅彲鐢ㄦ椂鏀捐锛堢敱鏋佸垜瓒呮椂鍏滃簳锛夛紝閬垮厤闄愭祦鏁呴殰闃诲璁よ瘉銆?"""
     if redis is None:
         _check_local_webauthn_rate_limit(client_ip_str)
         return

@@ -38,8 +38,8 @@ from backend.api.nodes_helpers import (  # noqa: F401 閳?re-exported for consum
     _to_response,
 )
 
-# 閳光偓閳光偓 Re-exports (backward-compat) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
-from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consumers
+# Re-exported for consumers that still import from backend.api.nodes.
+from backend.api.nodes_models import (  # noqa: F401
     BootstrapReceipt,
     NodeContractPayload,
     NodeDrainRequest,
@@ -51,7 +51,7 @@ from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consume
     NodeSelfDrainRequest,
     _utcnow,
 )
-from backend.api.nodes_schema import (  # noqa: F401 閳?re-exported for consumers
+from backend.api.nodes_schema import (  # noqa: F401
     _bootstrap_notes,
     _bootstrap_token_value,
     _build_bootstrap_commands,
@@ -59,14 +59,14 @@ from backend.api.nodes_schema import (  # noqa: F401 閳?re-exported for consume
     _resource_schema,
 )
 from backend.api.ui_contracts import ResourceSchemaResponse
-from backend.kernel.contracts.status import canonicalize_status
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.status import canonicalize_status
+from backend.kernel.scheduling.quota_service import check_node_quota
 from backend.kernel.topology.node_auth import authenticate_node_request
 from backend.kernel.topology.node_enrollment_service import NodeEnrollmentService
-from backend.kernel.scheduling.quota_service import check_node_quota
+from backend.models.node import Node
 from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
 from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
-from backend.models.node import Node
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
 
@@ -427,4 +427,3 @@ async def get_node(
     now = _utcnow()
     counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id], now=now)
     return _to_response(node, active_lease_count=counts.get(node.node_id, 0), now=now)
-

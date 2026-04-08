@@ -367,4 +367,3 @@ _engine = _build_default_engine()
 def get_scheduling_engine() -> SchedulingEngine:
     """Return the module-level scheduling engine singleton."""
     return _engine
-

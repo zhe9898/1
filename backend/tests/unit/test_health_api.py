@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -56,8 +57,7 @@ async def test_ingest_idempotency_blocks_duplicate_batch_when_redis_key_exists()
         idempotency_key="health-batch-0001",
     )
 
-    redis = AsyncMock()
-    redis.set = AsyncMock(return_value=None)
+    redis = SimpleNamespace(kv=SimpleNamespace(set=AsyncMock(return_value=None)))
 
     db = AsyncMock()
     db.add = MagicMock()

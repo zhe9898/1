@@ -44,4 +44,3 @@ def downgrade() -> None:
     guard = SchemaGuard(op.get_bind())
     if guard.has_table("webauthn_challenges"):
         op.drop_table("webauthn_challenges")
-

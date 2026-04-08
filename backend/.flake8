@@ -1,0 +1,5 @@
+[flake8]
+per-file-ignores =
+    kernel/scheduling/gen_grpc/placement_pb2.py:E501
+    kernel/scheduling/gen_grpc/placement_pb2_grpc.py:F401
+    kernel/scheduling/gen_grpc/__init__.py:F401

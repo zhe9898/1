@@ -63,4 +63,3 @@ async def test_fire_alert_creates_record_when_no_recent_duplicate() -> None:
     assert alert is not None
     db.add.assert_called_once()
     db.flush.assert_awaited()
-

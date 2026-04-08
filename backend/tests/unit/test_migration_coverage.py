@@ -113,4 +113,3 @@ def test_legacy_model_table_creations_are_frozen_to_approved_historical_set() ->
     legacy_created_model_tables = created["legacy"] & collect_model_tables()
 
     assert legacy_created_model_tables == APPROVED_LEGACY_MODEL_TABLE_CREATIONS
-

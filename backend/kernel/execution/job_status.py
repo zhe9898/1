@@ -36,4 +36,3 @@ def normalize_job_like_status(value: str | None, *, fallback: str = "pending") -
         if canonical:
             return canonical
     return normalized
-

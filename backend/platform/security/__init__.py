@@ -1,4 +1,3 @@
-from backend.platform.security.secret_envelope import AesGcmEnvelopeService, SecretKeyMaterial
 from backend.platform.security.normalization import (
     default_restic_allowed_roots,
     normalize_local_filesystem_path,
@@ -12,6 +11,7 @@ from backend.platform.security.normalization import (
     resolve_path_within_roots,
     split_csv_values,
 )
+from backend.platform.security.secret_envelope import AesGcmEnvelopeService, SecretKeyMaterial
 
 __all__ = (
     "AesGcmEnvelopeService",
