@@ -41,7 +41,7 @@ jobs:
         run: flake8 --max-line-length=160 --extend-ignore=E203,W503 backend/
 
       - name: Mypy (strict, typed defs only)
-        run: mypy --config-file backend/mypy.ini backend/api backend/core backend/models backend/workers backend/capabilities.py backend/background_tasks.py
+        run: mypy --config-file backend/mypy.ini backend/api backend/control_plane backend/kernel backend/models backend/platform backend/workers backend/capabilities.py backend/background_tasks.py
 
       - name: Unit tests + coverage gate
         run: |

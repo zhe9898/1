@@ -1,4 +1,11 @@
 [flake8]
 exclude =
-    backend/core/gen_grpc,
-    */core/gen_grpc/*
+    backend/kernel/scheduling/gen_grpc,
+    */kernel/scheduling/gen_grpc/*
+per-file-ignores =
+    backend/kernel/scheduling/gen_grpc/placement_pb2.py:E501
+    backend/kernel/scheduling/gen_grpc/placement_pb2_grpc.py:F401
+    backend/kernel/scheduling/gen_grpc/__init__.py:F401
+    kernel/scheduling/gen_grpc/placement_pb2.py:E501
+    kernel/scheduling/gen_grpc/placement_pb2_grpc.py:F401
+    kernel/scheduling/gen_grpc/__init__.py:F401
