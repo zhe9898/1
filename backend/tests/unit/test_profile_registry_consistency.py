@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import yaml
 
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME
-from backend.core.gateway_profile import PROFILE_ALIASES as BACKEND_PROFILE_ALIASES
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME
+from backend.kernel.profiles.public_profile import PROFILE_ALIASES as BACKEND_PROFILE_ALIASES
 from backend.tests.unit._repo_paths import repo_path
 from scripts.iac_core.profiles import PROFILE_ALIASES as IAC_PROFILE_ALIASES
 

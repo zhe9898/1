@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.feature_flag_service import FeatureFlagService
-from backend.core.queue_stratification import (
+from backend.kernel.scheduling.queue_stratification import (
     TenantQuota,
 )
 from backend.core.scheduling_policy_service import SchedulingPolicyService

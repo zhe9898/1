@@ -107,7 +107,7 @@ class AutoTuneAuditRecord:
 
 
 def _get_auto_tune_config() -> AutoTuneConfig:
-    from backend.core.scheduling_policy_store import get_policy_store
+    from backend.kernel.policy.policy_store import get_policy_store
 
     return get_policy_store().active.auto_tune
 

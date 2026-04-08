@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_redis, get_tenant_db
 from backend.core.errors import zen
-from backend.core.node_enrollment_service import NodeEnrollmentService
+from backend.kernel.topology.node_enrollment_service import NodeEnrollmentService
 from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
 

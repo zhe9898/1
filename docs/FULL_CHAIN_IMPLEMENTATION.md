@@ -183,7 +183,7 @@ PolicyStore 单例取代了四个模块分别解析 system.yaml 的做法（ADR 
 | `queue_stratification.py` | `tenant_quotas_config` + `default_service_class_override` |
 | `quota_aware_scheduling.py` | `resource_quotas_config` |
 
-### 3.2 评分器 15 维度 `backend/core/job_scheduler.py`
+### 3.2 评分器 15 维度 `backend/kernel/scheduling/job_scheduler.py`
 
 从 13 维度扩展到 15 维度，总分范围 `-130 ~ 504`:
 

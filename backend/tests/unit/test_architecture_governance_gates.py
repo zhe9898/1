@@ -8,18 +8,18 @@ import pytest
 
 from backend.core.aggregate_owner_registry import export_aggregate_owner_registry, unique_owner_service_map
 from backend.core.architecture_governance import export_architecture_governance_rules, export_architecture_governance_snapshot
-from backend.core.compatibility_adapter import export_status_compatibility_rules
-from backend.core.control_plane import export_surface_registry
-from backend.core.execution_fault_isolation import export_fault_isolation_contract
-from backend.core.extension_guard import (
+from backend.kernel.contracts.status import export_status_compatibility_rules
+from backend.kernel.capabilities.registry import capability_keys
+from backend.kernel.surfaces.registry import export_surface_registry
+from backend.kernel.execution.fault_isolation import export_fault_isolation_contract
+from backend.kernel.extensions.extension_guard import (
     assert_budgeted_payload,
     export_extension_budget_contract,
     validate_extension_manifest_contract,
     validate_scheduling_profile_budget,
 )
-from backend.core.kernel_capabilities import capability_keys
-from backend.core.lease_service import export_lease_service_contract
-from backend.core.runtime_policy_resolver import export_runtime_policy_contract
+from backend.kernel.execution.lease_service import export_lease_service_contract
+from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
 from backend.core.scheduling_framework import SchedulingProfile
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -28,23 +28,23 @@ RUNNER_ROOT = ROOT / "runner-agent"
 
 _OWNER_MODULES_BY_FIELD: dict[tuple[str, str], set[str]] = {
     ("job", "status"): {
-        "backend/core/job_lifecycle_service.py",
-        "backend/core/lease_service.py",
+        "backend/kernel/execution/job_lifecycle_service.py",
+        "backend/kernel/execution/lease_service.py",
     },
-    ("job", "attempt"): {"backend/core/lease_service.py"},
-    ("job", "lease_token"): {"backend/core/lease_service.py"},
-    ("job", "leased_until"): {"backend/core/lease_service.py"},
-    ("attempt", "status"): {"backend/core/lease_service.py"},
-    ("attempt", "lease_token"): {"backend/core/lease_service.py"},
-    ("attempt", "scheduling_decision_id"): {"backend/core/lease_service.py"},
-    ("node", "enrollment_status"): {"backend/core/node_enrollment_service.py"},
-    ("node", "drain_status"): {"backend/core/node_enrollment_service.py"},
-    ("node", "drain_until"): {"backend/core/node_enrollment_service.py"},
-    ("connector", "status"): {"backend/core/connector_service.py"},
-    ("connector", "config"): {"backend/core/connector_service.py"},
-    ("trigger", "status"): {"backend/core/trigger_command_service.py"},
-    ("delivery", "status"): {"backend/core/trigger_command_service.py"},
-    ("workflow", "status"): {"backend/core/workflow_command_service.py"},
+    ("job", "attempt"): {"backend/kernel/execution/lease_service.py"},
+    ("job", "lease_token"): {"backend/kernel/execution/lease_service.py"},
+    ("job", "leased_until"): {"backend/kernel/execution/lease_service.py"},
+    ("attempt", "status"): {"backend/kernel/execution/lease_service.py"},
+    ("attempt", "lease_token"): {"backend/kernel/execution/lease_service.py"},
+    ("attempt", "scheduling_decision_id"): {"backend/kernel/execution/lease_service.py"},
+    ("node", "enrollment_status"): {"backend/kernel/topology/node_enrollment_service.py"},
+    ("node", "drain_status"): {"backend/kernel/topology/node_enrollment_service.py"},
+    ("node", "drain_until"): {"backend/kernel/topology/node_enrollment_service.py"},
+    ("connector", "status"): {"backend/kernel/extensions/connector_service.py"},
+    ("connector", "config"): {"backend/kernel/extensions/connector_service.py"},
+    ("trigger", "status"): {"backend/kernel/extensions/trigger_command_service.py"},
+    ("delivery", "status"): {"backend/kernel/extensions/trigger_command_service.py"},
+    ("workflow", "status"): {"backend/kernel/extensions/workflow_command_service.py"},
     ("policy", "config_version"): {"backend/core/scheduling_policy_service.py"},
     ("flag", "enabled"): {"backend/core/feature_flag_service.py"},
     ("flag", "updated_by"): {"backend/core/feature_flag_service.py"},
@@ -159,11 +159,11 @@ def test_status_compatibility_rules_export_release_window_metadata() -> None:
 
 def test_runtime_policy_gate_blocks_runtime_system_yaml_reads_outside_allowlist() -> None:
     allowlist = {
-        "backend/core/scheduling_policy_store.py",
+        "backend/kernel/policy/policy_store.py",
         "backend/sentinel/routing_operator.py",
     }
     violations: list[str] = []
-    for path in _python_sources("api", "core", "workers", "sentinel"):
+    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
         rel = _rel(path)
         if rel in allowlist:
             continue
@@ -175,7 +175,7 @@ def test_runtime_policy_gate_blocks_runtime_system_yaml_reads_outside_allowlist(
 
 def test_state_path_gate_only_allows_owner_services_for_core_field_writes() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "core", "workers", "sentinel"):
+    for path in _python_sources("api", "control_plane", "core", "kernel", "workers"):
         rel = _rel(path)
         for lineno, pair in _assignment_pairs(path):
             allowed = _OWNER_MODULES_BY_FIELD[pair]
@@ -186,12 +186,12 @@ def test_state_path_gate_only_allows_owner_services_for_core_field_writes() -> N
 
 def test_lease_gate_only_allows_lease_service_writes() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "core", "workers", "sentinel"):
+    for path in _python_sources("api", "control_plane", "core", "kernel", "workers"):
         rel = _rel(path)
         for lineno, pair in _assignment_pairs(path):
             if pair not in _LEASE_ONLY_FIELDS:
                 continue
-            if rel != "backend/core/lease_service.py":
+            if rel != "backend/kernel/execution/lease_service.py":
                 violations.append(f"{rel}:{lineno}:{pair[0]}.{pair[1]}")
     assert violations == []
 
@@ -199,8 +199,10 @@ def test_lease_gate_only_allows_lease_service_writes() -> None:
 def test_runtime_policy_contract_exports_policy_store_entrypoint() -> None:
     contract = export_runtime_policy_contract()
 
-    assert contract["entrypoint"] == "backend.core.runtime_policy_resolver.RuntimePolicyResolver"
-    assert contract["policy_store_entrypoint"] == "backend.core.scheduling_policy_store.get_policy_store"
+    assert contract["entrypoint"] == "backend.kernel.policy.runtime_policy_resolver.RuntimePolicyResolver"
+    assert contract["policy_store_entrypoint"] == "backend.kernel.policy.policy_store.get_policy_store"
+    assert contract["profile_normalizer"] == "backend.kernel.profiles.public_profile.normalize_gateway_profile"
+    assert contract["runtime_pack_resolver"] == "backend.kernel.topology.profile_selection.resolve_runtime_pack_keys"
     assert contract["router_gate_method"] == "router_enabled"
     assert contract["snapshot_method"] == "snapshot"
 
@@ -208,7 +210,7 @@ def test_runtime_policy_contract_exports_policy_store_entrypoint() -> None:
 def test_lease_service_contract_exports_owned_fields_and_rotation_semantics() -> None:
     contract = export_lease_service_contract()
 
-    assert contract["entrypoint"] == "backend.core.lease_service.LeaseService"
+    assert contract["entrypoint"] == "backend.kernel.execution.lease_service.LeaseService"
     assert contract["grant_method"] == "grant_lease"
     assert contract["renew_method"] == "renew_lease"
     assert contract["rotates_lease_token_on_renew"] is True

@@ -628,8 +628,7 @@ deployment:
   profile: gateway-kernel
   packs: []
   # Formal runtime surface stays fixed to gateway-kernel.
-  # Legacy preset inputs may still be accepted by migration/bootstrap paths,
-  # but they must collapse into packs instead of becoming public product names.
+  # Optional capability domains must be enabled through explicit pack keys.
   available_profiles:
   - gateway-kernel
   available_packs:

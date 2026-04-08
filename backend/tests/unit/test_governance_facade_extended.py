@@ -70,7 +70,7 @@ class TestFailureControlPlaneProxies:
 
 class TestFairSchedulerProxies:
     def test_get_tenant_quota(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.queue_stratification.get_fair_scheduler") as mock_get:
+        with patch("backend.kernel.scheduling.queue_stratification.get_fair_scheduler") as mock_get:
             fs = MagicMock()
             fs.get_quota.return_value = {"max_concurrent": 10, "weight": 1.0}
             mock_get.return_value = fs
@@ -78,7 +78,7 @@ class TestFairSchedulerProxies:
         assert result["max_concurrent"] == 10
 
     def test_apply_fair_share(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.queue_stratification.get_fair_scheduler") as mock_get:
+        with patch("backend.kernel.scheduling.queue_stratification.get_fair_scheduler") as mock_get:
             fs = MagicMock()
             fs.apply_fair_share.return_value = ["j1", "j2"]
             mock_get.return_value = fs
@@ -86,7 +86,7 @@ class TestFairSchedulerProxies:
         assert result == ["j1", "j2"]
 
     def test_invalidate_cache(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.queue_stratification.get_fair_scheduler") as mock_get:
+        with patch("backend.kernel.scheduling.queue_stratification.get_fair_scheduler") as mock_get:
             fs = MagicMock()
             mock_get.return_value = fs
             facade.invalidate_fair_share_cache()
@@ -95,7 +95,7 @@ class TestFairSchedulerProxies:
 
 class TestPlacementSolverProxy:
     def test_run_placement_solver(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.job_scheduler.get_placement_solver") as mock_get:
+        with patch("backend.kernel.scheduling.job_scheduler.get_placement_solver") as mock_get:
             solver = MagicMock()
             solver.solve.return_value = {"j1": "n1"}
             mock_get.return_value = solver
@@ -111,7 +111,7 @@ class TestPlacementSolverProxy:
 
 class TestExecutorRegistryProxies:
     def test_validate_node_executor(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.executor_registry.get_executor_registry") as mock_get:
+        with patch("backend.kernel.topology.executor_registry.get_executor_registry") as mock_get:
             reg = MagicMock()
             reg.validate_node_executor.return_value = []
             mock_get.return_value = reg
@@ -119,7 +119,7 @@ class TestExecutorRegistryProxies:
         assert result == []
 
     def test_get_executor_contract(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.executor_registry.get_executor_registry") as mock_get:
+        with patch("backend.kernel.topology.executor_registry.get_executor_registry") as mock_get:
             contract = MagicMock()
             contract.kind = "docker"
             reg = MagicMock()
@@ -131,7 +131,7 @@ class TestExecutorRegistryProxies:
 
 class TestDispatchLifecycleProxy:
     def test_get_dispatch_pipeline(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.dispatch_lifecycle.get_dispatch_pipeline") as mock_get:
+        with patch("backend.kernel.execution.dispatch_lifecycle.get_dispatch_pipeline") as mock_get:
             pipeline = MagicMock()
             mock_get.return_value = pipeline
             result = facade.get_dispatch_pipeline()

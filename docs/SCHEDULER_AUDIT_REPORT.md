@@ -26,7 +26,7 @@
 
 4. **pull_jobs 完全不看 selector / capability / 资源** ✅
    - `select_jobs_for_node()` 调用 `job_matches_node()` 检查所有约束
-   - 位置: `backend/core/job_scheduler.py:146-153, 210`
+   - 位置: `backend/kernel/scheduling/job_scheduler.py:146-153, 210`
 
 ---
 
@@ -54,7 +54,7 @@
 - 退避参数通过环境变量 `RETRY_BASE_DELAY_SECONDS`（默认10）/ `RETRY_MAX_DELAY_SECONDS`（默认600）外部化
 
 **位置**:
-- 退避计算: `backend/core/failure_taxonomy.py:calculate_retry_delay_seconds()`
+- 退避计算: `backend/kernel/execution/failure_taxonomy.py:calculate_retry_delay_seconds()`
 - 执行层: `backend/api/jobs/routes.py:fail_job()` — 设置 `retry_at`
 - 查询层: `backend/api/jobs/routes.py:pull_jobs()` — `retry_at <= now` 条件
 
@@ -68,8 +68,8 @@
 - 这使 `eligible_nodes_count` 和 `scarcity_score` 更真实
 
 **位置**:
-- `backend/core/job_scheduler.py:count_eligible_nodes_for_job()` — 参数 + 优先逻辑
-- `backend/core/job_scheduler.py:select_jobs_for_node()` — 传入 `accepted_kinds`
+- `backend/kernel/scheduling/job_scheduler.py:count_eligible_nodes_for_job()` — 参数 + 优先逻辑
+- `backend/kernel/scheduling/job_scheduler.py:select_jobs_for_node()` — 传入 `accepted_kinds`
 
 ---
 
@@ -172,7 +172,7 @@
 - `backend/api/jobs/routes.py:283` (attempt +1)
 - `backend/api/jobs/routes.py:421` (attempt_count +1)
 - `backend/api/jobs/routes.py:654` (retry_count 重置，但 attempt_count 没重置)
-- `backend/core/failure_taxonomy.py:199-200` (should_retry_job 检查 attempt_count)
+- `backend/kernel/execution/failure_taxonomy.py:199-200` (should_retry_job 检查 attempt_count)
 
 ---
 

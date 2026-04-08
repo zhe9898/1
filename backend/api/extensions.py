@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_tenant_db
 from backend.api.workflows import StepStatus, WorkflowDetailResponse, _to_response
 from backend.core.errors import zen
-from backend.core.extension_sdk import (
+from backend.kernel.extensions.extension_sdk import (
     bootstrap_extension_runtime,
     get_extension_info,
     get_published_connector_kind,
@@ -23,8 +23,8 @@ from backend.core.extension_sdk import (
     list_published_job_kinds,
     list_published_workflow_templates,
 )
-from backend.core.workflow_engine import create_workflow
-from backend.core.workflow_template_registry import render_workflow_template
+from backend.kernel.extensions.workflow_engine import create_workflow
+from backend.kernel.extensions.workflow_template_registry import render_workflow_template
 from backend.models.workflow import WorkflowStep
 
 router = APIRouter(prefix="/api/v1/extensions", tags=["extensions"])

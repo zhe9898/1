@@ -188,6 +188,10 @@ def test_console_menu_shows_settings_for_superadmin_override() -> None:
     app.dependency_overrides[get_current_user_optional] = _superadmin_user
     try:
         client = TestClient(app)
+        menu_data = client.get("/api/v1/console/menu").json()["data"]
+        assert "settings" in [item["route_name"] for item in menu_data["items"]]
+        surfaces_data = client.get("/api/v1/console/surfaces").json()["data"]
+        assert "settings" in [item["route_name"] for item in surfaces_data["surfaces"]]
         profile_data = client.get("/api/v1/profile").json()["data"]
         assert profile_data["runtime_profile"] == "gateway-kernel"
         assert "settings" in profile_data["console_route_names"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from backend.core.gang_scheduler import (
+from backend.kernel.scheduling.gang_scheduler import (
     GangCoordinator,
     GangGroup,
     GangPermitPlugin,
@@ -249,7 +249,7 @@ def test_gang_permit_non_gang_passes():
     plugin = GangPermitPlugin(coord)
     job = _FakeJob("j1", None)
 
-    from backend.core.scheduling_constraints import SchedulingContext
+    from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
 
     ctx = SchedulingContext(
         now=datetime.datetime.now(datetime.timezone.utc),
@@ -272,7 +272,7 @@ def test_gang_permit_waits_until_all_placed():
 
     plugin = GangPermitPlugin(coord)
 
-    from backend.core.scheduling_constraints import SchedulingContext
+    from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
 
     ctx = SchedulingContext(
         now=datetime.datetime.now(datetime.timezone.utc),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.core.job_status import normalize_job_like_status
+from backend.kernel.execution.job_status import normalize_job_like_status
 
 
 @dataclass(frozen=True, slots=True)

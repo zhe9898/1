@@ -29,7 +29,7 @@ async def get_queue_stats(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> QueueStatsResponse:
     """Get queue statistics grouped by priority layer."""
-    from backend.core.queue_stratification import get_priority_layer_stats
+    from backend.kernel.scheduling.queue_stratification import get_priority_layer_stats
 
     tenant_id = str(current_user.get("tenant_id") or "default")
 
@@ -68,7 +68,7 @@ async def update_job_priority(
     redis: RedisClient | None = Depends(get_redis),
 ) -> JobPriorityUpdateResponse:
     """Update job priority (admin only)."""
-    from backend.core.queue_stratification import get_priority_layer
+    from backend.kernel.scheduling.queue_stratification import get_priority_layer
 
     tenant_id = str(current_user.get("tenant_id") or "default")
 

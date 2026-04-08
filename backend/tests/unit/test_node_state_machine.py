@@ -19,7 +19,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend.api.nodes import NodeHeartbeatRequest, heartbeat_node
-from backend.core.node_auth import hash_node_token
+from backend.kernel.topology.node_auth import hash_node_token
 from backend.models.node import Node
 
 

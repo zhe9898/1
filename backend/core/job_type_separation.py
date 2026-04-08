@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from backend.core.job_status import normalize_job_status
+from backend.kernel.execution.job_status import normalize_job_status
 
 if TYPE_CHECKING:
     from backend.models.job import Job

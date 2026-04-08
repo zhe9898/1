@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from backend.api.jobs.models import JobCreateRequest
 from backend.api.jobs.submission import submit_job
-from backend.core.job_kind_registry import validate_job_payload
+from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
 
 def _job_db() -> AsyncMock:
@@ -21,7 +21,7 @@ def _job_db() -> AsyncMock:
 async def test_submit_job_allows_safe_kind_for_scoped_non_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     db = _job_db()
     monkeypatch.setattr(
-        "backend.core.scheduling_resilience.AdmissionController.check_admission",
+        "backend.kernel.scheduling.scheduling_resilience.AdmissionController.check_admission",
         AsyncMock(return_value=(True, "", {})),
     )
     monkeypatch.setattr("backend.api.jobs.submission.acquire_transaction_advisory_locks", AsyncMock(return_value=None))

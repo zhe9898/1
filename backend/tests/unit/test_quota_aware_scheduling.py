@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock
 
-from backend.core.quota_aware_scheduling import (
+from backend.kernel.scheduling.quota_aware_scheduling import (
     FairShareCalculator,
     FairShareScoreModifier,
     QuotaAwareGate,
@@ -23,7 +23,7 @@ from backend.core.quota_aware_scheduling import (
     ResourceUsage,
     build_quota_accounts,
 )
-from backend.core.scheduling_constraints import SchedulingContext
+from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
 
 # ---------------------------------------------------------------------------
 # Helpers

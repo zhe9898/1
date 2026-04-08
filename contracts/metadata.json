@@ -4,9 +4,7 @@
   "compliance": "strict-sre-ruleset",
   "contracts": {
     "openapi": [
-      "openapi/zen70-gateway-kernel.openapi.json",
-      "openapi/zen70-gateway-iot.openapi.json",
-      "openapi/zen70-gateway-ops.openapi.json"
+      "openapi/zen70-gateway-kernel.openapi.json"
     ],
     "triggers": [
       "triggers/README.md",

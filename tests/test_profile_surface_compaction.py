@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from backend.core.pack_registry import PROFILE_ALIASES, PUBLIC_PROFILE_SURFACE
+from backend.kernel.profiles.public_profile import PUBLIC_PROFILE_SURFACE
 from scripts.iac_core.profiles import PUBLIC_PROFILE_SURFACE as IAC_PUBLIC_PROFILE_SURFACE
 from scripts.iac_core.profiles import resolve_requested_pack_keys
 
@@ -26,11 +26,7 @@ def test_runtime_public_profile_surface_excludes_legacy_presets() -> None:
     assert PUBLIC_PROFILE_SURFACE == ("gateway-kernel",)
     assert IAC_PUBLIC_PROFILE_SURFACE == PUBLIC_PROFILE_SURFACE
 
-    for legacy in ("gateway", "gateway-iot", "gateway-ops"):
-        assert legacy in PROFILE_ALIASES
-        assert legacy not in PUBLIC_PROFILE_SURFACE
 
-
-def test_legacy_profile_inputs_collapse_into_kernel_plus_packs() -> None:
-    assert resolve_requested_pack_keys("gateway-iot") == ("iot-pack",)
-    assert resolve_requested_pack_keys("gateway-ops") == ("ops-pack",)
+def test_pack_selection_requires_explicit_pack_keys() -> None:
+    assert resolve_requested_pack_keys("gateway-iot") == ()
+    assert resolve_requested_pack_keys("gateway-kernel", ["iot-pack", "ops-pack"]) == ("iot-pack", "ops-pack")

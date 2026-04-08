@@ -410,7 +410,7 @@ func (p *Poller) processJobs(ctx context.Context, jobs []api.Job) {
 ### 修复方案
 
 ```python
-# backend/core/failure_taxonomy.py
+# backend/kernel/execution/failure_taxonomy.py
 
 from enum import Enum
 from typing import Any

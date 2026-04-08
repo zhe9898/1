@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime
 
-from backend.core.business_scheduling import (
+from backend.kernel.scheduling.business_scheduling import (
     apply_business_filters,
     calculate_boosted_priority,
     calculate_sla_breach_risk,

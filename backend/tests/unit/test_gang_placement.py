@@ -14,8 +14,8 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock, patch
 
-from backend.core.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
-from backend.core.scheduling_constraints import GangSchedulingGate, SchedulingContext
+from backend.kernel.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
+from backend.kernel.scheduling.scheduling_constraints import GangSchedulingGate, SchedulingContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -235,7 +235,7 @@ class TestGangAtomicPlacement:
 class TestGangSchedulingGateTimeout:
     """Verify gang timeout and degrade behaviour."""
 
-    @patch("backend.core.scheduling_policy_store.get_policy_store")
+    @patch("backend.kernel.policy.policy_store.get_policy_store")
     def test_gang_timeout_fail(self, mock_store: MagicMock) -> None:
         """Gang older than timeout -> rejected (default action=fail)."""
         mock_gang_cfg = MagicMock()
@@ -252,7 +252,7 @@ class TestGangSchedulingGateTimeout:
         assert ok is False
         assert "gang_timeout_expired" in reason
 
-    @patch("backend.core.scheduling_policy_store.get_policy_store")
+    @patch("backend.kernel.policy.policy_store.get_policy_store")
     def test_gang_timeout_degrade(self, mock_store: MagicMock) -> None:
         """Gang older than timeout with action=degrade -> passes gate."""
         mock_gang_cfg = MagicMock()
@@ -278,7 +278,7 @@ class TestGangSchedulingGateTimeout:
         assert ok is True
         assert reason == ""
 
-    @patch("backend.core.scheduling_policy_store.get_policy_store")
+    @patch("backend.kernel.policy.policy_store.get_policy_store")
     def test_gang_within_timeout_checks_readiness(self, mock_store: MagicMock) -> None:
         """Gang within timeout -> falls through to readiness check."""
         mock_gang_cfg = MagicMock()

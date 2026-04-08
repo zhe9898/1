@@ -10,8 +10,8 @@ from scripts.iac_core.profiles import (
 
 def test_unknown_profile_is_rejected_by_registry() -> None:
     assert is_profile_known("gateway-kernel")
-    assert is_profile_known("gateway-iot")
-    assert is_profile_known("iot-pack")
+    assert not is_profile_known("gateway-iot")
+    assert not is_profile_known("iot-pack")
     assert not is_profile_known("gateway-typo")
 
 
@@ -22,11 +22,11 @@ def test_unknown_profile_normalizes_to_kernel_default() -> None:
 
 def test_gateway_target_mapping_is_stable() -> None:
     assert resolve_gateway_image_target("gateway-kernel") == "gateway-kernel"
-    assert resolve_gateway_image_target("gateway-iot") == "gateway-iot"
+    assert resolve_gateway_image_target("gateway-kernel", selected_packs=["iot-pack"]) == "gateway-kernel"
 
 
-def test_pack_resolution_supports_legacy_preset_and_explicit_packs() -> None:
-    assert resolve_requested_pack_keys("gateway-iot") == ("iot-pack",)
+def test_pack_resolution_requires_explicit_pack_keys() -> None:
+    assert resolve_requested_pack_keys("gateway-iot") == ()
     assert resolve_requested_pack_keys("gateway-kernel", ["vector-pack", "health-pack"]) == (
         "vector-pack",
         "health-pack",

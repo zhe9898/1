@@ -5,19 +5,21 @@ import os
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from backend.api.deps import get_current_user_optional, has_admin_role
+from backend.api.deps import get_current_user_optional
 from backend.api.ui_contracts import StatusView
-from backend.core.control_plane import get_control_plane_capability_keys, get_control_plane_route_names
-from backend.core.gateway_profile import (
-    DEFAULT_PRODUCT_NAME,
+from backend.control_plane.auth.access_policy import has_admin_role
+from backend.control_plane.console.manifest_service import (
+    get_control_plane_capability_keys,
+    get_control_plane_route_names,
+)
+from backend.kernel.packs.registry import available_pack_definitions
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.topology.profile_selection import (
     get_enabled_router_names,
     is_cluster_enabled,
     normalize_gateway_pack_keys,
-    normalize_gateway_profile,
     resolve_runtime_pack_keys,
-    to_public_profile,
 )
-from backend.core.pack_registry import available_pack_definitions
 
 router = APIRouter(prefix="/api/v1", tags=["profile"])
 

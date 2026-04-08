@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.core.node_auth import authenticate_node_request, hash_node_token
+from backend.kernel.topology.node_auth import authenticate_node_request, hash_node_token
 from backend.models.node import Node
 
 

@@ -40,7 +40,8 @@ from backend.api.deps import get_current_user, get_current_user_optional, get_te
 from backend.api.jobs.helpers import _build_job_actions
 from backend.api.nodes import _build_node_actions
 from backend.api.ui_contracts import StatusView
-from backend.core.control_plane import iter_control_plane_surfaces
+from backend.control_plane.auth.access_policy import has_admin_role
+from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
 from backend.core.control_plane_state import (
     connector_status_view,
     job_attention_reason,
@@ -55,8 +56,8 @@ from backend.core.control_plane_state import (
     node_status_view,
     tone_view,
 )
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
-from backend.core.job_scheduler import build_node_snapshot, count_eligible_nodes_for_job, node_blockers_for_job
+from backend.kernel.scheduling.job_scheduler import build_node_snapshot, count_eligible_nodes_for_job, node_blockers_for_job
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
@@ -75,7 +76,7 @@ async def get_control_plane_surfaces(
     frontend/src/config/controlPlaneSurfaces.json.
     """
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
-    is_admin = bool(current_user and current_user.get("role") == "admin")
+    is_admin = has_admin_role(current_user)
 
     surfaces = [
         ControlPlaneSurfaceResponse(
@@ -106,7 +107,7 @@ async def get_console_menu(
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> ConsoleMenuResponse:
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
-    is_admin = bool(current_user and current_user.get("role") == "admin")
+    is_admin = has_admin_role(current_user)
     return build_menu_response(runtime_profile, is_admin=is_admin)
 
 

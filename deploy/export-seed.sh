@@ -1,5 +1,6 @@
 #!/bin/bash
-# ZEN70 离线种子包导出：将 Git 仓库（完整克隆）与核心镜像打包为 .tar.gz，便于 U 盘携带与无网重铸
+# ZEN70 offline seed export: package the full Git repository and digest-pinned
+# runtime images into one tarball for deterministic offline bootstrap.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +25,6 @@ fi
 rm -rf "$SEED_DIR"
 mkdir -p "$SEED_DIR"/{git-repo,images}
 
-# 克隆当前仓库（完整克隆，含 .git）
 echo -e "${YELLOW}Cloning Git repository (full clone)...${NC}"
 cd "$REPO_ROOT"
 if [ -d .git ]; then
@@ -34,11 +34,9 @@ else
     exit 1
 fi
 
-# 复制镜像列表与部署脚本说明
 cp "$IMAGES_LIST" "$SEED_DIR/images.list"
 cp "$SCRIPT_DIR/README-registry.md" "$SEED_DIR/" 2>/dev/null || true
 
-# 从私有仓库或本地拉取并保存镜像
 echo -e "${YELLOW}Saving Docker images...${NC}"
 while IFS= read -r image || [ -n "$image" ]; do
     image="$(echo "$image" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
@@ -74,14 +72,12 @@ while IFS= read -r image || [ -n "$image" ]; do
     docker save "$local_tag" -o "$SEED_DIR/images/${safe_name}.tar"
 done < "$IMAGES_LIST"
 
-# 离线点火脚本（内嵌于种子包）
 cat > "$SEED_DIR/bootstrap-offline.sh" << 'BOOTEOF'
 #!/bin/bash
 set -e
 echo "ZEN70 offline bootstrap"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 加载镜像
 echo "Loading Docker images..."
 for img in "$SCRIPT_DIR/images/"*.tar; do
     [ -f "$img" ] || continue
@@ -89,13 +85,12 @@ for img in "$SCRIPT_DIR/images/"*.tar; do
     docker load -i "$img"
 done
 
-# 进入仓库目录并执行点火（--offline 跳过 Git 拉取）
 echo "Running bootstrap (offline)..."
 cd "$SCRIPT_DIR/git-repo"
-if [ -f deploy/bootstrap.py ]; then
-    python3 deploy/bootstrap.py --offline
+if [ -f scripts/bootstrap.py ]; then
+    python3 scripts/bootstrap.py --offline
 else
-    echo "Error: deploy/bootstrap.py not found" >&2
+    echo "Error: scripts/bootstrap.py not found" >&2
     exit 1
 fi
 
@@ -103,7 +98,6 @@ echo "Offline bootstrap completed"
 BOOTEOF
 chmod +x "$SEED_DIR/bootstrap-offline.sh"
 
-# 打包
 echo -e "${YELLOW}Packaging $SEED_TAR...${NC}"
 cd "$REPO_ROOT"
 tar -czf "$SEED_TAR" zen70-seed

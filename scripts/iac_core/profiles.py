@@ -1,25 +1,23 @@
 """
 Profile and pack normalization for Gateway Kernel releases.
 Runtime-visible profile surface is fixed to `gateway-kernel`.
-Legacy profile presets are accepted only as compatibility inputs and collapse
-into kernel + optional pack selection during normalization.
+Development builds keep profile selection strict and require explicit
+canonical pack keys for optional capability domains.
 """
 
 from __future__ import annotations
 
 from typing import Iterable
 
-from backend.core.pack_registry import (
-    PROFILE_ALIASES,
-    PUBLIC_PROFILE_SURFACE,
+from backend.kernel.packs.presets import (
     is_profile_preset_known,
-    normalize_base_profile,
-    normalize_requested_pack_keys as normalize_pack_keys,
     requested_pack_keys,
-    resolve_pack_keys,
-    resolve_gateway_image_target as resolve_registry_gateway_image_target,
-    selected_service_allowlist,
 )
+from backend.kernel.profiles.public_profile import PUBLIC_PROFILE_SURFACE, normalize_gateway_profile
+from backend.kernel.topology.pack_selection import (
+    resolve_gateway_image_target as resolve_registry_gateway_image_target,
+)
+from backend.kernel.topology.pack_selection import resolve_pack_keys, selected_service_allowlist
 
 CORE_SERVICES: tuple[str, ...] = (
     "caddy",
@@ -33,7 +31,7 @@ CORE_SERVICES: tuple[str, ...] = (
 
 
 def normalize_profile(raw_profile: object) -> str:
-    return normalize_base_profile(raw_profile)
+    return normalize_gateway_profile(raw_profile)
 
 
 def resolve_requested_pack_keys(profile: object, raw_packs: object = None) -> tuple[str, ...]:

@@ -8,7 +8,7 @@ from backend.api.control_events import publish_control_event
 from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.errors import zen
 from backend.core.job_concurrency_service import build_job_concurrency_window
-from backend.core.job_kind_registry import assert_job_submission_authorized, validate_job_payload
+from backend.kernel.extensions.job_kind_registry import assert_job_submission_authorized, validate_job_payload
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
 from backend.core.rls import set_tenant_context
 from backend.core.worker_pool import resolve_job_queue_contract
@@ -35,7 +35,7 @@ async def check_concurrent_limits(
 
 
 async def _check_submission_admission(db: AsyncSession, tenant_id: str) -> None:
-    from backend.core.scheduling_resilience import AdmissionController, SchedulingMetrics
+    from backend.kernel.scheduling.scheduling_resilience import AdmissionController, SchedulingMetrics
 
     admitted, admission_reason, admission_details = await AdmissionController.check_admission(
         db,

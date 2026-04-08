@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.capabilities import build_public_capability_matrix
-from backend.core.control_plane import load_control_plane_surfaces
+from backend.kernel.surfaces.registry import load_control_plane_surfaces
 
 
 def test_kernel_public_capabilities_match_guest_console_surfaces() -> None:

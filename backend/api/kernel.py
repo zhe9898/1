@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from backend.core.kernel_capabilities import (
+from backend.kernel.capabilities.registry import (
     KernelCapability,
     get_capability,
     list_capabilities,

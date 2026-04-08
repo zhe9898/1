@@ -2,7 +2,7 @@ import os
 
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 
 
 def _resource_schema() -> ResourceSchemaResponse:

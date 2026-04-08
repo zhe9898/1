@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.core.dispatch_lifecycle import (
+from backend.kernel.execution.dispatch_lifecycle import (
     AdmissionStage,
     DispatchContext,
     DispatchPipeline,

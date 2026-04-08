@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.api.main import app
-from backend.core.control_plane import iter_control_plane_surfaces
+from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
 
 
 def _mounted_api_paths() -> set[str]:

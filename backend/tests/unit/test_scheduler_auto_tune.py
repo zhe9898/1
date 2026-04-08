@@ -518,7 +518,7 @@ class TestGovernanceFacadeTunerProxies:
 class TestScoringIntegration:
     def test_tuner_multiplier_applied_to_scoring(self) -> None:
         """Verify that score_job_for_node uses tuner adjustments."""
-        from backend.core.job_scoring import score_job_for_node
+        from backend.kernel.scheduling.job_scoring import score_job_for_node
 
         job = MagicMock()
         job.priority = 100
@@ -539,7 +539,7 @@ class TestScoringIntegration:
         job.deadline_at = None
         job.sla_seconds = None
 
-        from backend.core.job_scheduler import SchedulerNodeSnapshot
+        from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
             node_id="n1",
@@ -614,7 +614,7 @@ class TestScoringIntegration:
         assert score_boosted > score_base
 
     def test_learned_node_bias_in_breakdown(self) -> None:
-        from backend.core.job_scoring import score_job_for_node
+        from backend.kernel.scheduling.job_scoring import score_job_for_node
 
         job = MagicMock()
         job.priority = 50
@@ -635,7 +635,7 @@ class TestScoringIntegration:
         job.deadline_at = None
         job.sla_seconds = None
 
-        from backend.core.job_scheduler import SchedulerNodeSnapshot
+        from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
             node_id="n1",
@@ -687,8 +687,8 @@ class TestScoringIntegration:
         assert breakdown["learned_node_bias"] == 15
 
     def test_recommended_strategy_is_used_when_job_has_no_explicit_strategy(self) -> None:
-        from backend.core.job_scoring import score_job_for_node
-        from backend.core.scheduling_strategies import SchedulingStrategy
+        from backend.kernel.scheduling.job_scoring import score_job_for_node
+        from backend.kernel.scheduling.scheduling_strategies import SchedulingStrategy
 
         job = MagicMock()
         job.priority = 60
@@ -709,7 +709,7 @@ class TestScoringIntegration:
         job.deadline_at = None
         job.sla_seconds = None
 
-        from backend.core.job_scheduler import SchedulerNodeSnapshot
+        from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
             node_id="n1",
@@ -740,7 +740,7 @@ class TestScoringIntegration:
             metadata_json={},
         )
 
-        with patch("backend.core.job_scoring.calculate_strategy_score", return_value=37) as mock_strategy_score:
+        with patch("backend.kernel.scheduling.job_scoring.calculate_strategy_score", return_value=37) as mock_strategy_score:
             with patch("backend.core.scheduler_auto_tune.get_scheduler_tuner") as mock_get:
                 mock_tuner = MagicMock()
                 mock_tuner.recommend_strategy.return_value = "binpack"

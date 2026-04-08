@@ -80,10 +80,10 @@ Supporting runtime consumers and integrations:
 
 - `backend/api/jobs/dispatch.py`
 - `backend/core/gateway_profile.py`
-- `backend/core/executor_registry.py`
-- `backend/core/placement_policy.py`
-- `backend/core/queue_stratification.py`
-- `backend/core/quota_aware_scheduling.py`
+- `backend/kernel/topology/executor_registry.py`
+- `backend/kernel/scheduling/placement_policy.py`
+- `backend/kernel/scheduling/queue_stratification.py`
+- `backend/kernel/scheduling/quota_aware_scheduling.py`
 
 ## 4. Consequences
 

@@ -4,7 +4,7 @@ import uuid
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
 from backend.core.control_plane_state import job_attention_reason, job_lease_state, job_lease_state_view, job_status_view
-from backend.core.job_status import (
+from backend.kernel.execution.job_status import (
     canonicalize_job_status_input,
     normalize_job_attempt_status,
     normalize_job_status,

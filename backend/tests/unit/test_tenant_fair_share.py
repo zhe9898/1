@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.business_scheduling import (
+from backend.kernel.scheduling.business_scheduling import (
     SchedulingContext,
     SchedulingEngine,
     apply_business_filters,
 )
-from backend.core.queue_stratification import (
+from backend.kernel.scheduling.queue_stratification import (
     SERVICE_CLASS_CONFIG,
     GlobalFairScheduler,
     get_fair_scheduler,
@@ -71,7 +71,7 @@ def _job(**overrides: object) -> Job:
     return job
 
 
-# ── GlobalFairScheduler unit tests ──────────────────────────────────
+# 鈹€鈹€ GlobalFairScheduler unit tests 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 class TestGlobalFairScheduler:
@@ -107,7 +107,7 @@ class TestGlobalFairScheduler:
         monkeypatch.chdir(tmp_path)
 
         # Reset policy store singleton so it re-reads from the test's temp system.yaml
-        import backend.core.scheduling_policy_store as _sps
+        import backend.kernel.policy.policy_store as _sps
 
         monkeypatch.setattr(_sps, "_store", None)
 
@@ -159,7 +159,7 @@ class TestGlobalFairScheduler:
     def test_apply_fair_share_enforces_quota(self) -> None:
         """apply_fair_share() respects per-tenant max_jobs_per_round."""
         fs = GlobalFairScheduler()
-        # Default standard quota = 20, so 25 jobs from same tenant → capped at 20
+        # Default standard quota = 20, so 25 jobs from same tenant 鈫?capped at 20
         jobs = [_job(job_id=f"j-{i}", tenant_id="t1") for i in range(25)]
         filtered = fs.apply_fair_share(jobs)
         quota = fs.get_quota("t1")
@@ -188,7 +188,7 @@ class TestGlobalFairScheduler:
         assert a is b
 
 
-# ── TenantFairShareGate tests ───────────────────────────────────────
+# 鈹€鈹€ TenantFairShareGate tests 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 class TestTenantFairShareGate:

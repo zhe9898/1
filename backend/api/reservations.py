@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_current_user, get_redis, get_tenant_db
-from backend.core.backfill_scheduling import ResourceReservation, get_reservation_manager
+from backend.kernel.scheduling.backfill_scheduling import ResourceReservation, get_reservation_manager
 from backend.core.errors import zen
-from backend.core.job_scheduler import build_node_snapshot
+from backend.kernel.scheduling.job_scheduler import build_node_snapshot
 from backend.core.redis_client import CHANNEL_RESERVATION_EVENTS, RedisClient
-from backend.core.reservation_runtime import estimate_node_next_slot_at
+from backend.kernel.scheduling.reservation_runtime import estimate_node_next_slot_at
 from backend.models.job import Job
 from backend.models.node import Node
 

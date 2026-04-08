@@ -68,7 +68,7 @@ def write_metadata(profiles: list[str]) -> None:
 
 
 def main() -> None:
-    profiles = ["gateway-kernel", "gateway-iot", "gateway-ops"]
+    profiles = ["gateway-kernel"]
     for profile in profiles:
         export_gateway_openapi(profile)
     write_metadata(profiles)

@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
-ZEN70 拓扑探针守护进程 (Topology Sentinel)。
-
-负责硬件热插拔检测、容器熔断、状态机更新；不采集周期性指标（由 Categraf 负责）。
-以固定周期轮询挂载点存活与 GPU 心跳，滑动窗口防抖、悲观锁、三重核验后写 Redis 并发布事件。
-
+ZEN70              (Topology Sentinel) ?
+                                               ?Categraf       ?                   ?GPU                               ?Redis          ?
 Constants, MountPoint, Docker API helpers extracted to sentinel_helpers.py.
 """
 
@@ -46,13 +43,12 @@ from backend.sentinel.sentinel_helpers import (
 logger: logging.LoggerAdapter | None = None
 
 
-# -------------------- 探针主类 --------------------
+# --------------------        --------------------
 
 
 class TopologySentinel:
     """
-    拓扑探针：轮询挂载点与 GPU，防抖后更新 Redis 状态并发布事件，必要时执行 docker pause/unpause。
-    """
+                    ?GPU          Redis                      docker pause/unpause ?    """
 
     def __init__(self) -> None:
         host = os.getenv("REDIS_HOST")
@@ -66,20 +62,18 @@ class TopologySentinel:
         self.window_size = max(1, min(10, int(os.getenv("DEBOUNCE_WINDOW", "3"))))
         self.pending_ttl = int(os.getenv("PENDING_LOCK_TTL", str(DEFAULT_PENDING_TTL)))
 
-        # 法典 7.2.1: 边缘节点脑裂防护静默状态 (Stop-Pulling)
+        #     7.2.1:                   ?(Stop-Pulling)
         self.is_zombie = False
         self.redis_timeout_count = 0
-        self.max_redis_timeouts = max(2, int(os.getenv("MAX_REDIS_TIMEOUTS", "6")))  # 默认 6 * 5s = 30s 熔断
+        self.max_redis_timeouts = max(2, int(os.getenv("MAX_REDIS_TIMEOUTS", "6")))  #     6 * 5s = 30s
 
-        # 边缘离线自治：Redis 断联时保留最后已知的期望状态用于本地闭环调谐
-        self._cached_desired: set[str] = set()
+        #            edis                                  ?        self._cached_desired: set[str] = set()
         self._cached_managed: set[str] = set()
 
-        # 磁盘污点机制：代替命令式 stop，由 _reconcile_loop 统一裁决
+        #                    stop    _reconcile_loop
         self.has_disk_taint = False
 
-        # 优雅关闭标志：SIGTERM / KeyboardInterrupt 触发后置为 True，主循环在下一轮检查时退出
-        self._stop_event = threading.Event()
+        #            IGTERM / KeyboardInterrupt        ?True                    ?        self._stop_event = threading.Event()
 
         self.mounts: list[MountPoint] = []
         mount_points_env = os.getenv("MOUNT_POINTS", "").strip()
@@ -106,7 +100,7 @@ class TopologySentinel:
             )
 
     def _connect_redis(self) -> None:
-        """连接 Redis，失败时指数退避重试（2/4/8/16/32s）后退出。"""
+        """    Redis                 2/4/8/16/32s        ?""
         backoff = [2, 4, 8, 16, 32]
         user = os.getenv("REDIS_USER", "default")
         for attempt in range(5):
@@ -138,7 +132,7 @@ class TopologySentinel:
         self.is_zombie = True
 
     def _redis_ok(self) -> bool:
-        """检查 Redis 是否可用，多次超时进入脑裂防备的 zombie 态，恢复重置"""
+        """   ?Redis                          zombie          """
         try:
             r = self._redis
             if r is not None:
@@ -166,15 +160,10 @@ class TopologySentinel:
 
     def _get_actual_running_containers(self) -> set[str]:
         """
-        Observe: 获取当前真正处于 'running' 状态的 Docker 容器名列表。
-
-        关键修复：Docker API `/containers/json` 默认返回所有非 exited 容器，
-        包括 paused 容器。必须严格过滤 State == 'running'，否则 paused 容器
-        会被调谐器误判为健康运行，导致永远无法自愈恢复。
-        使用 ?filters={"status":["running"]} 参数让 Docker Engine 端精确过滤。
-        """
-        # 法典修复：使用 Docker API filter 只返回真正 running 的容器
-        import urllib.parse
+        Observe:              'running'       Docker          ?
+                ocker API `/containers/json`             exited     ?            paused              ?State == 'running'    ?paused
+                                            ?            ?filters={"status":["running"]}     ?Docker Engine          ?        """
+        #           ?Docker API filter        ?running     ?        import urllib.parse
 
         filter_json = json.dumps({"status": ["running"]})
         query_path = f"/containers/json?filters={urllib.parse.quote(filter_json)}"
@@ -191,17 +180,15 @@ class TopologySentinel:
                 names.add(n.lstrip("/"))
         return names
 
-    # -------------------- P0-2：安全容器操作（法典 3.1 三步极刑） --------------------
+    # -------------------- P0-2                3.1        ?--------------------
 
-    # 有状态容器列表 — 由 IaC 编译器从 system.yaml sentinel.stateful_containers 注入
-    # 禁止硬编码（法典 §1.2 IAC 唯一事实来源、.env.j2 注释同载）
-    @staticmethod
+    #           ? ? ?IaC        system.yaml sentinel.stateful_containers
+    #               1.2 IAC           ?env.j2        ?    @staticmethod
     def _load_stateful_containers() -> set[str]:
         raw = os.getenv("SENTINEL_STATEFUL_CONTAINERS", "").strip()
         if raw:
             return {s.strip() for s in raw.split(",") if s.strip()}
-        # 运行时兜底（仅在 .env 未注入时生效，零知识下保护数据库安全）
-        return {"zen70-postgres", "zen70-redis"}
+        #              .env                             ?        return {"zen70-postgres", "zen70-redis"}
 
     @property
     def stateful_containers(self) -> set[str]:
@@ -211,13 +198,11 @@ class TopologySentinel:
 
     def _safe_container_action(self, container_name: str, action: str) -> None:
         """
-        法典 3.1：安全容器降级操作 (HTTP API 替代 CLI)。
-        - 纯 I/O 容器：docker pause
-        - 有状态容器：docker stop -t 10
+            3.1             ?(HTTP API     CLI) ?        -  ?I/O      ocker pause
+        -          docker stop -t 10
         - action: 'stop' | 'start'
 
-        离线自治：zombie mode 下仍然允许操作（Docker API 是本地 socket，不依赖 Redis）。
-        """
+                ombie mode             Docker API     ?socket       Redis   ?        """
         import urllib.parse
 
         encoded_name = urllib.parse.quote(container_name, safe="")
@@ -232,7 +217,7 @@ class TopologySentinel:
                         logger.warning("[SafeAction] stop failed for %s (code %s), escalating to kill", container_name, code)
                     _docker_api_post(f"/containers/{encoded_name}/kill")
             else:
-                # 法典 3.1: 纯 I/O 容器 pause 包裹 3s 异步超时升级 SIGKILL
+                #     3.1:  ?I/O     pause     3s           SIGKILL
                 if logger:
                     logger.info("[SafeAction] Pause (IO, 3s timeout) for %s", container_name)
                 code, body = _docker_api_post(f"/containers/{encoded_name}/pause", timeout=3)
@@ -245,35 +230,30 @@ class TopologySentinel:
                         )
                     _docker_api_post(f"/containers/{encoded_name}/kill")
         elif action == "start":
-            # 先尝试 unpause (如果被 pause 了)，如果未被 pause 会返回 500 (Container is not paused)
+            #     ?unpause (    ?pause  ?       ?pause     ?500 (Container is not paused)
             code, body = _docker_api_post(f"/containers/{encoded_name}/unpause")
             if code not in (204, 500, 304):
                 if logger:
                     logger.warning("[SafeAction] unpause returned code %s for %s", code, container_name)
-            # 无论 unpause 结果如何，都发送 start 以防容器是 Exited 状态
-            code2, body2 = _docker_api_post(f"/containers/{encoded_name}/start")
+            #     unpause             ?start        ?Exited    ?            code2, body2 = _docker_api_post(f"/containers/{encoded_name}/start")
             if code2 not in (204, 304, 404):
                 if logger:
                     logger.error("[SafeAction] start failed for %s: %s", container_name, body2[:200])
 
-    # -------------------- P0-1：系统盘 95% 物理熔断（法典 3.3） --------------------
+    # -------------------- P0-1       95%           ?3.3 ?--------------------
 
-    # 法典修复：受磁盘污点影响需降级的高频 I/O 容器列表
+    #                            ?I/O
     DISK_TAINT_AFFECTED: set[str] = {"zen70-jellyfin", "zen70-frigate", "zen70-promtail"}
 
     def _check_disk_usage(self) -> None:
         """
-        法典 3.3：系统盘使用率 ≥95% 时注入磁盘污点 (disk_taint)。
-
-        关键修复：不再直接命令式 pause 容器（这会与声明式调谐循环 _reconcile_loop
-        产生指令打架/Thrashing）。改为设置 self.has_disk_taint = True，交由
-        _compute_desired_containers() 将受影响容器的期望状态强覆写为 OFF，
-        再由 _reconcile_loop 统一执行平滑降级与自愈恢复。
-        """
+            3.3          ? ?5%           ?(disk_taint) ?
+                           pause                    ?_reconcile_loop
+                 /Thrashing         ?self.has_disk_taint = True    ?        _compute_desired_containers()                       ?OFF ?            _reconcile_loop                      ?        """
         try:
             usage = shutil.disk_usage("/")
         except OSError:
-            # Windows 开发环境或路径不可达时降级检查系统盘
+            # Windows
             try:
                 usage = shutil.disk_usage(Path(__file__).resolve().anchor)
             except OSError:
@@ -285,13 +265,13 @@ class TopologySentinel:
             if not self.has_disk_taint:
                 if logger:
                     logger.critical(
-                        "🔴 [DISK-TAINT] 系统盘使用率 %.1f%% ≥ %.0f%%，注入磁盘污点！" " 高频组件将由调谐循环统一降级。",
+                        "   [DISK-TAINT]           %.1f%%  ?%.0f%%            " "                       ?,
                         used_pct,
                         DISK_CRITICAL_THRESHOLD,
                     )
             self.has_disk_taint = True
 
-            # 通过 Redis 发布紧急告警事件 + 写入持久化标记供网关读取
+            #     Redis             ?+
             r = self._redis
             if r is not None:
                 try:
@@ -308,11 +288,11 @@ class TopologySentinel:
                     if logger:
                         logger.error("[DISK-TAINT] Redis publish failed: %s", pub_err)
         else:
-            # 磁盘恢复正常，自动清除污点 → 调谐循环将自动恢复受影响容器
+            #                    ? ?
             if self.has_disk_taint:
                 if logger:
                     logger.info(
-                        "🟢 [DISK-TAINT] 系统盘使用率 %.1f%% < %.0f%%，清除磁盘污点。" " 受影响组件将由调谐循环自动恢复。",
+                        "   [DISK-TAINT]           %.1f%% < %.0f%%            ? "                         ?,
                         used_pct,
                         DISK_CRITICAL_THRESHOLD,
                     )
@@ -347,13 +327,11 @@ class TopologySentinel:
 
     def _compute_desired_containers(self) -> tuple[set[str], set[str]]:
         """
-        计算期望运行的容器集，返回 (desired_running, managed_by_sentinel) 集合。
-
-        污点(Taint)拦截优先级：
-        1. GPU 过热污点 → 媒体类组件强制 OFF
-        2. 磁盘满污点 → DISK_TAINT_AFFECTED 列表中的高频 I/O 组件强制 OFF
-        3. 用户手动开关 switch_expected → 正常期望值
-        """
+                           ?(desired_running, managed_by_sentinel)     ?
+           (Taint)
+        1. GPU         ?          ?OFF
+        2.        ? ?DISK_TAINT_AFFECTED           I/O        OFF
+        3.          ?switch_expected  ?       ?        """
         switch_map = self._get_switch_map()
         gpu_taints = self._get_gpu_taints()
 
@@ -372,13 +350,12 @@ class TopologySentinel:
                 if logger:
                     logger.debug("switch_expected read failed: %s", e)
 
-            # 污点拦截 1: GPU 过热 → 媒体类组件降级
-            if "overheating:NoSchedule" in gpu_taints and "media" in switch_name.lower() and expected_state == "ON":
+            #        1: GPU      ?          ?            if "overheating:NoSchedule" in gpu_taints and "media" in switch_name.lower() and expected_state == "ON":
                 if logger:
                     logger.warning("Taint Active (overheating). Forcing component '%s' to OFF.", switch_name)
                 expected_state = "OFF"
 
-            # 污点拦截 2: 磁盘满 → 高频 I/O 组件降级（法典 3.3 声明式融合）
+            #        2:     ? ?    I/O           ?3.3
             if self.has_disk_taint and container_name in self.DISK_TAINT_AFFECTED:
                 if expected_state == "ON":
                     if logger:
@@ -391,21 +368,19 @@ class TopologySentinel:
 
             if expected_state == "ON":
                 desired.add(container_name)
-        # 边缘离线自治：缓存最后已知的期望状态
-        self._cached_desired = set(desired)
+        #                            ?        self._cached_desired = set(desired)
         self._cached_managed = set(managed)
         return desired, managed
 
     def _reconcile_loop(self) -> None:
         """
-        K3s-Inspired Reconciliation Loop (声明式控制循环): Observe -> Diff -> Act
-        核心思想: 抛弃事件触发器, 改为保证系统实际状态向预期状态收敛.
-        预期状态 (Desired state): yaml 中的 SWITCH_CONTAINER_MAP 配合用户手动设置 (存 Redis switch_expected:) + 污点 (Taints) 妥协.
+        K3s-Inspired Reconciliation Loop (          ?: Observe -> Diff -> Act
+              :           ?                           ?
+              ?(Desired state): yaml     SWITCH_CONTAINER_MAP              ( ?Redis switch_expected:) +     (Taints)    .
 
-        边缘离线自治 (Offline Autonomy):
-        zombie mode 下使用最后已知的缓存期望状态继续本地调谐，
-        保持容器拓扑闭环控制，直到 Redis 恢复。
-        """
+                  (Offline Autonomy):
+        zombie mode
+                           ?Redis     ?        """
         if self.is_zombie:
             self._reconcile_loop_offline()
             return
@@ -414,20 +389,19 @@ class TopologySentinel:
 
         r = self._redis
 
-        # 1. 整理预期状态 (Desired)
+        # 1.          ?(Desired)
         desired_running_containers, containers_managed_by_sentinel = self._compute_desired_containers()
 
-        # 2. 观察实际状态 (Observe)
+        # 2.          ?(Observe)
         actual_running = self._get_actual_running_containers()
 
-        # 3. 对比差异 (Diff) & 执行同步 (Act)
-        # 只管治 SWITCH_CONTAINER_MAP 列表里的容器，不干涉核心网关等容器
-        for container in containers_managed_by_sentinel:
+        # 3.        (Diff) &        (Act)
+        #     ?SWITCH_CONTAINER_MAP                          ?        for container in containers_managed_by_sentinel:
             should_run = container in desired_running_containers
             is_running = container in actual_running
 
             if should_run and not is_running:
-                # 状态弹簧对齐: 应该跑但没跑 -> HTTP API start
+                #          ?           -> HTTP API start
                 if logger:
                     logger.info(
                         "[Reconcile] Diff detected: %s is OFF but expected ON. Act: HTTP start",
@@ -454,20 +428,16 @@ class TopologySentinel:
 
     def _reconcile_loop_offline(self) -> None:
         """
-        边缘离线自治：zombie mode 下基于缓存期望状态的本地闭环调谐。
-
-        策略：
-        - 使用 _cached_desired / _cached_managed（最后一次 Redis 在线时的快照）
-        - 本地磁盘污点仍然生效（保护物理磁盘安全）
-        - 只做 start/stop，不尝试 Redis 发布（无法联通）
-        - 容器观察通过 Docker API（纯本地 socket，不依赖 Redis）
-        """
+                   ombie mode                          ?
+            ?        -     _cached_desired / _cached_managed       ?Redis           ?        -
+        -     start/stop       Redis
+        -           Docker API       socket       Redis ?        """
         if not self._cached_managed:
             return
 
         desired = set(self._cached_desired)
 
-        # 磁盘满污点在离线时仍然降级高频 I/O 组件
+        #                       ?I/O
         if self.has_disk_taint:
             for container_name in list(desired):
                 if container_name in self.DISK_TAINT_AFFECTED:
@@ -505,7 +475,7 @@ class TopologySentinel:
         state: str,
         reason: str = "",
     ) -> None:
-        """更新 Redis 中 hw:<path> 哈希并发布 hardware:events 事件。"""
+        """    Redis  ?hw:<path>        ?hardware:events     ?""
         r = self._redis
         if r is None:
             return
@@ -533,7 +503,7 @@ class TopologySentinel:
                 logger.error("Redis update_state failed: %s", e, exc_info=True)
 
     def _check_gpu(self) -> dict[str, str]:
-        """检测 GPU 状态，并主动生成污点 (Taints) 信号供控制循环参考"""
+        """   ?GPU                ?(Taints)              ?""
         if self.mock:
             return {
                 "online": "true",
@@ -569,7 +539,7 @@ class TopologySentinel:
                 if util_value is not None:
                     payload["util"] = util_value
 
-                # 注入污点机制 (Taint: overheating:NoSchedule)
+                #           (Taint: overheating:NoSchedule)
                 try:
                     if temp_value is None:
                         raise ValueError("gpu temp is invalid")
@@ -577,7 +547,7 @@ class TopologySentinel:
                     if target_temp > 85:
                         payload["taint"] = "overheating:NoSchedule"
                     else:
-                        payload["taint"] = ""  # 清理污点
+                        payload["taint"] = ""  #
                 except ValueError as e:
                     if logger:
                         logger.debug("GPU temp parse failed: %s", e)
@@ -626,17 +596,15 @@ class TopologySentinel:
             self._update_state(mount, HWState.ONLINE, "online")
 
     def _process_mount_state_change(self, mount: MountPoint, new_state: str, cur_state: str | None) -> None:
-        """处理检测到的挂载状态变动并写入 Redis。"""
+        """                        Redis ?""
         if new_state == HWState.OFFLINE:
             self._process_mount_offline(mount, cur_state)
         else:
             self._process_mount_online(mount, cur_state)
 
     def _handle_mount(self, mount: MountPoint) -> None:
-        """对单个挂载点执行检测防抖与状态更新；不再在此直接执行降级（交由 Reconcile）
-
-        离线自治：zombie mode 下仍检测挂载点（纯本地 I/O），但跳过 Redis 状态读取。
-        """
+        """                                               ?Reconcile ?
+                ombie mode                   I/O       ?Redis         ?        """
         if not self.is_zombie and not self._redis_ok():
             return
         exists: bool
@@ -666,7 +634,7 @@ class TopologySentinel:
         self._process_mount_state_change(mount, new_state, cur_state)
 
     def _probe_gpu(self) -> None:
-        """Step 2: GPU 状态核验并打污点，支持离线自治（本地 nvidia-smi 不依赖 Redis）。"""
+        """Step 2: GPU                            ?nvidia-smi     ?Redis   ?""
         r = self._redis
         if self._redis_ok() and r is not None:
             try:
@@ -683,15 +651,14 @@ class TopologySentinel:
                     logger.debug("GPU check failed in zombie mode (non-critical)")
 
     def run_once(self) -> None:
-        """执行一次检测周期与强一致性调谐。"""
-        # Step 0: 系统盘 95% 物理熔断预检（法典 3.3 最高优先级）
-        try:
+        """                         ?""
+        # Step 0:     ?95%              ?3.3          ?        try:
             self._check_disk_usage()
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             if logger:
                 logger.error("Disk usage check failed: %s", e)
 
-        # Step 1: 处理挂载点心跳 (I/O)
+        # Step 1:           ?(I/O)
         for mount in self.mounts:
             try:
                 self._handle_mount(mount)
@@ -699,10 +666,9 @@ class TopologySentinel:
                 if logger:
                     logger.error("Error handling mount %s: %s", mount.path, e)
 
-        # Step 2: GPU 状态核验
-        self._probe_gpu()
+        # Step 2: GPU       ?        self._probe_gpu()
 
-        # Step 3: K3s 调谐循环 (Reconcile loop)
+        # Step 3: K3s        (Reconcile loop)
         try:
             self._reconcile_loop()
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
@@ -710,7 +676,7 @@ class TopologySentinel:
                 logger.error("Reconcile loop crashed: %s", e, exc_info=True)
 
     def _process_switch_event_message(self, data: str | bytes) -> None:
-        """解析单条 switch:events 消息并将期望状态压入 Redis"""
+        """       switch:events                ?Redis"""
         if isinstance(data, bytes):
             data = data.decode("utf-8")
         try:
@@ -733,7 +699,7 @@ class TopologySentinel:
                 logger.debug("invalid switch event payload: %s", e)
 
     def _redis_listener_thread(self) -> None:
-        """后台专职监听 Redis pub/sub，现在只做状态写入(Desired State)，不直接操作物理层。"""
+        """          Redis pub/sub             ?Desired State)               ?""
         r = self._redis
         if r is None or self.is_zombie:
             return
@@ -742,8 +708,7 @@ class TopologySentinel:
             pubsub.subscribe("switch:events")
             if logger is not None:
                 logger.info("Topology sentinel starting declarative Redis pub/sub listener on switch:events")
-            # 法典 2.1：消费使用 get_message(timeout=...) 避免 listen() 无限阻塞，便于探针自愈与退出
-            while not self.is_zombie and r and not self._stop_event.is_set():
+            #     2.1       ?get_message(timeout=...)     listen()                      ?            while not self.is_zombie and r and not self._stop_event.is_set():
                 message = pubsub.get_message(timeout=3)
                 if message is None:
                     continue
@@ -760,11 +725,11 @@ class TopologySentinel:
                 logger.error("Redis listener thread crashed: %s", e)
 
     def run(self) -> None:
-        """主循环：按间隔周期执行 run_once；单次超时（interval*2）则告警并等待本周期结束再下一轮。"""
+        """                ?run_once         interval*2                          ?""
         if logger:
             logger.info("Starting topology sentinel main loop")
 
-        # 启动后台监听线程 (守护线程)
+        #              (      )
         listener = threading.Thread(target=self._redis_listener_thread, daemon=True)
         listener.start()
 
@@ -788,9 +753,8 @@ class TopologySentinel:
 
     def _evict_zombie_tasks(self) -> None:
         """
-        K3s 优雅驱逐 (Eviction & Tombstones): 探测失联超过 15 秒的 Worker 节点,
-        并为其认领的积压任务颁发墓碑 (Tombstone), 防止脑裂双写。
-        """
+        K3s       ?(Eviction & Tombstones):           15     Worker    ,
+                              (Tombstone),           ?        """
         r = self._redis
         if not self._redis_ok() or r is None:
             return
@@ -799,50 +763,48 @@ class TopologySentinel:
         group_name = "zen70_iot_workers"
 
         try:
-            # 1. 获取所有消费者信息
-            consumers = r.xinfo_consumers(stream_key, group_name)
+            # 1.               ?            consumers = r.xinfo_consumers(stream_key, group_name)
             for c in consumers:
                 idle_ms = c.get("idle", 0)
                 pending_count = c.get("pending", 0)
                 consumer_name = c.get("name", "")
 
-                # 2. 如果 Worker 失联超过 15 秒且手头有卡住的任务
+                # 2.     Worker        15
                 if idle_ms > 15000 and pending_count > 0:
                     if logger is not None:
                         logger.warning(
-                            "🧟‍♂️ [Eviction] Worker %s is OFFINE (>15s). Evicting tasks!",
+                            "      ?[Eviction] Worker %s is OFFINE (>15s). Evicting tasks!",
                             consumer_name,
                         )
 
-                    # 3. 查出它卡住的 Message ID
+                    # 3.           Message ID
                     pending_info = r.xpending_range(stream_key, group_name, "-", "+", pending_count, consumer_name)
                     for p in pending_info:
                         msg_id = p.get("message_id")
                         if not msg_id:
                             continue
 
-                        # 4. 读取原始 Payload 获取 command_id
+                        # 4.        Payload     command_id
                         msg_data = r.xrange(stream_key, msg_id, msg_id)
                         if msg_data:
                             _, payload = msg_data[0]
                             command_id = payload.get("command_id")
                             if command_id:
-                                # 5. 宣判物理死亡 (写入墓碑，保留 24 小时)
+                                # 5.           (          ?24    )
                                 tombstone_key = f"zen70:tombstone:{command_id}"
                                 r.setex(tombstone_key, 86400, "evicted")
                                 if logger is not None:
                                     logger.info(
-                                        "🪦 [Eviction] Tombstone written for dead command: %s",
+                                        "   [Eviction] Tombstone written for dead command: %s",
                                         command_id,
                                     )
 
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-            # Redis 流可能还没初始化，或者命令不支持，容错处理
-            if logger is not None:
+            # Redis                                ?            if logger is not None:
                 logger.debug("Eviction loop skipped: %s", e)
 
     def _run_once_safe(self) -> None:
-        """run_once 的线程安全包装，捕获异常避免拖垮线程。"""
+        """run_once                             ?""
         try:
             self.run_once()
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
@@ -850,17 +812,17 @@ class TopologySentinel:
                 logger.error("run_once error: %s", e, exc_info=True)
 
 
-# -------------------- 入口 --------------------
+# --------------------     --------------------
 
 
 def main() -> None:
-    """解析环境、初始化日志与探针并进入主循环。"""
+    """                              ?""
     global logger
     logger = setup_logging(request_id=str(uuid.uuid4()))
     _set_helpers_logger(logger)
     sentinel = TopologySentinel()
 
-    # 注册 SIGTERM 处理器，确保 K8s/Docker 优雅关闭期间能清理 Redis 连接和 event loop
+    #     SIGTERM           K8s/Docker              ?Redis     ?event loop
     def _handle_sigterm(signum: int, frame: object) -> None:
         del signum, frame
         if logger:
@@ -883,7 +845,7 @@ def main() -> None:
             logger.critical("Unhandled exception: %s", e, exc_info=True)
         sys.exit(1)
     finally:
-        # 确保 Redis 连接在退出前关闭
+        #     Redis
         if sentinel._redis is not None:
             try:
                 sentinel._redis.close()

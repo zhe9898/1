@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 from backend.api.jobs import JobCreateRequest, JobPullRequest, JobResultRequest, complete_job, pull_jobs
 from backend.api.jobs.submission import check_concurrent_limits, submit_job
-from backend.core.node_auth import hash_node_token
+from backend.kernel.topology.node_auth import hash_node_token
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.node import Node
@@ -201,7 +201,7 @@ async def test_submit_job_returns_503_when_transaction_recovery_fails(monkeypatc
     db.execute.return_value = _scalar_result(None)
 
     monkeypatch.setattr(
-        "backend.core.scheduling_resilience.AdmissionController.check_admission",
+        "backend.kernel.scheduling.scheduling_resilience.AdmissionController.check_admission",
         AsyncMock(return_value=(True, "", {})),
     )
     monkeypatch.setattr("backend.api.jobs.submission.validate_job_payload", lambda *_: {"ok": True})
@@ -351,8 +351,8 @@ async def test_pull_jobs_commits_then_publishes_then_releases_lock(monkeypatch: 
     monkeypatch.setattr("backend.api.jobs.dispatch.async_build_time_budgeted_placement_plan", AsyncMock(return_value={}))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
     monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
-    monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
-    monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     leased = await pull_jobs(
         JobPullRequest(tenant_id="default", node_id="node-a", limit=1, accepted_kinds=["connector.invoke"]),
@@ -438,8 +438,8 @@ async def test_pull_jobs_releases_lock_on_exception(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("backend.api.jobs.dispatch.async_build_time_budgeted_placement_plan", AsyncMock(return_value={}))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
     monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
-    monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
-    monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     with pytest.raises(RuntimeError, match="flush failed"):
         await pull_jobs(

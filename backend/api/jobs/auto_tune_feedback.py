@@ -119,7 +119,7 @@ async def record_job_outcome_for_tuner(
 
 
 def log_tuner_feedback_failure(job_id: str) -> None:
-    from backend.core.scheduling_resilience import SchedulingMetrics
+    from backend.kernel.scheduling.scheduling_resilience import SchedulingMetrics
 
     SchedulingMetrics.record_tuner_failure()
     logger.warning("Failed to record tuner outcome for job %s", job_id, exc_info=True)

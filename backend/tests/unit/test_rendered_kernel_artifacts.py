@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

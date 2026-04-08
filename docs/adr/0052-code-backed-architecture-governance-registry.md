@@ -51,11 +51,11 @@ Primary entrypoints:
 - `backend/core/architecture_governance.py`
 - `backend/core/control_plane.py`
 - `backend/core/runtime_policy_resolver.py`
-- `backend/core/lease_service.py`
-- `backend/core/execution_fault_isolation.py`
+- `backend/kernel/execution/lease_service.py`
+- `backend/kernel/execution/fault_isolation.py`
 - `backend/core/aggregate_owner_registry.py`
 - `backend/core/compatibility_adapter.py`
-- `backend/core/extension_guard.py`
+- `backend/kernel/extensions/extension_guard.py`
 
 Primary enforcement:
 

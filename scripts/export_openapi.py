@@ -19,7 +19,7 @@ def main() -> int:
         "--profiles",
         nargs="+",
         default=["gateway-kernel"],
-        help="Profiles to export, e.g. gateway-kernel gateway-iot gateway-ops",
+        help="Profiles to export. Current runtime surface: gateway-kernel",
     )
     args = parser.parse_args()
 

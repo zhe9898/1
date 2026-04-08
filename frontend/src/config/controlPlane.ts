@@ -70,8 +70,9 @@ export function getControlPlaneRoutes(): RouteRecordRaw[] {
  * /api/v1/console/surfaces endpoint (ADR 0011: backend is the single
  * source of truth).
  *
- * Safe to call multiple times: routes with the same name are skipped
- * if already registered, so static fallback routes are not duplicated.
+ * Safe to call multiple times: routes with the same name are replaced
+ * so the backend manifest remains the runtime authority over the bundled
+ * fallback snapshot.
  *
  * Unknown route_names (no VIEW_LOADERS entry) are silently skipped so
  * that a new backend surface never crashes the SPA.
@@ -84,17 +85,14 @@ export function addControlPlaneRoutesFromSurfaces(
     if (!(surface.route_name in VIEW_LOADERS)) {
       continue; // Unknown view — skip gracefully
     }
-    // router.hasRoute() prevents double-registration
-    if (!router.hasRoute(surface.route_name)) {
-      router.addRoute(surfaceToRoute(surface));
+    if (router.hasRoute(surface.route_name)) {
+      router.removeRoute(surface.route_name);
+    }
+    router.addRoute(surfaceToRoute(surface));
+    if (surface.requires_admin) {
+      ADMIN_ONLY_ROUTE_NAMES.add(surface.route_name);
     } else {
-      // Update admin-only guard set with runtime truth
-      if (surface.requires_admin) {
-        ADMIN_ONLY_ROUTE_NAMES.add(surface.route_name);
-      } else {
-        ADMIN_ONLY_ROUTE_NAMES.delete(surface.route_name);
-      }
+      ADMIN_ONLY_ROUTE_NAMES.delete(surface.route_name);
     }
   }
 }
-

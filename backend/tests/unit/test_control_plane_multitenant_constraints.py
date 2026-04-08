@@ -77,7 +77,7 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
         return _scalar_result(existing_other_tenant)
 
     db.execute.side_effect = execute_side_effect
-    import backend.core.scheduling_resilience as scheduling_resilience
+    import backend.kernel.scheduling.scheduling_resilience as scheduling_resilience
 
     original_check_admission = scheduling_resilience.AdmissionController.check_admission
     scheduling_resilience.AdmissionController.check_admission = AsyncMock(return_value=(True, "", {}))

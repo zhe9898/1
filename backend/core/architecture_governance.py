@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from typing import Final
 
 from backend.core.aggregate_owner_registry import export_aggregate_owner_registry
-from backend.core.compatibility_adapter import export_status_compatibility_rules
-from backend.core.control_plane import export_surface_registry
-from backend.core.execution_fault_isolation import export_fault_isolation_contract
-from backend.core.extension_guard import export_extension_budget_contract
-from backend.core.lease_service import export_lease_service_contract
-from backend.core.runtime_policy_resolver import export_runtime_policy_contract
+from backend.kernel.contracts.status import export_status_compatibility_rules
+from backend.kernel.execution.fault_isolation import export_fault_isolation_contract
+from backend.kernel.extensions.extension_guard import export_extension_budget_contract
+from backend.kernel.execution.lease_service import export_lease_service_contract
+from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
+from backend.kernel.surfaces.registry import export_surface_registry
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +32,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary=("Control-plane surfaces are defined in backend code and validated " "against the kernel capability registry before export."),
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.control_plane", "backend.core.kernel_capabilities"),
+        source_modules=("backend.kernel.surfaces.registry", "backend.kernel.capabilities.registry"),
         gate_tests=(
             "backend.tests.unit.test_architecture_governance_gates::test_surface_registry_exports_capability_scope_pack_and_policy_trace",
             "backend.tests.unit.test_control_plane_runtime_closure::test_kernel_guest_control_plane_surfaces_have_real_api_routes",
@@ -49,7 +49,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
             "system.yaml parsing outside the allowlist."
         ),
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.runtime_policy_resolver", "backend.core.scheduling_policy_store"),
+        source_modules=("backend.kernel.policy.runtime_policy_resolver", "backend.kernel.policy.policy_store"),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_runtime_policy_gate_blocks_runtime_system_yaml_reads_outside_allowlist",),
     ),
     ArchitectureGovernanceRule(
@@ -73,7 +73,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary="Lease lifecycle writes are centralized in LeaseService and backed by a dedicated static gate for lease-owned fields.",
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.lease_service",),
+        source_modules=("backend.kernel.execution.lease_service",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_lease_gate_only_allows_lease_service_writes",),
     ),
     ArchitectureGovernanceRule(
@@ -83,11 +83,11 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary=(
             "Transport compatibility for legacy state aliases has been "
-            "retired; the compatibility adapter export now attests that "
+            "retired; the canonical status contract export now attests that "
             "only canonical values are accepted."
         ),
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.compatibility_adapter",),
+        source_modules=("backend.kernel.contracts.status",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_status_compatibility_rules_export_release_window_metadata",),
     ),
     ArchitectureGovernanceRule(
@@ -103,7 +103,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         ),
         enforcement_layers=("core", "tests"),
         source_modules=(
-            "backend.core.execution_fault_isolation",
+            "backend.kernel.execution.fault_isolation",
             "backend.api.jobs.lifecycle",
             "backend.workers.control_plane_worker",
         ),
@@ -120,7 +120,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary="Extensions must remain manifest-traceable and pass budget validation before entering scheduling phases.",
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.extension_guard",),
+        source_modules=("backend.kernel.extensions.extension_guard",),
         gate_tests=(
             "backend.tests.unit.test_architecture_governance_gates::test_extension_manifest_guard_requires_traceable_manifest_path",
             "backend.tests.unit.test_architecture_governance_gates::test_extension_budget_guard_rejects_sync_plugin_over_budget",
@@ -133,7 +133,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary="Every exported surface carries capability, scope, pack, and policy metadata through the backend-owned surface registry.",
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.control_plane",),
+        source_modules=("backend.kernel.surfaces.registry",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_surface_registry_exports_capability_scope_pack_and_policy_trace",),
     ),
     ArchitectureGovernanceRule(
@@ -143,7 +143,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary="Dispatch audit context persists policy, quota, and governance version snapshots alongside scheduling decision linkage.",
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.api.jobs.dispatch", "backend.core.lease_service"),
+        source_modules=("backend.api.jobs.dispatch", "backend.kernel.execution.lease_service"),
         gate_tests=("backend.tests.unit.test_control_plane_protocol_contracts::test_pull_jobs_assigns_attempt_and_lease_token",),
     ),
     ArchitectureGovernanceRule(
@@ -165,7 +165,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         maturity="enforced",
         summary="Scheduling extensions are bounded by execution time, payload size, audit size, external-call count, and per-phase cardinality budgets.",
         enforcement_layers=("core", "tests"),
-        source_modules=("backend.core.extension_guard",),
+        source_modules=("backend.kernel.extensions.extension_guard",),
         gate_tests=(
             "backend.tests.unit.test_architecture_governance_gates::test_extension_budget_guard_rejects_post_bind_external_call_over_budget",
             "backend.tests.unit.test_architecture_governance_gates::test_extension_payload_budget_guard_enforces_64kib_limit",
@@ -193,13 +193,13 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
     return {
         "rules": export_architecture_governance_rules(),
         "entrypoints": {
-            "surface_registry": "backend.core.control_plane.export_surface_registry",
-            "runtime_policy_contract": "backend.core.runtime_policy_resolver.export_runtime_policy_contract",
-            "lease_service_contract": "backend.core.lease_service.export_lease_service_contract",
-            "fault_isolation_contract": "backend.core.execution_fault_isolation.export_fault_isolation_contract",
+            "surface_registry": "backend.kernel.surfaces.registry.export_surface_registry",
+            "runtime_policy_contract": "backend.kernel.policy.runtime_policy_resolver.export_runtime_policy_contract",
+            "lease_service_contract": "backend.kernel.execution.lease_service.export_lease_service_contract",
+            "fault_isolation_contract": "backend.kernel.execution.fault_isolation.export_fault_isolation_contract",
             "aggregate_owner_registry": "backend.core.aggregate_owner_registry.export_aggregate_owner_registry",
-            "compatibility_rules": "backend.core.compatibility_adapter.export_status_compatibility_rules",
-            "extension_budget_contract": "backend.core.extension_guard.export_extension_budget_contract",
+            "compatibility_rules": "backend.kernel.contracts.status.export_status_compatibility_rules",
+            "extension_budget_contract": "backend.kernel.extensions.extension_guard.export_extension_budget_contract",
         },
         "registries": {
             "surface_registry": export_surface_registry(),

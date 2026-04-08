@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.core.attempt_expiration_service import expire_stale_attempts
+from backend.kernel.execution.attempt_expiration_service import expire_stale_attempts
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 

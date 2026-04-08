@@ -1,0 +1,295 @@
+generated_at: 2026-04-07
+inventory_id: AUDIT-ASSET-INVENTORY-2026-04-07
+scopes:
+  - scope_id: M1-config-topology
+    module: M1
+    path: system.yaml
+    runtime_role: Global control-plane topology, runtime defaults, queue and lease policy entry.
+    upstream: Operator edits, release packaging inputs.
+    downstream: backend startup, scheduler defaults, deploy manifests.
+    state_side_effect: Changes service topology and runtime policy defaults consumed by the control plane.
+    existing_tests:
+      - backend/tests/unit/test_kernel_iac_explicit_contract.py
+      - tests/test_iac_bootstrapping.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-http-entry
+    module: M1
+    path: backend/api/main.py
+    runtime_role: FastAPI bootstrap and control-plane route registration.
+    upstream: system.yaml-derived runtime settings, dependency wiring.
+    downstream: jobs/nodes/routes handlers, middleware chain, SSE surface.
+    state_side_effect: Exposes the HTTP entry point and boot-time runtime guards.
+    existing_tests:
+      - backend/tests/unit/test_main_request_id.py
+      - backend/tests/unit/test_control_plane_runtime_closure.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-job-api
+    module: M1
+    path: backend/api/jobs/**
+    runtime_role: Submission, dispatch, lifecycle callbacks, DLQ recovery, and job response shaping.
+    upstream: frontend HTTP requests, runner-agent callbacks, node auth.
+    downstream: scheduler core, lease state, models, SSE publishing.
+    state_side_effect: Persists job state transitions, attempt projections, and operator actions.
+    existing_tests:
+      - backend/tests/unit/test_jobs_runtime.py
+      - backend/tests/unit/test_jobs_dlq.py
+      - backend/tests/unit/test_dispatch_lifecycle.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-node-sse-api
+    module: M1
+    path: backend/api/{nodes.py,nodes_models.py,routes.py,control_events.py}
+    runtime_role: Node lifecycle API and SSE event fan-out.
+    upstream: runner-agent heartbeats, authenticated UI sessions, Redis pubsub.
+    downstream: frontend runtime stores, node status projections, operator dashboards.
+    state_side_effect: Updates node lease and heartbeat state and publishes control-plane events.
+    existing_tests:
+      - backend/tests/unit/test_node_state_machine.py
+      - backend/tests/unit/test_routes_sse.py
+      - backend/tests/unit/test_control_plane_protocol_contracts.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-runtime-core
+    module: M1
+    path: backend/core/{attempt_expiration_service.py,backfill_scheduling.py,business_scheduling.py,db_locks.py,dispatch_lifecycle.py,failure_control_plane.py,failure_taxonomy.py,gang_scheduler.py,job_*.py,lease_service.py,node_auth.py,placement_*.py,queue_stratification.py,quota*.py,redis_client.py,safe_error_projection.py,scheduler_auto_tune*.py,scheduling_*.py,workload_semantics.py}
+    runtime_role: Scheduling, lease ownership, retry policy, quota governance, placement, and runtime safety checks.
+    upstream: API handlers, runner callbacks, placement solver, Redis, database state.
+    downstream: model transitions, expiration worker, solver RPCs, frontend-safe error hints.
+    state_side_effect: Owns the execution state machine and retry and lease timing behavior.
+    existing_tests:
+      - backend/tests/unit/test_job_scheduler.py
+      - backend/tests/unit/test_attempt_expiration_service.py
+      - backend/tests/unit/test_quota_aware_scheduling.py
+      - backend/tests/unit/test_scheduling_resilience.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-execution-models
+    module: M1
+    path: backend/models/{job.py,job_attempt.py,node.py,scheduling_decision.py,tenant_scheduling_policy.py}
+    runtime_role: Persistent job, attempt, node, and scheduling state.
+    upstream: execution APIs and scheduling core.
+    downstream: retry policy, lease timeout worker, operator read models.
+    state_side_effect: Stores source-of-truth execution and placement fields.
+    existing_tests:
+      - backend/tests/unit/test_db.py
+      - backend/tests/unit/test_control_plane_protocol_contracts.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-execution-migrations
+    module: M1
+    path: migrations/003_advanced_scheduling.sql
+    runtime_role: Schema support for advanced scheduling and execution projections.
+    upstream: database bootstrap and migration runner.
+    downstream: scheduler and lifecycle services.
+    state_side_effect: Changes persistent schema used by execution state transitions.
+    existing_tests:
+      - backend/tests/unit/test_migration_runtime.py
+      - tests/test_db_schema_migration_contract.py
+    review_status: reviewed
+    risk_level: medium
+
+  - scope_id: M1-expiration-worker
+    module: M1
+    path: backend/workers/attempt_expiration_worker.py
+    runtime_role: Background lease-expiry reconciler.
+    upstream: job and attempt persistence, scheduler timing.
+    downstream: expire_lease flow and requeue semantics.
+    state_side_effect: Moves stale leased work back into schedulable states.
+    existing_tests:
+      - backend/tests/unit/test_attempt_expiration_service.py
+      - backend/tests/unit/test_jobs_deadline_maintenance.py
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-runner-agent
+    module: M1
+    path: runner-agent/internal/{api,config,device,exec,heartbeat,jobs,service}/**
+    runtime_role: Node-side poll, execute, renew, report, and heartbeat implementation.
+    upstream: backend control plane, node machine token, local executor runtime.
+    downstream: job callback APIs, heartbeat and drain endpoints.
+    state_side_effect: Consumes leases and mutates job execution state from the node side.
+    existing_tests:
+      - runner-agent/internal/api/client_test.go
+      - runner-agent/internal/jobs/poller_test.go
+      - runner-agent/internal/exec/executor_test.go
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M1-placement-service
+    module: M1
+    path: placement-solver/{cmd,internal,proto,gen}/**
+    runtime_role: Solver RPC surface and placement decision engine.
+    upstream: backend placement client and scheduling constraints.
+    downstream: selected node and placement scoring results.
+    state_side_effect: Determines dispatch targets for runnable work.
+    existing_tests:
+      - placement-solver/internal/solver/solver_test.go
+    review_status: reviewed
+    risk_level: medium
+
+  - scope_id: M1-frontend-execution
+    module: M1
+    path: frontend/src/{composables/useAppRuntime.ts,stores/console.ts,stores/events.ts,stores/jobs.ts,stores/nodes.ts,types/sse.ts,utils/api.ts,utils/http.ts,utils/sse.ts,views/JobsView.vue,views/NodesView.vue}
+    runtime_role: HTTP and SSE consumption and execution state presentation in the browser.
+    upstream: backend REST and SSE responses.
+    downstream: jobs, nodes, event stores, and operator-visible status surfaces.
+    state_side_effect: Persists runtime state in Pinia and renders operator actions on top of backend contracts.
+    existing_tests:
+      - frontend/tests/jobs.spec.ts
+      - frontend/tests/nodes.spec.ts
+      - frontend/tests/sse.spec.ts
+    review_status: reviewed
+    risk_level: high
+
+  - scope_id: M2-identity-boundary
+    module: M2
+    path: backend/api/{auth.py,auth_bootstrap.py,auth_cookies.py,auth_invite.py,auth_password.py,auth_pin.py,auth_session_projection.py,auth_shared.py,auth_token_issue.py,auth_user.py,auth_webauthn.py,audit_logs.py,permissions.py,sessions.py,user_management.py} + backend/api/models/** + backend/core/{audit_logging.py,auth_helpers.py,jwt.py,permissions.py,rls.py,sessions.py,secret_envelope.py,security_policy.py,security_redaction.py,user_lifecycle.py,webauthn.py,webauthn_challenge_store.py,webauthn_flow_session.py} + backend/models/{audit_log.py,permission.py,session.py,tenant.py,user.py,webauthn_challenge.py} + frontend/src/{composables/useAuthFlow.ts,services/webauthn.ts,stores/auth.ts,stores/auth/**,types/user.ts,views/InviteView.vue,views/Login.vue}
+    runtime_role: Authentication, authorization, session projection, audit, and browser identity state.
+    upstream: login flows, cookies, WebAuthn devices, RBAC policies.
+    downstream: protected API access, tenant scoping, audit trails, and UI auth state.
+    state_side_effect: Issues sessions and tokens, enforces scope checks, and writes audit and auth records.
+    existing_tests:
+      - backend/tests/unit/test_auth_session_api.py
+      - backend/tests/unit/test_auth_tenant_scoping.py
+      - backend/tests/unit/test_auth_webauthn_and_invite_guards.py
+      - tests/integration/test_auth_flow.py
+    review_status: pending
+    risk_level: high
+
+  - scope_id: M3-extension-orchestration
+    module: M3
+    path: backend/api/{agent.py,connectors.py,connectors_helpers.py,evaluations.py,evaluations_helpers.py,extensions.py,iot.py,push.py,reservations.py,scenes.py,triggers.py,workflows.py} + backend/core/{ai_providers.py,connector_kind_registry.py,connector_secret_service.py,connector_service.py,control_plane.py,control_plane_state.py,device_profiles.py,events_schema.py,execution_fault_isolation.py,executor_registry.py,extension_guard.py,extension_sdk.py,feature_flag_service.py,job_kind_registry.py,pack_registry.py,reservation_runtime.py,runtime_policy_resolver.py,trigger_command_service.py,trigger_kind_registry.py,trigger_service.py,webhooks.py,workflow_command_service.py,workflow_engine.py,workflow_template_registry.py} + backend/models/{connector.py,feature_flag.py,software_evaluation.py,trigger.py,workflow.py} + contracts/{extensions,reservations,triggers}/**
+    runtime_role: Connector lifecycle, extension guardrails, trigger delivery, workflow execution, and related contracts.
+    upstream: operator actions, extension manifests, external device or trigger inputs.
+    downstream: runtime command execution, connector state, and reservation and workflow callbacks.
+    state_side_effect: Persists external orchestration state and emits connector, trigger, and control events.
+    existing_tests:
+      - backend/tests/unit/test_connector_secret_service.py
+      - backend/tests/unit/test_extensions_api.py
+      - backend/tests/unit/test_trigger_api.py
+      - backend/tests/unit/test_workflows_schema.py
+    review_status: pending
+    risk_level: high
+
+  - scope_id: M3-frontend-orchestration
+    module: M3
+    path: frontend/src/{stores/connectors.ts,stores/evaluations.ts,views/ConnectorsView.vue,views/EvaluationsView.vue,views/ReservationsView.vue,views/TriggersView.vue}
+    runtime_role: Frontend surfaces for connector, evaluation, reservation, and trigger workflows.
+    upstream: orchestration APIs and SSE contract events.
+    downstream: operator decisions and workflow observability.
+    state_side_effect: Stores orchestration resources and control actions in browser state.
+    existing_tests:
+      - frontend/tests/control_plane_actions.spec.ts
+      - frontend/tests/control_plane_registry.spec.ts
+      - frontend/tests/control_plane_views.spec.ts
+    review_status: pending
+    risk_level: medium
+
+  - scope_id: M4-console-shell
+    module: M4
+    path: backend/api/{action_contracts.py,assets.py,board.py,console.py,console_helpers.py,health.py,portability.py,profile.py,search.py,settings.py,ui_contracts.py} + backend/core/{aggregate_owner_registry.py,gateway_profile.py,runtime_support.py,status_contracts.py} + backend/models/{asset.py,health_record.py,memory.py,registry.py,system.py}
+    runtime_role: Control dashboard, generic console APIs, health and profile presentation, and server-owned UI contracts.
+    upstream: authenticated browser users and UI shell requests.
+    downstream: frontend chrome, dashboards, resource views, search, and settings.
+    state_side_effect: Shapes read models and operator action affordances for the web console.
+    existing_tests:
+      - backend/tests/unit/test_console_overview.py
+      - backend/tests/unit/test_profile_console_routes.py
+      - backend/tests/unit/test_status_contracts.py
+    review_status: pending
+    risk_level: medium
+
+  - scope_id: M4-frontend-shell
+    module: M4
+    path: frontend/src/{App.vue,components/**,config/**,constants/**,core/**,db/**,main.ts,router/**,services/offlineStorage.ts,stores/capabilities.ts,stores/switch.ts,stores/theme.ts,style.css,types/{backendUi.ts,capability.ts,cluster.ts,console.ts,controlPlane.ts,switch.ts},utils/{controlPlane.ts,db.ts,errorMessage.ts,logger.ts,persist.ts,push.ts,requestId.ts,statusView.ts},views/{ControlDashboard.vue,SystemSettings.vue},vite-env.d.ts}
+    runtime_role: Frontend shell, resource chrome, offline persistence, and general UI composition.
+    upstream: backend UI contracts, local browser storage, route and navigation state.
+    downstream: all browser-side operator interactions outside the execution main chain.
+    state_side_effect: Persists UI shell state, local caches, and generic client-side preferences.
+    existing_tests:
+      - frontend/tests/CardContainer.spec.ts
+      - frontend/tests/offline_storage.spec.ts
+      - frontend/tests/system_settings.spec.ts
+    review_status: pending
+    risk_level: medium
+
+  - scope_id: M5-config-deploy
+    module: M5
+    path: .github/workflows/** + backend/{.coveragerc,Dockerfile,alembic.ini,migrations.ini,mypy.ini,requirements-*.txt,run.sh} + backend/scripts/** + config/** + deploy/** + docker-compose.yml + frontend/{README.md,eslint-plugin-zen70.js,eslint.config.js,index.html,package-lock.json,package.json,postcss.config.js,public/**,tailwind.config.js,tsconfig*.json,vite.config.ts,vitest.config.ts} + iac/** + installer/** + package.json + pyproject.toml + pytest.ini + render-manifest.json + requirements-infra.txt + runner-agent/{Dockerfile,go.mod,go.sum} + scripts/** + start_installer.py + system.yaml + tests/{Dockerfile.backend,Dockerfile.test,docker-compose.yml} + zen70-doctor.sh + zen70_start.* + zen70_stop.*
+    runtime_role: Build, packaging, offline bundle generation, deployment templates, CI gates, and environment bootstrap.
+    upstream: release inputs, operator environment values, and CI configuration.
+    downstream: runtime manifests, deployment topology, and test and build behavior.
+    state_side_effect: Produces deployable artifacts and controls how the monorepo is built and shipped.
+    existing_tests:
+      - backend/tests/unit/test_compiler_render_targets.py
+      - backend/tests/unit/test_compiler_write_fallback.py
+      - tests/test_iac_bootstrapping.py
+      - tests/test_offline_bundle_validation.py
+    review_status: pending
+    risk_level: high
+
+  - scope_id: M6-data-governance
+    module: M6
+    path: backend/alembic/** + backend/core/{alembic_runtime.py,architecture_governance.py,data_retention.py,governance_facade.py,migration_governance.py,migration_runner.py,migration_schema_guard.py} + backend/migrations/** + backend/models/{alert.py,base.py,domain_registry.json,DOMAIN_REGISTRY.md,quota.py} + migrations/** + tests/_repo_paths.py + tools/**
+    runtime_role: Schema evolution, governance enforcement, retention, and repository hardening support.
+    upstream: migration inputs, domain registries, and governance policies.
+    downstream: database schema validity, code ownership rules, and hardening checks.
+    state_side_effect: Applies or validates migrations and repository governance constraints.
+    existing_tests:
+      - backend/tests/unit/test_architecture_governance_gates.py
+      - backend/tests/unit/test_data_retention.py
+      - backend/tests/unit/test_migration_governance.py
+      - tests/test_repo_hardening.py
+    review_status: pending
+    risk_level: high
+
+  - scope_id: M7-runtime-observability
+    module: M7
+    path: backend/{ai_router.py,background_tasks.py,capabilities.py,db.py,main.py,middleware.py,shared_state.py,__init__.py} + backend/core/{alert_actions.py,alerting.py,compatibility_adapter.py,constants.py,metrics.py,protocol_version.py,structured_logging.py,telemetry.py,version.py,worker_pool.py} + backend/sentinel/** + backend/workers/{ai_worker.py,alert_manager.py,clip_worker.py,control_plane_worker.py,iot_bridge.py,memory_summarizer.py,mqtt_worker.py,voice_worker.py} + config/{alertmanager,categraf,grafana,loki,mosquitto,promtail,vmalert}/**
+    runtime_role: Runtime bootstrap, observability pipeline, background workers, and resilience controls.
+    upstream: service startup, alerting configuration, telemetry sinks, and chaos and performance harnesses.
+    downstream: metrics, logs, alerts, background task execution, and operational recovery behavior.
+    state_side_effect: Emits telemetry and orchestrates long-running or recovery-oriented worker processes.
+    existing_tests:
+      - backend/tests/unit/test_alert_manager.py
+      - backend/tests/unit/test_metrics.py
+      - backend/tests/unit/test_worker_pool.py
+      - tests/test_observability_pipeline.py
+    review_status: pending
+    risk_level: high
+
+  - scope_id: M7-chaos-performance
+    module: M7
+    path: tests/{README.md,conftest.py,e2e/**,e2e_config_test.py,integration/**,performance/**,chaos/**,test_business_scheduler_hardening.py,test_compliance_sre.py,test_health_pack_delivery_artifacts.py,test_observability_pipeline.py}
+    runtime_role: End-to-end, chaos, and performance evidence layer for runtime behavior.
+    upstream: product code and deployment wiring.
+    downstream: confidence signals, regression detection, and SRE acceptance.
+    state_side_effect: Exercises runtime flows under load, failure, and integration conditions.
+    existing_tests:
+      - tests/test_compliance_sre.py
+      - tests/integration/test_chaos_redis.py
+      - tests/performance/test_scheduler_bench.py
+    review_status: pending
+    risk_level: medium
+
+  - scope_id: M8-contract-compatibility
+    module: M8
+    path: clients/** + contracts/** + docs/api/openapi_locked.json + docs/openapi*.json + placement-solver/Makefile
+    runtime_role: External client contracts, exported OpenAPI, protocol compatibility, and generated contract surfaces.
+    upstream: backend API schemas, contract export scripts, and release process.
+    downstream: external clients, partner integrations, and contract consumers.
+    state_side_effect: Defines or freezes externally visible compatibility surfaces.
+    existing_tests:
+      - backend/tests/unit/test_contract_capabilities.py
+      - backend/tests/unit/test_contract_responses.py
+      - tests/integration/test_api_contracts.py
+    review_status: pending
+    risk_level: high

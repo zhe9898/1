@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.node import Node
 
 from .nodes_models import BootstrapReceipt
@@ -191,7 +191,7 @@ def _resource_schema() -> ResourceSchemaResponse:
     )
 
 
-# ── Bootstrap helpers ─────────────────────────────────────────────────
+# 鈹€鈹€ Bootstrap helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 def _build_bootstrap_gateway_base_url() -> str:
@@ -244,10 +244,10 @@ def _build_bootstrap_commands(node: Node, node_token: str) -> dict[str, str]:
 
 def _bootstrap_notes() -> list[str]:
     return [
-        "请把 <gateway-base-url> 替换为当前网关对外可达的根地址；runner 会自行拼接 /api/v1/... 控制面路径。",
-        "机器通道默认要求 HTTPS；只有在本机开发联调时，才允许配合 RUNNER_ALLOW_INSECURE_HTTP=true 使用 http://127.0.0.1...",
-        "请同时保留 RUNNER_TENANT_ID；机器通道会在鉴权前先绑定租户上下文。",
-        "一次性 node token 只能保存在节点主机或原生客户端本地；当前回执关闭后不会再次展示。",
+        "Replace <gateway-base-url> with the externally reachable gateway base URL. The runner appends the /api/v1/... control-plane paths itself.",
+        "The machine channel requires HTTPS by default. Only local development may opt into http://127.0.0.1... together with RUNNER_ALLOW_INSECURE_HTTP=true.",
+        "Keep RUNNER_TENANT_ID alongside the node token so the machine channel is scoped to the tenant context before authentication completes.",
+        "The node token is one-time display material and should only be stored on the target host or native client. It will not be shown again after this response closes.",
     ]
 
 
@@ -264,7 +264,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                 platform="windows",
                 kind="command",
                 content=bootstrap_commands["powershell"],
-                notes=["适用于 Windows Runner 节点。"],
+                notes=["Use this bootstrap command on Windows runner hosts."],
             )
         )
     if node.node_type != "native-client" and node.os in {"darwin", "linux", "unknown"}:
@@ -275,7 +275,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                 platform="unix",
                 kind="command",
                 content=bootstrap_commands["unix"],
-                notes=["适用于 macOS 或 Linux Runner 节点。"],
+                notes=["Use this bootstrap command on macOS or Linux runner hosts."],
             )
         )
 
@@ -292,7 +292,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
             receipts.append(
                 BootstrapReceipt(
                     key="ios-native",
-                    label="iOS 原生客户端",
+                    label="iOS Native Client",
                     platform="ios",
                     kind="json-config",
                     content=(
@@ -306,14 +306,14 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                         f'  "zone": "{native_common["zone"]}"\n'
                         "}"
                     ),
-                    notes=["写入 iOS 原生客户端配置，供 HealthKit、通知和本地能力桥复用控制面合同。"],
+                    notes=["Embed this JSON into the iOS native client configuration so HealthKit, notifications, and local device bridges reuse the control-plane contract."],
                 )
             )
         if node.os in {"android", "unknown"} or node.executor == "kotlin-native" or node.node_type == "native-client":
             receipts.append(
                 BootstrapReceipt(
                     key="android-native",
-                    label="Android 原生客户端",
+                    label="Android Native Client",
                     platform="android",
                     kind="json-config",
                     content=(
@@ -327,7 +327,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                         f'  "zone": "{native_common["zone"]}"\n'
                         "}"
                     ),
-                    notes=["写入 Android 原生客户端配置，供 Health Connect、通知和本地能力桥复用控制面合同。"],
+                    notes=["Embed this JSON into the Android native client configuration so Health Connect, notifications, and local device bridges reuse the control-plane contract."],
                 )
             )
     return receipts

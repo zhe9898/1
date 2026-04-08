@@ -1,4 +1,4 @@
-"""Tests for scheduling policy store — versioned, auditable policy configuration.
+"""Tests for scheduling policy store 鈥?versioned, auditable policy configuration.
 
 Covers:
 - Policy data structures (frozen dataclass defaults and immutability)
@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.core.scheduling_policy_store import (
+from backend.kernel.policy.policy_store import (
     AdmissionPolicy,
     BackoffPolicy,
     NodeFreshnessPolicy,
@@ -44,7 +44,7 @@ def _utcnow() -> datetime.datetime:
 
 
 def _make_node_snapshot(**overrides):
-    from backend.core.job_scheduler import SchedulerNodeSnapshot
+    from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
     defaults = dict(
         node_id="node-1",
@@ -110,7 +110,7 @@ def _make_job(**overrides):
 @pytest.fixture(autouse=True)
 def _reset_policy_store():
     """Reset the global policy store singleton between tests."""
-    import backend.core.scheduling_policy_store as mod
+    import backend.kernel.policy.policy_store as mod
 
     mod._store = None
     yield
@@ -500,7 +500,7 @@ scheduling:
         try:
             store = PolicyStore()
             store.load_from_yaml(path)
-            # invalid → keeps defaults
+            # invalid 鈫?keeps defaults
             assert store.active.scoring.priority_max == 160
             assert store.version == 0
         finally:
@@ -508,19 +508,19 @@ scheduling:
 
 
 # =====================================================================
-# Integration — scoring engine reads from policy store
+# Integration 鈥?scoring engine reads from policy store
 # =====================================================================
 
 
 class TestScoringIntegration:
     def _score_with_policy(self, policy, **job_overrides):
         """Score a job with a specific policy active."""
-        import backend.core.scheduling_policy_store as mod
+        import backend.kernel.policy.policy_store as mod
 
         mod._store = PolicyStore()
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.core.job_scoring import score_job_for_node
+        from backend.kernel.scheduling.job_scoring import score_job_for_node
 
         job = _make_job(**job_overrides)
         node = _make_node_snapshot()
@@ -548,13 +548,13 @@ class TestScoringIntegration:
 
     def test_zone_bonus_from_policy(self):
         """Zone bonus reads from policy, not hardcoded 10."""
-        import backend.core.scheduling_policy_store as mod
+        import backend.kernel.policy.policy_store as mod
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(scoring=ScoringWeights(zone_match_bonus=25))
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.core.job_scoring import score_job_for_node
+        from backend.kernel.scheduling.job_scoring import score_job_for_node
 
         job = _make_job(target_zone="zone-a")
         node = _make_node_snapshot(zone="zone-a")
@@ -573,20 +573,20 @@ class TestScoringIntegration:
 class TestFreshnessIntegration:
     def test_freshness_penalty_uses_policy(self):
         """Freshness penalty reads grace/stale from policy store."""
-        import backend.core.scheduling_policy_store as mod
+        import backend.kernel.policy.policy_store as mod
 
         mod._store = PolicyStore()
-        # Set stale_after to 100 → more lenient
+        # Set stale_after to 100 鈫?more lenient
         policy = SchedulingPolicy(
             freshness=NodeFreshnessPolicy(grace_period_seconds=10, stale_after_seconds=100),
         )
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.core.job_scoring import _freshness_penalty
+        from backend.kernel.scheduling.job_scoring import _freshness_penalty
 
         now = _utcnow()
         node = _make_node_snapshot(last_seen_at=now - datetime.timedelta(seconds=50))
-        # With default (stale=45), 50s → fully stale. With stale=100, partially stale.
+        # With default (stale=45), 50s 鈫?fully stale. With stale=100, partially stale.
         penalty = _freshness_penalty(node, now)
         assert 0 < penalty < 15  # partial, not full
 
@@ -594,7 +594,7 @@ class TestFreshnessIntegration:
 class TestRetryIntegration:
     def test_retry_delay_reads_policy_defaults(self):
         """calculate_retry_delay_seconds() uses policy store defaults."""
-        import backend.core.scheduling_policy_store as mod
+        import backend.kernel.policy.policy_store as mod
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
@@ -602,7 +602,7 @@ class TestRetryIntegration:
         )
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.core.failure_taxonomy import (
+        from backend.kernel.execution.failure_taxonomy import (
             FailureCategory,
             calculate_retry_delay_seconds,
         )
@@ -612,7 +612,7 @@ class TestRetryIntegration:
 
     def test_retry_delay_explicit_override_wins(self):
         """Explicit base_delay= kwarg overrides policy store."""
-        from backend.core.failure_taxonomy import (
+        from backend.kernel.execution.failure_taxonomy import (
             FailureCategory,
             calculate_retry_delay_seconds,
         )
@@ -629,8 +629,8 @@ class TestRetryIntegration:
 class TestResilienceIntegration:
     def test_admission_reads_policy(self):
         """AdmissionController._resolve_max_pending reads from policy store."""
-        import backend.core.scheduling_policy_store as mod
-        from backend.core.scheduling_resilience import AdmissionController
+        import backend.kernel.policy.policy_store as mod
+        from backend.kernel.scheduling.scheduling_resilience import AdmissionController
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
@@ -645,8 +645,8 @@ class TestResilienceIntegration:
 
     def test_backoff_reads_policy(self):
         """SchedulingBackoff._resolve reads from policy store."""
-        import backend.core.scheduling_policy_store as mod
-        from backend.core.scheduling_resilience import SchedulingBackoff
+        import backend.kernel.policy.policy_store as mod
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingBackoff
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
@@ -665,8 +665,8 @@ class TestResilienceIntegration:
 
     def test_preemption_reads_policy(self):
         """PreemptionBudgetPolicy._resolve_limits reads from policy store."""
-        import backend.core.scheduling_policy_store as mod
-        from backend.core.scheduling_resilience import PreemptionBudgetPolicy
+        import backend.kernel.policy.policy_store as mod
+        from backend.kernel.scheduling.scheduling_resilience import PreemptionBudgetPolicy
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(

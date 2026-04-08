@@ -86,7 +86,7 @@ class TestPreemptionBudget:
         facade = GovernanceFacade()
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         with patch(
-            "backend.core.scheduling_resilience.PreemptionBudgetPolicy.can_preempt",
+            "backend.kernel.scheduling.scheduling_resilience.PreemptionBudgetPolicy.can_preempt",
             return_value=(True, ""),
         ) as mock_can:
             result = facade.can_preempt(now)
@@ -97,7 +97,7 @@ class TestPreemptionBudget:
         facade = GovernanceFacade()
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         with patch(
-            "backend.core.scheduling_resilience.PreemptionBudgetPolicy.record_preemption",
+            "backend.kernel.scheduling.scheduling_resilience.PreemptionBudgetPolicy.record_preemption",
         ) as mock_rec:
             facade.record_preemption(now)
             mock_rec.assert_called_once_with(now)
@@ -110,7 +110,7 @@ class TestSchedulingMetricsProxy:
     def test_record_placement(self):
         facade = GovernanceFacade()
         with patch(
-            "backend.core.scheduling_resilience.SchedulingMetrics.record_placement",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingMetrics.record_placement",
         ) as mock:
             facade.record_placement_metric(42.5)
             mock.assert_called_once_with(42.5)
@@ -118,7 +118,7 @@ class TestSchedulingMetricsProxy:
     def test_record_rejection(self):
         facade = GovernanceFacade()
         with patch(
-            "backend.core.scheduling_resilience.SchedulingMetrics.record_rejection",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingMetrics.record_rejection",
         ) as mock:
             facade.record_rejection_metric("no_eligible_slot")
             mock.assert_called_once_with("no_eligible_slot")
@@ -126,7 +126,7 @@ class TestSchedulingMetricsProxy:
     def test_record_preemption_budget_hit(self):
         facade = GovernanceFacade()
         with patch(
-            "backend.core.scheduling_resilience.SchedulingMetrics.record_preemption_budget_hit",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingMetrics.record_preemption_budget_hit",
         ) as mock:
             facade.record_preemption_budget_hit()
             mock.assert_called_once()
@@ -134,7 +134,7 @@ class TestSchedulingMetricsProxy:
     def test_record_backoff_skip(self):
         facade = GovernanceFacade()
         with patch(
-            "backend.core.scheduling_resilience.SchedulingMetrics.record_backoff_skip",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingMetrics.record_backoff_skip",
         ) as mock:
             facade.record_backoff_skip_metric()
             mock.assert_called_once()
@@ -143,7 +143,7 @@ class TestSchedulingMetricsProxy:
         facade = GovernanceFacade()
         fake_snap = {"placements": 10, "rejections": 2}
         with patch(
-            "backend.core.scheduling_resilience.SchedulingMetrics.snapshot",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingMetrics.snapshot",
             return_value=fake_snap,
         ) as mock:
             result = facade.metrics_snapshot(window_seconds=60)
@@ -159,7 +159,7 @@ class TestSchedulingBackoffProxy:
         facade = GovernanceFacade()
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         with patch(
-            "backend.core.scheduling_resilience.SchedulingBackoff.should_skip",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingBackoff.should_skip",
             return_value=True,
         ) as mock:
             result = facade.should_skip_backoff("job-1", now)
@@ -170,7 +170,7 @@ class TestSchedulingBackoffProxy:
         facade = GovernanceFacade()
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         with patch(
-            "backend.core.scheduling_resilience.SchedulingBackoff.record_failure",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingBackoff.record_failure",
         ) as mock:
             facade.record_backoff_failure("job-2", now)
             mock.assert_called_once_with("job-2", now)
@@ -178,7 +178,7 @@ class TestSchedulingBackoffProxy:
     def test_record_backoff_success(self):
         facade = GovernanceFacade()
         with patch(
-            "backend.core.scheduling_resilience.SchedulingBackoff.record_success",
+            "backend.kernel.scheduling.scheduling_resilience.SchedulingBackoff.record_success",
         ) as mock:
             facade.record_backoff_success("job-3")
             mock.assert_called_once_with("job-3")
@@ -192,7 +192,7 @@ class TestTopologySpreadProxy:
         facade = GovernanceFacade()
         zone_load = {"zone-a": 5, "zone-b": 3}
         with patch(
-            "backend.core.scheduling_resilience.TopologySpreadPolicy.configure_zone_context",
+            "backend.kernel.scheduling.scheduling_resilience.TopologySpreadPolicy.configure_zone_context",
         ) as mock:
             facade.configure_zone_context(zone_load)
             mock.assert_called_once_with(zone_load)

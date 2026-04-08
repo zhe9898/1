@@ -31,7 +31,7 @@ from backend.api.nodes import (
     revoke_node,
     rotate_node_token,
 )
-from backend.core.node_auth import hash_node_token
+from backend.kernel.topology.node_auth import hash_node_token
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.node import Node
@@ -312,8 +312,8 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
     monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
     monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
-    monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
-    monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     leased = await pull_jobs(
         JobPullRequest(tenant_id="default", node_id="node-a", limit=1, accepted_kinds=["connector.invoke"]),
@@ -405,8 +405,8 @@ async def test_pull_jobs_attaches_scheduling_decision_and_policy_snapshot(monkey
     monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
     monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
     monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
-    monkeypatch.setattr("backend.core.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
-    monkeypatch.setattr("backend.core.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     await pull_jobs(
         JobPullRequest(tenant_id="default", node_id="node-a", limit=1, accepted_kinds=["connector.invoke"]),

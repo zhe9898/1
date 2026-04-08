@@ -1,4 +1,4 @@
-﻿"""
+"""
 ZEN70 Nodes API 鈥?Route handlers only.
 
 Models live in nodes_models.py; helpers live in nodes_helpers.py.
@@ -59,11 +59,11 @@ from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consume
     _resource_schema,
 )
 from backend.api.ui_contracts import ResourceSchemaResponse
-from backend.core.compatibility_adapter import canonicalize_status
+from backend.kernel.contracts.status import canonicalize_status
 from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.errors import zen
-from backend.core.node_auth import authenticate_node_request
-from backend.core.node_enrollment_service import NodeEnrollmentService
+from backend.kernel.topology.node_auth import authenticate_node_request
+from backend.kernel.topology.node_enrollment_service import NodeEnrollmentService
 from backend.core.quota import check_node_quota
 from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
@@ -266,7 +266,7 @@ async def register_node(
     now = _utcnow()
 
     # 鈹€鈹€ Executor contract validation (non-blocking) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    from backend.core.executor_registry import get_executor_registry
+    from backend.kernel.topology.executor_registry import get_executor_registry
 
     _exec_warnings = get_executor_registry().validate_node_executor(
         node.executor,

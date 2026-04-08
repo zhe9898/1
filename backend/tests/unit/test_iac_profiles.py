@@ -33,7 +33,7 @@ def test_gateway_kernel_profile_renders_minimal_service_set() -> None:
     assert "target: gateway-kernel" in services["gateway"]["build_block"]
 
 
-def test_gateway_iot_profile_can_enable_mqtt_and_iot_image_target() -> None:
+def test_explicit_iot_pack_can_enable_mqtt_and_iot_image_target() -> None:
     config = deepcopy(_load_system_config())
     config["deployment"] = dict(config.get("deployment") or {})
     config["deployment"]["profile"] = "gateway-kernel"
@@ -44,4 +44,4 @@ def test_gateway_iot_profile_can_enable_mqtt_and_iot_image_target() -> None:
 
     assert "mosquitto" in services
     assert "runner-agent" in services
-    assert "target: gateway-iot" in services["gateway"]["build_block"]
+    assert "target: gateway-kernel" in services["gateway"]["build_block"]

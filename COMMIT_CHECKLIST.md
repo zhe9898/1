@@ -7,7 +7,7 @@
 - `backend/models/node.py` - 新增 accepted_kinds、边缘算力字段
 
 ### 调度器
-- `backend/core/job_scheduler.py` - 强化评分算法、支持调度策略、亲和性
+- `backend/kernel/scheduling/job_scheduler.py` - 强化评分算法、支持调度策略、亲和性
 - `backend/core/control_plane.py` - 控制面真源移到后端
 - `backend/capabilities.py` - 清理非 kernel 能力
 
@@ -21,8 +21,8 @@
 ## 新增的文件
 
 ### 调度算法
-- `backend/core/scheduling_strategies.py` - 5种调度策略实现
-- `backend/core/business_scheduling.py` - 业务调度算法
+- `backend/kernel/scheduling/scheduling_strategies.py` - 5种调度策略实现
+- `backend/kernel/scheduling/business_scheduling.py` - 业务调度算法
 
 ### 测试
 - `tests/test_business_scheduler_hardening.py` - 业务调度门禁测试
@@ -62,7 +62,7 @@ Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 # Commit 2: P1 调度治理
 git add backend/models/job.py
 git add backend/api/jobs/routes.py
-git add backend/core/job_scheduler.py
+git add backend/kernel/scheduling/job_scheduler.py
 git commit -m "feat(scheduler): P1 scheduling governance
 
 - Concurrent limits enforcement
@@ -76,7 +76,7 @@ Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 # Commit 3: 边缘算力编排
 git add backend/models/job.py
 git add backend/models/node.py
-git add backend/core/job_scheduler.py
+git add backend/kernel/scheduling/job_scheduler.py
 git add backend/api/nodes.py
 git commit -m "feat(edge): edge computing orchestration
 
@@ -90,10 +90,10 @@ git commit -m "feat(edge): edge computing orchestration
 Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 
 # Commit 4: 高级调度算法
-git add backend/core/scheduling_strategies.py
-git add backend/core/business_scheduling.py
+git add backend/kernel/scheduling/scheduling_strategies.py
+git add backend/kernel/scheduling/business_scheduling.py
 git add backend/models/job.py
-git add backend/core/job_scheduler.py
+git add backend/kernel/scheduling/job_scheduler.py
 git commit -m "feat(scheduler): advanced scheduling algorithms
 
 - 5 scheduling strategies (spread/binpack/locality/performance/balanced)

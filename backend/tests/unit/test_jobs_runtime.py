@@ -20,7 +20,7 @@ from backend.api.jobs import (
     report_job_progress,
     retry_job_now,
 )
-from backend.core.node_auth import hash_node_token
+from backend.kernel.topology.node_auth import hash_node_token
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.node import Node

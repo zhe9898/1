@@ -1,4 +1,4 @@
-﻿"""
+"""
 ZEN70 Nodes API 鈥?Helper functions.
 
 Split from nodes.py for maintainability.  Contains response builders,
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
-from backend.core.compatibility_adapter import normalize_persisted_status
+from backend.kernel.contracts.status import normalize_persisted_status
 from backend.core.control_plane_state import (
     node_attention_reason,
     node_capacity_state,
@@ -27,7 +27,7 @@ from backend.core.control_plane_state import (
     node_status_view,
 )
 from backend.core.errors import zen
-from backend.core.node_auth import generate_node_token, hash_node_token
+from backend.kernel.topology.node_auth import generate_node_token, hash_node_token
 from backend.core.protocol_version import validate_lease_version, validate_protocol_version
 from backend.core.worker_pool import infer_node_worker_pools
 from backend.models.job import Job

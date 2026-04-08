@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from backend.core.connector_kind_registry import get_connector_kind_info, validate_connector_config
-from backend.core.extension_sdk import (
+from backend.kernel.extensions.connector_kind_registry import get_connector_kind_info, validate_connector_config
+from backend.kernel.extensions.extension_sdk import (
     CompatibilityPolicy,
     ConnectorKindSpec,
     ExtensionManifest,
@@ -16,8 +16,8 @@ from backend.core.extension_sdk import (
     load_extension_manifests_from_dir,
     register_extension_manifest,
 )
-from backend.core.job_kind_registry import get_job_kind_info, validate_job_payload, validate_job_result
-from backend.core.workflow_template_registry import get_workflow_template_info, render_workflow_template
+from backend.kernel.extensions.job_kind_registry import get_job_kind_info, validate_job_payload, validate_job_result
+from backend.kernel.extensions.workflow_template_registry import get_workflow_template_info, render_workflow_template
 
 
 class PhotoIndexPayload(BaseModel):

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.core.backfill_scheduling import (
+from backend.kernel.scheduling.backfill_scheduling import (
     BackfillConfig,
     BackfillEvaluator,
     BackfillGate,
@@ -28,7 +28,7 @@ from backend.core.backfill_scheduling import (
     get_reservation_manager,
     reset_reservation_manager,
 )
-from backend.core.scheduling_constraints import SchedulingContext
+from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
 
 # ---------------------------------------------------------------------------
 # Helpers

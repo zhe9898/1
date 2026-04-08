@@ -1,9 +1,6 @@
 """
-ZEN70 API v1 路由：能力矩阵、软开关、SSE 事件流。
-
-法典 §2.1 强制：前端每 30s 发送 Ping，后端 45s 未收到必须 cancel() 释放 FD。
-Client-Token-in-URL + Redis SETEX 实现跨 Worker 一致的超时熔断。
-"""
+ZEN70 API v1 璺敱锛氳兘鍔涚煩闃点€佽蒋寮€鍏炽€丼SE 浜嬩欢娴併€?
+娉曞吀 搂2.1 寮哄埗锛氬墠绔瘡 30s 鍙戦€?Ping锛屽悗绔?45s 鏈敹鍒板繀椤?cancel() 閲婃斁 FD銆?Client-Token-in-URL + Redis SETEX 瀹炵幇璺?Worker 涓€鑷寸殑瓒呮椂鐔旀柇銆?"""
 
 from __future__ import annotations
 
@@ -23,8 +20,8 @@ from pydantic import BaseModel, Field
 from backend.api.deps import get_current_user, get_current_user_optional, get_redis
 from backend.api.models import CapabilityResponse
 from backend.capabilities import build_public_capability_matrix
+from backend.control_plane.auth.access_policy import has_admin_role
 from backend.core.errors import zen
-from backend.core.gateway_profile import normalize_gateway_profile
 from backend.core.redis_client import (
     CHANNEL_CONNECTOR_EVENTS,
     CHANNEL_JOB_EVENTS,
@@ -34,11 +31,12 @@ from backend.core.redis_client import (
     RedisClient,
 )
 from backend.core.structured_logging import get_logger
+from backend.kernel.profiles.public_profile import normalize_gateway_profile
 
 logger = get_logger("api.routes", None)
 
 
-# 法典 §2.1: SSE 超时常量
+# 娉曞吀 搂2.1: SSE 瓒呮椂甯搁噺
 SSE_PING_TIMEOUT = 45
 SSE_PING_TTL = SSE_PING_TIMEOUT + 5
 SSE_PING_KEY_PREFIX = "sse:ping:"
@@ -54,44 +52,39 @@ def _next_sse_ping_deadline() -> str:
 @router.get(
     "/capabilities",
     response_model=dict[str, CapabilityResponse],
-    summary="获取能力矩阵",
+    summary="鑾峰彇鑳藉姏鐭╅樀",
 )
 async def get_capabilities(
     request: Request,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> dict:
     """
-    返回当前所有服务能力。
-
-    法典 2.3.1：供前端 v-for 动态渲染。
-    法典 3.2.5：Redis 失联时返回 All-OFF 矩阵并带 X-ZEN70-Bus-Status: not-ready。
-
-    修复：之前 redis is None 时返回空 {}，导致前端"暂无能力数据"。
-    现在走 capabilities.get_capabilities_matrix()，Redis 不可用时回退 ALL_OFF_MATRIX。
-    """
+    杩斿洖褰撳墠鎵€鏈夋湇鍔¤兘鍔涖€?
+    娉曞吀 2.3.1锛氫緵鍓嶇 v-for 鍔ㄦ€佹覆鏌撱€?    娉曞吀 3.2.5锛歊edis 澶辫仈鏃惰繑鍥?All-OFF 鐭╅樀骞跺甫 X-ZEN70-Bus-Status: not-ready銆?
+    淇锛氫箣鍓?redis is None 鏃惰繑鍥炵┖ {}锛屽鑷村墠绔?鏆傛棤鑳藉姏鏁版嵁"銆?    鐜板湪璧?capabilities.get_capabilities_matrix()锛孯edis 涓嶅彲鐢ㄦ椂鍥為€€ ALL_OFF_MATRIX銆?    """
     del request
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
-    is_admin = bool(current_user and current_user.get("role") == "admin")
+    is_admin = has_admin_role(current_user)
     matrix = build_public_capability_matrix(runtime_profile, is_admin=is_admin)
 
-    # 序列化 CapabilityItem → dict
+    # 搴忓垪鍖?CapabilityItem 鈫?dict
     serialized = {k: v.model_dump(mode="json") if hasattr(v, "model_dump") else v for k, v in matrix.items()}
 
     return serialized
 
 
-# -------------------- SSE Ping 端点 --------------------
+# -------------------- SSE Ping 绔偣 --------------------
 
 
 class SSEPingRequest(BaseModel):
-    """法典 §2.1: 前端每 30s 调此接口续期 SSE 连接，防 45s 超时斩杀。"""
+    """Heartbeat payload used to keep an SSE connection alive."""
 
-    connection_id: str = Field(..., description="SSE 建连时的 client_token")
+    connection_id: str = Field(..., description="SSE 寤鸿繛鏃剁殑 client_token")
 
 
 @router.post(
     "/events/ping",
-    summary="SSE 心跳续期",
+    summary="SSE 蹇冭烦缁湡",
 )
 async def sse_ping(
     body: SSEPingRequest,
@@ -99,12 +92,14 @@ async def sse_ping(
     current_user: dict = Depends(get_current_user),
 ) -> dict[str, bool]:
     """
-    法典 §2.1: 前端每 30s 调此接口续期 SSE，否则 45s 后服务端 cancel。
+    Frontend clients call this every ~30 seconds to keep the SSE connection
+    alive; the server treats the channel as stale after roughly 45 seconds
+    without a ping.
 
-    使用 Redis SETEX 存储 Ping 时间戳，确保跨 Uvicorn Worker 一致性。
-    鉴权防注入：Depends(get_current_user) 拦截匿名恶意灌水。
+    The ping timestamp is stored via Redis SETEX so multiple Uvicorn workers
+    share the same liveness view. Authentication is still required here to
+    prevent anonymous ping flooding.
     """
-    # 格式校验：仅接受 UUID 格式，防止注入
     if not _UUID_RE.match(body.connection_id):
         raise zen(
             "ZEN-SSE-4001",
@@ -124,11 +119,11 @@ async def sse_ping(
     return {"ok": True}
 
 
-# -------------------- SSE 事件流 --------------------
+# -------------------- SSE 浜嬩欢娴?--------------------
 
 
 async def _process_sse_ping_timeout(redis: RedisClient, ping_key: str, conn_id_inner: str) -> bool:
-    """检查 SSE Ping 超时，返回 True 表示应该掐断连接。"""
+    """Return True when the SSE ping lease has expired for this connection."""
     try:
         deadline_raw = await redis.get(ping_key)
         if deadline_raw is None:
@@ -185,13 +180,13 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
             CHANNEL_RESERVATION_EVENTS,
             CHANNEL_TRIGGER_EVENTS,
         )
-        # 首包：回显 connection_id
+        # 棣栧寘锛氬洖鏄?connection_id
         yield f'event: connected\ndata: {{"connection_id":"{conn_id}"}}\n\n'
         while True:
             if await request.is_disconnected():
                 break
 
-            # 45s 超时检查 (Redis EXISTS)
+            # 45s 瓒呮椂妫€鏌?(Redis EXISTS)
             if await _process_sse_ping_timeout(redis, ping_key, conn_id):
                 break
 
@@ -211,7 +206,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
                 logger.debug("SSE event loop: %s", e)
                 yield ": heartbeat\n\n"
     finally:
-        # 清理 Redis 中的 Ping 键
+        # Clean up the ping lease and pubsub subscription on exit.
         try:
             await redis.delete(ping_key)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError):
@@ -234,17 +229,15 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
 
 @router.get(
     "/events",
-    summary="SSE 事件流",
+    summary="SSE Event Stream",
 )
 async def sse_events(
     request: Request,
     redis: RedisClient | None = Depends(get_redis),
-    client_token: str | None = Query(None, description="前端生成的连接 UUID，用于 Ping 关联"),
+    client_token: str | None = Query(None, description="鍓嶇鐢熸垚鐨勮繛鎺?UUID锛岀敤浜?Ping 鍏宠仈"),
     current_user: dict = Depends(get_current_user),
 ) -> StreamingResponse:
-    """
-    订阅硬件状态变更与软开关事件，以 Server-Sent Events 推送。
-    """
+    """Stream control-plane events over SSE for the authenticated session."""
     if redis is None:
         raise zen(
             "ZEN-SSE-5001",
@@ -261,15 +254,13 @@ async def sse_events(
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
 
-    # 确定 connection_id：优先使用前端提供的 client_token，否则后端兜底生成
-    conn_id: str
+    # 纭畾 connection_id锛氫紭鍏堜娇鐢ㄥ墠绔彁渚涚殑 client_token锛屽惁鍒欏悗绔厹搴曠敓鎴?    conn_id: str
     if client_token and _UUID_RE.match(client_token):
         conn_id = client_token
     else:
         conn_id = str(uuid.uuid4())
 
-    # 在 Redis 中注册初始 Ping 时间戳（SETEX 45s TTL）
-    ping_key = f"{SSE_PING_KEY_PREFIX}{conn_id}"
+    # 鍦?Redis 涓敞鍐屽垵濮?Ping 鏃堕棿鎴筹紙SETEX 45s TTL锛?    ping_key = f"{SSE_PING_KEY_PREFIX}{conn_id}"
     try:
         await redis.setex(ping_key, SSE_PING_TTL, _next_sse_ping_deadline())
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:

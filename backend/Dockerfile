@@ -13,16 +13,6 @@ RUN groupadd -r -g 1000 appgroup && useradd -r -u 1000 -g appgroup -s /sbin/nolo
 ARG CACHEBUST=1
 COPY --chown=appuser:appgroup backend ./backend
 
-FROM gateway-base AS gateway-full
-RUN pip install --no-cache-dir \
-    -r backend/requirements-core.txt \
-    -r backend/requirements-iot.txt \
-    -r backend/requirements-ai.txt \
-    -r backend/requirements-media.txt
-
-USER appuser
-CMD ["sh", "-c", "exec uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --timeout-graceful-shutdown 15"]
-
 FROM gateway-base AS gateway-iot
 RUN pip install --no-cache-dir \
     -r backend/requirements-core.txt \
@@ -37,5 +27,5 @@ RUN pip install --no-cache-dir -r backend/requirements-core.txt
 USER appuser
 CMD ["sh", "-c", "exec uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --timeout-graceful-shutdown 15"]
 
-# Keep the default build output pinned to core dependencies.
+# Keep the default build output pinned to kernel-only dependencies.
 FROM gateway-kernel AS gateway-default

@@ -1,4 +1,4 @@
-﻿"""
+"""
 ZEN70 Jobs API 鈥?Dispatch endpoints (pull_jobs, explain_job).
 
 Split from routes.py for maintainability. Contains the scheduling-heavy
@@ -28,7 +28,7 @@ from backend.api.deps import (
     get_tenant_db,
 )
 from backend.api.ui_contracts import StatusView
-from backend.core.backfill_scheduling import get_reservation_manager
+from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager
 from backend.core.control_plane_state import (
     eligibility_view,
     node_drain_status_view,
@@ -38,20 +38,20 @@ from backend.core.db_locks import acquire_transaction_advisory_locks
 from backend.core.failure_control_plane import get_failure_control_plane
 from backend.core.governance_facade import get_governance_facade
 from backend.core.job_concurrency_service import build_job_concurrency_window
-from backend.core.job_lifecycle_service import JobLifecycleService
-from backend.core.job_scheduler import (
+from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
+from backend.kernel.scheduling.job_scheduler import (
     build_node_snapshot,
     count_eligible_nodes_for_job,
     node_blockers_for_job,
     score_job_for_node,
     select_jobs_for_node,
 )
-from backend.core.lease_service import LeaseGrant, LeaseService
-from backend.core.node_auth import authenticate_node_request
-from backend.core.placement_grpc_client import async_build_time_budgeted_placement_plan
+from backend.kernel.execution.lease_service import LeaseGrant, LeaseService
+from backend.kernel.topology.node_auth import authenticate_node_request
+from backend.kernel.scheduling.placement_grpc_client import async_build_time_budgeted_placement_plan
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
-from backend.core.reservation_runtime import choose_reservation_slot
-from backend.core.runtime_policy_resolver import get_runtime_policy_resolver
+from backend.kernel.scheduling.reservation_runtime import choose_reservation_slot
+from backend.kernel.policy.runtime_policy_resolver import get_runtime_policy_resolver
 from backend.core.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
     SCHED_FLAG_EXECUTOR_VALIDATION,
@@ -93,7 +93,7 @@ if TYPE_CHECKING:
 
 
 def _get_dispatch_config() -> DispatchConfig:
-    from backend.core.scheduling_policy_store import get_policy_store
+    from backend.kernel.policy.policy_store import get_policy_store
 
     return get_policy_store().active.dispatch
 
@@ -245,7 +245,7 @@ async def pull_jobs(  # noqa: C901
         literal(0),
     )
 
-    from backend.core.scheduling_policy_store import get_policy_store as _gps
+    from backend.kernel.policy.policy_store import get_policy_store as _gps
 
     _qcfg = _gps().active.queue
     _layers = _qcfg.priority_layers
@@ -286,7 +286,7 @@ async def pull_jobs(  # noqa: C901
 
     # Apply Python-side stratification sort (re-classifies layers using
     # effective priority) for deterministic ordering with tiebreakers.
-    from backend.core.queue_stratification import sort_jobs_by_stratified_priority
+    from backend.kernel.scheduling.queue_stratification import sort_jobs_by_stratified_priority
 
     candidates = cast(list[Job], sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True))
 
@@ -315,7 +315,7 @@ async def pull_jobs(  # noqa: C901
     candidates = _filtered_candidates
 
     # 鈹€鈹€ Phase 2: Business scheduling filters (single entry point) 鈹€鈹€鈹€鈹€
-    from backend.core.business_scheduling import apply_business_filters
+    from backend.kernel.scheduling.business_scheduling import apply_business_filters
 
     # Pre-fetch dependency and parent data needed by the filter
     all_dep_ids: set[str] = set()
@@ -357,7 +357,7 @@ async def pull_jobs(  # noqa: C901
         if leased_node_id:
             _active_jobs_by_node[str(leased_node_id)].append(leased_job)
     try:
-        from backend.core.quota_aware_scheduling import (
+        from backend.kernel.scheduling.quota_aware_scheduling import (
             FairShareCalculator,
             ResourceUsage,
             build_quota_accounts,
@@ -416,7 +416,7 @@ async def pull_jobs(  # noqa: C901
     _dispatch_start = time.monotonic()
 
     # Toggle placement policies per feature flag
-    from backend.core.placement_policy import set_placement_enabled
+    from backend.kernel.scheduling.placement_policy import set_placement_enabled
 
     set_placement_enabled(_ff_placement)
     _solver_dispatch_context: dict[str, object] = {}
@@ -454,7 +454,7 @@ async def pull_jobs(  # noqa: C901
     # preemption of currently-running low-priority jobs.
     # Gated by feature flag 鈥?allows disabling preemption globally.
     if _ff_preemption and not selected and available_slots <= 0 and candidates and active_jobs_on_node:
-        from backend.core.business_scheduling import find_preemption_candidates
+        from backend.kernel.scheduling.business_scheduling import find_preemption_candidates
 
         _can_preempt, _budget_reason = _governance.can_preempt(now)
         if not _can_preempt:
@@ -739,7 +739,7 @@ async def explain_job(
     decisions.sort(key=lambda item: (not item.eligible, -(item.score or -10_000), item.node_id))
 
     # 鈹€鈹€ Governance context for explain trace 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-    from backend.core.queue_stratification import (
+    from backend.kernel.scheduling.queue_stratification import (
         get_aging_config,
         get_fair_scheduler,
         get_starvation_threshold_seconds,
@@ -758,7 +758,7 @@ async def explain_job(
 
     _placement_policy_name = "default"
     try:
-        from backend.core.placement_policy import get_placement_policy
+        from backend.kernel.scheduling.placement_policy import get_placement_policy
 
         _pp = get_placement_policy()
         _placement_policy_name = getattr(_pp, "name", "composite") or "composite"

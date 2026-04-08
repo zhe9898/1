@@ -217,7 +217,7 @@ async def test_fire_trigger_dispatches_job_and_records_delivery() -> None:
     mocked_submit_response.job_id = "job-1"
     mocked_submit_response.model_dump.return_value = {"job_id": "job-1", "status": "accepted"}
 
-    with patch("backend.core.trigger_service.submit_job", new=AsyncMock(return_value=mocked_submit_response)):
+    with patch("backend.kernel.extensions.trigger_service.submit_job", new=AsyncMock(return_value=mocked_submit_response)):
         response = await fire_trigger_endpoint(
             "trigger-1",
             TriggerFireRequest(

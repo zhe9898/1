@@ -1,4 +1,4 @@
-"""Governance Facade — single mandatory entry for the dispatch chain.
+"""Governance Facade 鈥?single mandatory entry for the dispatch chain.
 
 All scheduling decisions MUST flow through ``GovernanceFacade`` so that:
 
@@ -10,10 +10,10 @@ All scheduling decisions MUST flow through ``GovernanceFacade`` so that:
    scheduling policies without explicit admin ``unseal``.
 
 The dispatch.py ``pull_jobs`` function calls:
-- ``facade.pre_dispatch_admission(...)`` → admission gate
-- ``facade.filter_by_executor_contract(...)`` → kind-compat pre-filter
-- ``facade.post_dispatch_audit(...)`` → decision audit flush
-- ``facade.is_sealed`` → checked by ``set_scheduling_feature()`` to block mutations
+- ``facade.pre_dispatch_admission(...)`` 鈫?admission gate
+- ``facade.filter_by_executor_contract(...)`` 鈫?kind-compat pre-filter
+- ``facade.post_dispatch_audit(...)`` 鈫?decision audit flush
+- ``facade.is_sealed`` 鈫?checked by ``set_scheduling_feature()`` to block mutations
 
 All strategy selection also flows through ``facade.resolve_strategy(...)``.
 
@@ -76,7 +76,7 @@ class GovernanceFacade:
         self._seal_reason: str = ""
         self._metrics_enabled: bool = True
 
-    # ── Seal / Unseal ────────────────────────────────────────────────
+    # 鈹€鈹€ Seal / Unseal 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     @property
     def is_sealed(self) -> bool:
@@ -87,19 +87,19 @@ class GovernanceFacade:
         return self._seal_reason
 
     def seal(self, reason: str = "post-boot governance lock") -> None:
-        """Freeze governance configuration — feature flag writes blocked."""
+        """Freeze governance configuration 鈥?feature flag writes blocked."""
         self._sealed = True
         self._seal_reason = reason
         logger.info("governance sealed: %s", reason)
 
     def unseal(self, *, operator: str) -> None:
-        """Explicitly unseal — requires operator identity for audit trail."""
+        """Explicitly unseal 鈥?requires operator identity for audit trail."""
         prev = self._seal_reason
         self._sealed = False
         self._seal_reason = ""
         logger.warning("governance unsealed by %s (was: %s)", operator, prev)
 
-    # ── Pre-dispatch admission ───────────────────────────────────────
+    # 鈹€鈹€ Pre-dispatch admission 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def pre_dispatch_admission(
         self,
@@ -115,7 +115,7 @@ class GovernanceFacade:
         1. Tenant pending/leased job count vs. AdmissionController limit.
         2. Node quarantine status (via FailureControlPlane).
         """
-        from backend.core.scheduling_resilience import AdmissionController
+        from backend.kernel.scheduling.scheduling_resilience import AdmissionController
 
         admitted, reason, details = await AdmissionController.check_admission(
             db,
@@ -136,7 +136,7 @@ class GovernanceFacade:
 
         return AdmissionResult(admitted=True)
 
-    # ── Executor contract filter ─────────────────────────────────────
+    # 鈹€鈹€ Executor contract filter 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def filter_by_executor_contract(
         self,
@@ -144,31 +144,31 @@ class GovernanceFacade:
         kind: str,
     ) -> ExecutorFilterResult:
         """Check if an executor supports a given job kind."""
-        from backend.core.executor_registry import get_executor_registry
+        from backend.kernel.topology.executor_registry import get_executor_registry
 
         compatible, reason = get_executor_registry().kind_compatible(executor, kind)
         return ExecutorFilterResult(compatible=compatible, reason=reason)
 
-    # ── Strategy resolution ──────────────────────────────────────────
+    # 鈹€鈹€ Strategy resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def resolve_strategy(self, job_strategy: str | None) -> str:
         """Resolve the effective scheduling strategy for a job.
 
-        Strategy selection is governed — only registered strategies are
+        Strategy selection is governed 鈥?only registered strategies are
         allowed. Unknown strategies fall back to the policy-store default.
         """
-        from backend.core.scheduling_strategies import SchedulingStrategy
+        from backend.kernel.scheduling.scheduling_strategies import SchedulingStrategy
 
         if job_strategy:
             lower = job_strategy.lower()
             valid = {s.value for s in SchedulingStrategy}
             if lower in valid:
                 return lower
-        from backend.core.scheduling_policy_store import get_policy_store
+        from backend.kernel.policy.policy_store import get_policy_store
 
         return get_policy_store().active.default_strategy
 
-    # ── Post-dispatch audit ──────────────────────────────────────────
+    # 鈹€鈹€ Post-dispatch audit 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def post_dispatch_audit(
         self,
@@ -184,7 +184,7 @@ class GovernanceFacade:
             return result
         return None
 
-    # ── Guarded feature flag mutation ────────────────────────────────
+    # 鈹€鈹€ Guarded feature flag mutation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def set_feature_guarded(
         self,
@@ -192,7 +192,7 @@ class GovernanceFacade:
         flag_key: str,
         enabled: bool,
     ) -> None:
-        """Set a scheduling feature flag — blocked when governance is sealed."""
+        """Set a scheduling feature flag 鈥?blocked when governance is sealed."""
         if self._sealed:
             msg = f"governance is sealed ({self._seal_reason}); " f"cannot mutate flag '{flag_key}'. " f"Call unseal(operator=...) first."
             raise RuntimeError(msg)
@@ -200,72 +200,72 @@ class GovernanceFacade:
 
         await set_scheduling_feature(db, flag_key, enabled)
 
-    # ── Preemption budget gate ───────────────────────────────────────
+    # 鈹€鈹€ Preemption budget gate 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def can_preempt(self, now: datetime.datetime) -> tuple[bool, str]:
         """Check preemption budget via resilience layer."""
-        from backend.core.scheduling_resilience import PreemptionBudgetPolicy
+        from backend.kernel.scheduling.scheduling_resilience import PreemptionBudgetPolicy
 
         return PreemptionBudgetPolicy.can_preempt(now)
 
     def record_preemption(self, now: datetime.datetime) -> None:
-        from backend.core.scheduling_resilience import PreemptionBudgetPolicy
+        from backend.kernel.scheduling.scheduling_resilience import PreemptionBudgetPolicy
 
         PreemptionBudgetPolicy.record_preemption(now)
 
-    # ── Scheduling metrics proxy ─────────────────────────────────────
+    # 鈹€鈹€ Scheduling metrics proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def metrics_snapshot(self, window_seconds: int = 300) -> dict:
         """Return scheduling metrics snapshot."""
-        from backend.core.scheduling_resilience import SchedulingMetrics
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingMetrics
 
         return SchedulingMetrics.snapshot(window_seconds)
 
     def record_placement_metric(self, dispatch_ms: float) -> None:
-        from backend.core.scheduling_resilience import SchedulingMetrics
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingMetrics
 
         SchedulingMetrics.record_placement(dispatch_ms)
 
     def record_rejection_metric(self, reason: str) -> None:
-        from backend.core.scheduling_resilience import SchedulingMetrics
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingMetrics
 
         SchedulingMetrics.record_rejection(reason)
 
     def record_preemption_budget_hit(self) -> None:
-        from backend.core.scheduling_resilience import SchedulingMetrics
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingMetrics
 
         SchedulingMetrics.record_preemption_budget_hit()
 
     def record_backoff_skip_metric(self) -> None:
-        from backend.core.scheduling_resilience import SchedulingMetrics
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingMetrics
 
         SchedulingMetrics.record_backoff_skip()
 
-    # ── Scheduling backoff proxy ─────────────────────────────────────
+    # 鈹€鈹€ Scheduling backoff proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def should_skip_backoff(self, job_id: str, now: datetime.datetime) -> bool:
-        from backend.core.scheduling_resilience import SchedulingBackoff
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingBackoff
 
         return SchedulingBackoff.should_skip(job_id, now)
 
     def record_backoff_failure(self, job_id: str, now: datetime.datetime) -> None:
-        from backend.core.scheduling_resilience import SchedulingBackoff
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingBackoff
 
         SchedulingBackoff.record_failure(job_id, now)
 
     def record_backoff_success(self, job_id: str) -> None:
-        from backend.core.scheduling_resilience import SchedulingBackoff
+        from backend.kernel.scheduling.scheduling_resilience import SchedulingBackoff
 
         SchedulingBackoff.record_success(job_id)
 
-    # ── Topology spread proxy ────────────────────────────────────────
+    # 鈹€鈹€ Topology spread proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def configure_zone_context(self, zone_load: dict[str, int]) -> None:
-        from backend.core.scheduling_resilience import TopologySpreadPolicy
+        from backend.kernel.scheduling.scheduling_resilience import TopologySpreadPolicy
 
         TopologySpreadPolicy.configure_zone_context(zone_load)
 
-    # ── Decision audit factory ───────────────────────────────────────
+    # 鈹€鈹€ Decision audit factory 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def create_decision_logger(
         self,
@@ -278,14 +278,14 @@ class GovernanceFacade:
 
         return SchedulingDecisionLogger(tenant_id=tenant_id, node_id=node_id, now=now)
 
-    # ── Feature flag queries ─────────────────────────────────────────
+    # 鈹€鈹€ Feature flag queries 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def is_feature_enabled(self, db: AsyncSession, flag_key: str) -> bool:
         from backend.core.scheduling_governance import is_scheduling_feature_enabled
 
         return await is_scheduling_feature_enabled(db, flag_key)
 
-    # ── Failure control plane proxy ──────────────────────────────────
+    # 鈹€鈹€ Failure control plane proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def is_node_quarantined(self, node_id: str, now: datetime.datetime) -> bool:
         """Check node quarantine via FailureControlPlane."""
@@ -313,24 +313,24 @@ class GovernanceFacade:
 
         return await get_failure_control_plane().snapshot(now=now)
 
-    # ── Fair scheduler proxy ─────────────────────────────────────────
+    # 鈹€鈹€ Fair scheduler proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def get_tenant_quota(self, tenant_id: str) -> object:
-        from backend.core.queue_stratification import get_fair_scheduler
+        from backend.kernel.scheduling.queue_stratification import get_fair_scheduler
 
         return get_fair_scheduler().get_quota(tenant_id)
 
     def apply_fair_share(self, candidates: list) -> list:
-        from backend.core.queue_stratification import get_fair_scheduler
+        from backend.kernel.scheduling.queue_stratification import get_fair_scheduler
 
         return get_fair_scheduler().apply_fair_share(candidates)
 
     def invalidate_fair_share_cache(self) -> None:
-        from backend.core.queue_stratification import get_fair_scheduler
+        from backend.kernel.scheduling.queue_stratification import get_fair_scheduler
 
         get_fair_scheduler().invalidate_cache()
 
-    # ── Placement solver proxy ───────────────────────────────────────
+    # 鈹€鈹€ Placement solver proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def run_placement_solver(
         self,
@@ -342,7 +342,7 @@ class GovernanceFacade:
         recent_failed_job_ids: set[str] | None = None,
     ) -> dict[str, str]:
         """Run the global placement solver and return {job_id: node_id} hints."""
-        from backend.core.job_scheduler import get_placement_solver
+        from backend.kernel.scheduling.job_scheduler import get_placement_solver
 
         return get_placement_solver().solve(
             jobs,
@@ -352,14 +352,14 @@ class GovernanceFacade:
             recent_failed_job_ids=recent_failed_job_ids,
         )
 
-    # ── Dispatch lifecycle proxy ─────────────────────────────────────
+    # 鈹€鈹€ Dispatch lifecycle proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def get_dispatch_pipeline(self) -> object:
-        from backend.core.dispatch_lifecycle import get_dispatch_pipeline
+        from backend.kernel.execution.dispatch_lifecycle import get_dispatch_pipeline
 
         return get_dispatch_pipeline()
 
-    # ── Executor registry proxy ──────────────────────────────────────
+    # 鈹€鈹€ Executor registry proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def validate_node_executor(
         self,
@@ -369,7 +369,7 @@ class GovernanceFacade:
         cpu_cores: int = 0,
         gpu_vram_mb: int = 0,
     ) -> list[str]:
-        from backend.core.executor_registry import get_executor_registry
+        from backend.kernel.topology.executor_registry import get_executor_registry
 
         return get_executor_registry().validate_node_executor(
             executor,
@@ -379,11 +379,11 @@ class GovernanceFacade:
         )
 
     def get_executor_contract(self, executor: str) -> object | None:
-        from backend.core.executor_registry import get_executor_registry
+        from backend.kernel.topology.executor_registry import get_executor_registry
 
         return get_executor_registry().get(executor)
 
-    # ── Scheduler auto-tune proxy ────────────────────────────────────
+    # 鈹€鈹€ Scheduler auto-tune proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def tuner_snapshot(self) -> dict[str, object]:
         """Return full auto-tune diagnostic snapshot."""
@@ -402,7 +402,7 @@ class GovernanceFacade:
         get_scheduler_tuner().set_enabled(value)
 
     def reset_tuner(self) -> None:
-        """Clear all learned state — revert to baseline weights."""
+        """Clear all learned state 鈥?revert to baseline weights."""
         from backend.core.scheduler_auto_tune import get_scheduler_tuner
 
         get_scheduler_tuner().reset()
@@ -439,11 +439,11 @@ class GovernanceFacade:
 
         await get_scheduler_tuner().save_state(db)
 
-    # ── Scheduling policy store proxy ────────────────────────────────
+    # 鈹€鈹€ Scheduling policy store proxy 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def policy_snapshot(self) -> dict[str, object]:
         """Return full policy store diagnostic snapshot."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        from backend.kernel.policy.policy_store import get_policy_store
 
         return get_policy_store().snapshot()
 
@@ -455,43 +455,43 @@ class GovernanceFacade:
         reason: str = "",
     ) -> int:
         """Apply a new scheduling policy and return the new version number."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        from backend.kernel.policy.policy_store import get_policy_store
 
         return get_policy_store().apply(new_policy, operator=operator, reason=reason).version  # type: ignore[arg-type]
 
     def rollback_policy(self, target_version: int, *, operator: str = "system") -> int:
         """Rollback to a previous policy version."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        from backend.kernel.policy.policy_store import get_policy_store
 
         return get_policy_store().rollback(target_version, operator=operator).version
 
     def freeze_policy(self, *, reason: str = "") -> None:
-        """Freeze the policy store — prevent further mutations."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        """Freeze the policy store 鈥?prevent further mutations."""
+        from backend.kernel.policy.policy_store import get_policy_store
 
         get_policy_store().freeze(reason=reason)
 
     def unfreeze_policy(self, *, operator: str = "system") -> None:
-        """Unfreeze the policy store — allow mutations again."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        """Unfreeze the policy store 鈥?allow mutations again."""
+        from backend.kernel.policy.policy_store import get_policy_store
 
         get_policy_store().unfreeze(operator=operator)
 
     def get_policy_version(self, version: int) -> object | None:
         """Retrieve a specific policy version record."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        from backend.kernel.policy.policy_store import get_policy_store
 
         return get_policy_store().get_version_detail(version)
 
     @property
     def active_policy(self) -> object:
         """Return the currently active SchedulingPolicy."""
-        from backend.core.scheduling_policy_store import get_policy_store
+        from backend.kernel.policy.policy_store import get_policy_store
 
         return get_policy_store().active
 
 
-# ── Module-level singleton ────────────────────────────────────────────
+# 鈹€鈹€ Module-level singleton 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 _facade: GovernanceFacade | None = None
 

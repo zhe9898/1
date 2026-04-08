@@ -22,7 +22,7 @@ def _utcnow() -> datetime.datetime:
 
 
 def _make_node_snapshot(**overrides):
-    from backend.core.job_scheduler import SchedulerNodeSnapshot
+    from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
     defaults = dict(
         node_id="node-1",
@@ -95,7 +95,7 @@ def _make_job(**overrides):
 
 class TestResourceReservationPolicy:
     def test_accept_low_utilisation(self):
-        from backend.core.placement_policy import ResourceReservationPolicy
+        from backend.kernel.scheduling.placement_policy import ResourceReservationPolicy
 
         policy = ResourceReservationPolicy(reserve_pct=0.80, min_priority=70)
         node = _make_node_snapshot(active_lease_count=1, max_concurrency=4)
@@ -104,7 +104,7 @@ class TestResourceReservationPolicy:
         assert ok is True
 
     def test_reject_high_utilisation_low_priority(self):
-        from backend.core.placement_policy import ResourceReservationPolicy
+        from backend.kernel.scheduling.placement_policy import ResourceReservationPolicy
 
         policy = ResourceReservationPolicy(reserve_pct=0.80, min_priority=70)
         # 4/4 = 100% utilisation → above 80% threshold
@@ -115,7 +115,7 @@ class TestResourceReservationPolicy:
         assert "resource_reservation" in reason
 
     def test_accept_high_utilisation_high_priority(self):
-        from backend.core.placement_policy import ResourceReservationPolicy
+        from backend.kernel.scheduling.placement_policy import ResourceReservationPolicy
 
         policy = ResourceReservationPolicy(reserve_pct=0.80, min_priority=70)
         node = _make_node_snapshot(active_lease_count=4, max_concurrency=5)
@@ -124,7 +124,7 @@ class TestResourceReservationPolicy:
         assert ok is True
 
     def test_adjust_score_passthrough(self):
-        from backend.core.placement_policy import ResourceReservationPolicy
+        from backend.kernel.scheduling.placement_policy import ResourceReservationPolicy
 
         policy = ResourceReservationPolicy()
         node = _make_node_snapshot()
@@ -136,7 +136,7 @@ class TestResourceReservationPolicy:
 
 class TestThermalCapPolicy:
     def test_accept_normal_thermal(self):
-        from backend.core.placement_policy import ThermalCapPolicy
+        from backend.kernel.scheduling.placement_policy import ThermalCapPolicy
 
         policy = ThermalCapPolicy()
         node = _make_node_snapshot(thermal_state="normal")
@@ -145,7 +145,7 @@ class TestThermalCapPolicy:
         assert ok is True
 
     def test_reject_throttling(self):
-        from backend.core.placement_policy import ThermalCapPolicy
+        from backend.kernel.scheduling.placement_policy import ThermalCapPolicy
 
         policy = ThermalCapPolicy()
         node = _make_node_snapshot(thermal_state="throttling")
@@ -155,7 +155,7 @@ class TestThermalCapPolicy:
         assert "thermal_cap" in reason
 
     def test_accept_throttling_when_sensitivity_none(self):
-        from backend.core.placement_policy import ThermalCapPolicy
+        from backend.kernel.scheduling.placement_policy import ThermalCapPolicy
 
         policy = ThermalCapPolicy()
         node = _make_node_snapshot(thermal_state="throttling")
@@ -166,7 +166,7 @@ class TestThermalCapPolicy:
 
 class TestBinPackConsolidationPolicy:
     def test_bonus_scales_with_utilisation(self):
-        from backend.core.placement_policy import BinPackConsolidationPolicy
+        from backend.kernel.scheduling.placement_policy import BinPackConsolidationPolicy
 
         policy = BinPackConsolidationPolicy(bonus_weight=0.15)
         node_low = _make_node_snapshot(active_lease_count=1, max_concurrency=4)
@@ -181,7 +181,7 @@ class TestBinPackConsolidationPolicy:
 
 class TestPowerAwarePolicy:
     def test_penalty_low_headroom(self):
-        from backend.core.placement_policy import PowerAwarePolicy
+        from backend.kernel.scheduling.placement_policy import PowerAwarePolicy
 
         policy = PowerAwarePolicy(min_headroom_pct=0.15, penalty=25)
         # 490/500 = 2% headroom < 15%
@@ -192,7 +192,7 @@ class TestPowerAwarePolicy:
         assert bd.get("power_aware_penalty") == -25
 
     def test_no_penalty_sufficient_headroom(self):
-        from backend.core.placement_policy import PowerAwarePolicy
+        from backend.kernel.scheduling.placement_policy import PowerAwarePolicy
 
         policy = PowerAwarePolicy(min_headroom_pct=0.15, penalty=25)
         node = _make_node_snapshot(power_capacity_watts=500, current_power_watts=200)
@@ -203,7 +203,7 @@ class TestPowerAwarePolicy:
 
 class TestCompositePlacementPolicy:
     def test_chain_respects_order(self):
-        from backend.core.placement_policy import (
+        from backend.kernel.scheduling.placement_policy import (
             CompositePlacementPolicy,
             ResourceReservationPolicy,
             ThermalCapPolicy,
@@ -219,7 +219,7 @@ class TestCompositePlacementPolicy:
         assert composite.policies[0].order <= composite.policies[1].order
 
     def test_chain_short_circuits_on_reject(self):
-        from backend.core.placement_policy import (
+        from backend.kernel.scheduling.placement_policy import (
             CompositePlacementPolicy,
             ResourceReservationPolicy,
             ThermalCapPolicy,
@@ -245,7 +245,7 @@ class TestCompositePlacementPolicy:
 
 class TestExecutorRegistry:
     def test_default_contracts_loaded(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         contracts = reg.all_contracts()
@@ -255,28 +255,28 @@ class TestExecutorRegistry:
         assert "unknown" in contracts
 
     def test_get_or_default_unknown(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         c = reg.get_or_default("nonexistent")
         assert c.name == "unknown"
 
     def test_validate_gpu_executor_no_vram(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         warns = reg.validate_node_executor("gpu", memory_mb=2048, cpu_cores=4, gpu_vram_mb=0)
         assert any("GPU" in w for w in warns)
 
     def test_validate_docker_ok(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         warns = reg.validate_node_executor("docker", memory_mb=4096, cpu_cores=4)
         assert len(warns) == 0
 
     def test_is_kind_supported(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         assert reg.is_kind_supported("docker", "shell.exec") is True
@@ -284,7 +284,7 @@ class TestExecutorRegistry:
         assert reg.is_kind_supported("unknown", "anything") is None  # permissive
 
     def test_register_custom(self):
-        from backend.core.executor_registry import ExecutorContract, ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorContract, ExecutorRegistry
 
         reg = ExecutorRegistry()
         custom = ExecutorContract(
@@ -381,7 +381,7 @@ class TestGlobalFairSchedulerDBLoad:
     def test_load_from_db_policies(self):
         from unittest.mock import MagicMock
 
-        from backend.core.queue_stratification import GlobalFairScheduler
+        from backend.kernel.scheduling.queue_stratification import GlobalFairScheduler
 
         scheduler = GlobalFairScheduler()
 
@@ -403,7 +403,7 @@ class TestGlobalFairSchedulerDBLoad:
     def test_load_from_db_disabled_tenant_skipped(self):
         from unittest.mock import MagicMock
 
-        from backend.core.queue_stratification import GlobalFairScheduler
+        from backend.kernel.scheduling.queue_stratification import GlobalFairScheduler
 
         scheduler = GlobalFairScheduler()
 
@@ -428,7 +428,7 @@ class TestGlobalFairSchedulerDBLoad:
 
 class TestPlacementPolicyLoader:
     def test_default_policy_set(self):
-        from backend.core.placement_policy import load_placement_policies
+        from backend.kernel.scheduling.placement_policy import load_placement_policies
 
         composite = load_placement_policies()
         assert len(composite.policies) >= 1
@@ -437,7 +437,7 @@ class TestPlacementPolicyLoader:
         assert "resource_reservation" in names
 
     def test_get_singleton(self):
-        from backend.core.placement_policy import get_placement_policy
+        from backend.kernel.scheduling.placement_policy import get_placement_policy
 
         pp = get_placement_policy()
         assert pp is not None
@@ -451,7 +451,7 @@ class TestPlacementPolicyLoader:
 
 class TestScoringWithPlacementPolicy:
     def test_score_includes_policy_adjustment(self):
-        from backend.core.job_scheduler import score_job_for_node
+        from backend.kernel.scheduling.job_scheduler import score_job_for_node
 
         node = _make_node_snapshot(active_lease_count=0, max_concurrency=4)
         job = _make_job(priority=50)
@@ -477,7 +477,7 @@ class TestScoringWithPlacementPolicy:
 
 class TestExtendedExecutorContracts:
     def test_k8s_contract_loaded(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         c = reg.get("k8s")
@@ -488,7 +488,7 @@ class TestExtendedExecutorContracts:
         assert "cron.tick" in c.supported_kinds
 
     def test_remote_ssh_contract_loaded(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         c = reg.get("remote-ssh")
@@ -498,7 +498,7 @@ class TestExtendedExecutorContracts:
         assert c.stability_tier == "ga"
 
     def test_edge_native_contract_loaded(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         c = reg.get("edge-native")
@@ -509,7 +509,7 @@ class TestExtendedExecutorContracts:
         assert "healthcheck" in c.supported_kinds
 
     def test_kind_compatible_pass(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         ok, reason = reg.kind_compatible("docker", "shell.exec")
@@ -517,7 +517,7 @@ class TestExtendedExecutorContracts:
         assert reason == ""
 
     def test_kind_compatible_fail(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         ok, reason = reg.kind_compatible("wasm", "shell.exec")
@@ -525,35 +525,35 @@ class TestExtendedExecutorContracts:
         assert "wasm" in reason
 
     def test_kind_compatible_unknown_permissive(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         ok, reason = reg.kind_compatible("unknown", "any.kind")
         assert ok is True
 
     def test_kind_compatible_unregistered_permissive(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         ok, reason = reg.kind_compatible("nonexistent", "any.kind")
         assert ok is True
 
     def test_validate_k8s_low_memory(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         warns = reg.validate_node_executor("k8s", memory_mb=256, cpu_cores=1)
         assert any("512" in w for w in warns)
 
     def test_validate_edge_native_ok(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         warns = reg.validate_node_executor("edge-native", memory_mb=64)
         assert len(warns) == 0
 
     def test_all_contracts_count(self):
-        from backend.core.executor_registry import ExecutorRegistry
+        from backend.kernel.topology.executor_registry import ExecutorRegistry
 
         reg = ExecutorRegistry()
         contracts = reg.all_contracts()
@@ -568,7 +568,7 @@ class TestExtendedExecutorContracts:
 
 class TestExtendedJobKinds:
     def test_all_builtin_kinds_registered(self):
-        from backend.core.job_kind_registry import get_registered_job_kinds
+        from backend.kernel.extensions.job_kind_registry import get_registered_job_kinds
 
         kinds = get_registered_job_kinds()
         expected = [
@@ -587,7 +587,7 @@ class TestExtendedJobKinds:
             assert k in kinds, f"{k} not registered"
 
     def test_container_run_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "container.run",
@@ -600,13 +600,13 @@ class TestExtendedJobKinds:
         assert valid["pull_policy"] == "IfNotPresent"  # default
 
     def test_container_run_missing_image_fails(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         with pytest.raises(ValueError, match="container.run"):
             validate_job_payload("container.run", {"command": ["echo"]})
 
     def test_healthcheck_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "healthcheck",
@@ -618,7 +618,7 @@ class TestExtendedJobKinds:
         assert valid["timeout"] == 10
 
     def test_ml_inference_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "ml.inference",
@@ -631,7 +631,7 @@ class TestExtendedJobKinds:
         assert valid["precision"] == "fp32"
 
     def test_media_transcode_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "media.transcode",
@@ -643,7 +643,7 @@ class TestExtendedJobKinds:
         assert valid["codec"] == "h264"
 
     def test_script_run_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "script.run",
@@ -655,7 +655,7 @@ class TestExtendedJobKinds:
         assert valid["timeout"] == 300
 
     def test_wasm_run_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "wasm.run",
@@ -667,7 +667,7 @@ class TestExtendedJobKinds:
         assert valid["memory_pages"] == 256
 
     def test_cron_tick_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "cron.tick",
@@ -680,7 +680,7 @@ class TestExtendedJobKinds:
         assert valid["timeout"] == 120
 
     def test_data_sync_payload_validation(self):
-        from backend.core.job_kind_registry import validate_job_payload
+        from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
         valid = validate_job_payload(
             "data.sync",
@@ -693,7 +693,7 @@ class TestExtendedJobKinds:
         assert valid["conflict_resolution"] == "latest-wins"
 
     def test_result_schema_registered(self):
-        from backend.core.job_kind_registry import validate_job_result
+        from backend.kernel.extensions.job_kind_registry import validate_job_result
 
         result = validate_job_result(
             "container.run",
@@ -707,7 +707,7 @@ class TestExtendedJobKinds:
         assert result["exit_code"] == 0
 
     def test_kind_info_has_schemas(self):
-        from backend.core.job_kind_registry import get_job_kind_info
+        from backend.kernel.extensions.job_kind_registry import get_job_kind_info
 
         info = get_job_kind_info("ml.inference")
         assert info["has_payload_schema"] is True
@@ -715,7 +715,7 @@ class TestExtendedJobKinds:
         assert info["payload_schema"] is not None
 
     def test_kind_count(self):
-        from backend.core.job_kind_registry import get_registered_job_kinds
+        from backend.kernel.extensions.job_kind_registry import get_registered_job_kinds
 
         kinds = get_registered_job_kinds()
         assert len(kinds) >= 10
@@ -728,7 +728,7 @@ class TestExtendedJobKinds:
 
 class TestExecutorKindCompatInScoring:
     def test_incompatible_kind_excluded_from_selection(self):
-        from backend.core.job_scheduler import select_jobs_for_node
+        from backend.kernel.scheduling.job_scheduler import select_jobs_for_node
 
         now = _utcnow()
         node = _make_node_snapshot(
@@ -749,7 +749,7 @@ class TestExecutorKindCompatInScoring:
         assert len(selected) == 0
 
     def test_compatible_kind_passes(self):
-        from backend.core.job_scheduler import select_jobs_for_node
+        from backend.kernel.scheduling.job_scheduler import select_jobs_for_node
 
         now = _utcnow()
         node = _make_node_snapshot(
@@ -777,7 +777,7 @@ class TestExecutorKindCompatInScoring:
 
 class TestPlacementPolicyToggle:
     def test_disabled_returns_noop(self):
-        from backend.core.placement_policy import (
+        from backend.kernel.scheduling.placement_policy import (
             get_placement_policy,
             set_placement_enabled,
         )
@@ -790,7 +790,7 @@ class TestPlacementPolicyToggle:
             set_placement_enabled(True)
 
     def test_enabled_returns_real(self):
-        from backend.core.placement_policy import (
+        from backend.kernel.scheduling.placement_policy import (
             get_placement_policy,
             set_placement_enabled,
         )
@@ -963,7 +963,7 @@ class TestConfigurableSchedulingConstants:
     """Tests for system.yaml-backed scheduling configuration."""
 
     def test_get_aging_config_returns_dict(self):
-        from backend.core.queue_stratification import get_aging_config, reset_scheduling_config_cache
+        from backend.kernel.scheduling.queue_stratification import get_aging_config, reset_scheduling_config_cache
 
         reset_scheduling_config_cache()
         cfg = get_aging_config()
@@ -974,7 +974,7 @@ class TestConfigurableSchedulingConstants:
         assert "max_bonus" in cfg
 
     def test_get_default_tenant_quota_is_int(self):
-        from backend.core.queue_stratification import get_default_tenant_quota, reset_scheduling_config_cache
+        from backend.kernel.scheduling.queue_stratification import get_default_tenant_quota, reset_scheduling_config_cache
 
         reset_scheduling_config_cache()
         q = get_default_tenant_quota()
@@ -982,7 +982,7 @@ class TestConfigurableSchedulingConstants:
         assert q > 0
 
     def test_get_starvation_threshold_is_int(self):
-        from backend.core.queue_stratification import get_starvation_threshold_seconds, reset_scheduling_config_cache
+        from backend.kernel.scheduling.queue_stratification import get_starvation_threshold_seconds, reset_scheduling_config_cache
 
         reset_scheduling_config_cache()
         t = get_starvation_threshold_seconds()
@@ -990,7 +990,7 @@ class TestConfigurableSchedulingConstants:
         assert t > 0
 
     def test_reset_cache_forces_reload(self):
-        from backend.core.queue_stratification import (
+        from backend.kernel.scheduling.queue_stratification import (
             _load_scheduling_config,
             get_default_tenant_quota,
             reset_scheduling_config_cache,
@@ -1010,7 +1010,7 @@ class TestConfigurableSchedulingConstants:
 
     def test_config_reads_from_system_yaml(self):
         """Verify that values come from system.yaml when file exists."""
-        from backend.core.queue_stratification import (
+        from backend.kernel.scheduling.queue_stratification import (
             get_aging_config,
             get_default_tenant_quota,
             get_starvation_threshold_seconds,

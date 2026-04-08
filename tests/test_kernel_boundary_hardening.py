@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.control_plane import load_control_plane_surfaces
+from backend.kernel.surfaces.registry import load_control_plane_surfaces
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,15 +25,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_control_plane_surfaces_defined_in_backend():
     """Backend is the single source of truth for control-plane surfaces."""
-    control_plane = (REPO_ROOT / "backend" / "core" / "control_plane.py").read_text(encoding="utf-8")
+    surface_registry = (REPO_ROOT / "backend" / "kernel" / "surfaces" / "registry.py").read_text(encoding="utf-8")
+    manifest_service = (REPO_ROOT / "backend" / "control_plane" / "console" / "manifest_service.py").read_text(encoding="utf-8")
 
     # Should NOT read from frontend
-    assert "frontend/src/config/controlPlaneSurfaces.json" not in control_plane, (
+    assert "frontend/src/config/controlPlaneSurfaces.json" not in surface_registry, (
         "Backend should not read control-plane surfaces from frontend"
+    )
+    assert "frontend/src/config/controlPlaneSurfaces.json" not in manifest_service, (
+        "Control-plane visibility service should not read surfaces from frontend"
     )
 
     # Should have hardcoded surfaces
-    assert "_KERNEL_CONTROL_PLANE_SURFACES" in control_plane, (
+    assert "_KERNEL_CONTROL_PLANE_SURFACES" in surface_registry, (
         "Backend should define control-plane surfaces as constants"
     )
 
@@ -62,6 +66,26 @@ def test_console_api_exposes_surfaces_endpoint():
     )
 
 
+def test_pack_and_profile_topology_no_longer_live_under_backend_core():
+    """Pack/profile topology facts should live in kernel topology, not backend.core."""
+    legacy_files = [
+        REPO_ROOT / "backend" / "core" / "pack_registry.py",
+        REPO_ROOT / "backend" / "core" / "gateway_profile.py",
+    ]
+    for path in legacy_files:
+        assert not path.exists(), f"Legacy core module should be deleted: {path.name}"
+
+    new_files = [
+        REPO_ROOT / "backend" / "kernel" / "packs" / "registry.py",
+        REPO_ROOT / "backend" / "kernel" / "packs" / "presets.py",
+        REPO_ROOT / "backend" / "kernel" / "profiles" / "public_profile.py",
+        REPO_ROOT / "backend" / "kernel" / "topology" / "pack_selection.py",
+        REPO_ROOT / "backend" / "kernel" / "topology" / "profile_selection.py",
+    ]
+    for path in new_files:
+        assert path.exists(), f"Expected split module missing: {path.name}"
+
+
 # ============================================================================
 # P1: Capabilities boundary
 # ============================================================================
@@ -69,30 +93,33 @@ def test_console_api_exposes_surfaces_endpoint():
 
 def test_capabilities_only_exposes_kernel_surfaces():
     """Capabilities module should only expose kernel control-plane surfaces."""
-    capabilities = (REPO_ROOT / "backend" / "capabilities.py").read_text(encoding="utf-8")
+    from backend.capabilities import build_public_capability_matrix
+
+    capabilities = build_public_capability_matrix("gateway-kernel", is_admin=True)
+    capability_keys = set(capabilities)
 
     # Should have kernel surfaces
-    assert "Gateway Dashboard" in capabilities
-    assert "Gateway Nodes" in capabilities
-    assert "Gateway Jobs" in capabilities
-    assert "Gateway Connectors" in capabilities
-    assert "Gateway Settings" in capabilities
+    assert "platform.capabilities.query" in capability_keys
+    assert "control.nodes.manage" in capability_keys
+    assert "control.jobs.schedule" in capability_keys
+    assert "control.connectors.invoke" in capability_keys
+    assert "platform.settings.manage" in capability_keys
 
     # Should NOT have business/ops/AI capabilities
     forbidden_capabilities = [
-        "容灾备份",
+        "Disaster Recovery",
         "Local LLM Agent",
-        "对话记忆",
-        "对话日总结",
-        "场景编排",
-        "定时调度",
-        "能耗监测",
-        "语音控制",
-        "集群状态",
+        "Conversation Memory",
+        "Conversation Summary",
+        "Scenario Orchestration",
+        "Scheduled Tasks",
+        "Energy Monitoring",
+        "Voice Control",
+        "Cluster Status",
     ]
 
     for forbidden in forbidden_capabilities:
-        assert forbidden not in capabilities, (
+        assert forbidden not in capability_keys, (
             f"Capabilities should not expose {forbidden} (should be in pack)"
         )
 
@@ -159,7 +186,7 @@ def test_node_model_has_accepted_kinds_field():
 
 def test_scheduler_snapshot_includes_accepted_kinds():
     """Scheduler node snapshot should include accepted_kinds."""
-    scheduler = (REPO_ROOT / "backend" / "core" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     # SchedulerNodeSnapshot should have accepted_kinds
     assert "accepted_kinds: frozenset[str]" in scheduler, (
@@ -174,7 +201,7 @@ def test_scheduler_snapshot_includes_accepted_kinds():
 
 def test_node_blockers_uses_node_contract_accepted_kinds():
     """node_blockers_for_job should use node contract accepted_kinds."""
-    scheduler = (REPO_ROOT / "backend" / "core" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     # Should check node.accepted_kinds first
     assert "if node.accepted_kinds:" in scheduler, (
@@ -231,7 +258,7 @@ def test_node_model_has_edge_computing_fields():
 
 def test_scheduler_snapshot_includes_edge_attributes():
     """Scheduler node snapshot should include edge computing attributes."""
-    scheduler = (REPO_ROOT / "backend" / "core" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     edge_attrs = [
         "network_latency_ms: int",
@@ -251,7 +278,7 @@ def test_scheduler_snapshot_includes_edge_attributes():
 
 def test_node_blockers_checks_edge_constraints():
     """node_blockers_for_job should check edge computing constraints."""
-    scheduler = (REPO_ROOT / "backend" / "core" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     edge_checks = [
         "max_network_latency_ms",
@@ -269,7 +296,7 @@ def test_node_blockers_checks_edge_constraints():
 
 def test_score_job_includes_edge_factors():
     """score_job_for_node should include edge computing scoring factors."""
-    scheduler = (REPO_ROOT / "backend" / "core" / "job_scoring.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scoring.py").read_text(encoding="utf-8")
 
     # Find score_job_for_node function
     func_start = scheduler.find("def score_job_for_node(")
@@ -297,12 +324,12 @@ def test_score_job_includes_edge_factors():
 def test_kernel_boundary_hardening_summary():
     """Summary of kernel boundary hardening status."""
     status = {
-        "P0 - Control-plane source": "✅ Fixed (backend is source of truth)",
-        "P1 - Capabilities boundary": "✅ Fixed (only kernel surfaces)",
-        "P1 - Settings boundary": "✅ Fixed (AI/system endpoints removed)",
-        "P1 - Switches boundary": "✅ Fixed (switches API removed)",
-        "Edge - Kind dimension": "✅ Fixed (accepted_kinds in node contract)",
-        "Edge - Advanced factors": "✅ Fixed (latency/data/power/thermal)",
+        "P0 - Control-plane source": "鉁?Fixed (backend is source of truth)",
+        "P1 - Capabilities boundary": "鉁?Fixed (only kernel surfaces)",
+        "P1 - Settings boundary": "鉁?Fixed (AI/system endpoints removed)",
+        "P1 - Switches boundary": "鉁?Fixed (switches API removed)",
+        "Edge - Kind dimension": "鉁?Fixed (accepted_kinds in node contract)",
+        "Edge - Advanced factors": "鉁?Fixed (latency/data/power/thermal)",
     }
 
     print("\n" + "=" * 80)

@@ -15,13 +15,13 @@ AGGREGATE_OWNERS: tuple[AggregateOwner, ...] = (
     AggregateOwner(
         aggregate_key="JobAggregate",
         owner_service="JobLifecycleService",
-        allowed_modules=("backend/core/job_lifecycle_service.py",),
+        allowed_modules=("backend/kernel/execution/job_lifecycle_service.py",),
         owned_fields=("jobs.status",),
     ),
     AggregateOwner(
         aggregate_key="LeaseAggregate",
         owner_service="LeaseService",
-        allowed_modules=("backend/core/lease_service.py",),
+        allowed_modules=("backend/kernel/execution/lease_service.py",),
         owned_fields=(
             "jobs.status",
             "jobs.attempt",
@@ -35,25 +35,25 @@ AGGREGATE_OWNERS: tuple[AggregateOwner, ...] = (
     AggregateOwner(
         aggregate_key="NodeAggregate",
         owner_service="NodeEnrollmentService",
-        allowed_modules=("backend/core/node_enrollment_service.py",),
+        allowed_modules=("backend/kernel/topology/node_enrollment_service.py",),
         owned_fields=("nodes.enrollment_status", "nodes.drain_status", "nodes.drain_until"),
     ),
     AggregateOwner(
         aggregate_key="ConnectorAggregate",
         owner_service="ConnectorService",
-        allowed_modules=("backend/core/connector_service.py",),
+        allowed_modules=("backend/kernel/extensions/connector_service.py",),
         owned_fields=("connectors.status", "connectors.config"),
     ),
     AggregateOwner(
         aggregate_key="TriggerAggregate",
         owner_service="TriggerCommandService",
-        allowed_modules=("backend/core/trigger_command_service.py",),
+        allowed_modules=("backend/kernel/extensions/trigger_command_service.py",),
         owned_fields=("triggers.status", "trigger_deliveries.status"),
     ),
     AggregateOwner(
         aggregate_key="WorkflowAggregate",
         owner_service="WorkflowCommandService",
-        allowed_modules=("backend/core/workflow_command_service.py",),
+        allowed_modules=("backend/kernel/extensions/workflow_command_service.py",),
         owned_fields=("workflows.status",),
     ),
     AggregateOwner(

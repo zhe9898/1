@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.queue_stratification import SERVICE_CLASS_CONFIG, TenantQuota
+from backend.kernel.scheduling.queue_stratification import SERVICE_CLASS_CONFIG, TenantQuota
 from backend.models.tenant_scheduling_policy import TenantSchedulingPolicy
 
 

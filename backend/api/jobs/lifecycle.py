@@ -20,14 +20,14 @@ from backend.api.deps import (
     get_redis,
     get_tenant_db,
 )
-from backend.core.backfill_scheduling import get_reservation_manager
+from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager
 from backend.core.errors import zen
 from backend.core.failure_control_plane import get_failure_control_plane
-from backend.core.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
-from backend.core.job_lifecycle_service import JobLifecycleService
-from backend.core.job_status import normalize_job_status
-from backend.core.lease_service import LeaseService
-from backend.core.node_auth import authenticate_node_request
+from backend.kernel.execution.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
+from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
+from backend.kernel.execution.job_status import normalize_job_status
+from backend.kernel.execution.lease_service import LeaseService
+from backend.kernel.topology.node_auth import authenticate_node_request
 from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
 
 from .auto_tune_feedback import log_tuner_feedback_failure, record_job_outcome_for_tuner
@@ -240,7 +240,7 @@ async def fail_job(
     should_retry = should_retry_job(job, failure_category)
 
     if should_retry:
-        from backend.core.failure_taxonomy import calculate_retry_delay_seconds
+        from backend.kernel.execution.failure_taxonomy import calculate_retry_delay_seconds
 
         retry_delay_seconds = calculate_retry_delay_seconds(
             failure_category,
@@ -584,7 +584,7 @@ async def fair_share_config(
 ) -> dict[str, object]:
     """Return current tenant fair-share configuration (admin only)."""
 
-    from backend.core.queue_stratification import (
+    from backend.kernel.scheduling.queue_stratification import (
         SERVICE_CLASS_CONFIG,
         get_fair_scheduler,
     )

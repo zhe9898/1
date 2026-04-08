@@ -15,7 +15,7 @@ LOCAL_BUILD_IMAGES = ("zen70-gateway", "zen70-runner-agent")
 def test_runtime_secret_artifacts_are_ignored_untracked_and_absent() -> None:
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     for required in ("runtime/tmp-compile/", "runtime/secrets/", "config/users.acl"):
-        assert required in gitignore, f"{required} 必须被 .gitignore 严格忽略"
+        assert required in gitignore, f"{required} must be ignored in .gitignore"
 
     tracked = subprocess.run(
         ["git", "ls-files", "--", "runtime/tmp-compile", "runtime/secrets", "config/users.acl"],
@@ -26,7 +26,7 @@ def test_runtime_secret_artifacts_are_ignored_untracked_and_absent() -> None:
         check=True,
     )
     tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
-    assert not tracked_paths, f"禁止跟踪运行态 secrets/tmp 产物: {tracked_paths}"
+    assert not tracked_paths, f"runtime secrets/tmp artifacts must never be tracked: {tracked_paths}"
 
     leaked_files: list[str] = []
     for path in (REPO_ROOT / "runtime" / "secrets", REPO_ROOT / "runtime" / "tmp-compile"):
@@ -34,17 +34,18 @@ def test_runtime_secret_artifacts_are_ignored_untracked_and_absent() -> None:
             leaked_files.extend(item.relative_to(REPO_ROOT).as_posix() for item in path.rglob("*") if item.is_file())
     if (REPO_ROOT / "config" / "users.acl").exists():
         leaked_files.append("config/users.acl")
-    assert not leaked_files, f"工作树中不得残留运行态明文 secrets 产物: {leaked_files}"
+    assert not leaked_files, f"runtime secret artifacts must not remain in the workspace: {leaked_files}"
 
 
 def test_workflows_use_immutable_runner_and_action_refs() -> None:
     workflow_files = sorted(WORKFLOW_DIR.glob("*.yml"))
-    assert workflow_files, "未发现 .github/workflows/*.yml"
+    assert workflow_files, "expected at least one workflow file under .github/workflows"
 
     floating_runners: list[str] = []
     floating_refs: list[str] = []
     floating_latest: list[str] = []
     mutable_publish_tags: list[str] = []
+
     for workflow in workflow_files:
         text = workflow.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), 1):
@@ -66,17 +67,18 @@ def test_workflows_use_immutable_runner_and_action_refs() -> None:
             }:
                 mutable_publish_tags.append(f"{workflow.name}:{line_number}:{stripped}")
 
-    assert not floating_runners, f"workflow runner 必须固定镜像: {floating_runners}"
-    assert not floating_refs, f"workflow actions 必须固定 commit SHA: {floating_refs}"
-    assert not floating_latest, f"workflow 中禁止 latest: {floating_latest}"
-    assert not mutable_publish_tags, f"docker-publish 不得生成 branch/pr/schedule 可变标签: {mutable_publish_tags}"
+    assert not floating_runners, f"workflow runners must be pinned, found: {floating_runners}"
+    assert not floating_refs, f"workflow actions must be pinned to commit SHA, found: {floating_refs}"
+    assert not floating_latest, f"workflow files must not use latest tags: {floating_latest}"
+    assert not mutable_publish_tags, f"docker-publish must not emit mutable branch/pr/schedule tags: {mutable_publish_tags}"
 
 
 def test_python_ci_workflows_use_hashed_lockfile() -> None:
     violations: list[str] = []
     lockfile = REPO_ROOT / "backend" / "requirements-ci.lock"
-    assert lockfile.exists(), "backend/requirements-ci.lock 必须存在"
-    assert "--hash=" in lockfile.read_text(encoding="utf-8"), "requirements-ci.lock 必须包含 pip hashes"
+    assert lockfile.exists(), "backend/requirements-ci.lock must exist"
+    assert "--hash=" in lockfile.read_text(encoding="utf-8"), "requirements-ci.lock must contain pip hashes"
+
     for workflow_name in ("ci.yml", "compliance.yml"):
         text = (WORKFLOW_DIR / workflow_name).read_text(encoding="utf-8")
         if "requirements-ci.lock" not in text:
@@ -85,16 +87,18 @@ def test_python_ci_workflows_use_hashed_lockfile() -> None:
             violations.append(f"{workflow_name}:missing --require-hashes")
         if "pip install --upgrade pip" in text or "python -m pip install --upgrade pip" in text:
             violations.append(f"{workflow_name}:floating pip bootstrap")
-    assert not violations, f"Python CI workflows 必须使用带 hash 的锁文件安装: {violations}"
+
+    assert not violations, f"Python CI workflows must install from the hashed lockfile: {violations}"
 
 
 def test_offline_release_workflow_uses_immutable_release_tags_and_clean_bundle_inputs() -> None:
     text = (WORKFLOW_DIR / "build_offline_v2_9.yml").read_text(encoding="utf-8")
-    assert "RELEASE_SERIES:" in text, "离线包 workflow 必须区分 release 系列与冻结发行 tag"
-    assert 'echo "RELEASE_TAG=' in text, "离线包 workflow 必须按 commit 生成不可变 release tag"
-    assert "RELEASE_TAG: v2.9.1" not in text, "离线包 workflow 不得复用固定 release tag 承载持续构建"
-    assert 'has_asset "${ASSET_NAME}.sha256"' in text, "离线包上传跳过逻辑必须同时校验 checksum 资产"
-    assert "python scripts/validate_offline_bundle.py \"$BUNDLE_ROOT\"" in text, "离线包必须在打包前执行白名单校验"
+    assert "RELEASE_SERIES:" in text, "offline bundle workflow must distinguish release series from frozen release tags"
+    assert 'echo "RELEASE_TAG=' in text, "offline bundle workflow must derive an immutable release tag from the commit"
+    assert "RELEASE_TAG: v2.9.1" not in text, "offline bundle workflow must not hard-code a reusable release tag"
+    assert 'has_asset "${ASSET_NAME}.sha256"' in text, "offline bundle upload skipping logic must verify checksum assets"
+    assert "python scripts/validate_offline_bundle.py \"$BUNDLE_ROOT\"" in text, "offline bundle workflow must validate the bundle before packaging"
+
     for pattern in (
         "config/system.yaml",
         "frontend/build_*.txt",
@@ -104,36 +108,34 @@ def test_offline_release_workflow_uses_immutable_release_tags_and_clean_bundle_i
         "frontend/test_output.txt",
         "frontend/test_result*.json",
     ):
-        assert pattern in text, f"离线包必须排除前端临时审计/构建残留: {pattern}"
+        assert pattern in text, f"offline bundle workflow must exclude frontend audit residue: {pattern}"
 
 
 def test_offline_release_workflow_compiles_iac_env_before_resolving_images() -> None:
     text = (WORKFLOW_DIR / "build_offline_v2_9.yml").read_text(encoding="utf-8")
-    assert "Compile deterministic IaC runtime inputs" in text, "Offline bundle workflow must compile IaC inputs before resolving compose images"
-    assert "python -m pip install --disable-pip-version-check -r requirements-infra.txt" in text, "Offline bundle workflow must install compiler dependencies"
-    assert "python scripts/compiler.py system.yaml -o ." in text, "Offline bundle workflow must generate .env from IaC before compose image resolution"
-    assert "ZEN70_SECRET_STATE_DIR: ${{ runner.temp }}/zen70-secrets" in text, "Offline bundle workflow must keep ACL secrets under runner.temp instead of the repository workspace"
-    assert "docker compose --env-file .env config --images" in text, "Offline bundle workflow must resolve compose images against the compiled .env"
-    assert "if [ ! -s offline_bundle/compose-images.txt ]; then" in text, "Offline bundle workflow must fail fast when compose image resolution returns no images"
-    assert "render-manifest.json" in text, "Offline bundle workflow must validate render-manifest consistency before packaging"
-    assert "docs/openapi-kernel.json" in text, "Offline bundle workflow must validate kernel OpenAPI consistency before packaging"
-    assert "contracts/openapi/zen70-gateway-kernel.openapi.json" in text, "Offline bundle workflow must validate contract OpenAPI consistency before packaging"
+    assert "Compile deterministic IaC runtime inputs" in text
+    assert "python -m pip install --disable-pip-version-check -r requirements-infra.txt" in text
+    assert "python scripts/compiler.py system.yaml -o ." in text
+    assert "ZEN70_SECRET_STATE_DIR: ${{ runner.temp }}/zen70-secrets" in text
+    assert "docker compose --env-file .env config --images" in text
+    assert "if [ ! -s offline_bundle/compose-images.txt ]; then" in text
+    assert "render-manifest.json" in text
+    assert "docs/openapi-kernel.json" in text
+    assert "contracts/openapi/zen70-gateway-kernel.openapi.json" in text
 
 
 def test_repo_has_single_runtime_config_entrypoint() -> None:
     assert not (REPO_ROOT / "config" / "system.yaml").exists(), "legacy config/system.yaml must not exist in the repo root surface"
-
-    wrapper = (REPO_ROOT / "deploy" / "config-compiler.py").read_text(encoding="utf-8")
-    assert "scripts/compiler.py" in wrapper, "deploy/config-compiler.py must delegate to the canonical compiler"
-    assert "config/system.yaml" not in wrapper, "deploy/config-compiler.py must not advertise a second config entrypoint"
-    assert "migrate_and_persist" not in wrapper, "deploy/config-compiler.py must not embed a second compiler implementation"
+    assert (REPO_ROOT / "scripts" / "compiler.py").exists(), "scripts/compiler.py must remain the canonical compiler entrypoint"
+    assert not (REPO_ROOT / "deploy" / "config-compiler.py").exists(), "compatibility compiler wrapper must not exist in development"
+    assert not (REPO_ROOT / "deploy" / "bootstrap.py").exists(), "compatibility bootstrap wrapper must not exist in development"
 
 
 def test_ci_trivy_scan_uses_pinned_setup_action_and_direct_cli() -> None:
     text = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
-    assert "aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514" in text, "Trivy installation must use a commit-pinned setup-trivy action"
-    assert "trivy image \\" in text, "Trivy scan must call the CLI directly to avoid wrapper action drift"
-    assert "aquasecurity/trivy-action@" not in text, "Do not reintroduce trivy-action wrapper after the upstream resolution failure"
+    assert "aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514" in text
+    assert "trivy image \\" in text
+    assert "aquasecurity/trivy-action@" not in text
 
 
 def test_external_image_references_are_digest_pinned() -> None:
@@ -153,12 +155,12 @@ def test_external_image_references_are_digest_pinned() -> None:
         if "@sha256:" not in image_ref:
             violations.append(f"tests/docker-compose.yml:{image_ref}")
 
-    assert not violations, f"所有外部镜像引用都必须 digest pin: {violations}"
+    assert not violations, f"all external image references must be digest pinned: {violations}"
 
 
 def test_deploy_images_list_is_digest_pinned() -> None:
     images_list = REPO_ROOT / "deploy" / "images.list"
-    assert images_list.exists(), "deploy/images.list 蹇呴』瀛樺湪"
+    assert images_list.exists(), "deploy/images.list must exist"
 
     violations: list[str] = []
     for line_number, raw_line in enumerate(images_list.read_text(encoding="utf-8").splitlines(), 1):
@@ -168,7 +170,7 @@ def test_deploy_images_list_is_digest_pinned() -> None:
         if "@sha256:" not in line:
             violations.append(f"{line_number}:{line}")
 
-    assert not violations, f"deploy/images.list 蹇呴』鏄?digest pinned: {violations}"
+    assert not violations, f"deploy/images.list entries must be digest pinned: {violations}"
 
 
 def test_dockerfiles_use_digest_pinned_base_images() -> None:
@@ -188,7 +190,8 @@ def test_dockerfiles_use_digest_pinned_base_images() -> None:
                 continue
             if "@sha256:" not in image_ref:
                 violations.append(f"{relative}:{image_ref}")
-    assert not violations, f"Dockerfile 基础镜像必须 digest pin: {violations}"
+
+    assert not violations, f"Dockerfile base images must be digest pinned: {violations}"
 
 
 def test_frontend_audit_artifacts_do_not_exist_in_workspace() -> None:
@@ -196,7 +199,8 @@ def test_frontend_audit_artifacts_do_not_exist_in_workspace() -> None:
     frontend_dir = REPO_ROOT / "frontend"
     for pattern in ("build_*.txt", "eslint_*.txt", "vuetsc_*.txt", "full_build_*.txt", "test_output.txt"):
         leftovers.extend(path.relative_to(REPO_ROOT).as_posix() for path in frontend_dir.glob(pattern))
-    assert not leftovers, f"前端构建/审计残留不得留在工作树: {leftovers}"
+
+    assert not leftovers, f"frontend build or audit residue must not remain in the workspace: {leftovers}"
 
 
 def test_health_pack_no_longer_uses_placeholder_artifacts() -> None:
@@ -207,40 +211,27 @@ def test_health_pack_no_longer_uses_placeholder_artifacts() -> None:
     ):
         if (REPO_ROOT / relative).exists():
             violations.append(relative)
-    assert not violations, f"Health Pack 已进入最小交付阶段，不得回流 placeholder 产物: {violations}"
 
+    assert not violations, f"Health Pack must not fall back to placeholder artifacts: {violations}"
 
-# ---------------------------------------------------------------------------
-# 代码体积门禁（防石山）
-# ---------------------------------------------------------------------------
 
 _BACKEND_SOURCE_MAX_LINES = 600
 _BACKEND_TEST_MAX_LINES = 800
 
-# 白名单：每条必须注明理由，审查时视为技术债
 _BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
-    "sentinel/topology_sentinel.py": "拓扑探针主循环，拆分后仍需保留完整状态机",
-    "core/redis_client.py": "TypedDict 仅内部使用，拆分收益低",
-    "api/jobs/dispatch.py": "调度主流程含抢占/回退/拓扑扩展，不可分割",
-    "core/placement_solver.py": "Global placement solver remains intentionally centralized until further decomposition",
-    "core/backfill_scheduling.py": "ReservationManager + BackfillGate 时间规划引擎状态机不可分割",
+    "sentinel/topology_sentinel.py": "The topology sentinel remains a large state machine until it is decomposed safely.",
+    "core/redis_client.py": "redis_client is still a shared platform helper and remains allowlisted for now.",
+    "api/jobs/dispatch.py": "jobs dispatch still carries the main scheduling path and cannot be split blindly.",
+    "kernel/scheduling/placement_solver.py": "Global placement solver remains intentionally centralized until further decomposition",
+    "kernel/scheduling/backfill_scheduling.py": "Backfill scheduling still centralizes reservation time-window coordination.",
+    "api/jobs/lifecycle.py": "job lifecycle still shares transaction and audit context that has not been safely split yet.",
+    "kernel/extensions/extension_sdk.py": "extension SDK still shares bootstrap, registration, and manifest parsing context.",
 }
+
 _BACKEND_TEST_ALLOWLIST: dict[str, str] = {
-    "tests/unit/test_scheduling_governance.py": "调度治理场景覆盖面广，拆分会破坏测试上下文连贯性",
+    "tests/unit/test_scheduling_governance.py": "Scheduling governance intentionally keeps broad scenario coverage in one test file for now.",
+    "tests/unit/test_scheduler_auto_tune.py": "scheduler auto-tune integration coverage is intentionally kept together for now.",
 }
-
-
-_BACKEND_SOURCE_ALLOWLIST.update(
-    {
-        "api/jobs/lifecycle.py": "job lifecycle 路径共享事务与审计补偿，当前拆分会切断控制面闭环",
-        "core/extension_sdk.py": "extension SDK 启动、注册和 manifest 解析共用契约上下文，当前仍需保持单模块一致性",
-    }
-)
-_BACKEND_TEST_ALLOWLIST.update(
-    {
-        "tests/unit/test_scheduler_auto_tune.py": "scheduler auto tune 集成断言围绕同一调优引擎，拆分会削弱回归可读性",
-    }
-)
 
 
 def _count_lines(path: Path) -> int:
@@ -248,52 +239,49 @@ def _count_lines(path: Path) -> int:
 
 
 def test_backend_source_files_do_not_exceed_line_limit() -> None:
-    """后端源码单文件不得超过阈值，防止石山代码。"""
     backend = REPO_ROOT / "backend"
     violations: list[str] = []
     for py in sorted(backend.rglob("*.py")):
         rel = py.relative_to(backend).as_posix()
-        # 跳过测试、缓存、迁移
         if any(part in rel for part in ("__pycache__", "alembic/", "tests/")):
             continue
         lines = _count_lines(py)
         if lines > _BACKEND_SOURCE_MAX_LINES and rel not in _BACKEND_SOURCE_ALLOWLIST:
-            violations.append(f"{rel} ({lines} 行，上限 {_BACKEND_SOURCE_MAX_LINES})")
+            violations.append(f"{rel} ({lines} lines, limit {_BACKEND_SOURCE_MAX_LINES})")
+
     assert not violations, (
-        f"后端源码文件超过 {_BACKEND_SOURCE_MAX_LINES} 行上限，"
-        f"必须拆分或加入白名单并注明理由:\n" + "\n".join(violations)
+        f"backend source files exceeded the {_BACKEND_SOURCE_MAX_LINES}-line limit; "
+        f"split them or document them in the allowlist.\n" + "\n".join(violations)
     )
 
 
 def test_backend_test_files_do_not_exceed_line_limit() -> None:
-    """后端测试单文件不得超过阈值。"""
     backend = REPO_ROOT / "backend"
     violations: list[str] = []
     for py in sorted(backend.rglob("*.py")):
         rel = py.relative_to(backend).as_posix()
-        if "tests/" not in rel:
-            continue
-        if "__pycache__" in rel:
+        if "tests/" not in rel or "__pycache__" in rel:
             continue
         lines = _count_lines(py)
         if lines > _BACKEND_TEST_MAX_LINES and rel not in _BACKEND_TEST_ALLOWLIST:
-            violations.append(f"{rel} ({lines} 行，上限 {_BACKEND_TEST_MAX_LINES})")
+            violations.append(f"{rel} ({lines} lines, limit {_BACKEND_TEST_MAX_LINES})")
+
     assert not violations, (
-        f"后端测试文件超过 {_BACKEND_TEST_MAX_LINES} 行上限，"
-        f"必须拆分或加入白名单并注明理由:\n" + "\n".join(violations)
+        f"backend test files exceeded the {_BACKEND_TEST_MAX_LINES}-line limit; "
+        f"split them or document them in the allowlist.\n" + "\n".join(violations)
     )
 
 
 def test_backend_source_allowlist_entries_are_still_needed() -> None:
-    """白名单条目若已降到阈值以下，必须清除——不得养僵尸白名单。"""
     backend = REPO_ROOT / "backend"
     stale: list[str] = []
-    for rel, reason in _BACKEND_SOURCE_ALLOWLIST.items():
+    for rel in _BACKEND_SOURCE_ALLOWLIST:
         path = backend / rel
         if not path.exists():
-            stale.append(f"{rel} (文件已不存在)")
+            stale.append(f"{rel} (file no longer exists)")
             continue
         lines = _count_lines(path)
         if lines <= _BACKEND_SOURCE_MAX_LINES:
-            stale.append(f"{rel} ({lines} 行，已低于 {_BACKEND_SOURCE_MAX_LINES}，可移除白名单)")
-    assert not stale, f"白名单中存在过期条目，请清理:\n" + "\n".join(stale)
+            stale.append(f"{rel} ({lines} lines, now below {_BACKEND_SOURCE_MAX_LINES})")
+
+    assert not stale, "source allowlist contains stale entries:\n" + "\n".join(stale)

@@ -19,10 +19,10 @@ from backend.api.ui_contracts import (
     ResourceSchemaResponse,
     StatusView,
 )
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.software_evaluation import SoftwareEvaluation
 
-# ── Pydantic request/response models ─────────────────────────────────
+# 鈹€鈹€ Pydantic request/response models 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 VALID_RATINGS = {1, 2, 3, 4, 5}
 VALID_CATEGORIES = {"general", "performance", "reliability", "usability", "security"}
@@ -65,7 +65,7 @@ class EvaluationResponse(BaseModel):
     updated_at: datetime.datetime
 
 
-# ── Helper functions ──────────────────────────────────────────────────
+# 鈹€鈹€ Helper functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 def _evaluation_status_view(status: str) -> StatusView:
@@ -177,7 +177,7 @@ def _resource_schema() -> ResourceSchemaResponse:
                 fields=[
                     FormFieldSchema(
                         key="rating",
-                        label="Rating (1–5)",
+                        label="Rating (1鈥?)",
                         input_type="number",
                         required=True,
                         placeholder="5",
@@ -202,7 +202,7 @@ def _resource_schema() -> ResourceSchemaResponse:
                         label="Comment",
                         input_type="textarea",
                         required=False,
-                        placeholder="Optional detailed feedback…",
+                        placeholder="Optional detailed feedback",
                         description="Additional comments about the evaluation.",
                     ),
                 ],

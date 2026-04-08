@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock
 
-from backend.core.job_scheduler import (
+from backend.kernel.scheduling.job_scheduler import (
     PlacementCandidate,
     PlacementSolver,
     SchedulerNodeSnapshot,

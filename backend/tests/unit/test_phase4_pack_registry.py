@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from backend.core.gateway_profile import get_enabled_router_names
-from backend.core.pack_registry import (
-    available_pack_definitions,
-    selected_capability_keys,
-    selected_service_allowlist,
-)
+from backend.kernel.packs.registry import available_pack_definitions
+from backend.kernel.topology.pack_selection import selected_capability_keys, selected_service_allowlist
+from backend.kernel.topology.profile_selection import get_enabled_router_names
 from scripts.iac_core.profiles import CORE_SERVICES
 
 

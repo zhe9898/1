@@ -16,9 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.auth_cookies import get_auth_cookie_token, set_auth_cookie
 from backend.core.errors import zen
 from backend.core.jwt import decode_token
-from backend.core.node_auth import authenticate_node_request
+from backend.kernel.topology.node_auth import authenticate_node_request
 from backend.core.redis_client import RedisClient
 from backend.core.rls import assert_rls_ready, set_tenant_context
+from backend.control_plane.auth.access_policy import (
+    ADMIN_ROLES,
+    SUPERADMIN_ROLE,
+    has_admin_role,
+    is_superadmin_role,
+    require_admin_role,
+    require_superadmin_role,
+)
 from backend.db import get_db_session
 from backend.models.user import User
 
@@ -26,8 +34,6 @@ logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
 _node_bearer = HTTPBearer(auto_error=False)
-ADMIN_ROLES = frozenset({"admin", "superadmin"})
-SUPERADMIN_ROLE = "superadmin"
 _MACHINE_TENANT_BODY_TIMEOUT_SECONDS = float(os.getenv("MACHINE_TENANT_BODY_TIMEOUT_SECONDS", "2.0"))
 
 
@@ -205,39 +211,6 @@ async def get_machine_tenant_db(
     request.state.machine_tenant_id = authoritative_tenant_id
     request.state.machine_node_id = normalized_node_id
     return await _bind_tenant_db(db, authoritative_tenant_id)
-
-
-def has_admin_role(current_user: Mapping[str, object] | None) -> bool:
-    role = str((current_user or {}).get("role") or "").strip().lower()
-    return role in ADMIN_ROLES
-
-
-def is_superadmin_role(current_user: Mapping[str, object] | None) -> bool:
-    role = str((current_user or {}).get("role") or "").strip().lower()
-    return role == SUPERADMIN_ROLE
-
-
-def require_admin_role(current_user: dict[str, object]) -> dict[str, object]:
-    if not has_admin_role(current_user):
-        raise zen(
-            "ZEN-AUTH-403",
-            "Admin privileges required",
-            status_code=403,
-            recovery_hint="Sign in with an admin or superadmin account and retry",
-        )
-    return current_user
-
-
-def require_superadmin_role(current_user: dict[str, object]) -> dict[str, object]:
-    if not is_superadmin_role(current_user):
-        raise zen(
-            "ZEN-AUTH-403",
-            "Superadmin privileges required",
-            status_code=403,
-            recovery_hint="Sign in with a superadmin account and retry",
-        )
-    return current_user
-
 
 async def get_current_admin(
     current_user: dict[str, object] = Depends(get_current_user),

@@ -12,15 +12,15 @@ from pydantic import BaseModel, Field
 
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import StatusView
-from backend.core.compatibility_adapter import normalize_persisted_status
-from backend.core.control_plane import iter_control_plane_surfaces
+from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
+from backend.kernel.contracts.status import normalize_persisted_status
 from backend.core.control_plane_state import (
     node_heartbeat_state,
     severity_view,
     tone_view,
 )
-from backend.core.gateway_profile import DEFAULT_PRODUCT_NAME, to_public_profile
-from backend.core.job_status import normalize_job_status
+from backend.kernel.execution.job_status import normalize_job_status
+from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, to_public_profile
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.node import Node
@@ -226,7 +226,7 @@ class ControlPlaneSurfacesResponse(BaseModel):
     surfaces: list[ControlPlaneSurfaceResponse] = Field(default_factory=list)
 
 
-# ── Pure helper functions ─────────────────────────────────────────────
+# 鈹€鈹€ Pure helper functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 def build_menu_response(runtime_profile: str, *, is_admin: bool) -> ConsoleMenuResponse:

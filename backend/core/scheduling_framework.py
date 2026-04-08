@@ -35,10 +35,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from backend.core.extension_guard import validate_scheduling_profile_budget
+from backend.kernel.extensions.extension_guard import validate_scheduling_profile_budget
 
 if TYPE_CHECKING:
-    from backend.core.scheduling_constraints import SchedulingContext
+    from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
     from backend.models.job import Job
 
 logger = logging.getLogger(__name__)
@@ -461,7 +461,7 @@ class ConstraintFilterAdapter(FilterPlugin):
     """
 
     def __init__(self, constraint: object) -> None:
-        from backend.core.scheduling_constraints import SchedulingConstraint as SC
+        from backend.kernel.scheduling.scheduling_constraints import SchedulingConstraint as SC
 
         if not isinstance(constraint, SC):
             raise TypeError(f"Expected SchedulingConstraint, got {type(constraint)}")
@@ -481,7 +481,7 @@ class ConstraintScoreAdapter(ScorePlugin):
     """Adapter that wraps a soft SchedulingConstraint as a ScorePlugin."""
 
     def __init__(self, constraint: object) -> None:
-        from backend.core.scheduling_constraints import SchedulingConstraint as SC
+        from backend.kernel.scheduling.scheduling_constraints import SchedulingConstraint as SC
 
         if not isinstance(constraint, SC):
             raise TypeError(f"Expected SchedulingConstraint, got {type(constraint)}")
@@ -500,7 +500,7 @@ def build_profile_from_engine() -> SchedulingProfile:
     plugins inside a profile, enabling gradual migration to the
     framework model.
     """
-    from backend.core.scheduling_constraints import get_scheduling_engine
+    from backend.kernel.scheduling.scheduling_constraints import get_scheduling_engine
 
     engine = get_scheduling_engine()
     profile = SchedulingProfile(name="default")

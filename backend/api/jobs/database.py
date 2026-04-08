@@ -5,8 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.errors import zen
-from backend.core.job_scheduler import SchedulerNodeSnapshot, build_node_snapshot
-from backend.core.lease_service import LeaseService
+from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot, build_node_snapshot
+from backend.kernel.execution.lease_service import LeaseService
 from backend.core.redis_client import RedisClient
 from backend.core.worker_pool import resolve_job_queue_contract, resolve_job_queue_contract_from_record
 from backend.models.job import Job

@@ -17,7 +17,7 @@ from backend.api.reservations import (
     get_reservation_stats,
     list_reservations,
 )
-from backend.core.backfill_scheduling import get_reservation_manager, reset_reservation_manager
+from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager, reset_reservation_manager
 from backend.models.job import Job
 from backend.models.node import Node
 

@@ -25,5 +25,14 @@ def test_record_factory_backfills_request_id_from_context() -> None:
 
 def test_main_source_contains_no_known_mojibake_markers() -> None:
     text = repo_path("backend", "api", "main.py").read_text(encoding="utf-8")
-    for marker in ("闁", "濞", "婵", "鍐", "鍙", "鏉", "銆"):
+    for marker in ("闂?", "濠?", "婵?", "闁?", "闁?", "闁?"):
         assert marker not in text
+
+
+def test_request_id_has_single_http_owner() -> None:
+    main_text = repo_path("backend", "api", "main.py").read_text(encoding="utf-8")
+    middleware_stack_text = repo_path("backend", "control_plane", "app", "middleware_stack.py").read_text(encoding="utf-8")
+
+    assert "add_request_id_and_log" not in main_text
+    assert "response.headers[\"X-Request-ID\"]" not in middleware_stack_text
+    assert "uuid.uuid4()" not in middleware_stack_text

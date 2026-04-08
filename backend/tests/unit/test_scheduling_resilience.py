@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.core.scheduling_resilience import (
+from backend.kernel.scheduling.scheduling_resilience import (
     AdmissionController,
     PreemptionBudgetPolicy,
     SchedulingBackoff,
@@ -31,7 +31,7 @@ def _utcnow() -> datetime.datetime:
 
 
 def _make_node_snapshot(**overrides):
-    from backend.core.job_scheduler import SchedulerNodeSnapshot
+    from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
     defaults = dict(
         node_id="node-1",
@@ -589,12 +589,12 @@ class TestTopologySpreadPolicyProtocol:
         TopologySpreadPolicy._zone_context.set(None)
 
     def test_registered_in_builtin_policies(self):
-        from backend.core.placement_policy import _BUILTIN_POLICIES
+        from backend.kernel.scheduling.placement_policy import _BUILTIN_POLICIES
 
         assert "topology_spread" in _BUILTIN_POLICIES
 
     def test_works_in_composite(self):
-        from backend.core.placement_policy import CompositePlacementPolicy
+        from backend.kernel.scheduling.placement_policy import CompositePlacementPolicy
 
         TopologySpreadPolicy.configure_zone_context({"zone-a": 20, "zone-b": 4})
         policy = CompositePlacementPolicy(policies=[TopologySpreadPolicy(max_skew=2)])

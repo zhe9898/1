@@ -1,12 +1,11 @@
-#!/usr/bin/env python3
-"""
-配置编译器 CLI 壳：将 system.yaml 渲染为 docker-compose.yml 和 .env。
+﻿#!/usr/bin/env python3
+"""Compile system.yaml into deterministic runtime artifacts."""
 
-核心逻辑已提取至 iac_core 包（ADR 0011），本文件仅负责:
-- CLI 参数解析 (argparse)
-- 调用 iac_core 流水线: lint → prepare → secrets → render
-- 生产专属能力: ACL 生成、Caddyfile、Validate-Before-Commit 预检、dry-run diff
-"""
+
+
+
+
+
 
 from __future__ import annotations
 
@@ -27,16 +26,13 @@ import jinja2
 
 logger = logging.getLogger(__name__)
 
-# 法典 8.2: 当 compiler.py 被 bootstrap.py 通过 subprocess 直接调用时,
-# 项目根目录可能不在 sys.path 中, 导致 `from scripts.iac_core.xxx` 失败。
-# 此处将项目根（scripts/ 的父目录）注入 sys.path 以确保子包可被发现。
+# Ensure `scripts.iac_core` imports resolve when running compiler.py directly.
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 # ---------------------------------------------------------------------------
-# ADR 0011: 核心逻辑统一从 iac_core 导入
-# ---------------------------------------------------------------------------
+# ADR 0011: 閺嶇绺鹃柅鏄忕帆缂佺喍绔存禒?iac_core 鐎电厧鍙?# ---------------------------------------------------------------------------
 from scripts.iac_core.exceptions import (  # noqa: E402
     ConfigLoadError,
     MigrationError,
@@ -68,7 +64,7 @@ from scripts.iac_core.secrets import (  # noqa: E402
 
 
 def _project_root() -> Path:
-    """项目根目录（scripts 的上级），跨平台无绝对路径硬编码。"""
+    """Return the repository root relative to this script."""
     return Path(__file__).resolve().parent.parent
 
 
@@ -167,7 +163,7 @@ def _write_caddyfile_only(output_dir: Path, caddy_out: str, dry_run: bool) -> No
         _dry_run_caddy_diff(caddy_path, caddy_out)
         return
     caddy_path.write_text(caddy_out, encoding="utf-8")
-    logger.info("[OK] 已生成 %s", caddy_path)
+    logger.info("[OK] 瀹歌尙鏁撻幋?%s", caddy_path)
 
 
 def _render_caddyfile(env: jinja2.Environment, templates_dir: Path, dynamic_routes: list[dict]) -> str:
@@ -179,7 +175,7 @@ def _render_caddyfile(env: jinja2.Environment, templates_dir: Path, dynamic_rout
                 csp_connect_src_extra=_derive_csp_connect_src_extra(),
             )
     except jinja2.TemplateError as exc:
-        logger.error("Caddyfile 模板渲染失败: %s", exc)
+        logger.error("Caddyfile 濡剝婢樺〒鍙夌厠婢惰精瑙? %s", exc)
         sys.exit(1)
     return ""
 
@@ -204,20 +200,17 @@ def _render_systemd_units(
     host_services: list[dict],
     output_dir: Path,
 ) -> list[Path]:
-    """为每个 runtime: host 服务渲染 systemd unit 文件，写入 output_dir/systemd/。
-
-    返回已写入的文件路径列表。
-    """
+    """Render systemd unit files for runtime host services into output_dir/systemd."""
     if not host_services:
         return []
     tpl_path = templates_dir / "systemd.j2"
     if not tpl_path.exists():
-        logger.warning("[IaC-Host] systemd.j2 模板不存在，跳过 host 服务渲染")
+        logger.warning("[IaC-Host] systemd.j2 濡剝婢樻稉宥呯摠閸︻煉绱濈捄瀹犵箖 host 閺堝秴濮熷〒鍙夌厠")
         return []
     try:
         tpl = env.get_template("systemd.j2")
     except jinja2.TemplateError as exc:
-        logger.error("systemd.j2 模板加载失败: %s", exc)
+        logger.error("systemd.j2 濡剝婢橀崝鐘烘祰婢惰精瑙? %s", exc)
         sys.exit(1)
 
     systemd_dir = output_dir / "systemd"
@@ -227,20 +220,18 @@ def _render_systemd_units(
         try:
             content = tpl.render(svc=svc)
         except jinja2.TemplateError as exc:
-            logger.error("systemd 渲染失败 [%s]: %s", svc.get("name"), exc)
+            logger.error("systemd 濞撳弶鐓嬫径杈Е [%s]: %s", svc.get("name"), exc)
             sys.exit(1)
         dest = systemd_dir / f"{svc['name']}.service"
         dest.write_text(content, encoding="utf-8")
-        logger.info("[OK] 已生成 %s", dest)
+        logger.info("[OK] 瀹歌尙鏁撻幋?%s", dest)
         written.append(dest)
     return written
 
 
 def _host_services_caddy_routes(host_services: list[dict]) -> list[dict]:
-    """将 runtime: host 服务转换为 Caddyfile dynamic_routes 条目。
+    """Convert runtime host services into Caddy dynamic route entries."""
 
-    服务需同时设置 caddy_path 和 port 字段才生成路由。
-    """
     routes: list[dict] = []
     for svc in host_services:
         caddy_path = svc.get("caddy_path")
@@ -274,7 +265,7 @@ def _replace_text_artifact(tmp_path: Path, target_path: Path) -> None:
         )
 
     # Fallback: non-atomic overwrite with fsync to ensure data reaches disk.
-    # If write_text fails mid-way, target_path may be truncated — this is
+    # If write_text fails mid-way, target_path may be truncated 閳?this is
     # acceptable as the caller holds a .tmp copy and can retry.
     content = tmp_path.read_text(encoding="utf-8")
     with open(target_path, "w", encoding="utf-8") as fh:
@@ -288,31 +279,31 @@ def _replace_text_artifact(tmp_path: Path, target_path: Path) -> None:
 
 
 def main() -> None:
-    """CLI 入口：解析参数，执行 lint → prepare → secrets → render → validate → commit。"""
+    """CLI entrypoint for compile, validate, and dry-run flows."""
     parser = argparse.ArgumentParser(
-        description="ZEN70 配置编译器（跨平台，路径均相对项目根）",
+        description="Compile ZEN70 runtime inputs from system.yaml.",
     )
     parser.add_argument(
         "config",
         nargs="?",
         default="system.yaml",
-        help="system.yaml 路径（相对项目根），默认 system.yaml",
+        help="system.yaml 鐠侯垰绶為敍鍫㈡祲鐎靛綊銆嶉惄顔界壌閿涘绱濇妯款吇 system.yaml",
     )
     parser.add_argument(
         "-o",
         "--output-dir",
         default=".",
-        help="输出目录（相对项目根），默认 .",
+        help="鏉堟挸鍤惄顔肩秿閿涘牏娴夌€靛綊銆嶉惄顔界壌閿涘绱濇妯款吇 .",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="预览变更差异但不写入文件（密码自动脱敏）",
+        help="妫板嫯顫嶉崣妯绘纯瀹割喖绱撴担鍡曠瑝閸愭瑥鍙嗛弬鍥︽閿涘牆鐦戦惍浣藉殰閸斻劏鍔氶弫蹇ョ礆",
     )
     parser.add_argument(
         "--rotate-jwt",
         action="store_true",
-        help="执行 JWT 密钥轮转：CURRENT→PREVIOUS，生成新 CURRENT",
+        help="閹笛嗩攽 JWT 鐎靛棝鎸滄潪顔挎祮閿涙URRENT閳墾REVIOUS閿涘瞼鏁撻幋鎰煀 CURRENT",
     )
     parser.add_argument(
         "--render-target",
@@ -327,7 +318,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 法典 §2.5：确保独立运行时日志可见
+    # 濞夋洖鍚€ 鎼?.5閿涙氨鈥樻穱婵堝缁斿绻嶇悰灞炬閺冦儱绻旈崣顖濐潌
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s %(message)s",
@@ -343,13 +334,13 @@ def main() -> None:
         migrate_fn = lambda path, raw_config, dry_run=False: (raw_config, [f"skipped for render-target={args.render_target}"])
 
     if not config_path.exists():
-        logger.error("配置不存在: %s", config_path)
+        logger.error("闁板秶鐤嗘稉宥呯摠閸? %s", config_path)
         sys.exit(1)
     if not templates_dir.exists():
-        logger.error("模板目录不存在: %s", templates_dir)
+        logger.error("濡剝婢橀惄顔肩秿娑撳秴鐡ㄩ崷? %s", templates_dir)
         sys.exit(1)
 
-    # 0.5 版本迁移（备份 → 迁移 → 回写 system.yaml）
+    # 0.5 version migration (backup -> migrate -> write back system.yaml)
     try:
         import yaml as _yaml
 
@@ -359,34 +350,34 @@ def main() -> None:
         for log_line in migration_log:
             logger.info("[migrator] %s", log_line)
     except MigrationError as e:
-        logger.error("版本迁移失败: %s", e)
+        logger.error("閻楀牊婀版潻浣盒╂径杈Е: %s", e)
         sys.exit(1)
     except OSError as e:
-        logger.error("迁移文件 I/O 失败: %s", e)
+        logger.error("鏉╀胶些閺傚洣娆?I/O 婢惰精瑙? %s", e)
         sys.exit(1)
 
-    # 1. config-lint (三层校验) + policy engine
+    # 1. config-lint (娑撳鐪伴弽锟犵崣) + policy engine
     try:
         lint_result = config_lint(config_path)
     except ConfigLoadError as e:
-        logger.error("配置加载失败: %s", e)
+        logger.error("闁板秶鐤嗛崝鐘烘祰婢惰精瑙? %s", e)
         sys.exit(1)
     except SchemaValidationError as e:
-        logger.error("Tier 1 Schema 校验失败:")
+        logger.error("Tier 1 Schema 閺嶏繝鐛欐径杈Е:")
         for err in e.errors:
-            logger.error("  ✗ %s", err)
+            logger.error("  閴?%s", err)
         sys.exit(1)
 
     config = lint_result.config
     for w in lint_result.warnings:
         logger.warning("[config-lint] %s", w)
-    logger.info("[config-lint] 校验通过")
+    logger.info("[config-lint] 閺嶏繝鐛欓柅姘崇箖")
 
     deployment_cfg = config.get("deployment") or {}
     raw_profile = deployment_cfg.get("profile", "gateway-kernel")
     if not is_profile_known(str(raw_profile)):
         logger.error(
-            "Unsupported deployment.profile=%r. Supported runtime profile: gateway-kernel (legacy aliases accepted for migration: gateway, gateway-core, safe-kernel, gateway-iot, gateway-ops)",
+            "Unsupported deployment.profile=%r. Supported runtime profile: gateway-kernel",
             raw_profile,
         )
         sys.exit(1)
@@ -408,29 +399,28 @@ def main() -> None:
         product_name,
     )
 
-    # 1.5 策略引擎 (Tier 2)
+    # 1.5 缁涙牜鏆愬鏇熸惛 (Tier 2)
     policy_data = load_default_policy()
     policy_version = policy_data.get("policy_version", 0)
     policy_source = "iac/policy/core.yaml"
-    # 检查外部策略文件是否存在
+    # Prefer the checked-in policy file when it exists.
     _ext_policy_path = root / "iac" / "policy" / "core.yaml"
     if not _ext_policy_path.exists():
         policy_source = "(builtin-fallback)"
-
     try:
         policy_violations = evaluate_and_enforce(config, policy_data)
     except PolicyValidationError as e:
-        logger.error("Tier 2 策略校验失败:")
+        logger.error("Tier 2 缁涙牜鏆愰弽锟犵崣婢惰精瑙?")
         for v in e.violations:
-            logger.error("  ✗ [%s] %s: %s", v.rule_id, v.service, v.message)
+            logger.error("  閴?[%s] %s: %s", v.rule_id, v.service, v.message)
         sys.exit(1)
 
-    # 2. 逻辑聚合 (iac_core.loader)
+    # 2. 闁槒绶懕姘値 (iac_core.loader)
     services_list = prepare_services(config)
     host_services_list = prepare_host_services(config)
     env_vars = prepare_env(config)
     env_vars["csp_connect_src_extra"] = _derive_csp_connect_src_extra()
-    # 幂等：用配置 mtime 作为时间戳，确保连续编译输出完全一致
+    # Use config mtime as the render timestamp so recompiles stay deterministic.
     try:
         config_mtime = config_path.stat().st_mtime
     except OSError:
@@ -440,7 +430,7 @@ def main() -> None:
         tz=timezone.utc,
     ).strftime("%Y-%m-%d %H:%M:%S")
 
-    # 2.5 防腐凭证中心 (iac_core.secrets)
+    # 2.5 闂冭尪鍘崙顓＄槈娑擃厼绺?(iac_core.secrets)
     dynamic_routes_file = _resolve_dynamic_routes_file(root, args.dynamic_routes_file)
     dynamic_routes = _load_dynamic_routes(dynamic_routes_file) if args.render_target == "caddy" else []
     # Merge host-service routes (127.0.0.1:port) into caddy dynamic_routes
@@ -461,14 +451,12 @@ def main() -> None:
     _validate_acl_output_path(users_acl_path, root)
     env_vars["redis_acl_file"] = _compose_env_path(users_acl_path)
 
-    # 3. 渲染 (iac_core.renderer)
+    # 3. 濞撳弶鐓?(iac_core.renderer)
     volumes_list = extract_named_volumes(config)
     networks_list = extract_networks(config)
 
-    # 3.5 动态路由加载 (供 Routing-Operator 使用) + host 服务路由合并
-    # 注：全量渲染路径不从文件加载动态路由（仅 caddy-only 路径加载），此处仅含 host 服务路由。
+# Build extra Caddy routes for runtime host services and caddy-only surfaces.
     dynamic_routes = _host_services_caddy_routes(host_services_list)
-
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
 
@@ -481,14 +469,14 @@ def main() -> None:
             now=env_vars["now"],
         )
     except jinja2.TemplateError as e:
-        logger.error("docker-compose 模板渲染失败: %s", e)
+        logger.error("docker-compose 濡剝婢樺〒鍙夌厠婢惰精瑙? %s", e)
         sys.exit(1)
 
     try:
         env_tpl = env.get_template(".env.j2")
         env_out = env_tpl.render(**env_vars)
     except jinja2.TemplateError as e:
-        logger.error(".env 模板渲染失败: %s", e)
+        logger.error(".env 濡剝婢樺〒鍙夌厠婢惰精瑙? %s", e)
         sys.exit(1)
 
     try:
@@ -501,13 +489,13 @@ def main() -> None:
         else:
             caddy_out = ""
     except jinja2.TemplateError as e:
-        logger.error("Caddyfile 模板渲染失败: %s", e)
+        logger.error("Caddyfile 濡剝婢樺〒鍙夌厠婢惰精瑙? %s", e)
         sys.exit(1)
 
-    # 3.6 host 服务 systemd unit 文件渲染
+    # 3.6 host 閺堝秴濮?systemd unit 閺傚洣娆㈠〒鍙夌厠
     _render_systemd_units(env, templates_dir, host_services_list, output_dir)
 
-    # 3.9 Redis 零信任 ACL 结界 (Phase 9)
+    # 3.9 Redis 闂嗘湹淇婃禒?ACL 缂佹挾鏅?(Phase 9)
     readonly_password = _load_existing_acl_password(users_acl_path, "readonly")
     readonly_password = readonly_password or secrets.token_urlsafe(16)
     gateway_password = _load_existing_acl_password(users_acl_path, "zen70_gateway") or env_vars["redis_password"]
@@ -526,7 +514,7 @@ def main() -> None:
     except OSError:
         pass
 
-    # 4. Validate-Before-Commit 预检熔断 (Phase 9)
+    # 4. Validate-Before-Commit 妫板嫭顥呴悢鏃€鏌?(Phase 9)
     output_dir.mkdir(parents=True, exist_ok=True)
     tmp_dc = output_dir / "docker-compose.yml.tmp"
     tmp_env = output_dir / ".env.tmp"
@@ -534,16 +522,15 @@ def main() -> None:
     tmp_dc.write_text(dc_out, encoding="utf-8")
     tmp_env.write_text(env_out, encoding="utf-8")
 
-    logger.info("[IaC-Validate] 正在执行 docker-compose config 预检...")
+    logger.info("[IaC-Validate] Running docker compose config validation")
     try:
-        # ADR 0011: shutil.which() 在编译期确定正确命令，替代 stderr 字符串匹配
+        # Prefer docker-compose when available, otherwise fall back to docker compose.
         compose_cmd: list[str] | None = None
         if shutil.which("docker-compose"):
             compose_cmd = ["docker-compose"]
-        elif shutil.which("docker"):
             compose_cmd = ["docker", "compose"]
         else:
-            logger.warning("[IaC-Validate] docker-compose/docker 未找到，跳过预检 " "(仅在部署节点可用时执行)")
+            logger.warning("[IaC-Validate] docker-compose/docker 閺堫亝澹橀崚甯礉鐠哄疇绻冩０鍕梾 " "(娴犲懎婀柈銊ц閼哄倻鍋ｉ崣顖滄暏閺冭埖澧界悰?")
             compose_cmd = None
 
         if compose_cmd is not None:
@@ -561,30 +548,29 @@ def main() -> None:
 
             if res.returncode != 0:
                 logger.error(
-                    "Validate-Before-Commit: 预检失败，拒绝覆盖现有健康的 IaC 配置!\n" "详细信息:\n%s",
+                    "Validate-Before-Commit: 妫板嫭顥呮径杈Е閿涘本瀚嗙紒婵婎洬閻╂牜骞囬張澶婁淮鎼撮娈?IaC 闁板秶鐤?\n" "鐠囷妇绮忔穱鈩冧紖:\n%s",
                     res.stderr,
                 )
                 tmp_dc.unlink(missing_ok=True)
                 tmp_env.unlink(missing_ok=True)
                 sys.exit(1)
 
-        # 预检通过（或跳过），检查 dry-run 模式
+        # 妫板嫭顥呴柅姘崇箖閿涘牊鍨ㄧ捄瀹犵箖閿涘绱濆Λ鈧弻?dry-run 濡€崇础
         if getattr(args, "dry_run", False):
             _dry_run_diff(output_dir, dc_out, env_out, tmp_dc, tmp_env)
             sys.exit(0)
 
-        # 预检通过，实施原子替换封缄
-        _replace_text_artifact(tmp_dc, output_dir / "docker-compose.yml")
+        # 妫板嫭顥呴柅姘崇箖閿涘苯鐤勯弬钘夊斧鐎涙劖娴涢幑銏犵殱缂?        _replace_text_artifact(tmp_dc, output_dir / "docker-compose.yml")
         _replace_text_artifact(tmp_env, output_dir / ".env")
         env_path = output_dir / ".env"
 
     except (OSError, subprocess.SubprocessError) as e:
-        logger.error("无法执行预检引擎调起: %s", e)
+        logger.error("閺冪姵纭堕幍褑顢戞０鍕梾瀵洘鎼哥拫鍐崳: %s", e)
         tmp_dc.unlink(missing_ok=True)
         tmp_env.unlink(missing_ok=True)
         sys.exit(1)
 
-    # 架构要求: Caddyfile 写入 config/
+    # 閺嬭埖鐎憰浣圭湴: Caddyfile 閸愭瑥鍙?config/
     if caddy_out:
         (config_dir / "Caddyfile").write_text(caddy_out, encoding="utf-8")
 
@@ -592,18 +578,18 @@ def main() -> None:
         os.chmod(env_path, 0o600)
     except OSError as chmod_exc:
         logger.warning(
-            "[IaC-Security] Failed to set 0o600 on %s: %s — "
+            "[IaC-Security] Failed to set 0o600 on %s: %s 閳?"
             ".env may be world-readable; verify file permissions manually",
             env_path, chmod_exc,
         )
 
-    logger.info("[OK] IaC 预检通过，已原位升维并生成 %s", output_dir / "docker-compose.yml")
-    logger.info("[OK] 已生成 %s (权限 600)", env_path)
-    logger.info("[OK] 已生成内部加密矩阵 %s", users_acl_path)
+    logger.info("[OK] IaC 妫板嫭顥呴柅姘崇箖閿涘苯鍑￠崢鐔剁秴閸楀洨娣獮鍓佹晸閹?%s", output_dir / "docker-compose.yml")
+    logger.info("[OK] 瀹歌尙鏁撻幋?%s (閺夊啴妾?600)", env_path)
+    logger.info("[OK] 瀹歌尙鏁撻幋鎰敶闁劌濮炵€靛棛鐓╅梼?%s", users_acl_path)
     if caddy_out:
-        logger.info("[OK] 已生成 %s", config_dir / "Caddyfile")
+        logger.info("[OK] 瀹歌尙鏁撻幋?%s", config_dir / "Caddyfile")
 
-    # 5. render-manifest.json — 溴源记录
+    # 5. render-manifest.json 閳?濠у瓨绨拋鏉跨秿
     manifest = build_render_manifest(
         rendered_at=str(env_vars.get("now", "")),
         source=str(args.config),
@@ -623,7 +609,7 @@ def main() -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    logger.info("[OK] 已生成溴源记录 %s", manifest_path)
+    logger.info("[OK] 瀹歌尙鏁撻幋鎰崓濠ф劘顔囪ぐ?%s", manifest_path)
 
 
 def _dry_run_diff(
@@ -633,10 +619,10 @@ def _dry_run_diff(
     tmp_dc: Path,
     tmp_env: Path,
 ) -> None:
-    """dry-run 模式：输出变更 diff，密码脱敏，不写入文件。"""
+    """Emit a redacted dry-run diff without writing files."""
     _sensitive = ("PASSWORD", "SECRET", "TOKEN", "DSN")
     logger.info("=" * 60)
-    logger.info("[DRY-RUN] 以下为变更预览，未写入任何文件")
+    logger.info("[DRY-RUN] Previewing changes without writing files")
     logger.info("=" * 60)
 
     # docker-compose diff
@@ -651,11 +637,11 @@ def _dry_run_diff(
         ):
             logger.info("%s", line.rstrip())
 
-    # .env diff (密码脱敏)
+    # .env diff (鐎靛棛鐖滈懘杈ㄦ櫛)
     old_env_path = output_dir / ".env"
     if old_env_path.exists():
         old_env = old_env_path.read_text(encoding="utf-8")
-        logger.info("--- .env diff (敏感字段已脱敏) ---")
+        logger.info("--- .env diff (閺佸繑鍔呯€涙顔屽鑼跺姎閺? ---")
         for line in difflib.unified_diff(
             old_env.splitlines(keepends=True),
             env_out.splitlines(keepends=True),
@@ -670,12 +656,12 @@ def _dry_run_diff(
 
     tmp_dc.unlink(missing_ok=True)
     tmp_env.unlink(missing_ok=True)
-    logger.info("[DRY-RUN] 完成。未写入任何文件。")
+    logger.info("[DRY-RUN] Complete. No files were written")
 
 
 def _dry_run_caddy_diff(caddy_path: Path, caddy_out: str) -> None:
     logger.info("=" * 60)
-    logger.info("[DRY-RUN] 以下为 Caddyfile 变更预览，未写入任何文件")
+    logger.info("[DRY-RUN] 娴犮儰绗呮稉?Caddyfile 閸欐ɑ娲挎０鍕潔閿涘本婀崘娆忓弳娴犺缍嶉弬鍥︽")
     old_lines = caddy_path.read_text(encoding="utf-8").splitlines() if caddy_path.exists() else []
     new_lines = caddy_out.splitlines()
     diff = difflib.unified_diff(
@@ -687,7 +673,7 @@ def _dry_run_caddy_diff(caddy_path: Path, caddy_out: str) -> None:
     )
     for line in diff:
         logger.info("%s", line)
-    logger.info("[DRY-RUN] Caddyfile 预览完成。")
+    logger.info("[DRY-RUN] Caddyfile preview complete")
 
 
 if __name__ == "__main__":

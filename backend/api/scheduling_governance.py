@@ -18,8 +18,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_tenant_db
-from backend.core.executor_registry import get_executor_registry
-from backend.core.placement_policy import get_placement_policy
+from backend.kernel.topology.executor_registry import get_executor_registry
+from backend.kernel.scheduling.placement_policy import get_placement_policy
 from backend.core.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
     SCHED_FLAG_EXECUTOR_VALIDATION,

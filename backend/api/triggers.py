@@ -13,18 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.deps import _bind_tenant_db, get_current_admin, get_db, get_redis, get_tenant_db
-from backend.core.compatibility_adapter import canonicalize_status, normalize_persisted_status
+from backend.kernel.contracts.status import canonicalize_status, normalize_persisted_status
 from backend.core.errors import zen
 from backend.core.redis_client import CHANNEL_TRIGGER_EVENTS, RedisClient
-from backend.core.trigger_command_service import TriggerCommandService
-from backend.core.trigger_kind_registry import (
+from backend.kernel.extensions.trigger_command_service import TriggerCommandService
+from backend.kernel.extensions.trigger_kind_registry import (
     ManualTriggerConfig,
     WebhookTriggerConfig,
     get_trigger_kind_info,
     list_trigger_kinds,
     validate_trigger_config,
 )
-from backend.core.trigger_service import fire_trigger, validate_trigger_target_contract
+from backend.kernel.extensions.trigger_service import fire_trigger, validate_trigger_target_contract
 from backend.core.webhooks import verify_timestamped_hmac_sha256
 from backend.models.trigger import Trigger, TriggerDelivery
 

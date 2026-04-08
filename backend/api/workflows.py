@@ -1,4 +1,4 @@
-﻿"""Workflow API endpoints."""
+"""Workflow API endpoints."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_machine_tenant_db, get_node_machine_token, get_tenant_db
-from backend.core.compatibility_adapter import canonicalize_status, normalize_persisted_status
+from backend.kernel.contracts.status import canonicalize_status, normalize_persisted_status
 from backend.core.errors import zen
-from backend.core.job_kind_registry import validate_job_payload
-from backend.core.node_auth import authenticate_node_request
-from backend.core.workflow_engine import create_workflow, on_step_job_completed, on_step_job_failed
+from backend.kernel.extensions.job_kind_registry import validate_job_payload
+from backend.kernel.topology.node_auth import authenticate_node_request
+from backend.kernel.extensions.workflow_engine import create_workflow, on_step_job_completed, on_step_job_failed
 from backend.models.job import Job
 from backend.models.workflow import Workflow, WorkflowStep
 
