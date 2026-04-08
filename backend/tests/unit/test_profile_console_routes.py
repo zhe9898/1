@@ -55,6 +55,16 @@ def test_profile_endpoint_reports_public_profile(monkeypatch) -> None:
         pack_map = {item["pack_key"]: item for item in data["packs"]}
         assert pack_map["health-pack"]["delivery_stage"] == "runtime-present"
         assert pack_map["vector-pack"]["delivery_stage"] == "runtime-present"
+        assert pack_map["iot-pack"]["selector"] == {
+            "required_capabilities": ["iot.adapter"],
+            "target_zone": "home",
+            "target_executors": [],
+        }
+        assert pack_map["health-pack"]["selector"] == {
+            "required_capabilities": ["health.ingest"],
+            "target_zone": "mobile",
+            "target_executors": ["swift-native", "kotlin-native"],
+        }
         assert data["cluster_enabled"] is False
     finally:
         app.dependency_overrides = previous_overrides
@@ -83,6 +93,7 @@ def test_profile_endpoint_reports_selected_pack_contracts(monkeypatch) -> None:
         assert pack_map["iot-pack"]["router_names"] == ["iot", "scenes", "scheduler"]
         assert pack_map["iot-pack"]["services"] == ["mosquitto"]
         assert pack_map["health-pack"]["services"] == []
+        assert pack_map["health-pack"]["selector"]["target_executors"] == ["swift-native", "kotlin-native"]
         assert "iot" in data["router_names"]
         assert "scheduler" in data["router_names"]
     finally:

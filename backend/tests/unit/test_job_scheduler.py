@@ -380,7 +380,7 @@ def test_scheduler_can_fallback_when_plan_points_elsewhere() -> None:
 
 
 def test_build_time_budgeted_placement_plan_skips_oversized_windows(monkeypatch) -> None:
-    from backend.core.scheduling_policy_types import SolverConfig
+    from backend.kernel.policy.types import SolverConfig
 
     now = _utcnow()
     node = build_node_snapshot(_node(node_id="node-a"), active_lease_count=0, reliability_score=1.0)

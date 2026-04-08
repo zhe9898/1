@@ -15,7 +15,7 @@ from datetime import datetime
 from threading import RLock
 from typing import Final, Sequence, TypedDict
 
-from backend.core.scheduling_policy_types import QueueConfig
+from backend.kernel.policy.types import QueueConfig
 
 # ============================================================================
 # Priority Layer Definitions 鈥?resolved from policy store

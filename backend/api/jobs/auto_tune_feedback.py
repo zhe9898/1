@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.scheduler_auto_tune_audit import write_auto_tune_audit_log
+from backend.kernel.scheduling.scheduler_auto_tune_audit import write_auto_tune_audit_log
 from backend.models.scheduling_decision import SchedulingDecision
 
 logger = logging.getLogger(__name__)
@@ -69,8 +69,8 @@ async def record_job_outcome_for_tuner(
 ) -> None:
     """Record job execution feedback into the scheduler tuner and audit flow."""
 
-    from backend.core.governance_facade import get_governance_facade
-    from backend.core.scheduler_auto_tune import OutcomeSignal, get_scheduler_tuner
+    from backend.kernel.scheduling.governance_facade import get_governance_facade
+    from backend.kernel.scheduling.scheduler_auto_tune import OutcomeSignal, get_scheduler_tuner
 
     started = getattr(job, "started_at", None)
     latency_ms = (now - started).total_seconds() * 1000.0 if started else 0.0

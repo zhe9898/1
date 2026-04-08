@@ -1,9 +1,9 @@
-"""
-ZEN70 Nodes API 鈥?Route handlers only.
+﻿"""
+ZEN70 Nodes API 閳?Route handlers only.
 
 Models live in nodes_models.py; helpers live in nodes_helpers.py.
 This module wires them together behind FastAPI route definitions and
-re-exports all public names so existing ``from backend.api.nodes import 鈥`
+re-exports all public names so existing ``from backend.api.nodes import 閳ヮ泦`
 statements keep working.
 """
 
@@ -28,7 +28,7 @@ from backend.api.deps import (
     get_redis,
     get_tenant_db,
 )
-from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consumers
+from backend.api.nodes_helpers import (  # noqa: F401 閳?re-exported for consumers
     _apply_contract,
     _build_node_actions,
     _get_active_lease_counts,
@@ -38,8 +38,8 @@ from backend.api.nodes_helpers import (  # noqa: F401 鈥?re-exported for consum
     _to_response,
 )
 
-# 鈹€鈹€ Re-exports (backward-compat) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-from backend.api.nodes_models import (  # noqa: F401 – re-exported for consumers
+# 閳光偓閳光偓 Re-exports (backward-compat) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
+from backend.api.nodes_models import (  # noqa: F401 鈥?re-exported for consumers
     BootstrapReceipt,
     NodeContractPayload,
     NodeDrainRequest,
@@ -51,7 +51,7 @@ from backend.api.nodes_models import (  # noqa: F401 – re-exported for consume
     NodeSelfDrainRequest,
     _utcnow,
 )
-from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consumers
+from backend.api.nodes_schema import (  # noqa: F401 閳?re-exported for consumers
     _bootstrap_notes,
     _bootstrap_token_value,
     _build_bootstrap_commands,
@@ -60,12 +60,12 @@ from backend.api.nodes_schema import (  # noqa: F401 鈥?re-exported for consume
 )
 from backend.api.ui_contracts import ResourceSchemaResponse
 from backend.kernel.contracts.status import canonicalize_status
-from backend.core.db_locks import acquire_transaction_advisory_locks
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.kernel.topology.node_auth import authenticate_node_request
 from backend.kernel.topology.node_enrollment_service import NodeEnrollmentService
-from backend.core.quota import check_node_quota
-from backend.core.redis_client import CHANNEL_NODE_EVENTS, RedisClient
+from backend.kernel.scheduling.quota_service import check_node_quota
+from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
+from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.models.node import Node
 
 router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
@@ -265,7 +265,7 @@ async def register_node(
     )
     now = _utcnow()
 
-    # 鈹€鈹€ Executor contract validation (non-blocking) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # 閳光偓閳光偓 Executor contract validation (non-blocking) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
     from backend.kernel.topology.executor_registry import get_executor_registry
 
     _exec_warnings = get_executor_registry().validate_node_executor(
@@ -427,3 +427,4 @@ async def get_node(
     now = _utcnow()
     counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id], now=now)
     return _to_response(node, active_lease_count=counts.get(node.node_id, 0), now=now)
+

@@ -16,6 +16,24 @@ from backend.api.deps import get_tenant_db
 from backend.api.models.auth import AiRoutePreferenceRequest, WebAuthnLoginCompleteRequest, WebAuthnRegisterBeginRequest, WebAuthnRegisterCompleteRequest
 
 
+def _mock_redis(*, token_payload: dict[str, object] | None = None) -> SimpleNamespace:
+    encoded_payload = json.dumps(token_payload or {"user_id": 9})
+    return SimpleNamespace(
+        kv=SimpleNamespace(
+            get=AsyncMock(return_value=encoded_payload),
+            delete=AsyncMock(return_value=1),
+        ),
+        locks=SimpleNamespace(
+            acquire=AsyncMock(return_value=True),
+            release=AsyncMock(return_value=True),
+        ),
+        auth_challenges=SimpleNamespace(
+            store=AsyncMock(return_value=True),
+            consume=AsyncMock(return_value=None),
+        ),
+    )
+
+
 def _mock_request(client_ip: str = "127.0.0.1", *, flow_session_id: str = "flow-session-1") -> MagicMock:
     request = MagicMock()
     request.state.request_id = "rid-auth-guards"
@@ -53,7 +71,7 @@ async def test_webauthn_register_begin_requires_self_registration() -> None:
     request = _mock_request()
     response = MagicMock()
     db = AsyncMock()
-    redis = AsyncMock()
+    redis = _mock_redis()
 
     with patch("backend.api.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()):
         with pytest.raises(HTTPException) as exc:
@@ -82,7 +100,7 @@ async def test_webauthn_register_complete_rejects_challenge_for_other_user() -> 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_scalar_result(user))
     db.add = MagicMock()
-    redis = AsyncMock()
+    redis = _mock_redis()
 
     with (
         patch("backend.api.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
@@ -117,7 +135,7 @@ async def test_webauthn_register_complete_persists_transports_without_explicit_c
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_scalar_result(user))
     db.add = MagicMock()
-    redis = AsyncMock()
+    redis = _mock_redis()
 
     verification = SimpleNamespace(credential_id=b"cred-1", credential_public_key=b"pk", sign_count=1)
     with (
@@ -171,7 +189,7 @@ async def test_webauthn_login_complete_rejects_disabled_user() -> None:
 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_scalar_result(user))
-    redis = AsyncMock()
+    redis = _mock_redis()
 
     req = WebAuthnLoginCompleteRequest(
         tenant_id="tenant-a",
@@ -191,13 +209,13 @@ async def test_invite_fallback_login_requires_explicit_confirmation() -> None:
     request = _mock_request()
     response = MagicMock()
     db = AsyncMock()
-    redis = AsyncMock()
+    redis = _mock_redis()
 
     with pytest.raises(HTTPException) as exc:
         await invite_fallback_login("invite-token", request, response, confirm=None, db=db, redis=redis)
 
     assert exc.value.status_code == 400
-    redis.get.assert_not_awaited()
+    redis.kv.get.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -213,9 +231,7 @@ async def test_invite_fallback_login_rejects_disabled_user() -> None:
 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_scalar_result(user))
-    redis = AsyncMock()
-    redis.get = AsyncMock(return_value=json.dumps({"user_id": 9}))
-    redis.delete = AsyncMock()
+    redis = _mock_redis(token_payload={"user_id": 9})
 
     with pytest.raises(HTTPException) as exc:
         await invite_fallback_login(
@@ -243,10 +259,7 @@ async def test_invite_webauthn_begin_reuses_cached_challenge_for_same_flow_sessi
 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_scalar_result(user))
-    redis = AsyncMock()
-    redis.get = AsyncMock(return_value=json.dumps({"user_id": 9}))
-    redis.set_auth_challenge = AsyncMock(return_value=True)
-    redis.delete = AsyncMock(return_value=1)
+    redis = _mock_redis(token_payload={"user_id": 9})
 
     with (
         patch("backend.api.auth_invite.check_webauthn_rate_limit", new=AsyncMock()),
@@ -271,7 +284,7 @@ async def test_invite_webauthn_begin_reuses_cached_challenge_for_same_flow_sessi
         )
 
     assert first.options == second.options
-    redis.set_auth_challenge.assert_awaited()
+    redis.auth_challenges.store.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -294,7 +307,7 @@ async def test_webauthn_login_complete_rejects_sign_count_regression() -> None:
 
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=[_scalar_result(user), _scalar_result(credential)])
-    redis = AsyncMock()
+    redis = _mock_redis()
 
     req = WebAuthnLoginCompleteRequest(
         tenant_id="tenant-a",
@@ -360,8 +373,8 @@ async def test_webauthn_login_complete_warns_when_authenticator_has_no_counter()
         patch("backend.api.auth.origin_from_request", return_value="https://example.com"),
         patch("backend.api.auth_webauthn.issue_auth_token", return_value=token_response),
         patch("backend.api.auth_webauthn.register_login_session", new=AsyncMock()),
-        patch("backend.core.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
-        patch("backend.core.permissions.hydrate_scopes_for_role", return_value=[]),
+        patch("backend.control_plane.auth.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
+        patch("backend.control_plane.auth.permissions.hydrate_scopes_for_role", return_value=[]),
         patch("backend.api.auth_webauthn.logger.warning") as warning_mock,
     ):
         result = await login_complete(req, request, response, db=db, redis=redis)
@@ -386,8 +399,7 @@ async def test_invite_register_complete_rejects_cross_session_replay() -> None:
 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_scalar_result(user))
-    redis = AsyncMock()
-    redis.get = AsyncMock(return_value=json.dumps({"user_id": 9}))
+    redis = _mock_redis(token_payload={"user_id": 9})
 
     with (
         patch(
@@ -429,8 +441,8 @@ async def test_update_ai_preference_commits_before_issuing_new_token() -> None:
     db.execute = AsyncMock(return_value=_scalar_result(user))
 
     with (
-        patch("backend.core.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
-        patch("backend.core.permissions.hydrate_scopes_for_role", return_value=[]),
+        patch("backend.control_plane.auth.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
+        patch("backend.control_plane.auth.permissions.hydrate_scopes_for_role", return_value=[]),
     ):
         result = await update_ai_preference(
             AiRoutePreferenceRequest(preference="cloud"),

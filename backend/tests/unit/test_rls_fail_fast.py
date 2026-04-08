@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import backend.core.rls as rls_mod
-from backend.core.rls import apply_rls_policies, assert_rls_ready, validate_rls_runtime_mode
+import backend.platform.db.rls as rls_mod
+from backend.platform.db.rls import apply_rls_policies, assert_rls_ready, validate_rls_runtime_mode
 
 
 @pytest.mark.asyncio

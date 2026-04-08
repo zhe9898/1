@@ -1,21 +1,21 @@
-"""Async gRPC client for the standalone Go PlacementSolver service.
+﻿"""Async gRPC client for the standalone Go PlacementSolver service.
 
 Architecture
 ------------
 The Python ``PlacementSolver`` is correct and feature-complete but runs
 synchronously in CPython, which blocks the FastAPI asyncio event loop for
-hundreds of milliseconds at 1 000-node × 10 000-job scale — unacceptable in
+hundreds of milliseconds at 1 000-node 脳 10 000-job scale 鈥?unacceptable in
 an async gateway that must also service device heartbeats and SSE streams.
 
 This module provides two escape hatches, applied in order:
 
-1. **gRPC fast path** — delegates to the Go ``placement-solver`` sidecar over
+1. **gRPC fast path** 鈥?delegates to the Go ``placement-solver`` sidecar over
    a local gRPC channel.  The Go implementation runs the same routing-key
    partition algorithm entirely outside CPython, achieving <10 ms p99 even for
    10 000 heterogeneous jobs across 1 000 nodes.  The channel is lazy-opened
    and kept alive across dispatch cycles.
 
-2. **Thread-pool fallback** — if the gRPC sidecar is unavailable (not deployed,
+2. **Thread-pool fallback** 鈥?if the gRPC sidecar is unavailable (not deployed,
    starting up, or circuit-broken), the Python solver runs in
    ``asyncio.get_event_loop().run_in_executor(None, ...)`` so the event loop
    is never blocked.
@@ -104,7 +104,7 @@ def _get_grpc_stub() -> object | None:
     try:
         import grpc
 
-        from backend.core.gen_grpc import placement_pb2_grpc
+        from backend.kernel.scheduling.gen_grpc import placement_pb2_grpc
 
         placement_pb2_grpc_any = cast(Any, placement_pb2_grpc)
 
@@ -146,13 +146,13 @@ def _record_grpc_success() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Job / node → proto conversion helpers
+# Job / node 鈫?proto conversion helpers
 # ---------------------------------------------------------------------------
 
 
 def _job_to_proto(job: Job) -> object:
     """Convert a Job ORM/mock object to a placement_pb2.JobSpec."""
-    from backend.core.gen_grpc import placement_pb2
+    from backend.kernel.scheduling.gen_grpc import placement_pb2
 
     placement_pb2_any = cast(Any, placement_pb2)
 
@@ -195,7 +195,7 @@ def _job_to_proto(job: Job) -> object:
 
 def _node_to_proto(node: SchedulerNodeSnapshot) -> object:
     """Convert a SchedulerNodeSnapshot to a placement_pb2.NodeSpec."""
-    from backend.core.gen_grpc import placement_pb2
+    from backend.kernel.scheduling.gen_grpc import placement_pb2
 
     placement_pb2_any = cast(Any, placement_pb2)
 
@@ -238,7 +238,7 @@ def _grpc_solve_sync(
     accepted_kinds: set[str],
     budget_ms: int,
 ) -> dict[str, str] | None:
-    """Synchronous gRPC call — intended to be run in a thread pool.
+    """Synchronous gRPC call 鈥?intended to be run in a thread pool.
 
     Returns None on any failure (caller should fall through to Python solver).
     """
@@ -247,7 +247,7 @@ def _grpc_solve_sync(
         return None
 
     try:
-        from backend.core.gen_grpc import placement_pb2
+        from backend.kernel.scheduling.gen_grpc import placement_pb2
 
         placement_pb2_any = cast(Any, placement_pb2)
 
@@ -305,7 +305,7 @@ async def async_solve(
         remaining = (deadline_monotonic - time.monotonic()) * 1000
         budget_ms = max(int(remaining), 0)
 
-    # ── Try gRPC fast path ────────────────────────────────────────────────
+    # 鈹€鈹€ Try gRPC fast path 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     if _grpc_available():
         grpc_result = await loop.run_in_executor(
             executor,
@@ -321,7 +321,7 @@ async def async_solve(
                 metrics["assignments"] = len(grpc_result)
             return grpc_result
 
-    # ── Thread-pool Python fallback ───────────────────────────────────────
+    # 鈹€鈹€ Thread-pool Python fallback 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     from backend.kernel.scheduling.placement_solver import get_placement_solver
 
     solver = get_placement_solver()
@@ -423,3 +423,4 @@ async def async_build_time_budgeted_placement_plan(
         decision_context["assignments"] = len(plan)
         decision_context["reason"] = str(decision_context.get("result", "planned" if plan else "no_assignments"))
     return plan
+

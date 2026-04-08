@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_tenant_db
-from backend.core.errors import zen
-from backend.core.security_policy import normalize_webpush_endpoint
+from backend.kernel.contracts.errors import zen
+from backend.platform.security.normalization import normalize_webpush_endpoint
 from backend.models.user import PushSubscription
 
 router = APIRouter()

@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_current_user, get_redis, get_tenant_db
-from backend.core.errors import zen
-from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
+from backend.kernel.contracts.errors import zen
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 from backend.models.job import Job
 
 from .database import _append_log, _get_job_by_id_for_update
@@ -145,7 +145,7 @@ async def get_job_stats_by_type(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> JobTypeStatsResponse:
     """Get job statistics grouped by type (scheduled vs background)."""
-    from backend.core.job_type_separation import (
+    from backend.kernel.execution.job_type_separation import (
         SCHEDULED_JOB_SOURCES,
         get_job_type_stats,
         get_max_concurrent_limit,

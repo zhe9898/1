@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
 import sys
 
 import backend.middleware  # noqa: F401
-from backend.core.structured_logging import JsonFormatter, get_logger
+from backend.platform.logging.structured import JsonFormatter, get_logger
 
 
 class TestJsonFormatter:
@@ -113,12 +113,12 @@ class TestJsonFormatter:
             level=logging.INFO,
             pathname="t.py",
             lineno=1,
-            msg="磁盘已满",
+            msg="纾佺洏宸叉弧",
             args=(),
             exc_info=None,
         )
         output = fmt.format(record)
-        assert "磁盘已满" in output
+        assert "纾佺洏宸叉弧" in output
         assert "\\u" not in output
 
     def test_sensitive_fields_are_redacted(self) -> None:

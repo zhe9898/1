@@ -15,8 +15,8 @@ async def test_lifespan_never_starts_inprocess_control_workers(monkeypatch: pyte
         patch("backend.api.main.connect_redis_with_retry", new=AsyncMock(return_value=None)),
         patch("backend.api.main.signal.signal", return_value=MagicMock()),
         patch("backend.db._async_session_factory", None),
-        patch("backend.core.jwt.assert_jwt_runtime_ready"),
-        patch("backend.core.rls.validate_rls_runtime_mode"),
+        patch("backend.control_plane.auth.jwt.assert_jwt_runtime_ready"),
+        patch("backend.platform.db.rls.validate_rls_runtime_mode"),
         patch("backend.capabilities.clear_lru_cache"),
     ):
         async with lifespan(app):
@@ -35,9 +35,9 @@ async def test_lifespan_keeps_ingress_process_limited_to_redis_and_cache_cleanup
         patch("backend.api.main.connect_redis_with_retry", new=AsyncMock(return_value=redis_client)),
         patch("backend.api.main.signal.signal", return_value=MagicMock()),
         patch("backend.db._async_session_factory", session_factory),
-        patch("backend.core.jwt.assert_jwt_runtime_ready"),
-        patch("backend.core.rls.validate_rls_runtime_mode"),
-        patch("backend.core.rls.assert_rls_ready", new=AsyncMock()),
+        patch("backend.control_plane.auth.jwt.assert_jwt_runtime_ready"),
+        patch("backend.platform.db.rls.validate_rls_runtime_mode"),
+        patch("backend.platform.db.rls.assert_rls_ready", new=AsyncMock()),
         patch("backend.capabilities.clear_lru_cache") as clear_cache,
     ):
         async with lifespan(app):
@@ -51,7 +51,7 @@ async def test_lifespan_keeps_ingress_process_limited_to_redis_and_cache_cleanup
 @pytest.mark.asyncio
 async def test_lifespan_fails_fast_when_jwt_runtime_is_not_ready() -> None:
     with (
-        patch("backend.core.jwt.assert_jwt_runtime_ready", side_effect=RuntimeError("jwt not ready")),
+        patch("backend.control_plane.auth.jwt.assert_jwt_runtime_ready", side_effect=RuntimeError("jwt not ready")),
         patch("backend.api.main.signal.signal", return_value=MagicMock()),
         patch("backend.db._async_session_factory", None),
     ):

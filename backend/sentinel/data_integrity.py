@@ -1,9 +1,8 @@
-"""
-ZEN70 静默数据腐败巡检守护 (Bit-Rot Detection)
-法典准则 §3.2.3:
-通过低优先级后台任务，对底层冷数据块进行 SHA-256 哈希比对。
-若发现物理扇区数据反转，即刻通过告警通道推送预警以实施数据隔离。
-由于本模块低频、低并发且与核心业务隔离，明确允许使用独立 SQLite。
+"""Bit-rot detection for cold data directories.
+
+This sentinel keeps a local SQLite baseline of file hashes and raises
+critical alerts when a file changes without a size change, which is a
+practical proxy for silent corruption on cold storage.
 """
 
 from __future__ import annotations
@@ -15,21 +14,21 @@ import sqlite3
 import time
 from pathlib import Path
 
-from backend.core.webhooks import post_public_webhook
+from backend.platform.http.webhooks import post_public_webhook
 
 try:
     import psutil
-except ImportError:  # pragma: no cover - 运行时环境差异，单测不稳定复现
+except ImportError:  # pragma: no cover - optional runtime dependency
     psutil = None
 
 logger = logging.getLogger("zen70.sentinel.bit_rot")
 
-# 独立于 Postgres，规避高并发锁问题的专属本地哈希基线库
 DB_PATH = Path(__file__).parent / "bit_rot_baseline.db"
 DEFAULT_CPU_LOAD_THRESHOLD_PERCENT = 50.0
 DEFAULT_ALERT_TIMEOUT_SECONDS = 5.0
 DEFAULT_SQLITE_CONNECT_TIMEOUT_SECONDS = 5.0
 DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 5000.0
+
 ENV_CPU_LOAD_THRESHOLD_PERCENT = "BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT"
 ENV_ALERT_TIMEOUT_SECONDS = "BIT_ROT_ALERT_TIMEOUT_SECONDS"
 ENV_SQLITE_CONNECT_TIMEOUT_SECONDS = "BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS"
@@ -37,23 +36,21 @@ ENV_SQLITE_BUSY_TIMEOUT_MS = "BIT_ROT_SQLITE_BUSY_TIMEOUT_MS"
 
 
 def _read_positive_float_env(env_name: str, default: float) -> float:
-    """读取浮点环境变量，非法值回退默认值，避免异常中断巡检主链路。"""
     raw_value = os.getenv(env_name, "").strip()
     if not raw_value:
         return default
     try:
-        parsed_value = float(raw_value)
+        parsed = float(raw_value)
     except ValueError:
-        logger.warning("环境变量 %s 非法，回退默认值 %s", env_name, default)
+        logger.warning("invalid_env_value: %s=%r fallback=%s", env_name, raw_value, default)
         return default
-    if parsed_value <= 0:
-        logger.warning("环境变量 %s 必须大于 0，回退默认值 %s", env_name, default)
+    if parsed <= 0:
+        logger.warning("non_positive_env_value: %s=%r fallback=%s", env_name, raw_value, default)
         return default
-    return parsed_value
+    return parsed
 
 
 def _connect_baseline_db() -> sqlite3.Connection:
-    """创建带超时与 busy_timeout 的连接，降低文件锁竞争导致的失败概率。"""
     connect_timeout_seconds = _read_positive_float_env(
         ENV_SQLITE_CONNECT_TIMEOUT_SECONDS,
         DEFAULT_SQLITE_CONNECT_TIMEOUT_SECONDS,
@@ -70,56 +67,71 @@ def _connect_baseline_db() -> sqlite3.Connection:
 
 
 def init_baseline_db() -> None:
-    conn = _connect_baseline_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS file_hashes (
-            filepath TEXT PRIMARY KEY,
-            sha256 TEXT NOT NULL,
-            last_checked REAL NOT NULL,
-            size INTEGER NOT NULL
+    with _connect_baseline_db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS file_hashes (
+                filepath TEXT PRIMARY KEY,
+                sha256 TEXT NOT NULL,
+                last_checked REAL NOT NULL,
+                size INTEGER NOT NULL
+            )
+            """
         )
-    """)
-    conn.commit()
-    conn.close()
+        conn.commit()
 
 
 def compute_sha256(filepath: str, blocksize: int = 65536) -> str | None:
-    """大文件防 OOM 流式哈希计算"""
     hasher = hashlib.sha256()
     try:
-        with Path(filepath).open("rb") as afile:
-            buf = afile.read(blocksize)
-            while len(buf) > 0:
-                hasher.update(buf)
-                buf = afile.read(blocksize)
-        return hasher.hexdigest()
-    except OSError as e:
-        logger.error("无法读取文件计算哈希: %s - %s", filepath, e)
+        with Path(filepath).open("rb") as handle:
+            while True:
+                block = handle.read(blocksize)
+                if not block:
+                    break
+                hasher.update(block)
+    except OSError as exc:
+        logger.error("hash_read_failed: file=%s error=%s", filepath, exc)
         return None
+    return hasher.hexdigest()
 
 
 def check_system_load_safe() -> bool:
-    """
-    法典要求：仅在核心 CPU 负载低于 10% 时才执行（模拟设定）
-    为了开发测试，这里调高阈值为 50%
-    """
     cpu_threshold = _read_positive_float_env(
         ENV_CPU_LOAD_THRESHOLD_PERCENT,
         DEFAULT_CPU_LOAD_THRESHOLD_PERCENT,
     )
     if psutil is None:
-        logger.warning("psutil 不可用，跳过 CPU 负载门禁检查。")
+        logger.warning("psutil_unavailable_skip_load_gate")
         return True
     cpu_usage = psutil.cpu_percent(interval=1)
     if cpu_usage > cpu_threshold:
-        logger.info("系统当前负载较高 (%s%%)，挂起 Bit-Rot 巡检任务。", cpu_usage)
+        logger.info("bit_rot_scan_skipped_due_to_cpu_load: usage=%s threshold=%s", cpu_usage, cpu_threshold)
         return False
     return True
 
 
+def _record_new_file(filepath: Path, cursor: sqlite3.Cursor, current_size: int) -> None:
+    file_hash = compute_sha256(str(filepath))
+    if not file_hash:
+        return
+    cursor.execute(
+        "INSERT INTO file_hashes (filepath, sha256, last_checked, size) VALUES (?, ?, ?, ?)",
+        (str(filepath), file_hash, time.time(), current_size),
+    )
+
+
+def _refresh_file_baseline(filepath: Path, cursor: sqlite3.Cursor, current_size: int) -> None:
+    file_hash = compute_sha256(str(filepath))
+    if not file_hash:
+        return
+    cursor.execute(
+        "UPDATE file_hashes SET sha256 = ?, size = ?, last_checked = ? WHERE filepath = ?",
+        (file_hash, current_size, time.time(), str(filepath)),
+    )
+
+
 def _verify_single_file(filepath: Path, cursor: sqlite3.Cursor, corrupted_files: list[Path]) -> None:
-    """对单个文件执行哈希检查逻辑"""
     if not filepath.is_file() or filepath.is_symlink() or filepath.name.startswith("."):
         return
 
@@ -133,33 +145,23 @@ def _verify_single_file(filepath: Path, cursor: sqlite3.Cursor, corrupted_files:
         (str(filepath),),
     )
     row = cursor.fetchone()
+    if row is None:
+        logger.info("bit_rot_baseline_created: file=%s", filepath)
+        _record_new_file(filepath, cursor, current_size)
+        return
 
-    if not row:
-        logger.info("➕ 首次发现文件，录入基线: %s", filepath)
-        file_hash = compute_sha256(str(filepath))
-        if file_hash:
-            cursor.execute(
-                "INSERT INTO file_hashes (filepath, sha256, last_checked, size) VALUES (?, ?, ?, ?)",
-                (str(filepath), file_hash, time.time(), current_size),
-            )
-    else:
-        baseline_hash, baseline_size = row
-        if current_size == baseline_size:
-            current_hash = compute_sha256(str(filepath))
-            if current_hash and current_hash != baseline_hash:
-                logger.critical("☢️ [极高危] 静默数据腐败检测触发! 位翻转发生: %s", filepath)
-                corrupted_files.append(filepath)
-        else:
-            new_hash = compute_sha256(str(filepath))
-            if new_hash:
-                cursor.execute(
-                    "UPDATE file_hashes SET sha256 = ?, size = ?, last_checked = ? WHERE filepath = ?",
-                    (new_hash, current_size, time.time(), str(filepath)),
-                )
+    baseline_hash, baseline_size = row
+    if current_size != baseline_size:
+        _refresh_file_baseline(filepath, cursor, current_size)
+        return
+
+    current_hash = compute_sha256(str(filepath))
+    if current_hash and current_hash != baseline_hash:
+        logger.critical("bit_rot_corruption_detected: file=%s", filepath)
+        corrupted_files.append(filepath)
 
 
 def _scan_directory_against_baseline(target: Path) -> list[Path]:
-    """扫描目录并完成本地基线比对，返回检测出的腐败文件列表。"""
     corrupted_files: list[Path] = []
     with _connect_baseline_db() as conn:
         cursor = conn.cursor()
@@ -170,60 +172,51 @@ def _scan_directory_against_baseline(target: Path) -> list[Path]:
 
 
 def _send_corruption_alert(corrupted_files: list[Path]) -> None:
-    """Send corruption alerts only to validated public webhook destinations."""
     alert_webhook = os.getenv("ALERT_WEBHOOK_URL", "").strip()
     if not alert_webhook:
         return
 
-    alert_timeout_seconds = _read_positive_float_env(
+    timeout_seconds = _read_positive_float_env(
         ENV_ALERT_TIMEOUT_SECONDS,
         DEFAULT_ALERT_TIMEOUT_SECONDS,
     )
-    file_list = "\n".join(str(f) for f in corrupted_files[:10])
+    file_list = "\n".join(str(path) for path in corrupted_files[:10])
     payload = {
         "level": "critical",
         "title": "Bit-rot corruption detected",
-        "message": f"Detected {len(corrupted_files)} corrupted file(s)\n{file_list}",
+        "message": f"Detected {len(corrupted_files)} corrupted file(s) / 腐败文件\n{file_list}",
         "source": "data_integrity",
     }
     post_public_webhook(
         alert_webhook,
         payload,
-        timeout=alert_timeout_seconds,
+        timeout=timeout_seconds,
         logger=logger,
         context="data_integrity",
     )
 
 
 def scan_and_verify_directory(target_dir: str) -> None:
-    """递归遍历目标目录，进行状态比对与基线更新"""
     if not check_system_load_safe():
         return
 
     target = Path(target_dir)
     if not target.exists() or not target.is_dir():
-        logger.error("巡检目录不存在或不是目录: %s", target)
+        logger.error("bit_rot_invalid_directory: path=%s", target)
         return
 
     corrupted_files = _scan_directory_against_baseline(target)
+    if not corrupted_files:
+        return
 
-    if corrupted_files:
-        logger.critical(
-            "本次巡检发现 %s 个静默腐败文件！需要立即从高可用端或 S3 降级恢复。",
-            len(corrupted_files),
-        )
-        # 法典：触发 AlertManager API 下发紧急通知
-        _send_corruption_alert(corrupted_files)
+    logger.critical("bit_rot_scan_detected_corruption: count=%s", len(corrupted_files))
+    _send_corruption_alert(corrupted_files)
 
 
 if __name__ == "__main__":
-    import logging
-
     logging.basicConfig(level=logging.INFO)
-    logger.info("启动 ZEN70 静默腐败探针...")
+    logger.info("starting_bit_rot_probe")
     init_baseline_db()
-
-    # 开发态下，模拟检查当前应用根目录的某个 data 文件夹
-    test_dir = Path(__file__).parent.parent / "tests"
-    if test_dir.exists():
-        scan_and_verify_directory(str(test_dir))
+    sample_dir = Path(__file__).parent.parent / "tests"
+    if sample_dir.exists():
+        scan_and_verify_directory(str(sample_dir))

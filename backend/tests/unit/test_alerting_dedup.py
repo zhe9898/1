@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.core.alerting import _fire_alert
+from backend.kernel.extensions.alerting import _fire_alert
 
 
 @pytest.mark.asyncio
@@ -63,3 +63,4 @@ async def test_fire_alert_creates_record_when_no_recent_duplicate() -> None:
     assert alert is not None
     db.add.assert_called_once()
     db.flush.assert_awaited()
+

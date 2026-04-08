@@ -8,7 +8,7 @@ from collections.abc import Callable, Coroutine
 
 from backend.api.deps import get_settings
 from backend.background_tasks import bitrot_worker, data_retention_worker, health_probe_worker
-from backend.core.runtime_support import connect_redis_with_retry
+from backend.platform.redis.runtime import connect_redis_with_retry
 from backend.workers.attempt_expiration_worker import attempt_expiration_worker
 
 logger = logging.getLogger("zen70.control-worker")

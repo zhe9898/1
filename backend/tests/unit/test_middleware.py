@@ -259,11 +259,7 @@ class TestGlobalReadOnlyLock:
         request.url.path = "/api/v1/data"
         request.state = MagicMock()
         request.app.state.redis = MagicMock()
-
-        mock_pipe = MagicMock()
-        mock_pipe.get = MagicMock()
-        mock_pipe.execute = AsyncMock(side_effect=asyncio.TimeoutError())
-        request.app.state.redis.redis = MagicMock(pipeline=MagicMock(return_value=mock_pipe))
+        request.app.state.redis.kv = MagicMock(get_many=AsyncMock(side_effect=asyncio.TimeoutError()))
 
         expected_response = MagicMock()
         call_next = AsyncMock(return_value=expected_response)
@@ -284,11 +280,7 @@ class TestGlobalReadOnlyLock:
         request.url.path = "/api/v1/data"
         request.state = MagicMock()
         request.app.state.redis = MagicMock()
-
-        mock_pipe = MagicMock()
-        mock_pipe.get = MagicMock()
-        mock_pipe.execute = AsyncMock(return_value=["ONLINE"])
-        request.app.state.redis.redis = MagicMock(pipeline=MagicMock(return_value=mock_pipe))
+        request.app.state.redis.kv = MagicMock(get_many=AsyncMock(return_value=["ONLINE"]))
 
         expected_response = MagicMock()
         call_next = AsyncMock(return_value=expected_response)

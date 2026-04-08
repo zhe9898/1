@@ -299,19 +299,19 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
 
     db.execute.side_effect = _execute_side_effect
 
-    monkeypatch.setattr("backend.api.jobs.dispatch.authenticate_node_request", AsyncMock(return_value=node))
-    monkeypatch.setattr("backend.api.jobs.dispatch.get_reservation_manager", lambda: reservation_mgr)
-    monkeypatch.setattr("backend.api.jobs.dispatch.get_governance_facade", lambda: governance)
-    monkeypatch.setattr("backend.api.jobs.dispatch.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr("backend.api.jobs.pull_service.authenticate_node_request", AsyncMock(return_value=node))
+    monkeypatch.setattr("backend.api.jobs.pull_service.get_reservation_manager", lambda: reservation_mgr)
+    monkeypatch.setattr("backend.api.jobs.pull_service.get_governance_facade", lambda: governance)
+    monkeypatch.setattr("backend.api.jobs.pull_service.get_failure_control_plane", lambda: fcp)
     monkeypatch.setattr(
-        "backend.api.jobs.dispatch._load_node_metrics",
+        "backend.api.jobs.pull_service._load_node_metrics",
         AsyncMock(return_value=([node], {"node-a": 0}, {"node-a": 1.0})),
     )
-    monkeypatch.setattr("backend.api.jobs.dispatch._build_snapshots", lambda *a, **k: [])
-    monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
-    monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
-    monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
-    monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
+    monkeypatch.setattr("backend.api.jobs.pull_service._build_snapshots", lambda *a, **k: [])
+    monkeypatch.setattr("backend.api.jobs.pull_service._append_log", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.pull_service._load_recent_failed_job_ids", AsyncMock(return_value=set()))
+    monkeypatch.setattr("backend.api.jobs.pull_service.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.api.jobs.pull_service.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
     monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
     monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
@@ -392,19 +392,19 @@ async def test_pull_jobs_attaches_scheduling_decision_and_policy_snapshot(monkey
 
     db.execute.side_effect = _execute_side_effect
 
-    monkeypatch.setattr("backend.api.jobs.dispatch.authenticate_node_request", AsyncMock(return_value=node))
-    monkeypatch.setattr("backend.api.jobs.dispatch.get_reservation_manager", lambda: reservation_mgr)
-    monkeypatch.setattr("backend.api.jobs.dispatch.get_governance_facade", lambda: governance)
-    monkeypatch.setattr("backend.api.jobs.dispatch.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr("backend.api.jobs.pull_service.authenticate_node_request", AsyncMock(return_value=node))
+    monkeypatch.setattr("backend.api.jobs.pull_service.get_reservation_manager", lambda: reservation_mgr)
+    monkeypatch.setattr("backend.api.jobs.pull_service.get_governance_facade", lambda: governance)
+    monkeypatch.setattr("backend.api.jobs.pull_service.get_failure_control_plane", lambda: fcp)
     monkeypatch.setattr(
-        "backend.api.jobs.dispatch._load_node_metrics",
+        "backend.api.jobs.pull_service._load_node_metrics",
         AsyncMock(return_value=([node], {"node-a": 0}, {"node-a": 1.0})),
     )
-    monkeypatch.setattr("backend.api.jobs.dispatch._build_snapshots", lambda *a, **k: [])
-    monkeypatch.setattr("backend.api.jobs.dispatch._append_log", AsyncMock(return_value=None))
-    monkeypatch.setattr("backend.api.jobs.dispatch._load_recent_failed_job_ids", AsyncMock(return_value=set()))
-    monkeypatch.setattr("backend.api.jobs.dispatch.select_jobs_for_node", lambda *a, **k: [selected])
-    monkeypatch.setattr("backend.api.jobs.dispatch.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
+    monkeypatch.setattr("backend.api.jobs.pull_service._build_snapshots", lambda *a, **k: [])
+    monkeypatch.setattr("backend.api.jobs.pull_service._append_log", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.pull_service._load_recent_failed_job_ids", AsyncMock(return_value=set()))
+    monkeypatch.setattr("backend.api.jobs.pull_service.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.api.jobs.pull_service.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
     monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
     monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
@@ -496,12 +496,12 @@ async def test_fail_job_updates_current_lease(monkeypatch: pytest.MonkeyPatch) -
 
     fcp = MagicMock()
     fcp.record_failure = AsyncMock(return_value=None)
-    monkeypatch.setattr("backend.api.jobs.lifecycle.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr("backend.api.jobs.lifecycle_service.get_failure_control_plane", lambda: fcp)
     monkeypatch.setattr(
-        "backend.api.jobs.lifecycle.infer_failure_category",
+        "backend.api.jobs.lifecycle_service.infer_failure_category",
         MagicMock(return_value=SimpleNamespace(value="permanent")),
     )
-    monkeypatch.setattr("backend.api.jobs.lifecycle.should_retry_job", MagicMock(return_value=False))
+    monkeypatch.setattr("backend.api.jobs.lifecycle_service.should_retry_job", MagicMock(return_value=False))
 
     response = await fail_job(
         "job-1",

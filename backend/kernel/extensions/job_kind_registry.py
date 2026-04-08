@@ -12,12 +12,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-from backend.core.alert_actions import normalize_alert_action
-from backend.core.errors import zen
-from backend.core.security_policy import normalize_local_filesystem_path as _shared_normalize_local_filesystem_path
-from backend.core.security_policy import normalize_managed_uri as _shared_normalize_managed_uri
-from backend.core.security_policy import normalize_nonempty_string as _shared_normalize_nonempty_string
-from backend.core.security_policy import normalize_public_network_url as _shared_normalize_public_network_url
+from backend.kernel.extensions.alert_actions import normalize_alert_action
+from backend.kernel.contracts.errors import zen
+from backend.platform.security.normalization import normalize_local_filesystem_path as _shared_normalize_local_filesystem_path
+from backend.platform.security.normalization import normalize_managed_uri as _shared_normalize_managed_uri
+from backend.platform.security.normalization import normalize_nonempty_string as _shared_normalize_nonempty_string
+from backend.platform.security.normalization import normalize_public_network_url as _shared_normalize_public_network_url
 
 # ============================================================================
 # Job Kind Registry

@@ -1,11 +1,11 @@
-"""Add software_evaluations and system_logs tables."""
+﻿"""Add software_evaluations and system_logs tables."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0023_software_evaluations_system_logs"
 down_revision = "0022_memory_facts"
@@ -97,3 +97,4 @@ def downgrade() -> None:
         op.drop_index("ix_software_evaluations_evaluation_id", "software_evaluations")
         op.drop_index("ix_software_evaluations_tenant_id", "software_evaluations")
         op.drop_table("software_evaluations")
+

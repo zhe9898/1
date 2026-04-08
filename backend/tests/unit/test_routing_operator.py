@@ -81,11 +81,11 @@ async def test_reload_caddy_failure(mock_env: None, mocker: MockerFixture, tmp_p
 
 @pytest.mark.asyncio
 async def test_get_redis(mock_env: None, mocker: MockerFixture) -> None:
-    mock_redis_cls = mocker.patch("redis.asyncio.Redis")
-    mock_redis_cls.return_value = MagicMock()
+    mock_connect = mocker.patch("backend.sentinel.routing_operator.RedisClient.connect", new_callable=AsyncMock)
     op = RoutingOperator()
-    r = await op._get_redis()
-    assert r is not None
+    redis_client = await op._get_redis()
+    assert redis_client is not None
+    mock_connect.assert_awaited_once()
 
 
 def test_invalid_caddy_admin_url_is_disabled(monkeypatch: MonkeyPatch) -> None:

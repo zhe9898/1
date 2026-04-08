@@ -1,4 +1,4 @@
-"""Unit tests for backend.core.data_retention."""
+﻿"""Unit tests for backend.control_plane.admin.data_retention."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.core.data_retention import (
+from backend.control_plane.admin.data_retention import (
     TERMINAL_STATUSES,
     _cutoff,
     _list_active_tenant_ids,
@@ -100,9 +100,9 @@ class TestRunRetentionCycle:
     async def test_full_cycle_returns_aggregated_summary(self) -> None:
         session = AsyncMock()
         with (
-            patch("backend.core.data_retention._list_active_tenant_ids", new=AsyncMock(return_value=["tenant-a", "tenant-b"])),
+            patch("backend.control_plane.admin.data_retention._list_active_tenant_ids", new=AsyncMock(return_value=["tenant-a", "tenant-b"])),
             patch(
-                "backend.core.data_retention._run_retention_cycle_for_tenant",
+                "backend.control_plane.admin.data_retention._run_retention_cycle_for_tenant",
                 new=AsyncMock(
                     side_effect=[
                         {"jobs": 2, "scheduling_decisions": 5, "audit_logs": 10},
@@ -120,9 +120,9 @@ class TestRunRetentionCycle:
     async def test_empty_cycle(self) -> None:
         session = AsyncMock()
         with (
-            patch("backend.core.data_retention._list_active_tenant_ids", new=AsyncMock(return_value=["tenant-a"])),
+            patch("backend.control_plane.admin.data_retention._list_active_tenant_ids", new=AsyncMock(return_value=["tenant-a"])),
             patch(
-                "backend.core.data_retention._run_retention_cycle_for_tenant",
+                "backend.control_plane.admin.data_retention._run_retention_cycle_for_tenant",
                 new=AsyncMock(return_value={"jobs": 0, "scheduling_decisions": 0, "audit_logs": 0}),
             ),
         ):
@@ -147,3 +147,4 @@ class TestConstants:
         assert "cancelled" in TERMINAL_STATUSES
         assert "pending" not in TERMINAL_STATUSES
         assert "leased" not in TERMINAL_STATUSES
+

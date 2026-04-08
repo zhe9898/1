@@ -6,7 +6,7 @@ import datetime
 
 import pytest
 
-from backend.core.scheduling_framework import (
+from backend.kernel.scheduling.scheduling_framework import (
     ConstraintFilterAdapter,
     ConstraintScoreAdapter,
     FilterPlugin,

@@ -22,7 +22,7 @@ from backend.api.models.auth import (
     UserItem,
     UserListResponse,
 )
-from backend.core.auth_helpers import (
+from backend.control_plane.auth.auth_helpers import (
     CODE_BAD_REQUEST,
     CODE_NOT_FOUND,
     log_auth,
@@ -59,7 +59,7 @@ async def update_ai_preference(
     await db.flush()
     await db.commit()
     log_auth("ai_preference_update", True, request_id(request), username=username, detail=f"changed_to_{req.preference}")
-    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+    from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 
     user_scopes = hydrate_scopes_for_role(
         await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),

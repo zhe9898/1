@@ -1,4 +1,4 @@
-"""
+﻿"""
 ZEN70 Jobs API - CRUD endpoints and job schema.
 
 Dispatch (pull/explain) lives in dispatch.py; lifecycle callbacks live in
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_redis, get_tenant_db, require_scope
 from backend.api.ui_contracts import ResourceSchemaResponse
-from backend.core.redis_client import RedisClient
+from backend.platform.redis.client import RedisClient
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
@@ -25,7 +25,7 @@ from .database import _get_job_by_id
 from .helpers import _matches_job_list_filters, _normalize_job_status_filter, _to_attempt_response, _to_response, _utcnow
 from .models import JobAttemptResponse, JobCreateRequest, JobResponse
 from .schemas import _resource_schema
-from .submission import submit_job
+from .submission_service import submit_job
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 _WRITE_JOBS_SCOPE_DEPENDENCY = require_scope("write:jobs")

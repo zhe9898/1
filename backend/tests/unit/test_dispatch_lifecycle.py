@@ -190,14 +190,14 @@ class TestGovernanceStages:
         )
 
         monkeypatch.setattr(
-            "backend.core.failure_control_plane.get_failure_control_plane",
+            "backend.kernel.scheduling.failure_control_plane.get_failure_control_plane",
             lambda: MagicMock(
                 is_in_burst=AsyncMock(return_value=False),
                 get_kind_circuit_state=AsyncMock(return_value="closed"),
             ),
         )
         monkeypatch.setattr(
-            "backend.core.governance_facade.get_governance_facade",
+            "backend.kernel.scheduling.governance_facade.get_governance_facade",
             lambda: MagicMock(
                 should_skip_backoff=MagicMock(return_value=False),
                 filter_by_executor_contract=MagicMock(return_value=MagicMock(compatible=True, reason=None)),

@@ -6,7 +6,7 @@
 
 ## 1. Context
 
-ZEN70 now carries a large set of architecture constraints across the kernel, control plane, scheduling core, execution plane, and extension boundary.
+ZEN70 now carries a large set of architecture constraints across the kernel, control plane, execution plane, and extension boundary.
 
 The problem was not missing prose. The problem was drift between:
 
@@ -20,7 +20,7 @@ Without a code-backed registry, architecture discussions could easily become "do
 
 The repository adopts a code-backed architecture governance registry.
 
-- `backend/core/architecture_governance.py` is the aggregation entrypoint.
+- `backend/kernel/governance/architecture_rules.py` is the aggregation entrypoint.
 - It does not create a second architecture mechanism.
 - It re-exports already-existing implementation truth from runtime modules.
 - ADR text remains explanatory only.
@@ -48,13 +48,13 @@ The registry exports two repository-facing views:
 
 Primary entrypoints:
 
-- `backend/core/architecture_governance.py`
-- `backend/core/control_plane.py`
-- `backend/core/runtime_policy_resolver.py`
+- `backend/kernel/governance/architecture_rules.py`
+- `backend/kernel/surfaces/registry.py`
+- `backend/kernel/policy/runtime_policy_resolver.py`
 - `backend/kernel/execution/lease_service.py`
 - `backend/kernel/execution/fault_isolation.py`
-- `backend/core/aggregate_owner_registry.py`
-- `backend/core/compatibility_adapter.py`
+- `backend/kernel/governance/aggregate_owner_registry.py`
+- `backend/kernel/contracts/status.py`
 - `backend/kernel/extensions/extension_guard.py`
 
 Primary enforcement:

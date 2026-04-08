@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from backend.platform.redis.streams import RedisStreamAdapter
+
 logger = logging.getLogger("zen70.iot_bridge")
 
 MAX_RETRIES: int = 3
@@ -22,7 +24,7 @@ class IoTBridgeWorker:
     """Redis Streams 消费者：处理 IoT 控制指令并管理死信队列。"""
 
     def __init__(self) -> None:
-        self.redis: Any = None
+        self.streams: RedisStreamAdapter | Any = None
         self.mqtt: Any = None
 
     async def _handle_command(self, message_id: str, data: dict[str, str]) -> None:
@@ -33,10 +35,10 @@ class IoTBridgeWorker:
     async def spin_loop(self) -> None:
         """主消费循环：从 Redis Stream 读取消息并处理。"""
         while True:
-            streams = await self.redis.xreadgroup(
-                CONSUMER_GROUP,
-                "worker-1",
-                {REDIS_STREAM_KEY: ">"},
+            streams = await self.streams.xreadgroup(
+                groupname=CONSUMER_GROUP,
+                consumername="worker-1",
+                streams={REDIS_STREAM_KEY: ">"},
                 count=10,
                 block=5000,
             )
@@ -47,17 +49,17 @@ class IoTBridgeWorker:
                     retries = int(data.get("retry_count", 0))
                     try:
                         await self._handle_command(message_id, data)
-                        await self.redis.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
+                        await self.streams.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
                     except Exception as exc:
                         retries += 1
                         logger.warning("Command %s failed (attempt %s): %s", message_id, retries, exc)
                         if retries >= MAX_RETRIES:
-                            await self.redis.xadd(DLQ_STREAM_KEY, data, maxlen=10000, approximate=True)
-                            await self.redis.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
+                            await self.streams.xadd(DLQ_STREAM_KEY, data, maxlen=10000, approximate=True)
+                            await self.streams.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
                         else:
                             # Re-add the message with incremented retry_count so subsequent
                             # deliveries track the cumulative failure count correctly.
                             updated = dict(data)
                             updated["retry_count"] = str(retries)
-                            await self.redis.xadd(REDIS_STREAM_KEY, updated)
-                            await self.redis.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)
+                            await self.streams.xadd(REDIS_STREAM_KEY, updated)
+                            await self.streams.xack(REDIS_STREAM_KEY, CONSUMER_GROUP, message_id)

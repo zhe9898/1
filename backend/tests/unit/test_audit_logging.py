@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import Request
 
-from backend.core.audit_logging import extract_client_info, sanitize_audit_details, write_audit_log
+from backend.control_plane.admin.audit_logging import extract_client_info, sanitize_audit_details, write_audit_log
 
 
 def _request(*, xff: str | None, client_host: str) -> Request:
@@ -97,3 +97,4 @@ async def test_write_audit_log_sanitizes_details_before_flush() -> None:
         "password": "********",
     }
     db.flush.assert_awaited_once()
+

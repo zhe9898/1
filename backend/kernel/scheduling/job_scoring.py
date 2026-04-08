@@ -13,7 +13,7 @@ import math
 from typing import TYPE_CHECKING
 
 from backend.kernel.scheduling.business_scheduling import calculate_sla_breach_risk
-from backend.core.scheduling_policy_types import NodeFreshnessPolicy, ScoringWeights
+from backend.kernel.policy.types import NodeFreshnessPolicy, ScoringWeights
 from backend.kernel.scheduling.scheduling_strategies import (
     SchedulingStrategy,
     calculate_anti_affinity_penalty,
@@ -195,7 +195,7 @@ def score_job_for_node(
 
     reliability_score = int(max(0.0, min(node.reliability_score, 1.0)) * sw.reliability_max)
 
-    from backend.core.scheduler_auto_tune import get_scheduler_tuner
+    from backend.kernel.scheduling.scheduler_auto_tune import get_scheduler_tuner
 
     _tuner = get_scheduler_tuner()
 

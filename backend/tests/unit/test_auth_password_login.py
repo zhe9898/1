@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import bcrypt
@@ -10,11 +11,15 @@ from backend.api.models.auth import PasswordLoginRequest
 
 
 def _mock_redis():
-    redis = AsyncMock()
-    redis.get.return_value = None
-    redis.incr.return_value = 1
-    redis.delete = AsyncMock()
-    return redis
+    return SimpleNamespace(
+        kv=SimpleNamespace(
+            get=AsyncMock(return_value=None),
+            incr=AsyncMock(return_value=1),
+            expire=AsyncMock(),
+            setex=AsyncMock(),
+            delete=AsyncMock(),
+        )
+    )
 
 
 def _mock_db(user):

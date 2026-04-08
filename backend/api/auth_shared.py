@@ -16,9 +16,9 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import is_superadmin_role
-from backend.core.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, log_auth, zen
-from backend.core.jwt import get_access_token_expire_seconds
-from backend.core.rls import set_tenant_context as _set_tenant_context_impl
+from backend.control_plane.auth.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, log_auth, zen
+from backend.control_plane.auth.jwt import get_access_token_expire_seconds
+from backend.platform.db.rls import set_tenant_context as _set_tenant_context_impl
 from backend.models.user import User
 
 _logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ async def register_login_session(
     if not jti:
         return
     try:
-        from backend.core.sessions import create_session
+        from backend.control_plane.auth.sessions import create_session
 
         await create_session(
             db,

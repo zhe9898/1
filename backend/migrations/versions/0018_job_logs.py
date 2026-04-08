@@ -1,11 +1,11 @@
-"""Add job_logs table."""
+﻿"""Add job_logs table."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0018_job_logs"
 down_revision = "0017_feature_flags_system_config"
@@ -57,3 +57,4 @@ def downgrade() -> None:
     op.drop_index("ix_job_logs_job_id", "job_logs")
     op.drop_index("ix_job_logs_tenant_id", "job_logs")
     op.drop_table("job_logs")
+

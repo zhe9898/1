@@ -27,7 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from backend.capabilities import get_lru_matrix
-from backend.core.errors import ZenErrorResponse as ErrorResponse
+from backend.kernel.contracts.errors import ZenErrorResponse as ErrorResponse
 from backend.shared_state import service_readiness
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         # 桥接 OTEL：将 trace_id 注入响应头，与 X-Request-ID 共存
         trace_id_hex = ""
         try:
-            from backend.core.telemetry import is_otel_enabled
+            from backend.platform.telemetry.tracing import is_otel_enabled
 
             if is_otel_enabled():
                 from opentelemetry import trace
@@ -102,7 +102,7 @@ async def global_readonly_lock(request: Request, call_next: RequestResponseEndpo
     A-1: LRU 缓存为空时通过 app.state.redis 连接池读取 UPS 状态（不再建短连接）。
     """
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
-        from backend.core.constants import KEY_SYSTEM_READONLY_DISK, KEY_SYSTEM_UPS_STATUS
+        from backend.platform.redis.constants import KEY_SYSTEM_READONLY_DISK, KEY_SYSTEM_UPS_STATUS
 
         matrix = get_lru_matrix()
 
@@ -110,14 +110,16 @@ async def global_readonly_lock(request: Request, call_next: RequestResponseEndpo
             # LRU 缓存为空 → 走 app.state.redis 持久连接读一次
             try:
                 app_redis = getattr(request.app.state, "redis", None)
-                r = getattr(app_redis, "redis", None) if app_redis else None
-                if r:
+                if app_redis:
                     # 链路 9 修复：通过 pipeline(transaction=True) 原子读取 UPS 状态 + 磁盘 95% 只读标志，
                     # 使用 MULTI/EXEC 保证两个 GET 之间状态不会发生变化，消除判断不一致窗口。
-                    pipe = r.pipeline(transaction=True)
-                    pipe.get(KEY_SYSTEM_UPS_STATUS)
-                    pipe.get(KEY_SYSTEM_READONLY_DISK)
-                    results = await asyncio.wait_for(pipe.execute(), timeout=_READONLY_REDIS_TIMEOUT_SECONDS)
+                    results = await asyncio.wait_for(
+                        app_redis.kv.get_many(
+                            [KEY_SYSTEM_UPS_STATUS, KEY_SYSTEM_READONLY_DISK],
+                            transactional=True,
+                        ),
+                        timeout=_READONLY_REDIS_TIMEOUT_SECONDS,
+                    )
                     ups_val = results[0] if isinstance(results, (list, tuple)) and len(results) >= 1 else None
                     disk_val = results[1] if isinstance(results, (list, tuple)) and len(results) >= 2 else None
                     if ups_val and ups_val.strip().upper() == "LOW_BATTERY_SHUTDOWN":

@@ -41,7 +41,7 @@ flowchart LR
 - HTTP 与事件入口：`backend/api/main.py`、`backend/api/routes.py`、`backend/api/control_events.py`
 - 执行 API：`backend/api/jobs/__init__.py`、`backend/api/jobs/submission.py`、`backend/api/jobs/routes.py`、`backend/api/jobs/dispatch.py`、`backend/api/jobs/lifecycle.py`、`backend/api/jobs/helpers.py`、`backend/api/jobs/database.py`、`backend/api/jobs/dlq.py`、`backend/api/jobs/models.py`
 - 节点 API：`backend/api/nodes.py`、`backend/api/nodes_models.py`
-- 核心状态机：`backend/kernel/scheduling/job_scheduler.py`、`backend/kernel/execution/dispatch_lifecycle.py`、`backend/kernel/execution/lease_service.py`、`backend/kernel/execution/job_lifecycle_service.py`、`backend/kernel/execution/failure_taxonomy.py`、`backend/kernel/topology/node_auth.py`、`backend/core/safe_error_projection.py`、`backend/kernel/execution/attempt_expiration_service.py`、`backend/core/redis_client.py`、`backend/kernel/scheduling/placement_solver.py`、`backend/kernel/scheduling/placement_grpc_client.py`、`backend/kernel/scheduling/quota_aware_scheduling.py`
+- 核心状态机：`backend/kernel/scheduling/job_scheduler.py`、`backend/kernel/execution/dispatch_lifecycle.py`、`backend/kernel/execution/lease_service.py`、`backend/kernel/execution/job_lifecycle_service.py`、`backend/kernel/execution/failure_taxonomy.py`、`backend/kernel/topology/node_auth.py`、`backend/kernel/contracts/safe_error_projection.py`、`backend/kernel/execution/attempt_expiration_service.py`、`backend/platform/redis/**`、`backend/kernel/scheduling/placement_solver.py`、`backend/kernel/scheduling/placement_grpc_client.py`、`backend/kernel/scheduling/quota_aware_scheduling.py`
 - 数据层：`backend/models/job.py`、`backend/models/job_attempt.py`、`backend/models/node.py`、`migrations/003_advanced_scheduling.sql`
 - 后台 worker：`backend/workers/attempt_expiration_worker.py`
 - runner-agent：`runner-agent/internal/api/client.go`、`runner-agent/internal/jobs/poller.go`、`runner-agent/internal/exec/executor.go`、`runner-agent/internal/heartbeat/heartbeat.go`、`runner-agent/internal/service/service.go`
@@ -84,7 +84,7 @@ flowchart LR
 
 - `backend/kernel/execution/job_lifecycle_service.py:15-43` 的 `expire_lease()` 将 `job.failure_category` 写成 `"lease_timeout"`。
 - `backend/kernel/execution/failure_taxonomy.py:34` 定义的是 `FailureCategory.LEASE_EXPIRED = "lease_expired"`，后续 `should_retry_job()` 与 `calculate_retry_delay_seconds()` 都围绕这个枚举工作。
-- `backend/core/safe_error_projection.py:19` 只对 `"lease_expired"` 提供用户可读 hint，未覆盖 `"lease_timeout"`。
+- `backend/kernel/contracts/safe_error_projection.py:19` 只对 `"lease_expired"` 提供用户可读 hint，未覆盖 `"lease_timeout"`。
 - `backend/tests/unit/test_attempt_expiration_service.py:113` 反过来把 `"lease_timeout"` 固化进了测试，说明当前漂移已经进入稳定行为。
 
 ### F-004 DLQ 重新入队重置语义不完整

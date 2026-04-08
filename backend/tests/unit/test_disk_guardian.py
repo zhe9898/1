@@ -75,9 +75,10 @@ def test_check_and_act_warning(mocker: MockerFixture) -> None:
 
 def test_publish_disk_event() -> None:
     mock_redis = MagicMock()
+    mock_redis.pubsub.publish = MagicMock()
     _publish_disk_event(mock_redis, "critical", 96.0)
-    mock_redis.publish.assert_called_once()
-    args, _ = mock_redis.publish.call_args
+    mock_redis.pubsub.publish.assert_called_once()
+    args, _ = mock_redis.pubsub.publish.call_args
     assert args[0] == REDIS_CHANNEL_DISK
     payload = json.loads(args[1])
     assert payload["level"] == "critical"
@@ -86,17 +87,20 @@ def test_publish_disk_event() -> None:
 
 def test_set_readonly_flag() -> None:
     mock_redis = MagicMock()
+    mock_redis.kv.set = MagicMock()
+    mock_redis.kv.delete = MagicMock()
     _set_readonly_flag(mock_redis, True)
-    mock_redis.set.assert_called_with(REDIS_KEY_DISK_READONLY, "1")
+    mock_redis.kv.set.assert_called_with(REDIS_KEY_DISK_READONLY, "1")
 
     mock_redis.reset_mock()
+    mock_redis.kv.delete = MagicMock()
     _set_readonly_flag(mock_redis, False)
-    mock_redis.delete.assert_called_with(REDIS_KEY_DISK_READONLY)
+    mock_redis.kv.delete.assert_called_with(REDIS_KEY_DISK_READONLY)
 
 
 def test_clear_readonly_if_set(mocker: MockerFixture) -> None:
     mock_redis = MagicMock()
-    mock_redis.get.return_value = "1"
+    mock_redis.kv.get.return_value = "1"
 
     mock_set = mocker.patch("backend.sentinel.disk_guardian._set_readonly_flag")
     _clear_readonly_if_set(mock_redis, 50.0)

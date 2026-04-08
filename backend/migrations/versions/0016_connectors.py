@@ -1,11 +1,11 @@
-"""Add connectors table."""
+﻿"""Add connectors table."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0016_connectors"
 down_revision = "0015_tenants"
@@ -81,3 +81,4 @@ def downgrade() -> None:
     op.drop_index("ix_connectors_connector_id", "connectors")
     op.drop_index("ix_connectors_tenant_id", "connectors")
     op.drop_table("connectors")
+

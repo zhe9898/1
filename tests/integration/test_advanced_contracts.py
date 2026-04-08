@@ -97,7 +97,7 @@ class TestJWTDualTrackXNewToken:
         }):
             # 强制重载模块以应用新密钥
             import importlib
-            import backend.core.jwt as jwt_mod
+            import backend.control_plane.auth.jwt as jwt_mod
             importlib.reload(jwt_mod)
             try:
                 payload, new_token = await jwt_mod.decode_token(token)
@@ -128,7 +128,7 @@ class TestJWTDualTrackXNewToken:
             "ZEN70_ENV": "development",
         }):
             import importlib
-            import backend.core.jwt as jwt_mod
+            import backend.control_plane.auth.jwt as jwt_mod
             importlib.reload(jwt_mod)
             try:
                 payload, new_token = await jwt_mod.decode_token(token)
@@ -151,7 +151,7 @@ class TestJWTDualTrackXNewToken:
             "ZEN70_ENV": "development",
         }):
             import importlib
-            import backend.core.jwt as jwt_mod
+            import backend.control_plane.auth.jwt as jwt_mod
             importlib.reload(jwt_mod)
             try:
                 with pytest.raises(HTTPException) as exc_info:

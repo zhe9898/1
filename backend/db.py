@@ -60,7 +60,7 @@ else:
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields an async session or returns 503 when DB is absent."""
     if _async_session_factory is None:
-        from backend.core.errors import zen
+        from backend.kernel.contracts.errors import zen
 
         raise zen(
             "ZEN-BUS-5030",
@@ -98,7 +98,7 @@ async def init_db() -> None:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         await conn.run_sync(metadata.create_all)
 
-    from backend.core.rls import apply_rls_policies
+    from backend.platform.db.rls import apply_rls_policies
 
     async with _async_session_factory() as session:  # type: ignore[misc]
         await apply_rls_policies(session)

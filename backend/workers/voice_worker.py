@@ -33,14 +33,14 @@ async def _handle_voice_retry_failure(
     if retry_key is None:
         return
 
-    count = await redis.redis.incr(retry_key)
-    await redis.redis.expire(retry_key, 3600)
+    count = await redis.kv.incr(retry_key)
+    await redis.kv.expire(retry_key, 3600)
 
     if count >= MAX_VOICE_RETRIES:
         # Move to DLQ
-        await redis.redis.xadd(
+        await redis.streams.xadd(
             VOICE_DLQ_STREAM,
             {"msg_id": message_id, "error": str(error)},
         )
-        await redis.redis.xack(VOICE_INPUT_STREAM, CONSUMER_GROUP, message_id)
-        await redis.redis.delete(retry_key)
+        await redis.streams.xack(VOICE_INPUT_STREAM, CONSUMER_GROUP, message_id)
+        await redis.kv.delete(retry_key)

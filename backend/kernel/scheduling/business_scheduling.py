@@ -36,7 +36,7 @@ from backend.kernel.scheduling.scheduling_constraints import (  # noqa: F401 鈥
     TenantFairShareGate,
     get_scheduling_engine,
 )
-from backend.core.scheduling_policy_types import (
+from backend.kernel.policy.types import (
     BatchScoringConfig,
     PreemptionPolicy,
     PriorityBoostConfig,

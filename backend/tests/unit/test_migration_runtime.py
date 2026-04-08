@@ -4,7 +4,7 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from backend.core.alembic_runtime import _alembic_context_options, start_migration_lock_watchdog
+from backend.platform.db.alembic_runtime import MigrationLockLease, _alembic_context_options, start_migration_lock_watchdog
 
 
 def test_alembic_context_options_include_version_table() -> None:
@@ -21,12 +21,13 @@ def test_alembic_context_options_ignore_missing_version_table() -> None:
 
 def test_start_migration_lock_watchdog_renews_lock_and_stops_cleanly() -> None:
     redis_client = MagicMock()
-    lock = SimpleNamespace(name="zen70:DB_MIGRATION_LOCK")
+    redis_client.kv = MagicMock()
+    lease = MigrationLockLease(key="zen70:DB_MIGRATION_LOCK", owner="test-owner")
     stop_event = Event()
-    redis_client.pexpire.side_effect = lambda *args, **kwargs: stop_event.set()
+    redis_client.kv.expire.side_effect = lambda *args, **kwargs: stop_event.set()
 
-    watchdog = start_migration_lock_watchdog(redis_client, lock, stop_event)
+    watchdog = start_migration_lock_watchdog(redis_client, lease, stop_event)
     watchdog.join(timeout=1.0)
 
     assert not watchdog.is_alive()
-    redis_client.pexpire.assert_called()
+    redis_client.kv.expire.assert_called_with("zen70:DB_MIGRATION_LOCK", 120)

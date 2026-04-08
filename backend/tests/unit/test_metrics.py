@@ -11,7 +11,7 @@ import pytest
 class TestMetricsMiddleware:
     @pytest.mark.asyncio
     async def test_records_request_duration(self) -> None:
-        from backend.core.metrics import metrics_middleware
+        from backend.platform.telemetry.http_metrics import metrics_middleware
 
         request = MagicMock()
         request.url.path = "/api/v1/data"
@@ -28,7 +28,7 @@ class TestMetricsMiddleware:
 
     @pytest.mark.asyncio
     async def test_skips_metrics_endpoint(self) -> None:
-        from backend.core.metrics import metrics_middleware
+        from backend.platform.telemetry.http_metrics import metrics_middleware
 
         request = MagicMock()
         request.url.path = "/metrics"
@@ -43,7 +43,7 @@ class TestMetricsMiddleware:
 
     @pytest.mark.asyncio
     async def test_skips_health_endpoint(self) -> None:
-        from backend.core.metrics import metrics_middleware
+        from backend.platform.telemetry.http_metrics import metrics_middleware
 
         request = MagicMock()
         request.url.path = "/api/v1/health"
@@ -58,7 +58,7 @@ class TestMetricsMiddleware:
 
     @pytest.mark.asyncio
     async def test_exception_records_500(self) -> None:
-        from backend.core.metrics import metrics_middleware
+        from backend.platform.telemetry.http_metrics import metrics_middleware
 
         request = MagicMock()
         request.url.path = "/api/v1/crash"
@@ -71,7 +71,7 @@ class TestMetricsMiddleware:
             await metrics_middleware(request, call_next)
 
     def test_normalize_endpoint_uses_route_template(self) -> None:
-        from backend.core.metrics import _normalize_endpoint_label
+        from backend.platform.telemetry.http_metrics import _normalize_endpoint_label
 
         request = MagicMock()
         request.scope = {"route": SimpleNamespace(path="/api/v1/jobs/{id}")}
@@ -81,16 +81,16 @@ class TestMetricsMiddleware:
 
 class TestMetricsDefinitions:
     def test_counter_exists(self) -> None:
-        from backend.core.metrics import API_REQUESTS_TOTAL
+        from backend.platform.telemetry.http_metrics import API_REQUESTS_TOTAL
 
         assert API_REQUESTS_TOTAL is not None
 
     def test_histogram_exists(self) -> None:
-        from backend.core.metrics import API_REQUEST_DURATION
+        from backend.platform.telemetry.http_metrics import API_REQUEST_DURATION
 
         assert API_REQUEST_DURATION is not None
 
     def test_gauge_exists(self) -> None:
-        from backend.core.metrics import ACTIVE_CONNECTIONS
+        from backend.platform.telemetry.http_metrics import ACTIVE_CONNECTIONS
 
         assert ACTIVE_CONNECTIONS is not None

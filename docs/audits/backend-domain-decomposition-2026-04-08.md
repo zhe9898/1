@@ -50,7 +50,7 @@
   - `iter_control_plane_surfaces()` 却又直接调用 `RuntimePolicyResolver` 和 `get_enabled_router_names()` 做运行时准入。
 - [`backend/core/pack_registry.py`](/E:/1.0/1/backend/core/pack_registry.py) 同时装了 pack 合同事实、profile alias、preset 兼容输入、router selection、gateway image target 解析。
 - [`backend/core/gateway_profile.py`](/E:/1.0/1/backend/core/gateway_profile.py) 既暴露 public profile facts，又继续计算 enabled routers 和 runtime pack resolution。
-- [`backend/core/architecture_governance.py`](/E:/1.0/1/backend/core/architecture_governance.py) 已经把 surface traceability、runtime policy single-source、LeaseService single-writer、fault isolation、extension safety、aggregate ownership 写成硬规则，这反而进一步说明“内核治理”应该有独立 home。
+- [`backend/kernel/governance/architecture_rules.py`](/E:/1.0/1/backend/kernel/governance/architecture_rules.py) 现在已经把 surface traceability、runtime policy single-source、LeaseService single-writer、fault isolation、extension safety、aggregate ownership 写成硬规则，这反而进一步说明“内核治理”应该有独立 home。
 
 结论不是再给 `backend/core` 分类打标签，而是要把它拆掉。
 

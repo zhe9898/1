@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
+
+
+@dataclass(frozen=True, slots=True)
+class PackSelectorContract:
+    required_capabilities: tuple[str, ...] = ()
+    target_zone: str | None = None
+    target_executors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,7 +21,7 @@ class PackDefinition:
     services: tuple[str, ...] = ()
     routers: tuple[str, ...] = ()
     capability_keys: tuple[str, ...] = ()
-    selector_hints: tuple[str, ...] = ()
+    selector: PackSelectorContract = field(default_factory=PackSelectorContract)
     deployment_boundary: str = ""
     runtime_owner: str = ""
     includes: tuple[str, ...] = ()
@@ -32,7 +39,7 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         services=("mosquitto",),
         routers=("iot", "scenes", "scheduler"),
         capability_keys=("pack.iot", "iot.adapter", "iot.scene", "iot.rule", "iot.device.state"),
-        selector_hints=("required_capabilities=iot.adapter", "target_zone=home"),
+        selector=PackSelectorContract(required_capabilities=("iot.adapter",), target_zone="home"),
         deployment_boundary="Runs as an edge-side pack and talks to the kernel through jobs and connectors.",
         runtime_owner="edge-service",
         gateway_image_target="gateway-iot",
@@ -46,7 +53,7 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         services=("watchdog", "victoriametrics", "grafana", "categraf", "loki", "promtail", "alertmanager", "vmalert"),
         routers=("observability", "energy"),
         capability_keys=("pack.ops", "ops.observe", "ops.energy"),
-        selector_hints=("required_capabilities=ops.observe", "target_zone=ops"),
+        selector=PackSelectorContract(required_capabilities=("ops.observe",), target_zone="ops"),
         deployment_boundary="Runs as dedicated observability services and sidecars, not inside gateway request handlers.",
         runtime_owner="ops-stack",
     ),
@@ -58,7 +65,7 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         delivery_stage="runtime-present",
         routers=("assets", "portability"),
         capability_keys=("pack.media", "media.asset", "media.portability"),
-        selector_hints=("target_zone=media",),
+        selector=PackSelectorContract(target_zone="media"),
         deployment_boundary="Runs as an opt-in gateway extension domain and is mounted only when explicitly selected via packs.",
         runtime_owner="gateway-extension",
     ),
@@ -70,10 +77,10 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         delivery_stage="runtime-present",
         routers=("health",),
         capability_keys=("pack.health", "health.ingest"),
-        selector_hints=(
-            "required_capabilities=health.ingest",
-            "target_zone=mobile",
-            "target_executor=swift-native|kotlin-native",
+        selector=PackSelectorContract(
+            required_capabilities=("health.ingest",),
+            target_zone="mobile",
+            target_executors=("swift-native", "kotlin-native"),
         ),
         deployment_boundary="Uses native clients and connector ingestion; health libraries do not enter the Python gateway runtime.",
         runtime_owner="native-client",
@@ -86,10 +93,10 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         delivery_stage="runtime-present",
         routers=("search",),
         capability_keys=("pack.vector", "vector.embed", "vector.index", "vector.search", "vector.rerank"),
-        selector_hints=(
-            "required_capabilities=vector.search",
-            "target_zone=search",
-            "target_executor=vector-worker|search-service",
+        selector=PackSelectorContract(
+            required_capabilities=("vector.search",),
+            target_zone="search",
+            target_executors=("vector-worker", "search-service"),
         ),
         deployment_boundary="Runs as worker/search services and keeps semantic workloads out of the default kernel path.",
         runtime_owner="worker-service",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,16 +26,16 @@ def _mock_user(pin_hash: str | None = None, username: str = "alice") -> MagicMoc
     return user
 
 
-def _mock_redis(*, get_return: str | None = None, incr_return: int = 1) -> AsyncMock:
-    redis = AsyncMock()
-    redis.get = AsyncMock(return_value=get_return)
-    redis.incr_with_expire = AsyncMock(return_value=incr_return)
-    redis.setex = AsyncMock()
-    redis.delete = AsyncMock()
-    redis.redis = MagicMock()
-    redis.incr = AsyncMock(return_value=incr_return)
-    redis.expire = AsyncMock()
-    return redis
+def _mock_redis(*, get_return: str | None = None, incr_return: int = 1) -> SimpleNamespace:
+    return SimpleNamespace(
+        kv=SimpleNamespace(
+            get=AsyncMock(return_value=get_return),
+            incr=AsyncMock(return_value=incr_return),
+            expire=AsyncMock(),
+            setex=AsyncMock(),
+            delete=AsyncMock(),
+        )
+    )
 
 
 def _mock_db(user: Any = None) -> AsyncMock:
@@ -89,7 +90,8 @@ class TestPinLockout:
             await pin_login(req, request, response, db=db, redis=redis)
 
         assert exc_info.value.status_code == 401
-        redis.incr_with_expire.assert_awaited_once()
+        redis.kv.incr.assert_awaited_once()
+        redis.kv.expire.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_fifth_failure_triggers_freeze(self) -> None:
@@ -110,7 +112,7 @@ class TestPinLockout:
 
         assert exc_info.value.status_code == 429
         assert str(PIN_RATE_LIMIT_WINDOW // 60) in str(exc_info.value.detail)
-        redis.setex.assert_awaited_once()
+        redis.kv.setex.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_successful_pin_clears_counter(self) -> None:
@@ -133,7 +135,7 @@ class TestPinLockout:
         ):
             await pin_login(req, request, response, db=db, redis=redis)
 
-        assert redis.delete.await_count >= 2
+        assert redis.kv.delete.await_count >= 2
 
     @pytest.mark.asyncio
     async def test_public_ip_rejected(self) -> None:

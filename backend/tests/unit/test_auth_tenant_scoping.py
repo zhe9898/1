@@ -15,7 +15,7 @@ from backend.api.models.auth import (
     PinLoginRequest,
     WebAuthnLoginBeginRequest,
 )
-from backend.core.permissions import ALLOWED_SCOPES
+from backend.control_plane.auth.permissions import ALLOWED_SCOPES
 from backend.models.user import User
 
 
@@ -49,9 +49,9 @@ def _render_sql(stmt: Select[tuple[object]]) -> str:
 async def test_pin_login_propagates_real_role_and_tenant() -> None:
     request = _mock_request()
     redis = AsyncMock()
-    redis.get.return_value = None
-    redis.delete = AsyncMock()
-    redis.redis = MagicMock()
+    redis.kv = AsyncMock()
+    redis.kv.get = AsyncMock(return_value=None)
+    redis.kv.delete = AsyncMock()
 
     user = MagicMock()
     user.id = 42
@@ -85,9 +85,10 @@ async def test_pin_login_propagates_real_role_and_tenant() -> None:
 async def test_password_login_scopes_user_lookup_by_tenant() -> None:
     request = _mock_request("127.0.0.1")
     redis = AsyncMock()
-    redis.get.return_value = None
-    redis.incr.return_value = 1
-    redis.delete = AsyncMock()
+    redis.kv = AsyncMock()
+    redis.kv.get = AsyncMock(return_value=None)
+    redis.kv.incr = AsyncMock(return_value=1)
+    redis.kv.delete = AsyncMock()
 
     user = MagicMock()
     user.id = 7
@@ -119,9 +120,9 @@ async def test_password_login_scopes_user_lookup_by_tenant() -> None:
 async def test_pin_login_scopes_user_lookup_by_tenant() -> None:
     request = _mock_request()
     redis = AsyncMock()
-    redis.get.return_value = None
-    redis.delete = AsyncMock()
-    redis.redis = MagicMock()
+    redis.kv = AsyncMock()
+    redis.kv.get = AsyncMock(return_value=None)
+    redis.kv.delete = AsyncMock()
 
     user = MagicMock()
     user.id = 42

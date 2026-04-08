@@ -18,7 +18,7 @@ from backend.api.connectors import test_connector as connector_test_endpoint
 from backend.api.connectors import (
     upsert_connector,
 )
-from backend.core.connector_secret_service import ConnectorSecretService
+from backend.kernel.extensions.connector_secret_service import ConnectorSecretService
 from backend.models.connector import Connector
 
 

@@ -16,7 +16,7 @@ from backend.api.evaluations_helpers import (  # noqa: F401 – re-export
     _to_response,
 )
 from backend.api.ui_contracts import ResourceSchemaResponse
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.models.software_evaluation import SoftwareEvaluation
 
 router = APIRouter(prefix="/api/v1/evaluations", tags=["evaluations"])

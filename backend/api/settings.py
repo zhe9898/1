@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import datetime
 import logging
@@ -12,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db, get_redis
 from backend.api.deps import get_settings as get_runtime_settings
 from backend.control_plane.auth.access_policy import require_superadmin_role
-from backend.core.errors import zen
-from backend.core.feature_flag_service import FeatureFlagService
-from backend.core.redis_client import RedisClient
+from backend.kernel.contracts.errors import zen
+from backend.kernel.policy.feature_flag_service import FeatureFlagService
+from backend.platform.redis.client import RedisClient
 from backend.kernel.packs.registry import available_pack_definitions
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.feature_flag import DEFAULT_CONFIGS, DEFAULT_FLAGS, FeatureFlag, SystemConfig
@@ -186,7 +186,7 @@ async def toggle_flag(
 
     if redis is not None:
         try:
-            await redis.setex(f"zen70:ff:{key}", 300, "1" if new_state else "0")
+            await redis.kv.setex(f"zen70:ff:{key}", 300, "1" if new_state else "0")
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
             logger.debug("feature flag cache write failed: %s", exc)
 
@@ -462,3 +462,4 @@ async def system_info(
     require_superadmin_role(current_user)
     version = get_runtime_version()
     return {"status": "ok", "version": version}
+

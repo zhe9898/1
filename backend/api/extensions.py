@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_tenant_db
 from backend.api.workflows import StepStatus, WorkflowDetailResponse, _to_response
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.kernel.extensions.extension_sdk import (
     bootstrap_extension_runtime,
     get_extension_info,

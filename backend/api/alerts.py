@@ -1,4 +1,4 @@
-"""Alert rules and alert history API endpoints."""
+﻿"""Alert rules and alert history API endpoints."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_current_user, get_tenant_db
-from backend.core.alert_actions import AlertActionModel, normalize_alert_action
-from backend.core.alerting import run_alert_evaluation
-from backend.core.errors import zen
+from backend.kernel.extensions.alert_actions import AlertActionModel, normalize_alert_action
+from backend.kernel.extensions.alerting import run_alert_evaluation
+from backend.kernel.contracts.errors import zen
 from backend.models.alert import Alert, AlertRule
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
 
-# ── Request / Response models ──────────────────────────────────────────────
+# 鈹€鈹€ Request / Response models 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 class AlertRuleRequest(BaseModel):
@@ -82,7 +82,7 @@ def _alert_to_response(a: Alert) -> AlertResponse:
     )
 
 
-# ── Alert Rules CRUD ───────────────────────────────────────────────────────
+# 鈹€鈹€ Alert Rules CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 VALID_SEVERITIES = {"info", "warning", "error", "critical"}
 VALID_CONDITION_TYPES = {"node_offline", "job_failure_rate", "job_stuck", "quota_pct"}
@@ -166,7 +166,7 @@ async def delete_alert_rule(
     return {"status": "ok"}
 
 
-# ── Alert History ──────────────────────────────────────────────────────────
+# 鈹€鈹€ Alert History 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @router.get("", response_model=list[AlertResponse])
@@ -215,3 +215,4 @@ async def trigger_evaluation(
     """Manually trigger alert evaluation for this tenant (admin only)."""
     fired = await run_alert_evaluation(db, current_user["tenant_id"])
     return {"status": "ok", "fired": len(fired), "alerts": [_alert_to_response(a) for a in fired]}
+

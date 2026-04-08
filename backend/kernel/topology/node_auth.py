@@ -7,7 +7,7 @@ import bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.models.node import Node
 
 _TOKEN_PREFIX = "zkn_"

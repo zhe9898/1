@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.core.permissions import ALLOWED_SCOPES, grant_permission, revoke_permission
+from backend.control_plane.auth.permissions import ALLOWED_SCOPES, grant_permission, revoke_permission
 
 
 def _execute_result(

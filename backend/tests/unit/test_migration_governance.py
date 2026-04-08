@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
-from backend.core.migration_governance import (
+from backend.platform.db.migration_governance import (
     APPROVED_CROSS_STREAM_TABLE_OVERLAPS,
     APPROVED_LEGACY_MODEL_TABLE_CREATIONS,
     find_cross_stream_table_overlaps,
@@ -112,3 +112,4 @@ def test_repo_does_not_import_migration_env_modules_outside_entrypoints() -> Non
         if "backend.alembic.env" in source or "backend.migrations.env" in source:
             violations.append(rel)
     assert violations == []
+

@@ -11,13 +11,13 @@ The scheduling stack previously relied on scattered `system.yaml` parsing. The r
 Current repository evidence:
 
 - `PolicyStore` owns the runtime singleton, policy history, freeze/unfreeze, rollback, and YAML bootstrap.
-  - `backend/core/scheduling_policy_store.py`
+  - `backend/kernel/policy/policy_store.py`
 - `RuntimePolicyResolver` is the backend-facing entrypoint for runtime policy queries.
-  - `backend/core/runtime_policy_resolver.py`
+  - `backend/kernel/policy/runtime_policy_resolver.py`
 - Architecture gates block direct runtime `system.yaml` reads outside the allowlist.
   - `backend/tests/unit/test_architecture_governance_gates.py`
 - The code-backed architecture registry already treats runtime policy as an enforced rule.
-  - `backend/core/architecture_governance.py`
+  - `backend/kernel/governance/architecture_rules.py`
   - `docs/adr/0052-code-backed-architecture-governance-registry.md`
 
 This ADR exists to capture that runtime boundary cleanly and in readable form.
@@ -30,8 +30,8 @@ ZEN70 treats `PolicyStore` as the runtime policy source of truth for scheduling-
 
 Runtime scheduling code must read policy through:
 
-- `backend.core.scheduling_policy_store.get_policy_store`
-- `backend.core.runtime_policy_resolver.RuntimePolicyResolver`
+- `backend.kernel.policy.policy_store.get_policy_store`
+- `backend.kernel.policy.runtime_policy_resolver.RuntimePolicyResolver`
 
 It must not directly parse and cache `system.yaml` for runtime policy decisions outside approved bootstrap/import paths.
 
@@ -66,9 +66,9 @@ This means:
 
 Primary implementation:
 
-- `backend/core/scheduling_policy_store.py`
-- `backend/core/runtime_policy_resolver.py`
-- `backend/core/architecture_governance.py`
+- `backend/kernel/policy/policy_store.py`
+- `backend/kernel/policy/runtime_policy_resolver.py`
+- `backend/kernel/governance/architecture_rules.py`
 
 Primary enforcement:
 

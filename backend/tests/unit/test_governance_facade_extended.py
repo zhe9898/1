@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.core.governance_facade import GovernanceFacade
+from backend.kernel.scheduling.governance_facade import GovernanceFacade
 
 
 def _now() -> datetime.datetime:
@@ -22,7 +22,7 @@ def facade() -> GovernanceFacade:
 class TestFailureControlPlaneProxies:
     @pytest.mark.asyncio
     async def test_is_node_quarantined(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.failure_control_plane.get_failure_control_plane") as mock_get:
+        with patch("backend.kernel.scheduling.failure_control_plane.get_failure_control_plane") as mock_get:
             fcp = MagicMock()
             fcp.is_node_quarantined = AsyncMock(return_value=True)
             mock_get.return_value = fcp
@@ -32,7 +32,7 @@ class TestFailureControlPlaneProxies:
 
     @pytest.mark.asyncio
     async def test_is_connector_cooling(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.failure_control_plane.get_failure_control_plane") as mock_get:
+        with patch("backend.kernel.scheduling.failure_control_plane.get_failure_control_plane") as mock_get:
             fcp = MagicMock()
             fcp.is_connector_cooling = AsyncMock(return_value=False)
             mock_get.return_value = fcp
@@ -41,7 +41,7 @@ class TestFailureControlPlaneProxies:
 
     @pytest.mark.asyncio
     async def test_get_kind_circuit_state(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.failure_control_plane.get_failure_control_plane") as mock_get:
+        with patch("backend.kernel.scheduling.failure_control_plane.get_failure_control_plane") as mock_get:
             fcp = MagicMock()
             fcp.get_kind_circuit_state = AsyncMock(return_value="closed")
             mock_get.return_value = fcp
@@ -50,7 +50,7 @@ class TestFailureControlPlaneProxies:
 
     @pytest.mark.asyncio
     async def test_is_in_burst(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.failure_control_plane.get_failure_control_plane") as mock_get:
+        with patch("backend.kernel.scheduling.failure_control_plane.get_failure_control_plane") as mock_get:
             fcp = MagicMock()
             fcp.is_in_burst = AsyncMock(return_value=False)
             mock_get.return_value = fcp
@@ -59,7 +59,7 @@ class TestFailureControlPlaneProxies:
 
     @pytest.mark.asyncio
     async def test_fcp_snapshot(self, facade: GovernanceFacade) -> None:
-        with patch("backend.core.failure_control_plane.get_failure_control_plane") as mock_get:
+        with patch("backend.kernel.scheduling.failure_control_plane.get_failure_control_plane") as mock_get:
             snap = {"quarantined": [], "cooling": [], "burst": False}
             fcp = MagicMock()
             fcp.snapshot = AsyncMock(return_value=snap)

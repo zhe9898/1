@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 
-from backend.core.failure_control_plane import (
+from backend.kernel.scheduling.failure_control_plane import (
     BURST_THRESHOLD,
     CONNECTOR_COOLING_THRESHOLD,
     KIND_CIRCUIT_THRESHOLD,

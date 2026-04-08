@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.core.webauthn_flow_session import ensure_webauthn_flow_session, require_webauthn_flow_session
+from backend.control_plane.auth.webauthn_flow_session import ensure_webauthn_flow_session, require_webauthn_flow_session
 
 
 def _request(cookie_value: str | None = None) -> MagicMock:

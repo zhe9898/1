@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 
 ADMIN_ROLES = frozenset({"admin", "superadmin"})
 SUPERADMIN_ROLE = "superadmin"

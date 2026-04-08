@@ -27,7 +27,7 @@ class TestJwtDualTrack:
         ):
             import importlib
 
-            import backend.core.jwt as jwt_mod
+            import backend.control_plane.auth.jwt as jwt_mod
 
             importlib.reload(jwt_mod)
             self.jwt_mod = jwt_mod
@@ -153,7 +153,7 @@ class TestJwtDualTrack:
             },
         ):
             with pytest.raises(RuntimeError, match="JWT_SECRET_CURRENT"):
-                import backend.core.jwt as jwt_mod
+                import backend.control_plane.auth.jwt as jwt_mod
 
                 importlib.reload(jwt_mod)
 
@@ -172,7 +172,7 @@ class TestJwtDualTrack:
                 "JWT_SECRET_PREVIOUS": "",
             },
         ):
-            import backend.core.jwt as jwt_mod
+            import backend.control_plane.auth.jwt as jwt_mod
 
             importlib.reload(jwt_mod)
             with pytest.raises(RuntimeError, match="insecure default secret"):

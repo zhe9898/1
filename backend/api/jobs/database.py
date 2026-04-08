@@ -1,14 +1,14 @@
-import datetime
+﻿import datetime
 import uuid
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot, build_node_snapshot
 from backend.kernel.execution.lease_service import LeaseService
-from backend.core.redis_client import RedisClient
-from backend.core.worker_pool import resolve_job_queue_contract, resolve_job_queue_contract_from_record
+from backend.platform.redis.client import RedisClient
+from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract, resolve_job_queue_contract_from_record
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.job_log import JobLog
@@ -62,9 +62,9 @@ async def move_to_dead_letter_queue(
     # Add to Redis sorted set for fast time-based queries
     dlq_key = f"dlq:{job.tenant_id}:jobs"
     try:
-        await redis.zadd(dlq_key, {job.job_id: score})  # type: ignore[attr-defined]
+        await redis.sorted_sets.add(dlq_key, {job.job_id: score})
         # Set 90-day expiration on the DLQ key
-        await redis.expire(dlq_key, 90 * 24 * 3600)
+        await redis.kv.expire(dlq_key, 90 * 24 * 3600)
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         # Redis failure should not block DLQ operation
         # PostgreSQL remains source of truth
@@ -106,7 +106,7 @@ async def remove_from_dead_letter_queue(
 
     dlq_key = f"dlq:{tenant_id}:jobs"
     try:
-        removed = await redis.zrem(dlq_key, job_id)  # type: ignore[attr-defined]
+        removed = await redis.sorted_sets.remove(dlq_key, job_id)
         return bool(removed > 0)
     except (OSError, ValueError, KeyError, RuntimeError, TypeError):
         return False

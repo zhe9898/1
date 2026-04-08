@@ -204,7 +204,7 @@ class ConnectorCoolingGate(SchedulingConstraint):
             return True, ""
         # Connector cooling state is checked via the failure control plane
         # which is process-local. Import lazily to avoid circular deps.
-        from backend.core.failure_control_plane import get_failure_control_plane
+        from backend.kernel.scheduling.failure_control_plane import get_failure_control_plane
 
         fcp = get_failure_control_plane()
         until = fcp._connector_cool_until.get(connector_id)

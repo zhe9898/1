@@ -1,11 +1,11 @@
-"""Add failure taxonomy and attempt tracking."""
+﻿"""Add failure taxonomy and attempt tracking."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0006_failure_taxonomy"
 down_revision = "0005"
@@ -42,3 +42,4 @@ def downgrade() -> None:
         op.drop_column("jobs", "attempt_count")
         op.drop_index("idx_jobs_failure_category", "jobs")
         op.drop_column("jobs", "failure_category")
+

@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend.api.jobs.models import JobCreateRequest
-from backend.api.jobs.submission import submit_job
+from backend.api.jobs.submission_service import submit_job
 from backend.kernel.extensions.job_kind_registry import validate_job_payload
 
 
@@ -24,14 +24,14 @@ async def test_submit_job_allows_safe_kind_for_scoped_non_admin(monkeypatch: pyt
         "backend.kernel.scheduling.scheduling_resilience.AdmissionController.check_admission",
         AsyncMock(return_value=(True, "", {})),
     )
-    monkeypatch.setattr("backend.api.jobs.submission.acquire_transaction_advisory_locks", AsyncMock(return_value=None))
-    monkeypatch.setattr("backend.api.jobs.submission.check_concurrent_limits", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.submission_service.acquire_transaction_advisory_locks", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.submission_service.check_concurrent_limits", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        "backend.api.jobs.submission.resolve_job_queue_contract",
+        "backend.api.jobs.submission_service.resolve_job_queue_contract",
         lambda **_: ("interactive", "default"),
     )
-    monkeypatch.setattr("backend.api.jobs.submission._append_log", AsyncMock(return_value=None))
-    monkeypatch.setattr("backend.api.jobs.submission.publish_control_event", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.submission_service._append_log", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.api.jobs.submission_service.publish_control_event", AsyncMock(return_value=None))
 
     response = await submit_job(
         JobCreateRequest(kind="noop", payload={}),

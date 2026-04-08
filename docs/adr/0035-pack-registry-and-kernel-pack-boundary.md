@@ -36,7 +36,9 @@ Each pack must declare:
 - `delivery_stage`
 - `deployment_boundary`
 - `runtime_owner`
-- `selector_hints`
+- `selector.required_capabilities`
+- `selector.target_zone`
+- `selector.target_executors`
 
 ### 4. Boundary rule
 

@@ -24,7 +24,7 @@ from backend.api.auth_shared import assert_user_active, register_login_session
 from backend.api.auth_token_issue import issue_auth_token
 from backend.api.deps import get_current_admin, get_db, get_redis
 from backend.api.models.auth import AuthSessionResponse, InviteCreateRequest, InviteResponse, WebAuthnRegisterBeginResponse, WebAuthnRegisterCompleteRequest
-from backend.core.auth_helpers import (
+from backend.control_plane.auth.auth_helpers import (
     CHALLENGE_TTL,
     CODE_BAD_REQUEST,
     CODE_NOT_FOUND,
@@ -39,9 +39,9 @@ from backend.core.auth_helpers import (
     require_db_redis,
     zen,
 )
-from backend.core.redis_client import RedisClient
-from backend.core.webauthn_challenge_store import WebAuthnChallengeStore
-from backend.core.webauthn_flow_session import (
+from backend.platform.redis.client import RedisClient
+from backend.control_plane.auth.webauthn_challenge_store import WebAuthnChallengeStore
+from backend.control_plane.auth.webauthn_flow_session import (
     clear_webauthn_flow_session,
     ensure_webauthn_flow_session,
     require_webauthn_flow_session,
@@ -49,7 +49,7 @@ from backend.core.webauthn_flow_session import (
 from backend.models.user import User, WebAuthnCredential
 
 try:
-    from backend.core.webauthn import generate_registration_challenge, verify_registration
+    from backend.control_plane.auth.webauthn import generate_registration_challenge, verify_registration
 except (ImportError, RuntimeError):
     generate_registration_challenge = None  # type: ignore[assignment]
     verify_registration = None  # type: ignore[assignment]
@@ -75,11 +75,11 @@ def _assert_invite_fallback_confirmation(confirm: str | None) -> None:
 async def _consume_invite_token(redis: RedisClient, token: str) -> dict[str, object]:
     token_key = f"{INVITE_TOKEN_PREFIX}{token}"
     lock_key = f"{INVITE_TOKEN_LOCK_PREFIX}{token}"
-    lock_acquired = await redis.acquire_lock(lock_key, ttl=10)
+    lock_acquired = await redis.locks.acquire(lock_key, ttl=10)
     if not lock_acquired:
         raise zen("ZEN-AUTH-4092", "Invite token is being consumed", status_code=409, recovery_hint="Retry after a moment")
     try:
-        token_data_str = await redis.get(token_key)
+        token_data_str = await redis.kv.get(token_key)
         if not token_data_str:
             raise zen(
                 "ZEN-AUTH-4031",
@@ -101,16 +101,16 @@ async def _consume_invite_token(redis: RedisClient, token: str) -> dict[str, obj
                 "Invite token payload must be an object",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        await redis.delete(token_key)
+        await redis.kv.delete(token_key)
         return dict(payload)
     finally:
-        await redis.release_lock(lock_key)
+        await redis.locks.release(lock_key)
 
 
 async def _validate_invite_token(redis: RedisClient, token: str) -> dict[str, object]:
     """Validate invite token without consuming it. Returns payload if valid."""
     token_key = f"{INVITE_TOKEN_PREFIX}{token}"
-    token_data_str = await redis.get(token_key)
+    token_data_str = await redis.kv.get(token_key)
     if not token_data_str:
         raise zen(
             "ZEN-AUTH-4031",
@@ -159,7 +159,7 @@ async def create_invite(
     token = secrets.token_hex(32)
     expires_in = req.expires_in_minutes * 60
     token_key = f"{INVITE_TOKEN_PREFIX}{token}"
-    await redis.setex(token_key, expires_in, json.dumps({"user_id": user.id}))
+    await redis.kv.setex(token_key, expires_in, json.dumps({"user_id": user.id}))
 
     return InviteResponse(token=token, expires_at=int(time.time()) + expires_in)
 
@@ -214,7 +214,7 @@ async def invite_webauthn_register_complete(
     """Invite link: complete WebAuthn registration and consume token."""
     require_db_redis(db, redis)
 
-    # Step 1: Validate token without consuming — prevents DoS via invalid requests burning invites
+    # Step 1: Validate token without consuming 鈥?prevents DoS via invalid requests burning invites
     token_payload = await _validate_invite_token(redis, token)
     user_id = token_payload.get("user_id")
     result = await db.execute(select(User).where(User.id == user_id))
@@ -276,7 +276,7 @@ async def invite_webauthn_register_complete(
     db.add(new_cred)
     await db.flush()
 
-    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+    from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 
     user_scopes = hydrate_scopes_for_role(
         await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
@@ -325,7 +325,7 @@ async def invite_fallback_login(
 ) -> AuthSessionResponse:
     """Invite link: fallback login with admin confirmation required.
 
-    Security: requires admin authentication to prevent invite link leak → account takeover.
+    Security: requires admin authentication to prevent invite link leak 鈫?account takeover.
     """
     require_db_redis(db, redis)
     rid, cip = request_id(request), client_ip(request)
@@ -343,7 +343,7 @@ async def invite_fallback_login(
         raise zen("ZEN-AUTH-4041", "Invite target user not found", status_code=404, recovery_hint="Validate invite target and retry")
     assert_user_active(user, flow="invite_fallback_login", rid=rid, username=user.username, client_ip_str=cip)
 
-    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+    from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 
     user_scopes = hydrate_scopes_for_role(
         await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),

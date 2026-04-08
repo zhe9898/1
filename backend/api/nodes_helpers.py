@@ -1,5 +1,5 @@
-"""
-ZEN70 Nodes API 鈥?Helper functions.
+﻿"""
+ZEN70 Nodes API 閳?Helper functions.
 
 Split from nodes.py for maintainability.  Contains response builders,
 contract application, filtering, and database helpers.
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
 from backend.kernel.contracts.status import normalize_persisted_status
-from backend.core.control_plane_state import (
+from backend.control_plane.console.state_views import (
     node_attention_reason,
     node_capacity_state,
     node_capacity_state_view,
@@ -26,10 +26,10 @@ from backend.core.control_plane_state import (
     node_heartbeat_state_view,
     node_status_view,
 )
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.kernel.topology.node_auth import generate_node_token, hash_node_token
-from backend.core.protocol_version import validate_lease_version, validate_protocol_version
-from backend.core.worker_pool import infer_node_worker_pools
+from backend.kernel.contracts.protocol_version import validate_lease_version, validate_protocol_version
+from backend.kernel.scheduling.worker_pool import infer_node_worker_pools
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -215,11 +215,11 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
     node.last_seen_at = now
     node.updated_at = now
 
-    # ── Device profile: honour explicit value or auto-infer ──────────────
+    # 鈹€鈹€ Device profile: honour explicit value or auto-infer 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     current_meta: dict[str, object] = dict(node.metadata_json or {})
     explicit_profile = str(current_meta.get("device_profile", "")).strip()
     if not explicit_profile:
-        from backend.core.device_profiles import apply_profile_defaults, get_device_profile, infer_device_profile
+        from backend.kernel.topology.device_profiles import apply_profile_defaults, get_device_profile, infer_device_profile
 
         inferred = infer_device_profile(
             os=node.os or "",
@@ -231,7 +231,7 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
         current_meta["device_profile"] = inferred
         profile_obj = get_device_profile(inferred)
     else:
-        from backend.core.device_profiles import apply_profile_defaults, get_device_profile
+        from backend.kernel.topology.device_profiles import apply_profile_defaults, get_device_profile
 
         profile_obj = get_device_profile(explicit_profile)
     if profile_obj is not None:
@@ -337,3 +337,4 @@ def _provision_token(node: Node) -> tuple[str, int]:
     node.auth_token_hash = hash_node_token(token)
     node.auth_token_version = next_version
     return token, next_version
+

@@ -3,8 +3,8 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-from backend.core.auth_helpers import token_response as _token_response_impl
-from backend.core.jwt import get_access_token_expire_seconds
+from backend.control_plane.auth.auth_helpers import token_response as _token_response_impl
+from backend.control_plane.auth.jwt import get_access_token_expire_seconds
 
 
 def _auth_mod() -> object:  # noqa: ANN202

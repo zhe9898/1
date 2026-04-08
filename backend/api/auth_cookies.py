@@ -5,7 +5,7 @@ from typing import Literal, cast
 
 from fastapi import Request, Response
 
-from backend.core.jwt import get_access_token_expire_seconds
+from backend.control_plane.auth.jwt import get_access_token_expire_seconds
 
 CookieSameSite = Literal["lax", "strict", "none"]
 

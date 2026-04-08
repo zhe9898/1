@@ -15,7 +15,7 @@ import math
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from backend.core.scheduling_policy_types import StrategyConfig
+from backend.kernel.policy.types import StrategyConfig
 
 if TYPE_CHECKING:
     from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot

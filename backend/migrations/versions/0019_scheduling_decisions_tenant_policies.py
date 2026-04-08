@@ -1,11 +1,11 @@
-"""Add scheduling_decisions and tenant_scheduling_policies tables."""
+﻿"""Add scheduling_decisions and tenant_scheduling_policies tables."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0019_scheduling_decisions_tenant_policies"
 down_revision = "0018_job_logs"
@@ -113,3 +113,4 @@ def downgrade() -> None:
         op.drop_index("ix_scheduling_decisions_node_id", "scheduling_decisions")
         op.drop_index("ix_scheduling_decisions_tenant_id", "scheduling_decisions")
         op.drop_table("scheduling_decisions")
+

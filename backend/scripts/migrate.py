@@ -1,12 +1,12 @@
-"""CLI entrypoint for governed Alembic migration execution."""
+﻿"""CLI entrypoint for governed Alembic migration execution."""
 
 from __future__ import annotations
 
 import argparse
 import logging
 
-from backend.core.migration_governance import ordered_migration_chains
-from backend.core.migration_runner import run_governed_migrations
+from backend.platform.db.migration_governance import ordered_migration_chains
+from backend.platform.db.migration_runner import run_governed_migrations
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -50,3 +50,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

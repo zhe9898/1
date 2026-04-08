@@ -7,8 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_current_user, get_redis, get_tenant_db
-from backend.core.redis_client import RedisClient
-from backend.core.sessions import list_user_sessions, revoke_all_user_sessions, revoke_session
+from backend.platform.redis.client import RedisClient
+from backend.control_plane.auth.sessions import list_user_sessions, revoke_all_user_sessions, revoke_session
 from backend.models.session import Session
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])

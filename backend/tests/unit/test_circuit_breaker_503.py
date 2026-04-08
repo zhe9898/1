@@ -1,9 +1,4 @@
-"""
-单元测试：503 熔断与安全降级。
-
-验证 require_db_redis 防空指针、全局异常处理器统一错误码、
-健康检查降级路径。纯 Mock，不需要 Redis/DB/FastAPI 运行时。
-"""
+"""Unit tests for 503 degradation paths and WebAuthn rate limits."""
 
 from __future__ import annotations
 
@@ -12,17 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-# ---------------------------------------------------------------------------
-# require_db_redis 守门函数测试
-# ---------------------------------------------------------------------------
-
 
 class TestRequireDbRedis:
-    """验证 require_db_redis 对 None 依赖的防护行为。"""
+    """Guard rails for missing DB/Redis dependencies."""
 
     def test_redis_none_raises_503(self) -> None:
-        """Redis 为 None 时应抛出 503。"""
-        from backend.core.auth_helpers import require_db_redis
+        from backend.control_plane.auth.auth_helpers import require_db_redis
 
         fake_db = MagicMock()
 
@@ -33,8 +23,7 @@ class TestRequireDbRedis:
         assert "ZEN-AUTH-503" in str(exc_info.value.detail)
 
     def test_db_none_raises_503(self) -> None:
-        """DB 为 None 时应抛出 503。"""
-        from backend.core.auth_helpers import require_db_redis
+        from backend.control_plane.auth.auth_helpers import require_db_redis
 
         fake_redis = MagicMock()
 
@@ -45,38 +34,28 @@ class TestRequireDbRedis:
         assert "ZEN-AUTH-503" in str(exc_info.value.detail)
 
     def test_both_valid_passes(self) -> None:
-        """DB 和 Redis 都有效时不应抛异常。"""
-        from backend.core.auth_helpers import require_db_redis
+        from backend.control_plane.auth.auth_helpers import require_db_redis
 
         fake_db = MagicMock()
         fake_redis = MagicMock()
 
-        # 不应抛出任何异常
         require_db_redis(fake_db, fake_redis)
 
     def test_both_none_raises_503_for_db_first(self) -> None:
-        """两者都 None 时应优先报 DB 不可用（先检查 DB）。"""
-        from backend.core.auth_helpers import require_db_redis
+        from backend.control_plane.auth.auth_helpers import require_db_redis
 
         with pytest.raises(HTTPException) as exc_info:
             require_db_redis(None, None)
 
         assert exc_info.value.status_code == 503
-        # require_db_redis 先检查 db
         assert "Database" in str(exc_info.value.detail) or "ZEN-AUTH-503" in str(exc_info.value.detail)
 
 
-# ---------------------------------------------------------------------------
-# zen() 错误构造器测试
-# ---------------------------------------------------------------------------
-
-
 class TestZenErrorBuilder:
-    """验证 zen() 工厂函数构造的 HTTPException。"""
+    """Canonical error-envelope builder behavior."""
 
     def test_zen_creates_correct_envelope(self) -> None:
-        """zen() 应构造包含 code/message/recovery_hint/details 的标准错误体。"""
-        from backend.core.errors import zen
+        from backend.kernel.contracts.errors import zen
 
         exc = zen("ZEN-TEST-001", "test message", 418, recovery_hint="try again")
 
@@ -86,18 +65,17 @@ class TestZenErrorBuilder:
         assert detail["code"] == "ZEN-TEST-001"  # type: ignore[index]
         assert detail["message"] == "test message"  # type: ignore[index]
         assert detail["recovery_hint"] == "try again"  # type: ignore[index]
-        assert isinstance(detail["details"], dict)  # type: ignore[index, unreachable]
+        assert isinstance(detail["details"], dict)  # type: ignore[index]
 
     def test_zen_with_enum_code(self) -> None:
-        """zen() 应支持 ZenErrorCode 枚举。"""
-        from backend.core.errors import ZenErrorCode, zen
+        from backend.kernel.contracts.errors import ZenErrorCode, zen
 
         exc = zen(ZenErrorCode.AUTH_FORBIDDEN, "forbidden", 403)
+
         assert exc.detail["code"] == "ZEN-AUTH-403"  # type: ignore[index]
 
     def test_zen_extra_details_merged(self) -> None:
-        """zen() 的 extra_details 应被合并到 details 字段。"""
-        from backend.core.errors import zen
+        from backend.kernel.contracts.errors import zen
 
         exc = zen(
             "ZEN-TEST-002",
@@ -110,32 +88,20 @@ class TestZenErrorBuilder:
         assert exc.detail["details"]["reason"] == "too_short"  # type: ignore[index]
 
 
-# ---------------------------------------------------------------------------
-# 健康检查降级测试
-# ---------------------------------------------------------------------------
-
-
 class TestHealthDegradation:
-    """验证 /health 在依赖不可用时的降级行为。"""
+    """Control-plane health endpoint degradation behavior."""
 
     @pytest.mark.asyncio
     async def test_redis_ping_false_returns_unhealthy(self) -> None:
-        """Redis ping 返回 False 时，健康检查应返回 unhealthy。"""
         from backend.api.main import health_check
 
-        # 构造 mock request
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=False)
 
         mock_request = MagicMock()
         mock_request.app.state.redis = mock_redis
 
-        with patch(
-            "backend.api.main.get_settings",
-            return_value={
-                "postgres_dsn": None,
-            },
-        ):
+        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": None}):
             with patch(
                 "backend.api.main._check_postgres_async",
                 new_callable=AsyncMock,
@@ -148,18 +114,12 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_redis_none_returns_unhealthy(self) -> None:
-        """Redis 客户端为 None 时，健康检查应返回 unhealthy。"""
         from backend.api.main import health_check
 
         mock_request = MagicMock()
         mock_request.app.state.redis = None
 
-        with patch(
-            "backend.api.main.get_settings",
-            return_value={
-                "postgres_dsn": None,
-            },
-        ):
+        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": None}):
             with patch(
                 "backend.api.main._check_postgres_async",
                 new_callable=AsyncMock,
@@ -172,7 +132,6 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_redis_ping_timeout_returns_timeout(self) -> None:
-        """Redis ping 超时时，健康检查应标记 redis 为 timeout。"""
         import asyncio
 
         from backend.api.main import health_check
@@ -183,12 +142,7 @@ class TestHealthDegradation:
         mock_request = MagicMock()
         mock_request.app.state.redis = mock_redis
 
-        with patch(
-            "backend.api.main.get_settings",
-            return_value={
-                "postgres_dsn": None,
-            },
-        ):
+        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": None}):
             with patch(
                 "backend.api.main._check_postgres_async",
                 new_callable=AsyncMock,
@@ -201,7 +155,6 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_redis_ok_postgres_error_returns_degraded(self) -> None:
-        """Redis 正常但 Postgres 异常时，健康检查应返回 degraded。"""
         from backend.api.main import health_check
 
         mock_redis = AsyncMock()
@@ -210,12 +163,7 @@ class TestHealthDegradation:
         mock_request = MagicMock()
         mock_request.app.state.redis = mock_redis
 
-        with patch(
-            "backend.api.main.get_settings",
-            return_value={
-                "postgres_dsn": "postgresql://localhost/zen70",
-            },
-        ):
+        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": "postgresql://localhost/zen70"}):
             with patch(
                 "backend.api.main._check_postgres_async",
                 new_callable=AsyncMock,
@@ -229,7 +177,6 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_redis_error_postgres_ok_returns_degraded(self) -> None:
-        """Redis 异常但 Postgres 正常时，健康检查应返回 degraded。"""
         from backend.api.main import health_check
 
         mock_redis = AsyncMock()
@@ -238,12 +185,7 @@ class TestHealthDegradation:
         mock_request = MagicMock()
         mock_request.app.state.redis = mock_redis
 
-        with patch(
-            "backend.api.main.get_settings",
-            return_value={
-                "postgres_dsn": "postgresql://localhost/zen70",
-            },
-        ):
+        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": "postgresql://localhost/zen70"}):
             with patch(
                 "backend.api.main._check_postgres_async",
                 new_callable=AsyncMock,
@@ -257,7 +199,6 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_both_ok_returns_healthy(self) -> None:
-        """Redis 和 Postgres 都正常时，健康检查应返回 healthy。"""
         from backend.api.main import health_check
 
         mock_redis = AsyncMock()
@@ -266,12 +207,7 @@ class TestHealthDegradation:
         mock_request = MagicMock()
         mock_request.app.state.redis = mock_redis
 
-        with patch(
-            "backend.api.main.get_settings",
-            return_value={
-                "postgres_dsn": "postgresql://localhost/zen70",
-            },
-        ):
+        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": "postgresql://localhost/zen70"}):
             with patch(
                 "backend.api.main._check_postgres_async",
                 new_callable=AsyncMock,
@@ -284,35 +220,31 @@ class TestHealthDegradation:
         assert result.services["postgres"] == "ok"
 
 
-# ---------------------------------------------------------------------------
-# WebAuthn 速率限制测试
-# ---------------------------------------------------------------------------
-
-
 class TestWebAuthnRateLimit:
-    """验证 WebAuthn 接口的 IP 限流保护。"""
+    """WebAuthn IP rate limiting uses the platform Redis contract."""
 
     @pytest.mark.asyncio
     async def test_under_limit_passes(self) -> None:
-        """未超限时不应抛异常。"""
-        from backend.core.auth_helpers import check_webauthn_rate_limit
+        from backend.control_plane.auth.auth_helpers import check_webauthn_rate_limit
 
         redis = AsyncMock()
-        redis.incr_with_expire = AsyncMock(return_value=5)
+        redis.kv = AsyncMock()
+        redis.kv.incr = AsyncMock(return_value=5)
+        redis.kv.expire = AsyncMock()
 
-        # 不应抛异常
         await check_webauthn_rate_limit(redis, "192.168.1.1", "rid-001")
+
+        redis.kv.incr.assert_awaited_once()
+        redis.kv.expire.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_over_limit_raises_429(self) -> None:
-        """超限时应抛出 429。"""
-        from backend.core.auth_helpers import (
-            WEBAUTHN_RATE_MAX,
-            check_webauthn_rate_limit,
-        )
+        from backend.control_plane.auth.auth_helpers import WEBAUTHN_RATE_MAX, check_webauthn_rate_limit
 
         redis = AsyncMock()
-        redis.incr_with_expire = AsyncMock(return_value=WEBAUTHN_RATE_MAX + 1)
+        redis.kv = AsyncMock()
+        redis.kv.incr = AsyncMock(return_value=WEBAUTHN_RATE_MAX + 1)
+        redis.kv.expire = AsyncMock()
 
         with pytest.raises(HTTPException) as exc_info:
             await check_webauthn_rate_limit(redis, "10.0.0.1", "rid-002")
@@ -321,8 +253,6 @@ class TestWebAuthnRateLimit:
 
     @pytest.mark.asyncio
     async def test_redis_none_passes(self) -> None:
-        """Redis 不可用时应放行（避免限流故障阻塞认证）。"""
-        from backend.core.auth_helpers import check_webauthn_rate_limit
+        from backend.control_plane.auth.auth_helpers import check_webauthn_rate_limit
 
-        # 不应抛异常
         await check_webauthn_rate_limit(None, "10.0.0.1", "rid-003")

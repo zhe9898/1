@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import importlib
 import os
@@ -28,7 +28,7 @@ from backend.api import settings as settings_router
 from backend.api import triggers as triggers_router
 from backend.api import user_management as user_management_router
 from backend.api import workflows as workflows_router
-from backend.core.redis_client import get_logger
+from backend.platform.logging.structured import get_logger
 from backend.kernel.packs.registry import get_pack_definition
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
 from backend.kernel.topology.profile_selection import (

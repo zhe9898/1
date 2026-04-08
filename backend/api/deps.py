@@ -14,11 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth_cookies import get_auth_cookie_token, set_auth_cookie
-from backend.core.errors import zen
-from backend.core.jwt import decode_token
+from backend.kernel.contracts.errors import zen
+from backend.control_plane.auth.jwt import decode_token
 from backend.kernel.topology.node_auth import authenticate_node_request
-from backend.core.redis_client import RedisClient
-from backend.core.rls import assert_rls_ready, set_tenant_context
+from backend.platform.redis.client import RedisClient
+from backend.platform.db.rls import assert_rls_ready, set_tenant_context
 from backend.control_plane.auth.access_policy import (
     ADMIN_ROLES,
     SUPERADMIN_ROLE,
@@ -105,8 +105,7 @@ async def get_current_user(
         raise zen("ZEN-AUTH-401", "Missing or invalid token", status_code=401)
 
     redis_client = get_redis(request)
-    redis_conn = getattr(redis_client, "redis", None) if redis_client else None
-    payload, new_token = await decode_token(access_token, redis_conn=redis_conn)
+    payload, new_token = await decode_token(access_token, redis_conn=redis_client.kv if redis_client else None)
     if db is None:
         raise zen("ZEN-BUS-5030", "Database unavailable for token subject validation", status_code=503)
     await _assert_token_subject_active(db, payload)
@@ -229,8 +228,7 @@ async def get_current_user_optional(
         return None
     try:
         redis_client = get_redis(request)
-        redis_conn = getattr(redis_client, "redis", None) if redis_client else None
-        payload, new_token = await decode_token(access_token, redis_conn=redis_conn)
+        payload, new_token = await decode_token(access_token, redis_conn=redis_client.kv if redis_client else None)
         if new_token:
             set_auth_cookie(response, new_token)
         return payload

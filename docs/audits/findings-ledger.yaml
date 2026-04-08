@@ -29,7 +29,7 @@ findings:
     impact: retry policy, safe error projection, metrics, and frontend hints can diverge for the same lease-expiry scenario
     confidence: high
     recommended_fix: Collapse all lease-expiry paths onto one failure category constant and add a semantic consistency test from expire_lease through safe_error_projection
-    verification_hint: backend/kernel/execution/job_lifecycle_service.py:15-43; backend/kernel/execution/failure_taxonomy.py:34,188-228; backend/core/safe_error_projection.py:19-53; backend/tests/unit/test_attempt_expiration_service.py:113
+    verification_hint: backend/kernel/execution/job_lifecycle_service.py:15-43; backend/kernel/execution/failure_taxonomy.py:34,188-228; backend/kernel/contracts/safe_error_projection.py:19-53; backend/tests/unit/test_attempt_expiration_service.py:113
 
   - severity: P2
     category: retry_budget_semantics

@@ -1,4 +1,4 @@
-"""Trigger dispatch service for the unified control-plane trigger layer."""
+﻿"""Trigger dispatch service for the unified control-plane trigger layer."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.jobs.models import JobCreateRequest
-from backend.api.jobs.submission import submit_job
+from backend.api.jobs.submission_service import submit_job
 from backend.kernel.contracts.status import normalize_persisted_status
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.kernel.extensions.extension_sdk import bootstrap_extension_runtime, get_published_job_kind, get_published_workflow_template
-from backend.core.redis_client import CHANNEL_TRIGGER_EVENTS, RedisClient
+from backend.platform.redis.client import CHANNEL_TRIGGER_EVENTS, RedisClient
 from backend.kernel.extensions.trigger_command_service import TriggerCommandService
 from backend.kernel.extensions.workflow_engine import create_workflow
 from backend.kernel.extensions.workflow_template_registry import render_workflow_template

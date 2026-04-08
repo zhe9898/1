@@ -1,4 +1,4 @@
-"""Add tenants table."""
+﻿"""Add tenants table."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0015_tenants"
 down_revision = "0014_health_records"
@@ -66,3 +66,4 @@ def downgrade() -> None:
         return
     op.drop_index("ix_tenants_is_active", "tenants")
     op.drop_table("tenants")
+

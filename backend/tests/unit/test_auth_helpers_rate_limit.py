@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
 
-from backend.core.auth_helpers import _LOCAL_WEBAUTHN_RATE_BUCKETS, _LOCAL_WEBAUTHN_RATE_LOCK, _check_local_webauthn_rate_limit, check_webauthn_rate_limit
+from backend.control_plane.auth.auth_helpers import _LOCAL_WEBAUTHN_RATE_BUCKETS, _LOCAL_WEBAUTHN_RATE_LOCK, _check_local_webauthn_rate_limit, check_webauthn_rate_limit
 
 
 @pytest.mark.asyncio

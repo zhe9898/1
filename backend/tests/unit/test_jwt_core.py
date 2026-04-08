@@ -71,11 +71,11 @@ class TestDecodeToken:
     """decode_token() 双轨验证矩阵。"""
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_valid_token_current_secret(self) -> None:
         """当前密钥签发的合法 token → 解码成功，无 new_token。"""
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         token = _encode({"sub": "alice"})
         payload, new_token = await decode_token(token, redis_conn=_redis_allowing_tokens())
@@ -84,11 +84,11 @@ class TestDecodeToken:
         # (取决于 timing，可能为 None 或非 None，但不应 raise)
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", SECRET_B)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", SECRET_B)
     async def test_old_secret_triggers_renewal(self) -> None:
         """旧密钥签发的 token → 用 PREVIOUS 解码成功 + 自动续签 new_token。"""
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         token = _encode({"sub": "bob"}, secret=SECRET_B)
         payload, new_token = await decode_token(token, redis_conn=_redis_allowing_tokens())
@@ -99,11 +99,11 @@ class TestDecodeToken:
         assert new_payload["sub"] == "bob"
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_expired_token_rejected(self) -> None:
         """过期 token → 401 拒绝。"""
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         with pytest.raises(HTTPException) as exc_info:
             await decode_token(_expired())
@@ -111,11 +111,11 @@ class TestDecodeToken:
         assert "ZEN-AUTH-401" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_wrong_secret_rejected(self) -> None:
         """完全无效的密钥 → 401 拒绝。"""
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         token = _encode({"sub": "eve"}, secret="completely-wrong-secret-32bytes!!")
         with pytest.raises(HTTPException) as exc_info:
@@ -123,22 +123,22 @@ class TestDecodeToken:
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_empty_token_rejected(self) -> None:
         """空 token → 401 拒绝。"""
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         with pytest.raises(HTTPException) as exc_info:
             await decode_token("")
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_whitespace_token_rejected(self) -> None:
         """纯空白 token → 401 拒绝。"""
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         with pytest.raises(HTTPException) as exc_info:
             await decode_token("   ")
@@ -148,10 +148,10 @@ class TestDecodeToken:
 class TestCreateAccessToken:
     """create_access_token() 签发测试。"""
 
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", SECRET_B)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", SECRET_B)
     def test_creates_valid_jwt(self) -> None:
-        from backend.core.jwt import create_access_token
+        from backend.control_plane.auth.jwt import create_access_token
 
         token = create_access_token({"sub": "test", "role": "admin"})
         payload = pyjwt.decode(token, SECRET_A, algorithms=[ALGORITHM])
@@ -161,10 +161,10 @@ class TestCreateAccessToken:
         assert "iat" in payload
         assert "nbf" in payload
 
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", SECRET_B)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", SECRET_B)
     def test_custom_expiry(self) -> None:
-        from backend.core.jwt import create_access_token
+        from backend.control_plane.auth.jwt import create_access_token
 
         token = create_access_token(
             {"sub": "test"},
@@ -173,10 +173,10 @@ class TestCreateAccessToken:
         payload = pyjwt.decode(token, SECRET_A, algorithms=[ALGORITHM])
         assert payload["exp"] - payload["iat"] == pytest.approx(3600, abs=2)
 
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", SECRET_B)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", SECRET_B)
     def test_use_previous_secret(self) -> None:
-        from backend.core.jwt import create_access_token
+        from backend.control_plane.auth.jwt import create_access_token
 
         token = create_access_token(
             {"sub": "test"},
@@ -190,26 +190,26 @@ class TestCreateAccessToken:
 class TestGetAccessTokenExpireSeconds:
     """get_access_token_expire_seconds() 输出验证。"""
 
-    @patch("backend.core.jwt._EXPIRE_MINUTES", 30)
+    @patch("backend.control_plane.auth.jwt._EXPIRE_MINUTES", 30)
     def test_returns_seconds(self) -> None:
-        from backend.core.jwt import get_access_token_expire_seconds
+        from backend.control_plane.auth.jwt import get_access_token_expire_seconds
 
         assert get_access_token_expire_seconds() == 1800
 
 
 class TestRevocationChecks:
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._resolved_revocation_strict", return_value=True)
+    @patch("backend.control_plane.auth.jwt._resolved_revocation_strict", return_value=True)
     async def test_blacklist_check_denies_when_redis_is_unavailable(self, _mock_strict: object) -> None:
-        from backend.core.jwt import is_jti_blacklisted
+        from backend.control_plane.auth.jwt import is_jti_blacklisted
 
         assert await is_jti_blacklisted(None, "jti-1") is True
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_decode_token_rejects_blacklisted_jti(self) -> None:
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         redis = AsyncMock()
         redis.get = AsyncMock(return_value="1")
@@ -221,10 +221,10 @@ class TestRevocationChecks:
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_half_life_rotation_skips_new_token_when_blacklist_write_fails(self) -> None:
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         redis = AsyncMock()
         redis.get = AsyncMock(return_value=None)
@@ -236,10 +236,10 @@ class TestRevocationChecks:
         assert new_token is None
 
     @pytest.mark.asyncio
-    @patch("backend.core.jwt._CURRENT", SECRET_A)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     async def test_half_life_token_without_jti_rotates_legacy_token(self) -> None:
-        from backend.core.jwt import decode_token
+        from backend.control_plane.auth.jwt import decode_token
 
         now = datetime.now(UTC)
         token = pyjwt.encode(

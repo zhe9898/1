@@ -1,6 +1,5 @@
-"""
-ZEN70 Agent Action Router - AI 代理执行软开关操作。
-"""
+﻿"""
+ZEN70 Agent Action Router - AI 浠ｇ悊鎵ц杞紑鍏虫搷浣溿€?"""
 
 from __future__ import annotations
 
@@ -11,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_db, get_redis
-from backend.core.redis_client import RedisClient
+from backend.platform.redis.client import RedisClient
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -78,7 +77,7 @@ async def agent_act(
             continue
 
         if redis is not None:
-            await redis.set_switch(
+            await redis.switches.set(
                 action.switch,
                 action.state,
                 reason=action.reason,

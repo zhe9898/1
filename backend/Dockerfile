@@ -19,13 +19,13 @@ RUN pip install --no-cache-dir \
     -r backend/requirements-iot.txt
 
 USER appuser
-CMD ["sh", "-c", "exec uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --timeout-graceful-shutdown 15"]
+CMD ["sh", "-c", "exec uvicorn backend.control_plane.app.entrypoint:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --timeout-graceful-shutdown 15"]
 
 FROM gateway-base AS gateway-kernel
 RUN pip install --no-cache-dir -r backend/requirements-core.txt
 
 USER appuser
-CMD ["sh", "-c", "exec uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --timeout-graceful-shutdown 15"]
+CMD ["sh", "-c", "exec uvicorn backend.control_plane.app.entrypoint:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --timeout-graceful-shutdown 15"]
 
 # Keep the default build output pinned to kernel-only dependencies.
 FROM gateway-kernel AS gateway-default

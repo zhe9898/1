@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.core.webauthn_challenge_store import WebAuthnChallengeStore
+from backend.control_plane.auth.webauthn_challenge_store import WebAuthnChallengeStore
 from backend.models.webauthn_challenge import WebAuthnChallenge
 
 

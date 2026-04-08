@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_tenant_db
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.models.asset import Asset
 from backend.models.system import SystemLog
 

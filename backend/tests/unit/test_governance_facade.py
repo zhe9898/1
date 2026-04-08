@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.core.governance_facade import GovernanceFacade, get_governance_facade
+from backend.kernel.scheduling.governance_facade import GovernanceFacade, get_governance_facade
 
 # ── Seal / Unseal ────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ class TestGovernanceSeal:
         facade = GovernanceFacade()
         db = AsyncMock()
         with patch(
-            "backend.core.scheduling_governance.set_scheduling_feature",
+            "backend.kernel.scheduling.scheduling_governance.set_scheduling_feature",
             new_callable=AsyncMock,
         ) as mock_set:
             await facade.set_feature_guarded(db, "test_flag", True)
@@ -206,7 +206,7 @@ class TestDecisionLoggerFactory:
         facade = GovernanceFacade()
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         with patch(
-            "backend.core.scheduling_governance.SchedulingDecisionLogger",
+            "backend.kernel.scheduling.scheduling_governance.SchedulingDecisionLogger",
         ) as MockLogger:
             logger = facade.create_decision_logger("tenant-1", "node-a", now)
             MockLogger.assert_called_once_with(
@@ -226,7 +226,7 @@ class TestFeatureFlagQuery:
         facade = GovernanceFacade()
         db = AsyncMock()
         with patch(
-            "backend.core.scheduling_governance.is_scheduling_feature_enabled",
+            "backend.kernel.scheduling.scheduling_governance.is_scheduling_feature_enabled",
             new_callable=AsyncMock,
             return_value=True,
         ) as mock:

@@ -1,25 +1,14 @@
 #!/usr/bin/env python3
-#
-# ZEN70 核心 API 网关 — 透传代理 (Thin Proxy)。
-#
-# 为了贯彻“唯一事实来源”原则，并统一开发与生产的路由和后台任务，
-# 本文件不再自行创建 FastAPI 实例，
-# 而是直接导入并暴露 backend.api.main.app。
+"""Canonical process entrypoint for the backend-driven control plane."""
+
 from __future__ import annotations
 
-from backend.api.main import app
-
-# =========================================================================
-# ⚠️ 架构强约束: 本文件仅作为透传代理存在，禁止在此注册任何新的中间件或路由。
-# 所有应用级别的配置、生命周期和路由注册必须统一在 backend/api/main.py 进行。
-# =========================================================================
-
+from backend.control_plane.app.entrypoint import app
 
 __all__ = ["app"]
 
 
-# -------------------- 入口 --------------------
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend.api.main:app", host="0.0.0.0", port=8000, reload=True)  # nosec
+    uvicorn.run("backend.control_plane.app.entrypoint:app", host="0.0.0.0", port=8000, reload=True)  # nosec

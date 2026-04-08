@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime
 from typing import TYPE_CHECKING
 
-from backend.core.worker_pool import resolve_job_queue_contract_from_record
+from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract_from_record
 from backend.models.job import Job
 
 if TYPE_CHECKING:

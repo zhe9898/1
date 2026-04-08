@@ -26,7 +26,7 @@ from backend.kernel.scheduling.scheduling_candidates import (  # noqa: F401 閳?
     batch_eligible_counts,
     count_eligible_nodes_for_job,
 )
-from backend.core.worker_pool import infer_node_worker_pools, resolve_job_queue_contract_from_record
+from backend.kernel.scheduling.worker_pool import infer_node_worker_pools, resolve_job_queue_contract_from_record
 from backend.models.job import Job
 from backend.models.node import Node
 

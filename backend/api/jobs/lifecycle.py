@@ -1,8 +1,8 @@
-"""
-ZEN70 Jobs API - lifecycle endpoints.
+﻿"""
+ZEN70 Jobs API - lifecycle route assembly.
 
-Split from routes.py for maintainability. Contains the state-machine
-transition endpoints: complete, fail, progress, renew, cancel, retry.
+This module is the HTTP/control-plane entrypoint for lifecycle operations,
+while the job state-machine workflow lives in the dedicated lifecycle service.
 """
 
 from __future__ import annotations
@@ -12,97 +12,24 @@ import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.control_events import publish_control_event
-from backend.api.deps import (
-    get_current_admin,
-    get_machine_tenant_db,
-    get_node_machine_token,
-    get_redis,
-    get_tenant_db,
-)
-from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager
-from backend.core.errors import zen
-from backend.core.failure_control_plane import get_failure_control_plane
-from backend.kernel.execution.failure_taxonomy import FailureCategory, infer_failure_category, should_retry_job
-from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
-from backend.kernel.execution.job_status import normalize_job_status
-from backend.kernel.execution.lease_service import LeaseService
-from backend.kernel.topology.node_auth import authenticate_node_request
-from backend.core.redis_client import CHANNEL_JOB_EVENTS, CHANNEL_RESERVATION_EVENTS, RedisClient
+from backend.api.deps import get_current_admin, get_machine_tenant_db, get_node_machine_token, get_redis, get_tenant_db
+from backend.kernel.contracts.errors import zen
+from backend.kernel.scheduling.failure_control_plane import get_failure_control_plane
+from backend.platform.redis.client import RedisClient
 
-from .auto_tune_feedback import log_tuner_feedback_failure, record_job_outcome_for_tuner
-from .database import (
-    _append_log,
-    _assert_valid_lease_owner,
-    _get_attempt_for_callback,
-    _get_current_attempt,
-    _get_job_by_id,
-    _get_job_by_id_for_update,
-    move_to_dead_letter_queue,
+from .helpers import _utcnow
+from .lifecycle_service import (
+    build_default_job_lifecycle_dependencies,
+    cancel_job_by_operator,
+    complete_job_callback,
+    fail_job_callback,
+    renew_job_lease_callback,
+    report_job_progress_callback,
+    retry_job_by_operator,
 )
-from .helpers import (
-    _to_lease_response,
-    _to_response,
-    _utcnow,
-)
-from .models import (
-    JobActionRequest,
-    JobFailRequest,
-    JobLeaseResponse,
-    JobProgressRequest,
-    JobRenewRequest,
-    JobResponse,
-    JobResultRequest,
-)
+from .models import JobActionRequest, JobFailRequest, JobLeaseResponse, JobProgressRequest, JobRenewRequest, JobResponse, JobResultRequest
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
-
-
-async def _cancel_job_reservation(
-    redis: RedisClient | None,
-    job_id: str,
-    *,
-    reason: str,
-) -> None:
-    reservation_mgr = get_reservation_manager()
-    reservation = reservation_mgr.get_reservation(job_id)
-    if reservation is None:
-        return
-    if not reservation_mgr.cancel_reservation(job_id):
-        return
-    await publish_control_event(
-        redis,
-        CHANNEL_RESERVATION_EVENTS,
-        "canceled",
-        {
-            "reservation": reservation.to_dict(),
-            "reason": reason,
-            "source": "job_lifecycle",
-        },
-    )
-
-
-async def _record_tuner_feedback(
-    db: AsyncSession,
-    *,
-    job: object,
-    attempt: object,
-    node_id: str,
-    success: bool,
-    now: datetime.datetime,
-) -> None:
-    try:
-        await record_job_outcome_for_tuner(
-            db,
-            job=job,
-            attempt=attempt,
-            node_id=node_id,
-            success=success,
-            now=now,
-        )
-    except Exception:
-        log_tuner_feedback_failure(str(getattr(job, "job_id", "<unknown>") or "<unknown>"))
-        raise
 
 
 @router.post("/{id}/result", response_model=JobResponse)
@@ -113,73 +40,14 @@ async def complete_job(
     redis: RedisClient | None = Depends(get_redis),
     node_token: str = Depends(get_node_machine_token),
 ) -> JobResponse:
-    """Mark job as completed with row-level lock to prevent race conditions."""
-
-    await authenticate_node_request(
-        db,
-        payload.node_id,
-        node_token,
-        require_active=True,
-        tenant_id=payload.tenant_id,
+    return await complete_job_callback(
+        id,
+        payload,
+        db=db,
+        redis=redis,
+        node_token=node_token,
+        deps=build_default_job_lifecycle_dependencies(),
     )
-
-    job = await _get_job_by_id_for_update(db, payload.tenant_id, id)
-    _assert_valid_lease_owner(job, payload, "result")
-    if job.status == "completed":
-        return _to_response(job)
-
-    attempt = await _get_attempt_for_callback(db, job, payload)
-    if attempt is None:
-        raise zen(
-            "ZEN-JOB-4093",
-            "Job attempt history is missing for this lease",
-            status_code=409,
-            recovery_hint="Pull a fresh job lease before reporting terminal state",
-            details={"job_id": job.job_id, "node_id": payload.node_id, "attempt": payload.attempt},
-        )
-
-    now = _utcnow()
-    await JobLifecycleService.complete_job(
-        db,
-        job=job,
-        attempt=attempt,
-        result=payload.result,
-        now=now,
-    )
-    await _cancel_job_reservation(redis, job.job_id, reason="completed")
-    await _append_log(
-        db,
-        job.job_id,
-        payload.log or f"job completed by {payload.node_id} attempt={payload.attempt}",
-        tenant_id=job.tenant_id,
-    )
-    await _record_tuner_feedback(
-        db,
-        job=job,
-        attempt=attempt,
-        node_id=payload.node_id,
-        success=True,
-        now=now,
-    )
-    response = _to_response(job, now=now)
-    await db.commit()
-    await publish_control_event(
-        redis,
-        CHANNEL_JOB_EVENTS,
-        "completed",
-        {"job": response.model_dump(mode="json")},
-    )
-
-    _fcp = get_failure_control_plane()
-    await _fcp.record_success(node_id=payload.node_id, now=now)
-
-    job_kind = getattr(job, "kind", None)
-    if job_kind:
-        kind_state = await _fcp.get_kind_circuit_state(job_kind, now=now)
-        if kind_state == "half-open":
-            await _fcp.reset_kind_circuit(job_kind)
-
-    return response
 
 
 @router.post("/{id}/fail", response_model=JobResponse)
@@ -190,137 +58,14 @@ async def fail_job(
     redis: RedisClient | None = Depends(get_redis),
     node_token: str = Depends(get_node_machine_token),
 ) -> JobResponse:
-    """Mark job as failed with row-level lock to prevent race conditions."""
-
-    await authenticate_node_request(
-        db,
-        payload.node_id,
-        node_token,
-        require_active=True,
-        tenant_id=payload.tenant_id,
+    return await fail_job_callback(
+        id,
+        payload,
+        db=db,
+        redis=redis,
+        node_token=node_token,
+        deps=build_default_job_lifecycle_dependencies(),
     )
-
-    job = await _get_job_by_id_for_update(db, payload.tenant_id, id)
-    _assert_valid_lease_owner(job, payload, "fail")
-    if job.status == "failed":
-        return _to_response(job)
-
-    attempt = await _get_attempt_for_callback(db, job, payload)
-    if attempt is None:
-        raise zen(
-            "ZEN-JOB-4093",
-            "Job attempt history is missing for this lease",
-            status_code=409,
-            recovery_hint="Pull a fresh job lease before reporting terminal state",
-            details={"job_id": job.job_id, "node_id": payload.node_id, "attempt": payload.attempt},
-        )
-
-    now = _utcnow()
-    failure_category_str = (
-        payload.failure_category
-        or infer_failure_category(
-            error_message=payload.error,
-            exit_code=payload.error_details.get("exit_code") if payload.error_details else None,  # type: ignore[arg-type]
-            error_details=payload.error_details,
-        ).value
-    )
-
-    _fcp = get_failure_control_plane()
-    await _fcp.record_failure(
-        node_id=payload.node_id,
-        job_id=job.job_id,
-        category=failure_category_str,
-        connector_id=getattr(job, "connector_id", None),
-        kind=job.kind,
-        now=now,
-    )
-
-    attempt.failure_category = failure_category_str
-    failure_category = FailureCategory(failure_category_str)
-    should_retry = should_retry_job(job, failure_category)
-
-    if should_retry:
-        from backend.kernel.execution.failure_taxonomy import calculate_retry_delay_seconds
-
-        retry_delay_seconds = calculate_retry_delay_seconds(
-            failure_category,
-            int(job.retry_count or 0),
-        )
-        retry_at = now + datetime.timedelta(seconds=retry_delay_seconds)
-
-        await JobLifecycleService.requeue_after_failure(
-            db,
-            job=job,
-            attempt=attempt,
-            error_message=payload.error,
-            failure_category=failure_category_str,
-            retry_at=retry_at,
-            now=now,
-        )
-        await _cancel_job_reservation(redis, job.job_id, reason="requeued")
-        await _append_log(
-            db,
-            job.job_id,
-            payload.log
-            or (
-                f"job failed on {payload.node_id}; requeued retry={job.retry_count}/{job.max_retries}"
-                f" category={failure_category_str} retry_at={retry_at.isoformat()}"
-            ),
-            level="warning",
-            tenant_id=job.tenant_id,
-        )
-        await _record_tuner_feedback(
-            db,
-            job=job,
-            attempt=attempt,
-            node_id=payload.node_id,
-            success=False,
-            now=now,
-        )
-        response = _to_response(job, now=now)
-        await db.commit()
-        await publish_control_event(
-            redis,
-            CHANNEL_JOB_EVENTS,
-            "requeued",
-            {"job": response.model_dump(mode="json"), "failure_category": failure_category_str},
-        )
-        return response
-
-    await JobLifecycleService.fail_job(
-        db,
-        job=job,
-        attempt=attempt,
-        error_message=payload.error,
-        failure_category=failure_category_str,
-        now=now,
-    )
-    await _cancel_job_reservation(redis, job.job_id, reason="failed")
-    await _append_log(
-        db,
-        job.job_id,
-        payload.log or f"job failed permanently on {payload.node_id} category={failure_category_str}",
-        level="error",
-        tenant_id=job.tenant_id,
-    )
-    await move_to_dead_letter_queue(redis, db, job)
-    await _record_tuner_feedback(
-        db,
-        job=job,
-        attempt=attempt,
-        node_id=payload.node_id,
-        success=False,
-        now=now,
-    )
-    response = _to_response(job, now=now)
-    await db.commit()
-    await publish_control_event(
-        redis,
-        CHANNEL_JOB_EVENTS,
-        "failed",
-        {"job": response.model_dump(mode="json"), "failure_category": failure_category_str, "will_retry": False},
-    )
-    return response
 
 
 @router.post("/{id}/progress", response_model=JobResponse)
@@ -331,39 +76,14 @@ async def report_job_progress(
     redis: RedisClient | None = Depends(get_redis),
     node_token: str = Depends(get_node_machine_token),
 ) -> JobResponse:
-    await authenticate_node_request(db, payload.node_id, node_token, require_active=True, tenant_id=payload.tenant_id)
-    job = await _get_job_by_id(db, payload.tenant_id, id)
-
-    _assert_valid_lease_owner(job, payload, "progress")
-    attempt = await _get_attempt_for_callback(db, job, payload)
-    if attempt is None:
-        raise zen(
-            "ZEN-JOB-4093",
-            "Job attempt history is missing for this lease",
-            status_code=409,
-            recovery_hint="Pull a fresh job lease before reporting progress",
-            details={"job_id": job.job_id, "node_id": payload.node_id, "attempt": payload.attempt},
-        )
-
-    now = _utcnow()
-    await LeaseService.mark_attempt_running(db, job=job, attempt=attempt, now=now)
-    attempt.result_summary = {"progress": payload.progress, "message": payload.message}
-    await db.flush()
-    await _append_log(
-        db,
-        job.job_id,
-        payload.log or f"progress={payload.progress}% node={payload.node_id} message={payload.message or '-'}",
-        tenant_id=job.tenant_id,
+    return await report_job_progress_callback(
+        id,
+        payload,
+        db=db,
+        redis=redis,
+        node_token=node_token,
+        deps=build_default_job_lifecycle_dependencies(),
     )
-    response = _to_response(job, now=now)
-    await db.commit()
-    await publish_control_event(
-        redis,
-        CHANNEL_JOB_EVENTS,
-        "progress",
-        {"job": response.model_dump(mode="json")},
-    )
-    return response
 
 
 @router.post("/{id}/renew", response_model=JobLeaseResponse)
@@ -374,51 +94,14 @@ async def renew_job_lease(
     redis: RedisClient | None = Depends(get_redis),
     node_token: str = Depends(get_node_machine_token),
 ) -> JobLeaseResponse:
-    """Renew job lease with row-level lock to prevent race conditions."""
-
-    await authenticate_node_request(
-        db,
-        payload.node_id,
-        node_token,
-        require_active=True,
-        tenant_id=payload.tenant_id,
+    return await renew_job_lease_callback(
+        id,
+        payload,
+        db=db,
+        redis=redis,
+        node_token=node_token,
+        deps=build_default_job_lifecycle_dependencies(),
     )
-
-    job = await _get_job_by_id_for_update(db, payload.tenant_id, id)
-    _assert_valid_lease_owner(job, payload, "renew")
-    attempt = await _get_attempt_for_callback(db, job, payload)
-    if attempt is None:
-        raise zen(
-            "ZEN-JOB-4093",
-            "Job attempt history is missing for this lease",
-            status_code=409,
-            recovery_hint="Pull a fresh job lease before renewing",
-            details={"job_id": job.job_id, "node_id": payload.node_id, "attempt": payload.attempt},
-        )
-
-    now = _utcnow()
-    await LeaseService.renew_lease(
-        db,
-        job=job,
-        attempt=attempt,
-        now=now,
-        extend_seconds=payload.extend_seconds,
-    )
-    await _append_log(
-        db,
-        job.job_id,
-        payload.log or f"lease renewed by {payload.node_id} extend={payload.extend_seconds}s",
-        tenant_id=job.tenant_id,
-    )
-    response = _to_lease_response(job, now=now)
-    await db.commit()
-    await publish_control_event(
-        redis,
-        CHANNEL_JOB_EVENTS,
-        "renewed",
-        {"job": _to_response(job, now=now).model_dump(mode="json")},
-    )
-    return response
 
 
 @router.post("/{id}/cancel", response_model=JobResponse)
@@ -429,46 +112,14 @@ async def cancel_job(
     db: AsyncSession = Depends(get_tenant_db),
     redis: RedisClient | None = Depends(get_redis),
 ) -> JobResponse:
-    tenant_id = str(current_user.get("tenant_id") or "default")
-    job = await _get_job_by_id_for_update(db, tenant_id, id)
-    job_status = normalize_job_status(job.status) or "pending"
-    if job_status == "cancelled":
-        return _to_response(job)
-    if job_status not in {"pending", "leased"}:
-        raise zen(
-            "ZEN-JOB-4094",
-            "Only pending or leased jobs can be cancelled",
-            status_code=409,
-            recovery_hint="Retry only after the job returns to a cancelable state",
-            details={"job_id": job.job_id, "status": job_status},
-        )
-
-    now = _utcnow()
-    attempt = await _get_current_attempt(db, job)
-    await JobLifecycleService.cancel_job(
-        db,
-        job=job,
-        attempt=attempt,
-        reason=payload.reason or "cancelled by operator",
-        now=now,
+    return await cancel_job_by_operator(
+        id,
+        payload,
+        current_user=current_user,
+        db=db,
+        redis=redis,
+        deps=build_default_job_lifecycle_dependencies(),
     )
-    await _cancel_job_reservation(redis, job.job_id, reason="cancelled")
-    await _append_log(
-        db,
-        job.job_id,
-        payload.reason or "job cancelled by operator",
-        level="warning",
-        tenant_id=job.tenant_id,
-    )
-    response = _to_response(job, now=now)
-    await db.commit()
-    await publish_control_event(
-        redis,
-        CHANNEL_JOB_EVENTS,
-        "canceled",
-        {"job": response.model_dump(mode="json")},
-    )
-    return response
 
 
 @router.post("/{id}/retry", response_model=JobResponse)
@@ -479,39 +130,14 @@ async def retry_job_now(
     db: AsyncSession = Depends(get_tenant_db),
     redis: RedisClient | None = Depends(get_redis),
 ) -> JobResponse:
-    tenant_id = str(current_user.get("tenant_id") or "default")
-    job = await _get_job_by_id_for_update(db, tenant_id, id)
-    job_status = normalize_job_status(job.status) or "pending"
-    if job_status == "pending":
-        return _to_response(job)
-    if job_status not in {"failed", "completed", "cancelled"}:
-        raise zen(
-            "ZEN-JOB-4095",
-            "Only terminal jobs can be retried manually",
-            status_code=409,
-            recovery_hint="Cancel or wait for the current lease before retrying",
-            details={"job_id": job.job_id, "status": job_status},
-        )
-
-    now = _utcnow()
-    await JobLifecycleService.retry_job(db, job=job, now=now)
-    await _cancel_job_reservation(redis, job.job_id, reason="manual_retry")
-    await _append_log(
-        db,
-        job.job_id,
-        payload.reason or "job queued for manual retry",
-        level="warning",
-        tenant_id=job.tenant_id,
+    return await retry_job_by_operator(
+        id,
+        payload,
+        current_user=current_user,
+        db=db,
+        redis=redis,
+        deps=build_default_job_lifecycle_dependencies(),
     )
-    response = _to_response(job, now=now)
-    await db.commit()
-    await publish_control_event(
-        redis,
-        CHANNEL_JOB_EVENTS,
-        "manual-retry",
-        {"job": response.model_dump(mode="json")},
-    )
-    return response
 
 
 @router.post("/control-plane/release-quarantine/{node_id}")
@@ -519,10 +145,9 @@ async def release_quarantine(
     node_id: str,
     current_user: dict[str, object] = Depends(get_current_admin),
 ) -> dict[str, object]:
-    """Manually release a node from quarantine (admin only)."""
-
-    _fcp = get_failure_control_plane()
-    released = await _fcp.release_quarantine(node_id)
+    del current_user
+    failure_control_plane = get_failure_control_plane()
+    released = await failure_control_plane.release_quarantine(node_id)
     if not released:
         raise zen(
             "ZEN-FCP-4041",
@@ -537,11 +162,8 @@ async def release_quarantine(
 async def control_plane_snapshot(
     current_user: dict[str, object] = Depends(get_current_admin),
 ) -> dict[str, object]:
-    """Return a diagnostic snapshot of all failure control plane state."""
-
-    _fcp = get_failure_control_plane()
-    now = _utcnow()
-    return await _fcp.snapshot(now=now)
+    del current_user
+    return await get_failure_control_plane().snapshot(now=_utcnow())
 
 
 @router.get("/control-plane/governance/timeline")
@@ -553,13 +175,12 @@ async def governance_timeline(
     limit: int = 200,
     current_user: dict[str, object] = Depends(get_current_admin),
 ) -> list[dict[str, object]]:
-    """Query governance event timeline with optional filters (admin only)."""
-
-    _fcp = get_failure_control_plane()
+    del current_user
+    failure_control_plane = get_failure_control_plane()
     since = None
     if since_hours is not None:
         since = _utcnow() - datetime.timedelta(hours=since_hours)
-    return await _fcp.governance_timeline(
+    return await failure_control_plane.governance_timeline(
         event_type=event_type,
         resource_type=resource_type,
         resource_id=resource_id,
@@ -572,28 +193,22 @@ async def governance_timeline(
 async def governance_stats(
     current_user: dict[str, object] = Depends(get_current_admin),
 ) -> dict[str, object]:
-    """Return aggregate governance KPIs (admin only)."""
-
-    _fcp = get_failure_control_plane()
-    return await _fcp.governance_stats(now=_utcnow())
+    del current_user
+    return await get_failure_control_plane().governance_stats(now=_utcnow())
 
 
 @router.get("/control-plane/fair-share/config")
 async def fair_share_config(
     current_user: dict[str, object] = Depends(get_current_admin),
 ) -> dict[str, object]:
-    """Return current tenant fair-share configuration (admin only)."""
+    del current_user
+    from backend.kernel.scheduling.queue_stratification import SERVICE_CLASS_CONFIG, get_fair_scheduler
 
-    from backend.kernel.scheduling.queue_stratification import (
-        SERVICE_CLASS_CONFIG,
-        get_fair_scheduler,
-    )
-
-    fs = get_fair_scheduler()
-    quotas = fs.get_all_quotas()
+    fair_scheduler = get_fair_scheduler()
+    quotas = fair_scheduler.get_all_quotas()
     return {
         "service_classes": SERVICE_CLASS_CONFIG,
-        "default_service_class": fs._default_service_class,
+        "default_service_class": fair_scheduler._default_service_class,
         "tenant_quotas": {
             tid: {
                 "max_jobs_per_round": quota.max_jobs_per_round,

@@ -1,4 +1,4 @@
-"""Add memory_facts table with array-based embeddings."""
+﻿"""Add memory_facts table with array-based embeddings."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0022_memory_facts"
 down_revision = "0021_assets"
@@ -87,3 +87,4 @@ def downgrade() -> None:
     op.drop_index("ix_memory_facts_user_sub", "memory_facts")
     op.drop_index("ix_memory_facts_tenant_id", "memory_facts")
     op.drop_table("memory_facts")
+

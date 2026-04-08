@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import cast
 
@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.models import ErrorResponse
-from backend.core.redis_client import get_logger
+from backend.platform.logging.structured import get_logger
 
 logger = get_logger("api")
 

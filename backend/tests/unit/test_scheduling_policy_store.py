@@ -256,7 +256,7 @@ class TestValidation:
         assert any("weight" in e for e in errors)
 
     def test_solver_dispatch_limits_must_be_positive(self):
-        from backend.core.scheduling_policy_types import SolverConfig
+        from backend.kernel.policy.types import SolverConfig
 
         policy = SchedulingPolicy(
             solver=SolverConfig(
@@ -448,6 +448,37 @@ scheduling:
             assert store.active.retry.base_delay_seconds == 15
             assert store.active.default_strategy == "binpack"
             assert store.version == 1
+        finally:
+            os.unlink(path)
+
+    def test_load_from_yaml_parses_new_nested_policy_sections_generically(self):
+        yaml_content = """\
+scheduling:
+  policy:
+    gang:
+      wait_timeout_s: 120
+      timeout_action: degrade
+    queue:
+      priority_layers:
+        critical: [90, 100]
+        burst: [80, 89]
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".yaml",
+            delete=False,
+            encoding="utf-8",
+        ) as f:
+            f.write(yaml_content)
+            f.flush()
+            path = f.name
+
+        try:
+            store = PolicyStore()
+            store.load_from_yaml(path)
+            assert store.active.gang.wait_timeout_s == 120
+            assert store.active.gang.timeout_action == "degrade"
+            assert store.active.queue.priority_layers["burst"] == (80, 89)
         finally:
             os.unlink(path)
 
@@ -689,7 +720,7 @@ class TestResilienceIntegration:
 
 class TestGovernanceFacadeProxy:
     def test_policy_snapshot(self):
-        from backend.core.governance_facade import get_governance_facade
+        from backend.kernel.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         snap = facade.policy_snapshot()
@@ -697,7 +728,7 @@ class TestGovernanceFacadeProxy:
         assert "active_policy" in snap
 
     def test_apply_and_rollback(self):
-        from backend.core.governance_facade import get_governance_facade
+        from backend.kernel.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         policy = SchedulingPolicy(default_strategy="binpack")
@@ -708,7 +739,7 @@ class TestGovernanceFacadeProxy:
         assert facade.active_policy.default_strategy == "spread"
 
     def test_freeze_unfreeze(self):
-        from backend.core.governance_facade import get_governance_facade
+        from backend.kernel.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         facade.freeze_policy(reason="deploy")

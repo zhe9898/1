@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.core.scheduler_auto_tune import OutcomeSignal, SchedulerTuner
+from backend.kernel.scheduling.scheduler_auto_tune import OutcomeSignal, SchedulerTuner
 
 
 def _utcnow() -> datetime.datetime:
@@ -97,9 +97,9 @@ async def test_record_job_outcome_audits_and_persists_on_threshold() -> None:
     )
     attempt = SimpleNamespace(attempt_no=4, scheduling_decision_id=7)
 
-    with patch("backend.core.scheduler_auto_tune.get_scheduler_tuner", return_value=tuner):
+    with patch("backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner", return_value=tuner):
         with patch("backend.api.jobs.auto_tune_feedback.write_auto_tune_audit_log", audit_log):
-            with patch("backend.core.governance_facade.get_governance_facade", return_value=governance):
+            with patch("backend.kernel.scheduling.governance_facade.get_governance_facade", return_value=governance):
                 await record_job_outcome_for_tuner(
                     db,
                     job=job,
@@ -142,7 +142,7 @@ async def test_record_job_outcome_rolls_back_tuner_on_audit_failure() -> None:
     )
     attempt = SimpleNamespace(attempt_no=1, scheduling_decision_id=9)
 
-    with patch("backend.core.scheduler_auto_tune.get_scheduler_tuner", return_value=tuner):
+    with patch("backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner", return_value=tuner):
         with patch(
             "backend.api.jobs.auto_tune_feedback.write_auto_tune_audit_log",
             AsyncMock(side_effect=RuntimeError("audit down")),

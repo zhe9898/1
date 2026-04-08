@@ -1,3 +1,23 @@
+from backend.kernel.contracts.errors import (
+    ZenErrorCode,
+    ZenErrorDetails,
+    ZenErrorDetailsDict,
+    ZenErrorResponse,
+    ZenSuccessResponse,
+    ok,
+    zen,
+)
+from backend.kernel.contracts.protocol_version import (
+    CURRENT_LEASE_VERSION,
+    CURRENT_PROTOCOL_VERSION,
+    SUPPORTED_LEASE_VERSIONS,
+    SUPPORTED_PROTOCOL_VERSIONS,
+    get_version_compatibility_info,
+    is_lease_version_supported,
+    is_protocol_version_supported,
+    validate_lease_version,
+    validate_protocol_version,
+)
 from backend.kernel.contracts.status import (
     StatusContract,
     canonicalize_status,
@@ -7,13 +27,32 @@ from backend.kernel.contracts.status import (
     get_status_rule,
     normalize_persisted_status,
 )
+from backend.kernel.contracts.runtime_version import DEFAULT_RUNTIME_VERSION, get_runtime_version
 
 __all__ = (
+    "CURRENT_LEASE_VERSION",
+    "CURRENT_PROTOCOL_VERSION",
+    "DEFAULT_RUNTIME_VERSION",
+    "SUPPORTED_LEASE_VERSIONS",
+    "SUPPORTED_PROTOCOL_VERSIONS",
     "StatusContract",
+    "ZenErrorCode",
+    "ZenErrorDetails",
+    "ZenErrorDetailsDict",
+    "ZenErrorResponse",
+    "ZenSuccessResponse",
     "canonicalize_status",
     "canonicalize_transport_status",
     "export_status_compatibility_rules",
+    "get_version_compatibility_info",
+    "get_runtime_version",
     "get_status_contract",
     "get_status_rule",
+    "is_lease_version_supported",
+    "is_protocol_version_supported",
     "normalize_persisted_status",
+    "ok",
+    "validate_lease_version",
+    "validate_protocol_version",
+    "zen",
 )

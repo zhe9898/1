@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -19,8 +19,8 @@ def _token(sub: str = "user1", role: str = "admin", expired: bool = False) -> st
 
 
 class TestGetCurrentUser:
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_valid_token_returns_payload(self) -> None:
         from backend.api.deps import get_current_user
@@ -66,8 +66,8 @@ class TestGetCurrentUser:
             await get_current_user(request, response, cred, db)
         assert exc_info.value.status_code == 401
 
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_disabled_user_token_is_rejected(self) -> None:
         from backend.api.deps import get_current_user
@@ -85,8 +85,8 @@ class TestGetCurrentUser:
             await get_current_user(request, response, None, db)
         assert exc_info.value.status_code == 401
 
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_cookie_token_is_accepted(self) -> None:
         from backend.api.deps import get_current_user
@@ -103,8 +103,8 @@ class TestGetCurrentUser:
         result = await get_current_user(request, response, None, db)
         assert result["sub"] == "cookie-user"
 
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_authorization_header_is_ignored_for_cookie_only_auth(self) -> None:
         from backend.api.deps import get_current_user
@@ -151,8 +151,8 @@ class TestGetCurrentAdmin:
 
 
 class TestGetCurrentUserOptional:
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_valid_token_returns_payload(self) -> None:
         from backend.api.deps import get_current_user_optional
@@ -177,8 +177,8 @@ class TestGetCurrentUserOptional:
         result = await get_current_user_optional(request, response, None)
         assert result is None
 
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_expired_token_returns_none(self) -> None:
         from backend.api.deps import get_current_user_optional
@@ -206,8 +206,8 @@ class TestGetCurrentUserOptional:
 
         assert result is None
 
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_cookie_token_is_used_for_optional_auth(self) -> None:
         from backend.api.deps import get_current_user_optional
@@ -222,8 +222,8 @@ class TestGetCurrentUserOptional:
         assert result is not None
         assert result["sub"] == "cookie-optional"
 
-    @patch("backend.core.jwt._CURRENT", SECRET)
-    @patch("backend.core.jwt._PREVIOUS", None)
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_optional_auth_ignores_authorization_header_without_cookie(self) -> None:
         from backend.api.deps import get_current_user_optional

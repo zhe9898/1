@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.models.workflow import Workflow, WorkflowStep
 
 _WORKFLOW_ALLOWED_STEP_KEYS = frozenset({"id", "kind", "payload", "depends_on", "priority", "max_retries"})
@@ -152,7 +152,7 @@ class WorkflowCommandService:
                 payload["_step_id"] = step_id
                 payload["_context"] = {dep: step_records[dep].result for dep in deps if step_records[dep].result}
                 from backend.api.jobs.models import JobCreateRequest
-                from backend.api.jobs.submission import submit_job
+                from backend.api.jobs.submission_service import submit_job
 
                 submitted = await submit_job(
                     JobCreateRequest(

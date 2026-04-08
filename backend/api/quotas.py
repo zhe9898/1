@@ -1,4 +1,4 @@
-"""Quota management API endpoints."""
+﻿"""Quota management API endpoints."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_current_user, get_tenant_db
-from backend.core.quota import get_quota_status, set_quota
+from backend.kernel.scheduling.quota_service import get_quota_status, set_quota
 from backend.models.quota import DEFAULT_QUOTAS
 
 router = APIRouter(prefix="/api/v1/quotas", tags=["quotas"])
@@ -49,7 +49,7 @@ async def set_quota_endpoint(
     """Set quota for tenant resource (admin only)."""
     valid_types = set(DEFAULT_QUOTAS.keys())
     if payload.resource_type not in valid_types:
-        from backend.core.errors import zen
+        from backend.kernel.contracts.errors import zen
 
         raise zen("ZEN-QUOTA-4000", f"Unknown resource_type. Valid: {sorted(valid_types)}", status_code=400)
 
@@ -65,3 +65,4 @@ async def set_quota_endpoint(
     used, limit = data["used"], data["limit"]
     pct = round(used / limit * 100, 1) if limit > 0 else 0.0
     return QuotaStatusItem(resource_type=payload.resource_type, used=used, limit=limit, pct=pct)
+

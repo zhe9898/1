@@ -1,4 +1,4 @@
-"""ZEN70 Console API - Dashboard overview, diagnostics, and surface endpoints.
+﻿"""ZEN70 Console API - Dashboard overview, diagnostics, and surface endpoints.
 
 Models and helper functions extracted to console_helpers.py for maintainability.
 """
@@ -42,7 +42,7 @@ from backend.api.nodes import _build_node_actions
 from backend.api.ui_contracts import StatusView
 from backend.control_plane.auth.access_policy import has_admin_role
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
-from backend.core.control_plane_state import (
+from backend.control_plane.console.state_views import (
     connector_status_view,
     job_attention_reason,
     job_lease_state,
@@ -367,3 +367,4 @@ async def get_console_diagnostics(
         ),
         generated_at=now,
     )
+

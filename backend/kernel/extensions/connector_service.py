@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 
-from backend.core.connector_secret_service import ConnectorSecretService
+from backend.kernel.extensions.connector_secret_service import ConnectorSecretService
 from backend.models.connector import Connector
 
 

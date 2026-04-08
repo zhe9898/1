@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_admin, get_tenant_db
 from backend.kernel.topology.executor_registry import get_executor_registry
 from backend.kernel.scheduling.placement_policy import get_placement_policy
-from backend.core.scheduling_governance import (
+from backend.kernel.scheduling.scheduling_governance import (
     SCHED_FLAG_DECISION_AUDIT,
     SCHED_FLAG_EXECUTOR_VALIDATION,
     SCHED_FLAG_GANG_SCHEDULING,
@@ -217,7 +217,7 @@ async def set_flag(
         SCHED_FLAG_PRIORITY_INHERITANCE,
     }
     if payload.key not in valid_keys:
-        from backend.core.errors import zen
+        from backend.kernel.contracts.errors import zen
 
         raise zen("ZEN-SCHED-4000", f"Unknown flag key. Valid: {sorted(valid_keys)}", status_code=400)
 

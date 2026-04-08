@@ -1,4 +1,4 @@
-"""Tests for scheduling governance subsystem.
+﻿"""Tests for scheduling governance subsystem.
 
 Covers:
 - PlacementPolicy protocol + built-in policies
@@ -14,7 +14,7 @@ import datetime
 
 import pytest
 
-# ── Helpers ──────────────────────────────────────────────────────────
+# 鈹€鈹€ Helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 def _utcnow() -> datetime.datetime:
@@ -107,7 +107,7 @@ class TestResourceReservationPolicy:
         from backend.kernel.scheduling.placement_policy import ResourceReservationPolicy
 
         policy = ResourceReservationPolicy(reserve_pct=0.80, min_priority=70)
-        # 4/4 = 100% utilisation → above 80% threshold
+        # 4/4 = 100% utilisation 鈫?above 80% threshold
         node = _make_node_snapshot(active_lease_count=4, max_concurrency=5)
         job = _make_job(priority=20)
         ok, reason = policy.accept(job, node, 100)
@@ -304,7 +304,7 @@ class TestExecutorRegistry:
 
 class TestSchedulingDecisionLogger:
     def test_record_placement(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -320,7 +320,7 @@ class TestSchedulingDecisionLogger:
         assert logger.placements[0]["score"] == 150
 
     def test_record_rejection(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -332,7 +332,7 @@ class TestSchedulingDecisionLogger:
         assert logger.rejections[0]["reason"] == "capacity=full"
 
     def test_record_preemption(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -344,7 +344,7 @@ class TestSchedulingDecisionLogger:
         assert "preemptions" in logger.context
 
     def test_record_policy_rejection(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -362,7 +362,7 @@ class TestSchedulingDecisionLogger:
 
 class TestSchedulingFeatureFlags:
     def test_default_flags(self):
-        from backend.core.scheduling_governance import _SCHEDULING_FLAG_DEFAULTS
+        from backend.kernel.scheduling.scheduling_governance import _SCHEDULING_FLAG_DEFAULTS
 
         assert "sched_placement_policies" in _SCHEDULING_FLAG_DEFAULTS
         assert "sched_decision_audit" in _SCHEDULING_FLAG_DEFAULTS
@@ -807,7 +807,7 @@ class TestPlacementPolicyToggle:
 
 class TestAuditRejectionRecording:
     def test_record_circuit_breaker_rejection(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -819,7 +819,7 @@ class TestAuditRejectionRecording:
         assert "circuit_open" in logger.rejections[0]["reason"]
 
     def test_record_executor_compat_rejection(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -831,7 +831,7 @@ class TestAuditRejectionRecording:
         assert "executor_kind_incompat" in logger.rejections[0]["reason"]
 
     def test_context_stores_feature_flags(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -847,7 +847,7 @@ class TestAuditRejectionRecording:
         assert logger.context["feature_flags"]["decision_audit"] is True
 
     def test_context_stores_burst_state(self):
-        from backend.core.scheduling_governance import SchedulingDecisionLogger
+        from backend.kernel.scheduling.scheduling_governance import SchedulingDecisionLogger
 
         logger = SchedulingDecisionLogger(
             tenant_id="t1",
@@ -870,7 +870,7 @@ class TestPerKindQuota:
     async def test_per_kind_quota_passes_when_under_limit(self):
         from unittest.mock import AsyncMock, MagicMock
 
-        from backend.core.quota import check_per_kind_quota
+        from backend.kernel.scheduling.quota_service import check_per_kind_quota
 
         db = AsyncMock()
         # _get_limit calls: specific key returns -1, generic returns 5
@@ -890,7 +890,7 @@ class TestPerKindQuota:
 
         from fastapi import HTTPException
 
-        from backend.core.quota import check_per_kind_quota
+        from backend.kernel.scheduling.quota_service import check_per_kind_quota
 
         db = AsyncMock()
         # specific key returns -1, generic returns limit=5, count=5
@@ -916,16 +916,16 @@ class TestPerKindQuota:
     async def test_per_kind_quota_unlimited(self):
         from unittest.mock import AsyncMock, MagicMock
 
-        from backend.core.quota import check_per_kind_quota
+        from backend.kernel.scheduling.quota_service import check_per_kind_quota
 
         db = AsyncMock()
-        # Both specific and generic return None → DEFAULT_QUOTAS["jobs_per_kind"] = 100
-        # but if neither custom nor default → -1 means unlimited
+        # Both specific and generic return None 鈫?DEFAULT_QUOTAS["jobs_per_kind"] = 100
+        # but if neither custom nor default 鈫?-1 means unlimited
         _scalar_none = MagicMock()
         _scalar_none.scalars.return_value.first.return_value = None
         db.execute = AsyncMock(side_effect=[_scalar_none, _scalar_none, MagicMock(scalar=MagicMock(return_value=50))])
 
-        # Default of 100 with 50 used → should pass
+        # Default of 100 with 50 used 鈫?should pass
         await check_per_kind_quota(db, "default", "shell.exec")
 
     @pytest.mark.asyncio
@@ -934,7 +934,7 @@ class TestPerKindQuota:
 
         from fastapi import HTTPException
 
-        from backend.core.quota import check_per_kind_quota
+        from backend.kernel.scheduling.quota_service import check_per_kind_quota
 
         db = AsyncMock()
 
@@ -1247,7 +1247,7 @@ class TestOperatorActor:
         """release_quarantine should record actor identity in governance event."""
         import datetime
 
-        from backend.core.failure_control_plane import FailureControlPlane
+        from backend.kernel.scheduling.failure_control_plane import FailureControlPlane
 
         fcp = FailureControlPlane()
         node_id = "node-actor-test"
@@ -1268,7 +1268,7 @@ class TestOperatorActor:
         """pending_audit_events should include actor field."""
         import datetime
 
-        from backend.core.failure_control_plane import FailureControlPlane
+        from backend.kernel.scheduling.failure_control_plane import FailureControlPlane
 
         fcp = FailureControlPlane()
         node_id = "node-audit-actor"
@@ -1285,7 +1285,7 @@ class TestOperatorActor:
         """Auto-triggered governance events should default actor to 'system'."""
         import datetime
 
-        from backend.core.failure_control_plane import FailureControlPlane
+        from backend.kernel.scheduling.failure_control_plane import FailureControlPlane
 
         fcp = FailureControlPlane()
         now = datetime.datetime(2025, 1, 1, 12, 0, 0)
@@ -1327,3 +1327,4 @@ class TestConsoleSplit:
         assert router.prefix == "/api/v1/console"
         assert callable(get_console_overview)
         assert callable(get_console_diagnostics)
+

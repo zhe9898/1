@@ -8,7 +8,6 @@
     "/health": {
       "get": {
         "summary": "Health Check",
-        "description": "Health endpoint with dependency connectivity checks.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -29,8 +28,8 @@
         "tags": [
           "v1"
         ],
-        "summary": "获取能力矩阵",
-        "description": "返回当前所有服务能力。\n\n法典 2.3.1：供前端 v-for 动态渲染。\n法典 3.2.5：Redis 失联时返回 All-OFF 矩阵并带 X-ZEN70-Bus-Status: not-ready。\n\n修复：之前 redis is None 时返回空 {}，导致前端\"暂无能力数据\"。\n现在走 capabilities.get_capabilities_matrix()，Redis 不可用时回退 ALL_OFF_MATRIX。",
+        "summary": "閼惧嘲褰囬懗钘夊閻晠妯€",
+        "description": "鏉╂柨娲栬ぐ鎾冲閹碘偓閺堝婀囬崝陇鍏橀崝娑栤偓?\n濞夋洖鍚€ 2.3.1閿涙矮绶甸崜宥囶伂 v-for 閸斻劍鈧焦瑕嗛弻鎾扁偓?    濞夋洖鍚€ 3.2.5閿涙瓓edis 婢惰精浠堥弮鎯扮箲閸?All-OFF 閻晠妯€楠炶泛鐢?X-ZEN70-Bus-Status: not-ready閵?\n娣囶喖顦查敍姘閸?redis is None 閺冩儼绻戦崶鐐碘敄 {}閿涘苯顕遍懛鏉戝缁?閺嗗倹妫ら懗钘夊閺佺増宓?閵?    閻滄澘婀挧?capabilities.get_capabilities_matrix()閿涘edis 娑撳秴褰查悽銊︽閸ョ偤鈧偓 ALL_OFF_MATRIX閵?",
         "operationId": "get_capabilities_api_v1_capabilities_get",
         "responses": {
           "200": {
@@ -60,8 +59,8 @@
         "tags": [
           "v1"
         ],
-        "summary": "SSE 心跳续期",
-        "description": "法典 §2.1: 前端每 30s 调此接口续期 SSE，否则 45s 后服务端 cancel。\n\n使用 Redis SETEX 存储 Ping 时间戳，确保跨 Uvicorn Worker 一致性。\n鉴权防注入：Depends(get_current_user) 拦截匿名恶意灌水。",
+        "summary": "SSE 韫囧啳鐑︾紒顓熸埂",
+        "description": "Frontend clients call this every ~30 seconds to keep the SSE connection\nalive; the server treats the channel as stale after roughly 45 seconds\nwithout a ping.\n\nThe ping timestamp is stored via Redis SETEX so multiple Uvicorn workers\nshare the same liveness view. Authentication is still required here to\nprevent anonymous ping flooding.",
         "operationId": "sse_ping_api_v1_events_ping_post",
         "requestBody": {
           "content": {
@@ -111,8 +110,8 @@
         "tags": [
           "v1"
         ],
-        "summary": "SSE 事件流",
-        "description": "订阅硬件状态变更与软开关事件，以 Server-Sent Events 推送。",
+        "summary": "SSE Event Stream",
+        "description": "Stream control-plane events over SSE for the authenticated session.",
         "operationId": "sse_events_api_v1_events_get",
         "security": [
           {
@@ -133,10 +132,10 @@
                   "type": "null"
                 }
               ],
-              "description": "前端生成的连接 UUID，用于 Ping 关联",
+              "description": "Optional SSE client token used for ping correlation",
               "title": "Client Token"
             },
-            "description": "前端生成的连接 UUID，用于 Ping 关联"
+            "description": "Optional SSE client token used for ping correlation"
           }
         ],
         "responses": {
@@ -296,7 +295,7 @@
           "auth"
         ],
         "summary": "Sys Status",
-        "description": "检查数据库是否有用户。",
+        "description": "Sanitized legacy docstring.",
         "operationId": "sys_status_api_v1_auth_sys_status_get",
         "responses": {
           "200": {
@@ -322,7 +321,7 @@
           "auth"
         ],
         "summary": "Bootstrap",
-        "description": "初始化第一个管理员账户。只有在库为空时可用。",
+        "description": "Sanitized legacy docstring.",
         "operationId": "bootstrap_api_v1_auth_bootstrap_post",
         "requestBody": {
           "content": {
@@ -364,7 +363,7 @@
           "auth"
         ],
         "summary": "Password Login",
-        "description": "标准密码登录通道，防爆破，依赖 tenant 和 role。",
+        "description": "Sanitized legacy docstring.",
         "operationId": "password_login_api_v1_auth_password_login_post",
         "requestBody": {
           "content": {
@@ -625,7 +624,7 @@
           "auth"
         ],
         "summary": "Pin Set",
-        "description": "设置或修改当前用户 PIN（需已登录；若账户已有 PIN 则需提供 pin_old）。",
+        "description": "Sanitized legacy docstring.",
         "operationId": "pin_set_api_v1_auth_pin_set_post",
         "requestBody": {
           "content": {
@@ -1016,7 +1015,7 @@
           "auth"
         ],
         "summary": "Invite Fallback Login",
-        "description": "Invite link: fallback login with admin confirmation required.\n\nSecurity: requires admin authentication to prevent invite link leak → account takeover.",
+        "description": "Invite link: fallback login with admin confirmation required.\n\nSecurity: requires admin authentication to prevent invite link leak 鈫?account takeover.",
         "operationId": "invite_fallback_login_api_v1_auth_invites__token__fallback_login_post",
         "security": [
           {
@@ -2175,7 +2174,7 @@
           "node-approval"
         ],
         "summary": "Approve Node",
-        "description": "Approve a pending node (admin only).\n\nTransitions: pending → approved\nOnce approved the node can receive and execute jobs.",
+        "description": "Approve a pending node (admin only).\n\nTransitions: pending 鈫?approved\nOnce approved the node can receive and execute jobs.",
         "operationId": "approve_node_api_v1_nodes__node_id__approve_post",
         "security": [
           {
@@ -2233,7 +2232,7 @@
           "node-approval"
         ],
         "summary": "Reject Node",
-        "description": "Reject and revoke a pending node (admin only).\n\nTransitions: pending → rejected\nRejected nodes cannot register again with the same node_id.",
+        "description": "Reject and revoke a pending node (admin only).\n\nTransitions: pending 鈫?rejected\nRejected nodes cannot register again with the same node_id.",
         "operationId": "reject_node_api_v1_nodes__node_id__reject_post",
         "security": [
           {
@@ -2741,7 +2740,6 @@
           "jobs"
         ],
         "summary": "Complete Job",
-        "description": "Mark job as completed with row-level lock to prevent race conditions.",
         "operationId": "complete_job_api_v1_jobs__id__result_post",
         "security": [
           {
@@ -2800,7 +2798,6 @@
           "jobs"
         ],
         "summary": "Fail Job",
-        "description": "Mark job as failed with row-level lock to prevent race conditions.",
         "operationId": "fail_job_api_v1_jobs__id__fail_post",
         "security": [
           {
@@ -2917,7 +2914,6 @@
           "jobs"
         ],
         "summary": "Renew Job Lease",
-        "description": "Renew job lease with row-level lock to prevent race conditions.",
         "operationId": "renew_job_lease_api_v1_jobs__id__renew_post",
         "security": [
           {
@@ -3092,7 +3088,6 @@
           "jobs"
         ],
         "summary": "Release Quarantine",
-        "description": "Manually release a node from quarantine (admin only).",
         "operationId": "release_quarantine_api_v1_jobs_control_plane_release_quarantine__node_id__post",
         "security": [
           {
@@ -3143,7 +3138,6 @@
           "jobs"
         ],
         "summary": "Control Plane Snapshot",
-        "description": "Return a diagnostic snapshot of all failure control plane state.",
         "operationId": "control_plane_snapshot_api_v1_jobs_control_plane_snapshot_get",
         "responses": {
           "200": {
@@ -3173,7 +3167,6 @@
           "jobs"
         ],
         "summary": "Governance Timeline",
-        "description": "Query governance event timeline with optional filters (admin only).",
         "operationId": "governance_timeline_api_v1_jobs_control_plane_governance_timeline_get",
         "security": [
           {
@@ -3292,7 +3285,6 @@
           "jobs"
         ],
         "summary": "Governance Stats",
-        "description": "Return aggregate governance KPIs (admin only).",
         "operationId": "governance_stats_api_v1_jobs_control_plane_governance_stats_get",
         "responses": {
           "200": {
@@ -3322,7 +3314,6 @@
           "jobs"
         ],
         "summary": "Fair Share Config",
-        "description": "Return current tenant fair-share configuration (admin only).",
         "operationId": "fair_share_config_api_v1_jobs_control_plane_fair_share_config_get",
         "responses": {
           "200": {
@@ -10027,12 +10018,8 @@
             "type": "array",
             "title": "Capability Keys"
           },
-          "selector_hints": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Selector Hints"
+          "selector": {
+            "$ref": "#/components/schemas/GatewayPackSelectorResponse"
           },
           "deployment_boundary": {
             "type": "string",
@@ -10053,11 +10040,43 @@
           "category",
           "description",
           "delivery_stage",
+          "selector",
           "deployment_boundary",
           "runtime_owner",
           "status_view"
         ],
         "title": "GatewayPackResponse"
+      },
+      "GatewayPackSelectorResponse": {
+        "properties": {
+          "required_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Capabilities"
+          },
+          "target_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Zone"
+          },
+          "target_executors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Executors"
+          }
+        },
+        "type": "object",
+        "title": "GatewayPackSelectorResponse"
       },
       "GatewayProfileResponse": {
         "properties": {
@@ -14651,7 +14670,7 @@
           "connection_id": {
             "type": "string",
             "title": "Connection Id",
-            "description": "SSE 建连时的 client_token"
+            "description": "SSE 瀵ら缚绻涢弮鍓佹畱 client_token"
           }
         },
         "type": "object",
@@ -14659,7 +14678,7 @@
           "connection_id"
         ],
         "title": "SSEPingRequest",
-        "description": "法典 §2.1: 前端每 30s 调此接口续期 SSE 连接，防 45s 超时斩杀。"
+        "description": "Heartbeat payload used to keep an SSE connection alive."
       },
       "SchedulingOverviewResponse": {
         "properties": {
@@ -16713,11 +16732,6 @@
       "name": "profile",
       "description": "User profile",
       "x-stability": "stable"
-    },
-    {
-      "name": "cluster",
-      "description": "Multi-node cluster (optional)",
-      "x-stability": "experimental"
     }
   ]
 }

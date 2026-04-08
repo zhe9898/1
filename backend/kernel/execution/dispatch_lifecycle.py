@@ -138,7 +138,7 @@ class AdmissionStage:
     name = "admission"
 
     async def execute(self, ctx: DispatchContext) -> bool:
-        from backend.core.governance_facade import get_governance_facade
+        from backend.kernel.scheduling.governance_facade import get_governance_facade
 
         if ctx.db_session is None:
             raise RuntimeError("DispatchContext.db_session is required for admission checks")
@@ -163,8 +163,8 @@ class FilteringStage:
     name = "filtering"
 
     async def execute(self, ctx: DispatchContext) -> bool:
-        from backend.core.failure_control_plane import get_failure_control_plane
-        from backend.core.governance_facade import get_governance_facade
+        from backend.kernel.scheduling.failure_control_plane import get_failure_control_plane
+        from backend.kernel.scheduling.governance_facade import get_governance_facade
 
         fcp = get_failure_control_plane()
         facade = get_governance_facade()
@@ -258,7 +258,7 @@ class PostDispatchStage:
     name = "post_dispatch"
 
     async def execute(self, ctx: DispatchContext) -> bool:
-        from backend.core.governance_facade import get_governance_facade
+        from backend.kernel.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         dispatch_ms = ctx.total_ms

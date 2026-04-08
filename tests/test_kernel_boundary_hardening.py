@@ -67,7 +67,7 @@ def test_console_api_exposes_surfaces_endpoint():
 
 
 def test_pack_and_profile_topology_no_longer_live_under_backend_core():
-    """Pack/profile topology facts should live in kernel topology, not backend.core."""
+    """Pack/profile topology facts should live inside kernel domains, not legacy core."""
     legacy_files = [
         REPO_ROOT / "backend" / "core" / "pack_registry.py",
         REPO_ROOT / "backend" / "core" / "gateway_profile.py",

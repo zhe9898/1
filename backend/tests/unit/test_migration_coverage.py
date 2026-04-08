@@ -1,4 +1,4 @@
-"""Validate that model-backed schema evolution stays governed and traceable."""
+﻿"""Validate that model-backed schema evolution stays governed and traceable."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from backend.core.migration_governance import (
+from backend.platform.db.migration_governance import (
     APPLICATION_BASELINE_MODEL_TABLES,
     APPROVED_LEGACY_MODEL_TABLE_CREATIONS,
     collect_created_tables_by_chain,
@@ -113,3 +113,4 @@ def test_legacy_model_table_creations_are_frozen_to_approved_historical_set() ->
     legacy_created_model_tables = created["legacy"] & collect_model_tables()
 
     assert legacy_created_model_tables == APPROVED_LEGACY_MODEL_TABLE_CREATIONS
+

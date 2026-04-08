@@ -6,12 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.core.aggregate_owner_registry import export_aggregate_owner_registry, unique_owner_service_map
-from backend.core.architecture_governance import export_architecture_governance_rules, export_architecture_governance_snapshot
 from backend.kernel.contracts.status import export_status_compatibility_rules
 from backend.kernel.capabilities.registry import capability_keys
-from backend.kernel.surfaces.registry import export_surface_registry
 from backend.kernel.execution.fault_isolation import export_fault_isolation_contract
+from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry, unique_owner_service_map
+from backend.kernel.governance.architecture_rules import (
+    export_architecture_governance_rules,
+    export_architecture_governance_snapshot,
+)
 from backend.kernel.extensions.extension_guard import (
     assert_budgeted_payload,
     export_extension_budget_contract,
@@ -20,7 +22,8 @@ from backend.kernel.extensions.extension_guard import (
 )
 from backend.kernel.execution.lease_service import export_lease_service_contract
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
-from backend.core.scheduling_framework import SchedulingProfile
+from backend.kernel.surfaces.registry import export_surface_registry
+from backend.kernel.scheduling.scheduling_framework import SchedulingProfile
 
 ROOT = Path(__file__).resolve().parents[3]
 BACKEND_ROOT = ROOT / "backend"
@@ -45,9 +48,9 @@ _OWNER_MODULES_BY_FIELD: dict[tuple[str, str], set[str]] = {
     ("trigger", "status"): {"backend/kernel/extensions/trigger_command_service.py"},
     ("delivery", "status"): {"backend/kernel/extensions/trigger_command_service.py"},
     ("workflow", "status"): {"backend/kernel/extensions/workflow_command_service.py"},
-    ("policy", "config_version"): {"backend/core/scheduling_policy_service.py"},
-    ("flag", "enabled"): {"backend/core/feature_flag_service.py"},
-    ("flag", "updated_by"): {"backend/core/feature_flag_service.py"},
+    ("policy", "config_version"): {"backend/kernel/scheduling/scheduling_policy_service.py"},
+    ("flag", "enabled"): {"backend/kernel/policy/feature_flag_service.py"},
+    ("flag", "updated_by"): {"backend/kernel/policy/feature_flag_service.py"},
 }
 
 _LEASE_ONLY_FIELDS: set[tuple[str, str]] = {
@@ -173,6 +176,123 @@ def test_runtime_policy_gate_blocks_runtime_system_yaml_reads_outside_allowlist(
     assert violations == []
 
 
+def test_platform_infra_gate_blocks_legacy_core_imports() -> None:
+    blocked = (
+        "backend.core.runtime_support",
+        "backend.core.telemetry",
+        "backend.core.metrics",
+        "backend.core.db_locks",
+        "backend.core.alembic_runtime",
+        "backend.core.secret_envelope",
+        "backend.core.security_redaction",
+        "backend.core.scheduling_policy_types",
+        "backend.core.scheduling_policy_validation",
+        "backend.core.governance_facade",
+        "backend.core.failure_control_plane",
+        "backend.core.scheduling_governance",
+        "backend.core.scheduling_policy_service",
+        "backend.core.scheduler_auto_tune",
+        "backend.core.scheduler_auto_tune_audit",
+        "backend.core.scheduler_auto_tune_state",
+        "backend.core.scheduling_framework",
+        "backend.core.worker_pool",
+        "backend.core.version",
+        "backend.core.connector_secret_service",
+        "backend.core.security_policy",
+        "backend.core.errors",
+        "backend.core.safe_error_projection",
+        "backend.core.protocol_version",
+        "backend.core.workload_semantics",
+        "backend.core.alert_actions",
+        "backend.core.auth_helpers",
+        "backend.core.jwt",
+        "backend.core.permissions",
+        "backend.core.sessions",
+        "backend.core.webauthn",
+        "backend.core.webauthn_challenge_store",
+        "backend.core.webauthn_flow_session",
+        "backend.core.rls",
+        "backend.core.job_concurrency_service",
+        "backend.core.job_type_separation",
+        "backend.core.quota",
+        "backend.core.feature_flag_service",
+        "backend.core.control_plane_state",
+        "backend.core.device_profiles",
+        "backend.core.user_lifecycle",
+        "backend.core.webhooks",
+        "backend.core.alerting",
+        "backend.core.events_schema",
+        "backend.core.gen_grpc",
+        "backend.core.config",
+        "backend.core.data_retention",
+        "backend.core.migration_schema_guard",
+        "backend.core.migration_governance",
+        "backend.core.migration_runner",
+        "backend.core.status_contracts",
+        "backend.core.audit_logging",
+        "backend.core.ai_providers",
+    )
+    violations: list[str] = []
+    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+        rel = _rel(path)
+        source = path.read_text(encoding="utf-8")
+        for module in blocked:
+            if module in source:
+                violations.append(f"{rel}:{module}")
+    assert violations == []
+
+
+def test_platform_redis_gate_blocks_sdk_imports_outside_platform() -> None:
+    violations: list[str] = []
+    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+        rel = _rel(path)
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name == "redis" or alias.name.startswith("redis.") for alias in node.names):
+                    violations.append(f"{rel}:{getattr(node, 'lineno', 0)}")
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "redis" or (node.module or "").startswith("redis."):
+                    violations.append(f"{rel}:{getattr(node, 'lineno', 0)}")
+    assert violations == []
+
+
+def test_platform_redis_gate_blocks_client_escape_hatch_usage() -> None:
+    violations: list[str] = []
+    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+        rel = _rel(path)
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        parents: dict[ast.AST, ast.AST] = {}
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                parents[child] = parent
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr != "redis":
+                continue
+            parent = parents.get(node)
+            if not isinstance(parent, ast.Attribute):
+                continue
+            if isinstance(node.value, ast.Attribute) and node.value.attr == "state":
+                continue
+            violations.append(f"{rel}:{getattr(node, 'lineno', 0)}")
+    assert violations == []
+
+
+def test_platform_redis_gate_blocks_client_module_escape_imports() -> None:
+    violations: list[str] = []
+    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+        rel = _rel(path)
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.module != "backend.platform.redis.client":
+                continue
+            if any(alias.name == "redis" for alias in node.names):
+                violations.append(f"{rel}:{getattr(node, 'lineno', 0)}")
+    assert violations == []
+
+
 def test_state_path_gate_only_allows_owner_services_for_core_field_writes() -> None:
     violations: list[str] = []
     for path in _python_sources("api", "control_plane", "core", "kernel", "workers"):
@@ -239,6 +359,10 @@ def test_architecture_governance_registry_is_code_backed_and_exportable() -> Non
     assert rules["A1"]["maturity"] == "enforced"
     assert rules["A6"]["maturity"] == "enforced"
     assert "surface_registry" in snapshot["entrypoints"]
+    assert (
+        snapshot["entrypoints"]["aggregate_owner_registry"]
+        == "backend.kernel.governance.aggregate_owner_registry.export_aggregate_owner_registry"
+    )
     assert snapshot["registries"]["surface_registry"] == export_surface_registry()
     assert snapshot["registries"]["fault_isolation_contract"] == export_fault_isolation_contract()
     assert snapshot["registries"]["aggregate_owner_registry"] == export_aggregate_owner_registry()
@@ -251,7 +375,8 @@ def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
     executor_source = _runner_text("internal", "exec", "executor.go")
     service_source = _runner_text("internal", "service", "service.go")
     api_client_source = _runner_text("internal", "api", "client.go")
-    lifecycle_source = (BACKEND_ROOT / "api" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
+    lifecycle_route_source = (BACKEND_ROOT / "api" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
+    lifecycle_service_source = (BACKEND_ROOT / "api" / "jobs" / "lifecycle_service.py").read_text(encoding="utf-8")
     worker_source = (BACKEND_ROOT / "workers" / "control_plane_worker.py").read_text(encoding="utf-8")
 
     assert contract["runner_api_client_timeout_seconds"] == 30
@@ -281,9 +406,11 @@ def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
     assert "if leaseSeconds > 10 {" in executor_source
     assert "return time.Duration(leaseSeconds-5) * time.Second" in executor_source
 
-    assert '_assert_valid_lease_owner(job, payload, "renew")' in lifecycle_source
-    assert '_assert_valid_lease_owner(job, payload, "result")' in lifecycle_source
-    assert '_assert_valid_lease_owner(job, payload, "fail")' in lifecycle_source
+    assert "build_default_job_lifecycle_dependencies()" in lifecycle_route_source
+    assert "deps.assert_valid_lease_owner(job, payload, action)" in lifecycle_service_source
+    assert 'action="renew"' in lifecycle_service_source
+    assert 'action="result"' in lifecycle_service_source
+    assert 'action="fail"' in lifecycle_service_source
     assert 'asyncio.create_task(factory(redis_client), name=f"control-worker:{name}")' in worker_source
 
 

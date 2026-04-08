@@ -1,4 +1,4 @@
-"""Console helper models and builder functions.
+﻿"""Console helper models and builder functions.
 
 Extracted from console.py for maintainability. Contains all Pydantic
 view-models and pure helper functions used by console route handlers.
@@ -14,7 +14,7 @@ from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import StatusView
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
 from backend.kernel.contracts.status import normalize_persisted_status
-from backend.core.control_plane_state import (
+from backend.control_plane.console.state_views import (
     node_heartbeat_state,
     severity_view,
     tone_view,
@@ -226,7 +226,7 @@ class ControlPlaneSurfacesResponse(BaseModel):
     surfaces: list[ControlPlaneSurfaceResponse] = Field(default_factory=list)
 
 
-# 鈹€鈹€ Pure helper functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# 閳光偓閳光偓 Pure helper functions 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
 
 def build_menu_response(runtime_profile: str, *, is_admin: bool) -> ConsoleMenuResponse:
@@ -523,3 +523,4 @@ def build_connector_overview_bucket(connectors: list[Connector]) -> OverviewBuck
             bucket.degraded += 1
     bucket.attention = bucket.pending + bucket.degraded + bucket.failed
     return bucket
+

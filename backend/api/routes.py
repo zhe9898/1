@@ -1,6 +1,6 @@
-"""
-ZEN70 API v1 璺敱锛氳兘鍔涚煩闃点€佽蒋寮€鍏炽€丼SE 浜嬩欢娴併€?
-娉曞吀 搂2.1 寮哄埗锛氬墠绔瘡 30s 鍙戦€?Ping锛屽悗绔?45s 鏈敹鍒板繀椤?cancel() 閲婃斁 FD銆?Client-Token-in-URL + Redis SETEX 瀹炵幇璺?Worker 涓€鑷寸殑瓒呮椂鐔旀柇銆?"""
+﻿"""
+ZEN70 API v1 鐠侯垳鏁遍敍姘冲厴閸旀稓鐓╅梼鐐光偓浣借拫瀵偓閸忕偨鈧讣SE 娴滃娆㈠ù浣碘偓?
+濞夋洖鍚€ 鎼?.1 瀵搫鍩楅敍姘缁旑垱鐦?30s 閸欐垿鈧?Ping閿涘苯鎮楃粩?45s 閺堫亝鏁归崚鏉跨箑妞?cancel() 闁插﹥鏂?FD閵?Client-Token-in-URL + Redis SETEX 鐎圭偟骞囩捄?Worker 娑撯偓閼峰娈戠搾鍛閻旀梹鏌囬妴?"""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ from backend.api.deps import get_current_user, get_current_user_optional, get_re
 from backend.api.models import CapabilityResponse
 from backend.capabilities import build_public_capability_matrix
 from backend.control_plane.auth.access_policy import has_admin_role
-from backend.core.errors import zen
-from backend.core.redis_client import (
+from backend.kernel.contracts.errors import zen
+from backend.platform.redis.client import (
     CHANNEL_CONNECTOR_EVENTS,
     CHANNEL_JOB_EVENTS,
     CHANNEL_NODE_EVENTS,
@@ -30,13 +30,13 @@ from backend.core.redis_client import (
     CHANNEL_TRIGGER_EVENTS,
     RedisClient,
 )
-from backend.core.structured_logging import get_logger
+from backend.platform.logging.structured import get_logger
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
 
 logger = get_logger("api.routes", None)
 
 
-# 娉曞吀 搂2.1: SSE 瓒呮椂甯搁噺
+# 濞夋洖鍚€ 鎼?.1: SSE 鐡掑懏妞傜敮鎼佸櫤
 SSE_PING_TIMEOUT = 45
 SSE_PING_TTL = SSE_PING_TIMEOUT + 5
 SSE_PING_KEY_PREFIX = "sse:ping:"
@@ -52,39 +52,39 @@ def _next_sse_ping_deadline() -> str:
 @router.get(
     "/capabilities",
     response_model=dict[str, CapabilityResponse],
-    summary="鑾峰彇鑳藉姏鐭╅樀",
+    summary="閼惧嘲褰囬懗钘夊閻晠妯€",
 )
 async def get_capabilities(
     request: Request,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> dict:
     """
-    杩斿洖褰撳墠鎵€鏈夋湇鍔¤兘鍔涖€?
-    娉曞吀 2.3.1锛氫緵鍓嶇 v-for 鍔ㄦ€佹覆鏌撱€?    娉曞吀 3.2.5锛歊edis 澶辫仈鏃惰繑鍥?All-OFF 鐭╅樀骞跺甫 X-ZEN70-Bus-Status: not-ready銆?
-    淇锛氫箣鍓?redis is None 鏃惰繑鍥炵┖ {}锛屽鑷村墠绔?鏆傛棤鑳藉姏鏁版嵁"銆?    鐜板湪璧?capabilities.get_capabilities_matrix()锛孯edis 涓嶅彲鐢ㄦ椂鍥為€€ ALL_OFF_MATRIX銆?    """
+    鏉╂柨娲栬ぐ鎾冲閹碘偓閺堝婀囬崝陇鍏橀崝娑栤偓?
+    濞夋洖鍚€ 2.3.1閿涙矮绶甸崜宥囶伂 v-for 閸斻劍鈧焦瑕嗛弻鎾扁偓?    濞夋洖鍚€ 3.2.5閿涙瓓edis 婢惰精浠堥弮鎯扮箲閸?All-OFF 閻晠妯€楠炶泛鐢?X-ZEN70-Bus-Status: not-ready閵?
+    娣囶喖顦查敍姘閸?redis is None 閺冩儼绻戦崶鐐碘敄 {}閿涘苯顕遍懛鏉戝缁?閺嗗倹妫ら懗钘夊閺佺増宓?閵?    閻滄澘婀挧?capabilities.get_capabilities_matrix()閿涘edis 娑撳秴褰查悽銊︽閸ョ偤鈧偓 ALL_OFF_MATRIX閵?    """
     del request
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
     is_admin = has_admin_role(current_user)
     matrix = build_public_capability_matrix(runtime_profile, is_admin=is_admin)
 
-    # 搴忓垪鍖?CapabilityItem 鈫?dict
+    # 鎼村繐鍨崠?CapabilityItem 閳?dict
     serialized = {k: v.model_dump(mode="json") if hasattr(v, "model_dump") else v for k, v in matrix.items()}
 
     return serialized
 
 
-# -------------------- SSE Ping 绔偣 --------------------
+# -------------------- SSE Ping 缁旑垳鍋?--------------------
 
 
 class SSEPingRequest(BaseModel):
     """Heartbeat payload used to keep an SSE connection alive."""
 
-    connection_id: str = Field(..., description="SSE 寤鸿繛鏃剁殑 client_token")
+    connection_id: str = Field(..., description="SSE 瀵ら缚绻涢弮鍓佹畱 client_token")
 
 
 @router.post(
     "/events/ping",
-    summary="SSE 蹇冭烦缁湡",
+    summary="SSE 韫囧啳鐑︾紒顓熸埂",
 )
 async def sse_ping(
     body: SSEPingRequest,
@@ -109,7 +109,7 @@ async def sse_ping(
         )
     if redis is not None:
         try:
-            await redis.setex(
+            await redis.kv.setex(
                 f"{SSE_PING_KEY_PREFIX}{body.connection_id}",
                 SSE_PING_TTL,
                 _next_sse_ping_deadline(),
@@ -119,13 +119,13 @@ async def sse_ping(
     return {"ok": True}
 
 
-# -------------------- SSE 浜嬩欢娴?--------------------
+# -------------------- SSE 娴滃娆㈠ù?--------------------
 
 
 async def _process_sse_ping_timeout(redis: RedisClient, ping_key: str, conn_id_inner: str) -> bool:
     """Return True when the SSE ping lease has expired for this connection."""
     try:
-        deadline_raw = await redis.get(ping_key)
+        deadline_raw = await redis.kv.get(ping_key)
         if deadline_raw is None:
             logger.info(
                 "SSE timeout: connection %s exceeded %ds without ping",
@@ -180,13 +180,13 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
             CHANNEL_RESERVATION_EVENTS,
             CHANNEL_TRIGGER_EVENTS,
         )
-        # 棣栧寘锛氬洖鏄?connection_id
+        # 妫ｆ牕瀵橀敍姘礀閺?connection_id
         yield f'event: connected\ndata: {{"connection_id":"{conn_id}"}}\n\n'
         while True:
             if await request.is_disconnected():
                 break
 
-            # 45s 瓒呮椂妫€鏌?(Redis EXISTS)
+            # 45s 鐡掑懏妞傚Λ鈧弻?(Redis EXISTS)
             if await _process_sse_ping_timeout(redis, ping_key, conn_id):
                 break
 
@@ -208,7 +208,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
     finally:
         # Clean up the ping lease and pubsub subscription on exit.
         try:
-            await redis.delete(ping_key)
+            await redis.kv.delete(ping_key)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError):
             logger.debug("Failed to delete SSE ping key during cleanup")
         try:
@@ -222,7 +222,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
         except (ConnectionError, asyncio.CancelledError):
             logger.debug("PubSub unsubscribe failed during SSE cleanup")
         try:
-            await pubsub.aclose()
+            await pubsub.close()
         except (ConnectionError, asyncio.CancelledError):
             logger.debug("PubSub close failed during SSE cleanup")
 
@@ -234,7 +234,7 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
 async def sse_events(
     request: Request,
     redis: RedisClient | None = Depends(get_redis),
-    client_token: str | None = Query(None, description="鍓嶇鐢熸垚鐨勮繛鎺?UUID锛岀敤浜?Ping 鍏宠仈"),
+    client_token: str | None = Query(None, description="Optional SSE client token used for ping correlation"),
     current_user: dict = Depends(get_current_user),
 ) -> StreamingResponse:
     """Stream control-plane events over SSE for the authenticated session."""
@@ -245,7 +245,7 @@ async def sse_events(
             status_code=503,
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
-    pubsub = redis.pubsub()
+    pubsub = await redis.pubsub.session()
     if pubsub is None:
         raise zen(
             "ZEN-SSE-5002",
@@ -254,15 +254,15 @@ async def sse_events(
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
 
-    # 纭畾 connection_id锛氫紭鍏堜娇鐢ㄥ墠绔彁渚涚殑 client_token锛屽惁鍒欏悗绔厹搴曠敓鎴?    conn_id: str
+    # 绾喖鐣?connection_id閿涙矮绱崗鍫滃▏閻劌澧犵粩顖涘絹娓氭稓娈?client_token閿涘苯鎯侀崚娆忔倵缁旑垰鍘规惔鏇犳晸閹?    conn_id: str
     if client_token and _UUID_RE.match(client_token):
         conn_id = client_token
     else:
         conn_id = str(uuid.uuid4())
 
-    # 鍦?Redis 涓敞鍐屽垵濮?Ping 鏃堕棿鎴筹紙SETEX 45s TTL锛?    ping_key = f"{SSE_PING_KEY_PREFIX}{conn_id}"
+    # 閸?Redis 娑擃厽鏁為崘灞藉灥婵?Ping 閺冨爼妫块幋绛圭礄SETEX 45s TTL閿?    ping_key = f"{SSE_PING_KEY_PREFIX}{conn_id}"
     try:
-        await redis.setex(ping_key, SSE_PING_TTL, _next_sse_ping_deadline())
+        await redis.kv.setex(ping_key, SSE_PING_TTL, _next_sse_ping_deadline())
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         logger.warning("SSE initial ping registration failed: %s", exc)
 

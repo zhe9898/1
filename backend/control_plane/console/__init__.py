@@ -1,13 +1,7 @@
-"""Console services for the backend-driven control plane."""
+"""Control-plane console package.
 
-from .manifest_service import (
-    get_control_plane_capability_keys,
-    get_control_plane_route_names,
-    iter_control_plane_surfaces,
-)
+Keep package import side-effect free so pure view helpers do not pull in
+manifest/runtime-policy wiring during module import.
+"""
 
-__all__ = (
-    "get_control_plane_capability_keys",
-    "get_control_plane_route_names",
-    "iter_control_plane_surfaces",
-)
+__all__: tuple[str, ...] = ()

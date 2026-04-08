@@ -8,17 +8,13 @@ import logging
 
 from fastapi import APIRouter
 
-logger = logging.getLogger(__name__)
+from backend.platform.redis.runtime import redis_sdk_available
 
-try:
-    import redis.asyncio as redis
-except ImportError as exc:
-    logger.warning("iot_redis_runtime_unavailable: %s", exc)
-    redis = None  # type: ignore[assignment]
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/iot", tags=["iot"])
 
 
 def ensure_iot_runtime_available() -> None:
-    if redis is None:
+    if not redis_sdk_available():
         raise RuntimeError("IoT Redis runtime is unavailable")

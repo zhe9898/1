@@ -1,11 +1,11 @@
-"""Backfill trigger and workflow statuses to canonical values."""
+﻿"""Backfill trigger and workflow statuses to canonical values."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0028_canonical_trigger_workflow_statuses"
 down_revision = "0027_webauthn_challenge_store"
@@ -33,3 +33,4 @@ def downgrade() -> None:
         op.execute(sa.text("UPDATE trigger_deliveries SET status = 'accepted' WHERE status = 'delivered'"))
     if guard.has_table("workflows"):
         op.execute(sa.text("UPDATE workflows SET status = 'canceled' WHERE status = 'cancelled'"))
+

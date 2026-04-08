@@ -6,6 +6,7 @@ from backend.kernel.governance.domain_blueprint import (
     TARGET_BACKEND_DOMAINS,
     export_backend_domain_blueprint,
 )
+from pathlib import Path
 
 
 def test_domain_blueprint_locks_three_target_domains() -> None:
@@ -79,3 +80,27 @@ def test_pack_and_profile_splits_are_completed() -> None:
         "backend/kernel/profiles/public_profile.py",
         "backend/kernel/topology/profile_selection.py",
     )
+
+
+def test_governance_splits_are_completed() -> None:
+    architecture_split = next(
+        item for item in PRIORITY_SPLITS if item.current_module == "backend/core/architecture_governance.py"
+    )
+    owner_split = next(
+        item for item in PRIORITY_SPLITS if item.current_module == "backend/core/aggregate_owner_registry.py"
+    )
+
+    assert architecture_split.status == "completed"
+    assert architecture_split.target_modules == ("backend/kernel/governance/architecture_rules.py",)
+    assert owner_split.status == "completed"
+    assert owner_split.target_modules == ("backend/kernel/governance/aggregate_owner_registry.py",)
+
+
+def test_platform_blueprint_subdomains_exist_on_disk() -> None:
+    root = Path(__file__).resolve().parents[3]
+    assert (root / "backend" / "platform" / "db").is_dir()
+    assert (root / "backend" / "platform" / "redis").is_dir()
+    assert (root / "backend" / "platform" / "http").is_dir()
+    assert (root / "backend" / "platform" / "logging").is_dir()
+    assert (root / "backend" / "platform" / "telemetry").is_dir()
+    assert (root / "backend" / "platform" / "security").is_dir()

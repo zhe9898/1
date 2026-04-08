@@ -220,11 +220,9 @@ _BACKEND_TEST_MAX_LINES = 800
 
 _BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
     "sentinel/topology_sentinel.py": "The topology sentinel remains a large state machine until it is decomposed safely.",
-    "core/redis_client.py": "redis_client is still a shared platform helper and remains allowlisted for now.",
-    "api/jobs/dispatch.py": "jobs dispatch still carries the main scheduling path and cannot be split blindly.",
+    "api/jobs/pull_service.py": "pull_service still centralizes dispatch orchestration and must be decomposed along domain boundaries, not line count alone.",
     "kernel/scheduling/placement_solver.py": "Global placement solver remains intentionally centralized until further decomposition",
     "kernel/scheduling/backfill_scheduling.py": "Backfill scheduling still centralizes reservation time-window coordination.",
-    "api/jobs/lifecycle.py": "job lifecycle still shares transaction and audit context that has not been safely split yet.",
     "kernel/extensions/extension_sdk.py": "extension SDK still shares bootstrap, registration, and manifest parsing context.",
 }
 

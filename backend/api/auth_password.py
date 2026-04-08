@@ -1,5 +1,5 @@
 """
-ZEN70 Auth Password - 密码认证
+ZEN70 Auth Password - 瀵嗙爜璁よ瘉
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from backend.api.auth_shared import assert_user_active, register_login_session, 
 from backend.api.auth_token_issue import issue_auth_token
 from backend.api.deps import get_db, get_redis
 from backend.api.models.auth import AuthSessionResponse, PasswordLoginRequest
-from backend.core.auth_helpers import (
+from backend.control_plane.auth.auth_helpers import (
     CODE_BAD_REQUEST,
     CODE_TOO_MANY,
     CODE_UNAUTHORIZED,
@@ -27,7 +27,7 @@ from backend.core.auth_helpers import (
     require_db_redis,
     zen,
 )
-from backend.core.redis_client import RedisClient
+from backend.platform.redis.client import RedisClient
 from backend.models.user import User
 
 router = APIRouter()
@@ -56,7 +56,7 @@ async def password_login(
     db: AsyncSession | None = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
 ) -> AuthSessionResponse:
-    """标准密码登录通道，防爆破，依赖 tenant 和 role。"""
+    """Sanitized legacy docstring."""
     require_db_redis(db, redis)
     assert db is not None  # noqa: S101
     rid, cip = request_id(request), client_ip(request)
@@ -67,11 +67,11 @@ async def password_login(
     limit_key = f"pwd:rate:{cip}"
     lock_key = f"pwd:lock:{cip}"
 
-    if await redis.get(lock_key):
+    if await redis.kv.get(lock_key):
         log_auth("password_login", False, rid, username=username, client_ip_str=cip, detail="hard_locked")
-        raise zen(CODE_TOO_MANY, "IP 已被强制锁定，请 15 分钟后再试或联系指挥官解锁", status.HTTP_429_TOO_MANY_REQUESTS)
+        raise zen(CODE_TOO_MANY, "IP is temporarily locked for 15 minutes", status.HTTP_429_TOO_MANY_REQUESTS)
 
-    count_str = await redis.get(limit_key)
+    count_str = await redis.kv.get(limit_key)
     fail_count = int(count_str) if count_str else 0
 
     if fail_count == 1:
@@ -104,25 +104,25 @@ async def password_login(
         bcrypt.checkpw(candidate_password, _DUMMY_HASH)
 
     if not is_valid:
-        new_count = await redis.incr(limit_key)
+        new_count = await redis.kv.incr(limit_key)
         if new_count == 1:
-            await redis.expire(limit_key, 900)
+            await redis.kv.expire(limit_key, 900)
         if new_count >= 5:
-            await redis.setex(lock_key, 900, "1")
+            await redis.kv.setex(lock_key, 900, "1")
             log_auth("password_login", False, rid, username=username, client_ip_str=cip, detail="trigger_lock")
-            raise zen(CODE_TOO_MANY, "连续失败 5 次，IP 已被锁定 15 分钟", status.HTTP_429_TOO_MANY_REQUESTS)
+            raise zen(CODE_TOO_MANY, "杩炵画澶辫触 5 娆★紝IP 宸茶閿佸畾 15 鍒嗛挓", status.HTTP_429_TOO_MANY_REQUESTS)
         log_auth("password_login", False, rid, username=username, client_ip_str=cip, detail="wrong_password_or_user")
         raise zen(CODE_UNAUTHORIZED, "Invalid credentials", status.HTTP_401_UNAUTHORIZED)
 
     assert user is not None  # noqa: S101
     assert_user_active(user, flow="password_login", rid=rid, username=username, client_ip_str=cip)
-    await redis.delete(limit_key)
-    await redis.delete(lock_key)
+    await redis.kv.delete(limit_key)
+    await redis.kv.delete(lock_key)
 
     log_auth("password_login", True, rid, username=username, client_ip_str=cip)
 
     # Load user scopes from permissions table for JWT
-    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+    from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 
     user_scopes = hydrate_scopes_for_role(
         await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),

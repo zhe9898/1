@@ -1,11 +1,11 @@
-"""Add persisted WebAuthn challenge store."""
+﻿"""Add persisted WebAuthn challenge store."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0027_webauthn_challenge_store"
 down_revision = "0026_dual_chain_reconciliation"
@@ -44,3 +44,4 @@ def downgrade() -> None:
     guard = SchemaGuard(op.get_bind())
     if guard.has_table("webauthn_challenges"):
         op.drop_table("webauthn_challenges")
+

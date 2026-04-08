@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import datetime
 import ipaddress
@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from backend.api.connectors_helpers import (  # noqa: F401 鈥?re-export
+from backend.api.connectors_helpers import (  # noqa: F401 閳?re-export
     ConnectorInvokeRequest,
     ConnectorInvokeResponse,
     ConnectorResponse,
@@ -25,14 +25,14 @@ from backend.api.connectors_helpers import (  # noqa: F401 鈥?re-export
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_current_user, get_redis, get_tenant_db
 from backend.api.jobs.models import JobCreateRequest
-from backend.api.jobs.submission import submit_job
+from backend.api.jobs.submission_service import submit_job
 from backend.api.ui_contracts import ResourceSchemaResponse
 from backend.kernel.extensions.connector_kind_registry import validate_connector_config
 from backend.kernel.extensions.connector_service import ConnectorService
-from backend.core.errors import zen
-from backend.core.quota import check_connector_quota
-from backend.core.redis_client import CHANNEL_CONNECTOR_EVENTS, RedisClient
-from backend.core.security_redaction import sanitize_sensitive_data
+from backend.kernel.contracts.errors import zen
+from backend.kernel.scheduling.quota_service import check_connector_quota
+from backend.platform.logging.redaction import sanitize_sensitive_data
+from backend.platform.redis.client import CHANNEL_CONNECTOR_EVENTS, RedisClient
 from backend.models.connector import Connector
 
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
@@ -321,3 +321,4 @@ async def test_connector(
         },
     )
     return response
+

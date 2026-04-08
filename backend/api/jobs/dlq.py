@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import Select, func, select
@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.control_events import publish_control_event
 from backend.api.deps import get_current_admin, get_redis, get_tenant_db
-from backend.core.errors import zen
+from backend.kernel.contracts.errors import zen
 from backend.kernel.execution.job_lifecycle_service import JobLifecycleService
-from backend.core.redis_client import CHANNEL_JOB_EVENTS, RedisClient
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS, RedisClient
 from backend.models.job import Job
 
 from .database import _append_log, _get_job_by_id, _get_job_by_id_for_update, remove_from_dead_letter_queue
@@ -63,10 +63,10 @@ async def list_dead_letter_queue(
         dlq_key = f"dlq:{tenant_id}:jobs"
         try:
             # Get total count
-            total = await redis.zcard(dlq_key)  # type: ignore[attr-defined]
+            total = await redis.sorted_sets.cardinality(dlq_key)
 
             # Get paginated job IDs (sorted by timestamp, newest first)
-            job_ids = await redis.zrevrange(dlq_key, offset, offset + limit - 1)  # type: ignore[attr-defined]
+            job_ids = await redis.sorted_sets.range_desc(dlq_key, offset, offset + limit - 1)
 
             if not job_ids:
                 return DeadLetterQueueResponse(total=total, items=[])

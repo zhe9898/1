@@ -36,7 +36,7 @@ from backend.models.job import Job
 
 if TYPE_CHECKING:
     from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
-    from backend.core.scheduling_policy_types import SolverConfig
+    from backend.kernel.policy.types import SolverConfig
 
 logger = logging.getLogger(__name__)
 

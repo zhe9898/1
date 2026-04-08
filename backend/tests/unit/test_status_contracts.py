@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pytest
 
-from backend.core.status_contracts import canonicalize_transport_status, normalize_persisted_status
+from backend.kernel.contracts.status import canonicalize_transport_status, normalize_persisted_status
 
 
 def test_trigger_status_transport_alias_normalizes_to_inactive() -> None:
@@ -59,3 +59,4 @@ def test_workflow_step_pending_legacy_value_normalizes_to_waiting() -> None:
         canonicalize_transport_status("workflow_steps.status", "pending")
     with pytest.raises(ValueError):
         normalize_persisted_status("workflow_steps.status", "pending")
+

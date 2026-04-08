@@ -1,6 +1,5 @@
 """
-ZEN70 Auth Bootstrap - 系统初始化（首次运行）
-"""
+ZEN70 Auth Bootstrap - 绯荤粺鍒濆鍖栵紙棣栨杩愯锛?"""
 
 from __future__ import annotations
 
@@ -16,13 +15,13 @@ from backend.api.auth_shared import register_login_session
 from backend.api.auth_token_issue import issue_auth_token
 from backend.api.deps import get_db, get_redis
 from backend.api.models.auth import AuthSessionResponse, BootstrapRequest
-from backend.core.auth_helpers import (
+from backend.control_plane.auth.auth_helpers import (
     CODE_DB_UNAVAILABLE,
     CODE_FORBIDDEN,
     require_db_redis,
     zen,
 )
-from backend.core.redis_client import RedisClient
+from backend.platform.redis.client import RedisClient
 from backend.models.user import User
 
 router = APIRouter()
@@ -35,7 +34,7 @@ BOOTSTRAP_LOCK_TTL_SECONDS = 60
 
 @router.get("/sys/status")
 async def sys_status(db: AsyncSession | None = Depends(get_db)) -> dict[str, bool]:
-    """检查数据库是否有用户。"""
+    """Sanitized legacy docstring."""
     if db is None:
         raise zen(CODE_DB_UNAVAILABLE, "DB unavailable", status.HTTP_503_SERVICE_UNAVAILABLE)
     from backend.api.auth_shared import first_user_or_schema_unavailable
@@ -51,12 +50,12 @@ async def bootstrap(
     db: AsyncSession | None = Depends(get_db),
     redis: RedisClient = Depends(get_redis),
 ) -> AuthSessionResponse:
-    """初始化第一个管理员账户。只有在库为空时可用。"""
+    """Sanitized legacy docstring."""
     require_db_redis(db, redis)
     assert db is not None  # noqa: S101
     from backend.api.auth_shared import first_user_or_schema_unavailable
 
-    locked = await redis.acquire_lock(BOOTSTRAP_LOCK_KEY, ttl=BOOTSTRAP_LOCK_TTL_SECONDS)
+    locked = await redis.locks.acquire(BOOTSTRAP_LOCK_KEY, ttl=BOOTSTRAP_LOCK_TTL_SECONDS)
     if not locked:
         raise zen(
             CODE_FORBIDDEN,
@@ -79,7 +78,7 @@ async def bootstrap(
         db.add(user)
         await db.flush()
         await db.commit()
-        from backend.core.permissions import hydrate_scopes_for_role
+        from backend.control_plane.auth.permissions import hydrate_scopes_for_role
 
         issued_token = issue_auth_token(
             str(user.id),
@@ -110,6 +109,6 @@ async def bootstrap(
             expires_in=issued_token.expires_in,
         )
     finally:
-        released = await redis.release_lock(BOOTSTRAP_LOCK_KEY)
+        released = await redis.locks.release(BOOTSTRAP_LOCK_KEY)
         if not released:
             logger.warning("bootstrap_lock_release_failed: key=%s", BOOTSTRAP_LOCK_KEY)

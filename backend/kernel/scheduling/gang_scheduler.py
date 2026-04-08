@@ -297,7 +297,7 @@ class GangPermitPlugin:
         self._coord = coordinator
 
     def permit(self, job: Job, ctx: SchedulingContext) -> object:
-        from backend.core.scheduling_framework import PluginResult, PluginStatus
+        from backend.kernel.scheduling.scheduling_framework import PluginResult, PluginStatus
 
         gang_id = getattr(job, "gang_id", None)
         if not gang_id:

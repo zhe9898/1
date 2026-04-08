@@ -1,4 +1,4 @@
-"""Final dual-chain reconciliation fence for overlapping control-plane tables."""
+﻿"""Final dual-chain reconciliation fence for overlapping control-plane tables."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0026_dual_chain_reconciliation"
 down_revision = "0025_webauthn_credential_transports"
@@ -185,3 +185,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """This migration is intentionally irreversible."""
+

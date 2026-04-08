@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from backend.api.models.auth import AuthSessionResponse
-from backend.core.permissions import filter_valid_scopes
+from backend.control_plane.auth.permissions import filter_valid_scopes
 
 
 def _coerce_optional_string(value: object, *, fallback: str | None = None) -> str | None:

@@ -1,11 +1,11 @@
-"""Backfill job and job-attempt statuses to canonical values."""
+﻿"""Backfill job and job-attempt statuses to canonical values."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0029_canonical_job_statuses"
 down_revision = "0028_canonical_trigger_workflow_statuses"
@@ -27,3 +27,4 @@ def downgrade() -> None:
         op.execute(sa.text("UPDATE jobs SET status = 'canceled' WHERE status = 'cancelled'"))
     if guard.has_table("job_attempts"):
         op.execute(sa.text("UPDATE job_attempts SET status = 'canceled' WHERE status = 'cancelled'"))
+

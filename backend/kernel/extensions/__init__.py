@@ -1,5 +1,9 @@
 """Kernel extension subdomain."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from .connector_service import ConnectorService
 from .extension_guard import export_extension_budget_contract, validate_extension_manifest_contract
 from .extension_sdk import (
@@ -13,8 +17,23 @@ from .extension_sdk import (
     list_extensions,
 )
 from .trigger_command_service import TriggerCommandService
-from .trigger_service import fire_trigger, validate_trigger_target_contract
 from .workflow_command_service import WorkflowCommandService
+
+if TYPE_CHECKING:
+    from .trigger_service import fire_trigger as fire_trigger
+    from .trigger_service import validate_trigger_target_contract as validate_trigger_target_contract
+
+
+async def fire_trigger(*args: Any, **kwargs: Any) -> Any:
+    from .trigger_service import fire_trigger as _fire_trigger
+
+    return await _fire_trigger(*args, **kwargs)
+
+
+def validate_trigger_target_contract(*args: Any, **kwargs: Any) -> Any:
+    from .trigger_service import validate_trigger_target_contract as _validate_trigger_target_contract
+
+    return _validate_trigger_target_contract(*args, **kwargs)
 
 __all__ = [
     "CompatibilityPolicy",

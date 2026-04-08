@@ -9,13 +9,13 @@
 
 ## Pack Catalog
 
-| Pack | Category | Delivery Stage | Services / Routers | Selector Hints | Deployment Boundary | Runtime Owner |
+| Pack | Category | Delivery Stage | Services / Routers | Selector Contract | Deployment Boundary | Runtime Owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| `iot-pack` | IoT | `runtime-present` | `mosquitto`; `iot` `scenes` `scheduler` | `required_capabilities=iot.adapter`, `target_zone=home` | 家庭/边缘网络执行，不进入默认 kernel 请求进程 | `edge-service` |
-| `ops-pack` | Ops | `runtime-present` | observability stack; `observability` `energy` | `required_capabilities=ops.observe`, `target_zone=ops` | 独立运维与观测 stack，不进入默认 kernel 请求进程 | `ops-stack` |
-| `media-pack` | Media | `runtime-present` | media workers; `media` | media capability hints | 媒体处理下沉到独立 worker 边界 | `worker-service` |
-| `health-pack` | Health | `mvp-skeleton` | native skeleton clients | `required_capabilities=health.ingest`, `target_zone=mobile`, `target_executor=swift-native|kotlin-native` | 原生客户端采集，不把健康 SDK 接回 Python gateway | `native-client` |
-| `vector-pack` | AI / Search | `contract-only` | search / vector workers; `search` | `required_capabilities=vector.search`, `target_zone=search`, `target_executor=vector-worker|search-service` | 语义检索与重排由独立 worker/search 服务承载 | `worker-service` |
+| `iot-pack` | IoT | `runtime-present` | `mosquitto`; `iot` `scenes` `scheduler` | `required_capabilities=[iot.adapter]`, `target_zone=home`, `target_executors=[]` | 家庭/边缘网络执行，不进入默认 kernel 请求进程 | `edge-service` |
+| `ops-pack` | Ops | `runtime-present` | observability stack; `observability` `energy` | `required_capabilities=[ops.observe]`, `target_zone=ops`, `target_executors=[]` | 独立运维与观测 stack，不进入默认 kernel 请求进程 | `ops-stack` |
+| `media-pack` | Media | `runtime-present` | media workers; `media` | `required_capabilities=[]`, `target_zone=media`, `target_executors=[]` | 媒体处理下沉到独立 worker 边界 | `worker-service` |
+| `health-pack` | Health | `runtime-present` | native clients; `health` | `required_capabilities=[health.ingest]`, `target_zone=mobile`, `target_executors=[swift-native, kotlin-native]` | 原生客户端采集，不把健康 SDK 接回 Python gateway | `native-client` |
+| `vector-pack` | AI / Search | `runtime-present` | search / vector workers; `search` | `required_capabilities=[vector.search]`, `target_zone=search`, `target_executors=[vector-worker, search-service]` | 语义检索与重排由独立 worker/search 服务承载 | `worker-service` |
 
 ## Delivery Discipline
 

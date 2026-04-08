@@ -1,12 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-import backend.core.migration_runner as migration_runner
-from backend.core.migration_governance import MIGRATION_CHAINS_BY_KEY, ordered_migration_chains, runtime_managed_migration_chains
-from backend.core.migration_runner import (
+import backend.platform.db.migration_runner as migration_runner
+from backend.platform.db.migration_governance import MIGRATION_CHAINS_BY_KEY, ordered_migration_chains, runtime_managed_migration_chains
+from backend.platform.db.migration_runner import (
     MigrationGovernanceError,
     build_alembic_config,
     resolve_migration_chains,
@@ -68,3 +68,4 @@ def test_run_governed_migrations_fails_fast_when_governance_is_invalid(monkeypat
 
     with pytest.raises(MigrationGovernanceError, match="broken overlap policy"):
         run_governed_migrations(upgrade_fn=lambda *_args: None)
+

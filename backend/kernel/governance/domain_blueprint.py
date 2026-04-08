@@ -66,7 +66,11 @@ EXTERNAL_RUNTIME_INVARIANTS: Final[tuple[ExternalRuntimeInvariant, ...]] = (
         key="extensions_follow_contract_chain",
         statement="extension entry remains capability -> surface -> policy -> service contract -> execution contract.",
         rationale="Extensions stay behind backend-owned contracts instead of direct runtime shortcuts.",
-        evidence_modules=("backend/kernel/surfaces/registry.py", "backend/control_plane/console/manifest_service.py", "backend/core/architecture_governance.py"),
+        evidence_modules=(
+            "backend/kernel/surfaces/registry.py",
+            "backend/control_plane/console/manifest_service.py",
+            "backend/kernel/governance/architecture_rules.py",
+        ),
     ),
 )
 
@@ -108,6 +112,7 @@ TARGET_BACKEND_DOMAINS: Final[tuple[DomainBlueprint, ...]] = (
         subdomains=(
             SubdomainBlueprint("db", ("Database sessions", "Migration wiring", "Persistence adapters")),
             SubdomainBlueprint("redis", ("Redis clients", "PubSub adapters")),
+            SubdomainBlueprint("http", ("Outbound HTTP clients", "Webhook delivery adapters")),
             SubdomainBlueprint("logging", ("Structured logging", "Redaction helpers")),
             SubdomainBlueprint("telemetry", ("Metrics", "Tracing", "Operational signals")),
             SubdomainBlueprint("security", ("Crypto helpers", "Transport-safe primitives")),
@@ -181,13 +186,13 @@ PRIORITY_SPLITS: Final[tuple[SplitBlueprint, ...]] = (
         why="Capability ownership belongs to the kernel registry and should not live under backend/core.",
     ),
     SplitBlueprint(
-        status="planned",
+        status="completed",
         current_module="backend/core/architecture_governance.py",
         target_modules=("backend/kernel/governance/architecture_rules.py",),
         why="Architecture rules define kernel-level invariants and should govern domains from the kernel package.",
     ),
     SplitBlueprint(
-        status="planned",
+        status="completed",
         current_module="backend/core/aggregate_owner_registry.py",
         target_modules=("backend/kernel/governance/aggregate_owner_registry.py",),
         why="Aggregate ownership is a governance fact, not runtime behavior.",

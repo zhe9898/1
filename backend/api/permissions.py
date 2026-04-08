@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin, get_tenant_db
-from backend.core.errors import zen
-from backend.core.permissions import ALLOWED_SCOPES, grant_permission, is_valid_scope, list_user_permissions, normalize_scope, revoke_permission
+from backend.kernel.contracts.errors import zen
+from backend.control_plane.auth.permissions import ALLOWED_SCOPES, grant_permission, is_valid_scope, list_user_permissions, normalize_scope, revoke_permission
 from backend.models.permission import Permission
 
 router = APIRouter(prefix="/api/v1/permissions", tags=["permissions"])

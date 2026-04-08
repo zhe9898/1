@@ -52,21 +52,25 @@ def test_mount_point_basics(mocker: MockerFixture) -> None:
 
 
 def test_topology_sentinel_init_and_redis(mock_env: None, mocker: MockerFixture) -> None:
-    mock_redis = mocker.patch("redis.Redis")
-    instance: Any = mock_redis.return_value
+    mock_client_cls = mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
+    instance: Any = mock_client_cls.return_value
+    instance.ping.return_value = True
 
     sentinel = TopologySentinel()
 
     assert sentinel.redis_host == "localhost"
     assert len(sentinel.mounts) == 1
     assert sentinel.mounts[0].path == Path("/tmp/mock_disk")
-    instance.ping.assert_called_once()
+    instance.connect.assert_called_once()
     assert sentinel._redis_ok() is True
 
 
 def test_topology_sentinel_check_disk_usage(mock_env: None, mocker: MockerFixture) -> None:
-    mocker.patch("redis.Redis")
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
+    sentinel._redis.pubsub.publish = MagicMock()  # type: ignore[union-attr]
+    sentinel._redis.kv.set = MagicMock()  # type: ignore[union-attr]
+    sentinel._redis.kv.delete = MagicMock()  # type: ignore[union-attr]
 
     mock_usage = MagicMock(used=96, total=100)
     mocker.patch("shutil.disk_usage", return_value=mock_usage)
@@ -76,8 +80,8 @@ def test_topology_sentinel_check_disk_usage(mock_env: None, mocker: MockerFixtur
 
     # 验证 Taint 机制：标志位被设置 + Redis 事件发布
     assert sentinel.has_disk_taint is True
-    sentinel._redis.publish.assert_called()  # type: ignore[union-attr]
-    sentinel._redis.set.assert_called_with("zen70:disk_breaker", "active", ex=300)  # type: ignore[union-attr]
+    sentinel._redis.pubsub.publish.assert_called()  # type: ignore[union-attr]
+    sentinel._redis.kv.set.assert_called_with("zen70:disk_breaker", "active", ex=300)  # type: ignore[union-attr]
 
     # 验证磁盘恢复时自动清除 Taint
     mock_usage_ok = MagicMock(used=80, total=100)
@@ -87,11 +91,13 @@ def test_topology_sentinel_check_disk_usage(mock_env: None, mocker: MockerFixtur
 
 
 def test_topology_sentinel_reconcile_loop(mock_env: None, mocker: MockerFixture) -> None:
-    mocker.patch("redis.Redis")
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
 
-    sentinel._redis.get.return_value = "ON"  # type: ignore[union-attr]
-    sentinel._redis.hgetall.return_value = {}  # type: ignore[union-attr]
+    sentinel._redis.ping.return_value = True  # type: ignore[union-attr]
+    sentinel._redis.kv.get.return_value = "ON"  # type: ignore[union-attr]
+    sentinel._redis.hashes.get_all.return_value = {}  # type: ignore[union-attr]
+    sentinel._redis.pubsub.publish = MagicMock()  # type: ignore[union-attr]
 
     mocker.patch.object(sentinel, "_get_actual_running_containers", return_value=set())
     mock_action = mocker.patch.object(sentinel, "_safe_container_action")
@@ -102,7 +108,7 @@ def test_topology_sentinel_reconcile_loop(mock_env: None, mocker: MockerFixture)
 
 
 def test_topology_sentinel_run_once(mock_env: None, mocker: MockerFixture) -> None:
-    mocker.patch("redis.Redis")
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
 
     mock_disk = mocker.patch.object(sentinel, "_check_disk_usage")
@@ -119,7 +125,7 @@ def test_topology_sentinel_run_once(mock_env: None, mocker: MockerFixture) -> No
 
 
 def test_topology_sentinel_safe_action(mock_env: None, mocker: MockerFixture) -> None:
-    mocker.patch("redis.Redis")
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
 
     mocker.patch(

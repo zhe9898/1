@@ -1,5 +1,5 @@
-generated_at: 2026-04-07
-catalog_id: AUDIT-MODULE-CATALOG-2026-04-07
+generated_at: 2026-04-08
+catalog_id: AUDIT-MODULE-CATALOG-2026-04-08
 modules:
   - module_id: M1
     name: 执行主链
@@ -18,29 +18,28 @@ modules:
       - backend/kernel/execution/attempt_expiration_service.py
       - backend/kernel/scheduling/backfill_scheduling.py
       - backend/kernel/scheduling/business_scheduling.py
-      - backend/core/__init__.py
-      - backend/core/db_locks.py
+      - backend/platform/db/advisory_locks.py
       - backend/kernel/execution/dispatch_lifecycle.py
-      - backend/core/failure_control_plane.py
+      - backend/kernel/scheduling/failure_control_plane.py
       - backend/kernel/execution/failure_taxonomy.py
       - backend/kernel/scheduling/gang_scheduler.py
-      - backend/core/gen_grpc/**
-      - backend/core/job_concurrency_service.py
+      - backend/kernel/scheduling/gen_grpc/**
+      - backend/kernel/execution/job_concurrency_service.py
       - backend/kernel/execution/job_lifecycle_service.py
       - backend/kernel/scheduling/job_scheduler.py
       - backend/kernel/scheduling/job_scoring.py
       - backend/kernel/execution/job_status.py
-      - backend/core/job_type_separation.py
+      - backend/kernel/execution/job_type_separation.py
       - backend/kernel/execution/lease_service.py
       - backend/kernel/topology/node_auth.py
-      - backend/core/placement_*.py
+      - backend/kernel/scheduling/placement_*.py
       - backend/kernel/scheduling/queue_stratification.py
-      - backend/core/quota*.py
-      - backend/core/redis_client.py
-      - backend/core/safe_error_projection.py
-      - backend/core/scheduler_auto_tune*.py
-      - backend/core/scheduling_*.py
-      - backend/core/workload_semantics.py
+      - backend/kernel/scheduling/quota*.py
+      - backend/platform/redis/**
+      - backend/kernel/contracts/safe_error_projection.py
+      - backend/kernel/scheduling/scheduler_auto_tune*.py
+      - backend/kernel/scheduling/scheduling_*.py
+      - backend/kernel/execution/workload_semantics.py
       - backend/models/job.py
       - backend/models/job_attempt.py
       - backend/models/job_log.py
@@ -134,20 +133,20 @@ modules:
       - backend/api/permissions.py
       - backend/api/sessions.py
       - backend/api/user_management.py
-      - backend/core/audit_logging.py
-      - backend/core/auth_helpers.py
-      - backend/core/jwt.py
-      - backend/core/permissions.py
-      - backend/core/rls.py
-      - backend/core/sessions.py
-      - backend/core/secret_envelope.py
-      - backend/core/security_policy.py
-      - backend/core/security_redaction.py
+      - backend/control_plane/admin/audit_logging.py
+      - backend/control_plane/auth/auth_helpers.py
+      - backend/control_plane/auth/jwt.py
+      - backend/control_plane/auth/permissions.py
+      - backend/platform/db/rls.py
+      - backend/control_plane/auth/sessions.py
+      - backend/platform/security/secret_envelope.py
+      - backend/platform/security/normalization.py
+      - backend/platform/logging/redaction.py
       - backend/kernel/topology/node_enrollment_service.py
-      - backend/core/user_lifecycle.py
-      - backend/core/webauthn.py
-      - backend/core/webauthn_challenge_store.py
-      - backend/core/webauthn_flow_session.py
+      - backend/control_plane/admin/user_lifecycle.py
+      - backend/control_plane/auth/webauthn.py
+      - backend/control_plane/auth/webauthn_challenge_store.py
+      - backend/control_plane/auth/webauthn_flow_session.py
       - backend/models/audit_log.py
       - backend/models/permission.py
       - backend/models/session.py
@@ -205,27 +204,31 @@ modules:
       - backend/api/scenes.py
       - backend/api/triggers.py
       - backend/api/workflows.py
-      - backend/core/ai_providers.py
+      - backend/kernel/extensions/ai_providers.py
       - backend/kernel/extensions/connector_kind_registry.py
-      - backend/core/connector_secret_service.py
+      - backend/kernel/extensions/connector_secret_service.py
       - backend/kernel/extensions/connector_service.py
-      - backend/core/control_plane.py
-      - backend/core/control_plane_state.py
-      - backend/core/device_profiles.py
-      - backend/core/events_schema.py
+      - backend/kernel/surfaces/contracts.py
+      - backend/kernel/surfaces/registry.py
+      - backend/control_plane/console/manifest_service.py
+      - backend/control_plane/console/state_views.py
+      - backend/kernel/topology/device_profiles.py
+      - backend/kernel/contracts/events_schema.py
       - backend/kernel/execution/fault_isolation.py
       - backend/kernel/topology/executor_registry.py
       - backend/kernel/extensions/extension_guard.py
       - backend/kernel/extensions/extension_sdk.py
-      - backend/core/feature_flag_service.py
+      - backend/kernel/policy/feature_flag_service.py
       - backend/kernel/extensions/job_kind_registry.py
-      - backend/core/pack_registry.py
+      - backend/kernel/packs/registry.py
+      - backend/kernel/packs/presets.py
+      - backend/kernel/topology/pack_selection.py
       - backend/kernel/scheduling/reservation_runtime.py
-      - backend/core/runtime_policy_resolver.py
+      - backend/kernel/policy/runtime_policy_resolver.py
       - backend/kernel/extensions/trigger_command_service.py
       - backend/kernel/extensions/trigger_kind_registry.py
       - backend/kernel/extensions/trigger_service.py
-      - backend/core/webhooks.py
+      - backend/platform/http/webhooks.py
       - backend/kernel/extensions/workflow_command_service.py
       - backend/kernel/extensions/workflow_engine.py
       - backend/kernel/extensions/workflow_template_registry.py
@@ -289,10 +292,11 @@ modules:
       - backend/api/search.py
       - backend/api/settings.py
       - backend/api/ui_contracts.py
-      - backend/core/aggregate_owner_registry.py
-      - backend/core/gateway_profile.py
-      - backend/core/runtime_support.py
-      - backend/core/status_contracts.py
+      - backend/kernel/governance/aggregate_owner_registry.py
+      - backend/kernel/profiles/public_profile.py
+      - backend/kernel/topology/profile_selection.py
+      - backend/platform/redis/runtime.py
+      - backend/kernel/contracts/status.py
       - backend/models/asset.py
       - backend/models/health_record.py
       - backend/models/memory.py
@@ -367,7 +371,6 @@ modules:
       - backend/.coveragerc
       - backend/Dockerfile
       - backend/alembic.ini
-      - backend/core/requirements.txt
       - backend/migrations.ini
       - backend/mypy.ini
       - backend/requirements-ai.txt
@@ -450,13 +453,13 @@ modules:
     name: 数据与治理
     included_paths:
       - backend/alembic/**
-      - backend/core/alembic_runtime.py
-      - backend/core/architecture_governance.py
-      - backend/core/data_retention.py
-      - backend/core/governance_facade.py
-      - backend/core/migration_governance.py
-      - backend/core/migration_runner.py
-      - backend/core/migration_schema_guard.py
+      - backend/platform/db/alembic_runtime.py
+      - backend/kernel/governance/architecture_rules.py
+      - backend/control_plane/admin/data_retention.py
+      - backend/kernel/scheduling/governance_facade.py
+      - backend/platform/db/migration_governance.py
+      - backend/platform/db/migration_runner.py
+      - backend/platform/db/schema_guard.py
       - backend/migrations/**
       - backend/models/__init__.py
       - backend/models/alert.py
@@ -517,17 +520,16 @@ modules:
       - backend/shared_state.py
       - backend/api/alerts.py
       - backend/api/energy.py
-      - backend/core/alert_actions.py
-      - backend/core/alerting.py
-      - backend/core/compatibility_adapter.py
-      - backend/core/constants.py
-      - backend/core/errors.py
-      - backend/core/metrics.py
-      - backend/core/protocol_version.py
-      - backend/core/structured_logging.py
-      - backend/core/telemetry.py
-      - backend/core/version.py
-      - backend/core/worker_pool.py
+      - backend/kernel/extensions/alert_actions.py
+      - backend/kernel/extensions/alerting.py
+      - backend/platform/redis/constants.py
+      - backend/kernel/contracts/errors.py
+      - backend/platform/telemetry/http_metrics.py
+      - backend/kernel/contracts/protocol_version.py
+      - backend/platform/logging/structured.py
+      - backend/platform/telemetry/tracing.py
+      - backend/kernel/contracts/runtime_version.py
+      - backend/kernel/scheduling/worker_pool.py
       - backend/sentinel/**
       - backend/workers/__init__.py
       - backend/workers/ai_worker.py
@@ -600,7 +602,7 @@ modules:
       - clients/**
       - contracts/**
       - backend/api/kernel.py
-      - backend/core/kernel_capabilities.py
+      - backend/kernel/capabilities/registry.py
       - docs/api/openapi_locked.json
       - docs/openapi-iot.json
       - docs/openapi-kernel.json

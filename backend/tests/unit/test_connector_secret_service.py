@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from backend.core.connector_secret_service import ConnectorSecretService
+from backend.kernel.extensions.connector_secret_service import ConnectorSecretService
 
 
 def test_connector_secret_service_roundtrip_and_masked_view(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
-
 from fastapi import Request
 from pydantic import BaseModel, Field
 
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
+from backend.platform.redis.client import RedisClient
+from backend.platform.redis.runtime import redis_sdk_available
 
 TOPOLOGY_KEY_PREFIX = "zen70:topology:"
 LRU_CACHE_TTL = 30
@@ -55,30 +55,23 @@ def _set_lru_matrix(matrix: dict[str, CapabilityItem]) -> None:
     _lru_ts = time.time()
 
 
-def _get_redis_from_app(request: Request) -> Any:
+def _get_redis_from_app(request: Request) -> RedisClient | None:
     app_redis = getattr(request.app.state, "redis", None)
     if app_redis is None:
         return None
-    return getattr(app_redis, "redis", None)
+    return app_redis if isinstance(app_redis, RedisClient) else None
 
 
 def is_redis_available() -> bool:
-    try:
-        import redis.asyncio  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return redis_sdk_available()
 
 
-async def fetch_topology(redis_conn: Any) -> dict[str, str]:
+async def fetch_topology(redis_client: RedisClient) -> dict[str, str]:
     try:
-        keys = [key async for key in redis_conn.scan_iter(f"{TOPOLOGY_KEY_PREFIX}*", count=100)]
+        keys = await redis_client.kv.scan_prefix(TOPOLOGY_KEY_PREFIX)
         if not keys:
             return {}
-        pipe = redis_conn.pipeline()
-        for key in keys:
-            pipe.get(key)
-        values = await pipe.execute()
+        values = await redis_client.kv.get_many(keys)
     except (OSError, ValueError, KeyError, RuntimeError, TypeError, AttributeError):
         return {}
 
@@ -89,8 +82,8 @@ async def fetch_topology(redis_conn: Any) -> dict[str, str]:
     return result
 
 
-async def _read_feature_flags(redis_conn: Any | None) -> dict[str, str | None]:
-    del redis_conn
+async def _read_feature_flags(redis_client: RedisClient | None) -> dict[str, str | None]:
+    del redis_client
     return {}
 
 
@@ -131,14 +124,14 @@ async def get_capabilities_matrix(request: Request) -> dict[str, CapabilityItem]
         if cached is not None:
             return cached
 
-        redis_conn = _get_redis_from_app(request)
-        if redis_conn is None:
+        redis_client = _get_redis_from_app(request)
+        if redis_client is None:
             matrix = dict(ALL_OFF_MATRIX)
             _set_lru_matrix(matrix)
             return matrix
 
-        topology = await fetch_topology(redis_conn)
-        feature_flags = await _read_feature_flags(redis_conn)
+        topology = await fetch_topology(redis_client)
+        feature_flags = await _read_feature_flags(redis_client)
         matrix = build_matrix(topology, feature_flags)
         _set_lru_matrix(matrix)
         return matrix

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from backend.core.worker_pool import (
+from backend.kernel.scheduling.worker_pool import (
     infer_node_worker_pools,
     infer_queue_class,
     resolve_job_queue_contract,

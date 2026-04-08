@@ -24,6 +24,12 @@ from backend.kernel.topology.profile_selection import (
 router = APIRouter(prefix="/api/v1", tags=["profile"])
 
 
+class GatewayPackSelectorResponse(BaseModel):
+    required_capabilities: list[str] = Field(default_factory=list)
+    target_zone: str | None = None
+    target_executors: list[str] = Field(default_factory=list)
+
+
 class GatewayPackResponse(BaseModel):
     pack_key: str
     label: str
@@ -35,7 +41,7 @@ class GatewayPackResponse(BaseModel):
     services: list[str] = Field(default_factory=list)
     router_names: list[str] = Field(default_factory=list)
     capability_keys: list[str] = Field(default_factory=list)
-    selector_hints: list[str] = Field(default_factory=list)
+    selector: GatewayPackSelectorResponse
     deployment_boundary: str
     runtime_owner: str
     status_view: StatusView
@@ -81,7 +87,11 @@ def _build_pack_contracts(requested_pack_keys: tuple[str, ...], resolved_pack_ke
                 services=list(definition.services),
                 router_names=list(definition.routers),
                 capability_keys=list(definition.capability_keys),
-                selector_hints=list(definition.selector_hints),
+                selector=GatewayPackSelectorResponse(
+                    required_capabilities=list(definition.selector.required_capabilities),
+                    target_zone=definition.selector.target_zone,
+                    target_executors=list(definition.selector.target_executors),
+                ),
                 deployment_boundary=definition.deployment_boundary,
                 runtime_owner=definition.runtime_owner,
                 status_view=_pack_status_view(selected=selected, inherited=inherited),

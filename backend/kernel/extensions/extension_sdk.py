@@ -61,7 +61,7 @@ from backend.kernel.extensions.job_kind_registry import (
     register_job_kind,
     unregister_job_kind,
 )
-from backend.core.version import get_runtime_version
+from backend.kernel.contracts.runtime_version import get_runtime_version
 from backend.kernel.extensions.workflow_template_registry import (
     get_workflow_template_info,
     list_workflow_templates,

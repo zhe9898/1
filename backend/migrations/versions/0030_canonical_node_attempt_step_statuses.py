@@ -1,11 +1,11 @@
-"""Backfill node, attempt, and workflow-step statuses to canonical values."""
+﻿"""Backfill node, attempt, and workflow-step statuses to canonical values."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0030_canonical_node_attempt_step_statuses"
 down_revision = "0029_canonical_job_statuses"
@@ -33,3 +33,4 @@ def downgrade() -> None:
         op.execute(sa.text("UPDATE job_attempts SET status = 'expired' WHERE status = 'timeout'"))
     if guard.has_table("workflow_steps"):
         op.execute(sa.text("UPDATE workflow_steps SET status = 'pending' WHERE status = 'waiting'"))
+

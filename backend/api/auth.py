@@ -46,7 +46,7 @@ PIN_RATE_LIMIT_WINDOW = auth_pin.PIN_RATE_LIMIT_WINDOW
 PIN_RATE_LIMIT_MAX = auth_pin.PIN_RATE_LIMIT_MAX
 
 # Re-export helpers so tests can patch on backend.api.auth namespace
-from backend.core.auth_helpers import (  # noqa: E402, F401
+from backend.control_plane.auth.auth_helpers import (  # noqa: E402, F401
     check_webauthn_rate_limit,
     consume_challenge,
     credential_id_to_base64url,
@@ -54,10 +54,10 @@ from backend.core.auth_helpers import (  # noqa: E402, F401
     origin_from_request,
     token_response,
 )
-from backend.core.rls import set_tenant_context  # noqa: E402, F401
+from backend.platform.db.rls import set_tenant_context  # noqa: E402, F401
 
 try:
-    from backend.core.webauthn import (  # noqa: E402
+    from backend.control_plane.auth.webauthn import (  # noqa: E402
         generate_authentication_challenge,
         verify_authentication,
     )

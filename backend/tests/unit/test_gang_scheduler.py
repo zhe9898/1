@@ -258,7 +258,7 @@ def test_gang_permit_non_gang_passes():
         parent_jobs={},
     )
     result = plugin.permit(job, ctx)
-    from backend.core.scheduling_framework import PluginStatus
+    from backend.kernel.scheduling.scheduling_framework import PluginStatus
 
     assert result.status == PluginStatus.SUCCESS
 
@@ -283,7 +283,7 @@ def test_gang_permit_waits_until_all_placed():
 
     # Before placing both
     result = plugin.permit(j1, ctx)
-    from backend.core.scheduling_framework import PluginStatus
+    from backend.kernel.scheduling.scheduling_framework import PluginStatus
 
     assert result.status == PluginStatus.WAIT
 

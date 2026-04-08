@@ -1,5 +1,5 @@
 """
-ZEN70 Auth WebAuthn - WebAuthn 娉ㄥ唽涓庣櫥褰?"""
+ZEN70 Auth WebAuthn - WebAuthn 濞夈劌鍞芥稉搴ｆ瑜?"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-import backend.core.auth_helpers as _auth_helpers
+import backend.control_plane.auth.auth_helpers as _auth_helpers
 from backend.api.auth_cookies import set_auth_cookie
 from backend.api.auth_session_projection import build_authenticated_session_response
 from backend.api.auth_shared import assert_user_active, register_login_session, request_tenant_id
@@ -33,7 +33,7 @@ from backend.api.models.auth import (
     WebAuthnRegisterBeginResponse,
     WebAuthnRegisterCompleteRequest,
 )
-from backend.core.auth_helpers import (
+from backend.control_plane.auth.auth_helpers import (
     CHALLENGE_TTL,
     CODE_BAD_REQUEST,
     CODE_NOT_FOUND,
@@ -45,8 +45,8 @@ from backend.core.auth_helpers import (
     require_db_redis,
     zen,
 )
-from backend.core.webauthn_challenge_store import WebAuthnChallengeStore
-from backend.core.webauthn_flow_session import (
+from backend.control_plane.auth.webauthn_challenge_store import WebAuthnChallengeStore
+from backend.control_plane.auth.webauthn_flow_session import (
     clear_webauthn_flow_session,
     ensure_webauthn_flow_session,
     require_webauthn_flow_session,
@@ -56,11 +56,11 @@ from backend.core.webauthn_flow_session import (
 check_webauthn_rate_limit = _auth_helpers.check_webauthn_rate_limit
 credential_id_to_base64url = _auth_helpers.credential_id_to_base64url
 expected_challenge_bytes = _auth_helpers.expected_challenge_bytes
-from backend.core.redis_client import RedisClient  # noqa: E402
+from backend.platform.redis.client import RedisClient  # noqa: E402
 from backend.models.user import User, WebAuthnCredential  # noqa: E402
 
 try:
-    from backend.core.webauthn import (
+    from backend.control_plane.auth.webauthn import (
         generate_authentication_challenge,
         generate_registration_challenge,
         verify_authentication,
@@ -415,7 +415,7 @@ async def login_complete(
     log_auth("webauthn_login_complete", True, rid, username=req.username, client_ip_str=cip, detail=audit_detail)
 
     # Load user scopes from permissions table for JWT
-    from backend.core.permissions import get_user_scopes, hydrate_scopes_for_role
+    from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 
     user_scopes = hydrate_scopes_for_role(
         await get_user_scopes(db, tenant_id=login_user.tenant_id, user_id=str(cred.user_id)),

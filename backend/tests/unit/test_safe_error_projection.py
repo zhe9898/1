@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.core.safe_error_projection import project_safe_error
+from backend.kernel.contracts.safe_error_projection import project_safe_error
 
 
 def test_project_safe_error_uses_failure_category_mapping() -> None:

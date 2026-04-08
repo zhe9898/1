@@ -1,16 +1,16 @@
-import datetime
+﻿import datetime
 import uuid
 
 from backend.api.action_contracts import ControlAction, optional_reason_field
 from backend.api.ui_contracts import StatusView
-from backend.core.control_plane_state import job_attention_reason, job_lease_state, job_lease_state_view, job_status_view
+from backend.control_plane.console.state_views import job_attention_reason, job_lease_state, job_lease_state_view, job_status_view
 from backend.kernel.execution.job_status import (
     canonicalize_job_status_input,
     normalize_job_attempt_status,
     normalize_job_status,
 )
-from backend.core.safe_error_projection import project_safe_error
-from backend.core.worker_pool import resolve_job_queue_contract_from_record
+from backend.kernel.contracts.safe_error_projection import project_safe_error
+from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract_from_record
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 
@@ -235,3 +235,4 @@ def _matches_job_list_filters(
     if required_capability and required_capability not in list(job.required_capabilities or []):
         return False
     return True
+

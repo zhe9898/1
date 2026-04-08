@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from backend.core.errors import (
+from backend.kernel.contracts.errors import (
     ZenErrorCode,
     ZenErrorDetails,
     ZenErrorResponse,

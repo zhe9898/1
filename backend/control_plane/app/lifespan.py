@@ -10,8 +10,8 @@ from fastapi import FastAPI
 
 from backend.api.deps import get_settings
 from backend.kernel.extensions.extension_sdk import bootstrap_extension_runtime
-from backend.core.redis_client import get_logger
-from backend.core.runtime_support import connect_redis_with_retry
+from backend.platform.logging.structured import get_logger
+from backend.platform.redis.runtime import connect_redis_with_retry
 
 logger = get_logger("api")
 
@@ -52,8 +52,8 @@ async def check_postgres_async(dsn: str | None) -> str:
 async def lifespan(app: FastAPI) -> object:
     logger.info("Starting API server")
 
-    from backend.core.jwt import assert_jwt_runtime_ready
-    from backend.core.rls import assert_rls_ready, validate_rls_runtime_mode
+    from backend.control_plane.auth.jwt import assert_jwt_runtime_ready
+    from backend.platform.db.rls import assert_rls_ready, validate_rls_runtime_mode
     from backend.db import _async_session_factory
 
     assert_jwt_runtime_ready()
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI) -> object:
 
     if _async_session_factory is not None:
         try:
-            from backend.core.governance_facade import get_governance_facade
+            from backend.kernel.scheduling.governance_facade import get_governance_facade
 
             async with _async_session_factory() as session:
                 await get_governance_facade().load_tuner_state(session)
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI) -> object:
     signal.signal(signal.SIGTERM, _sigterm_handler)
 
     from backend.capabilities import clear_lru_cache
-    from backend.core.telemetry import init_telemetry, shutdown_telemetry
+    from backend.platform.telemetry.tracing import init_telemetry, shutdown_telemetry
 
     init_telemetry(app)
     logger.info("API process is ingress-only; control-plane workers must run out of process")
@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI) -> object:
 
         if _async_session_factory is not None:
             try:
-                from backend.core.governance_facade import get_governance_facade
+                from backend.kernel.scheduling.governance_facade import get_governance_facade
 
                 async with _async_session_factory() as session:
                     await get_governance_facade().save_tuner_state(session)

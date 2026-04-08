@@ -57,8 +57,8 @@ def _reload_runtime_modules(monkeypatch: pytest.MonkeyPatch, database_dsn: str):
     monkeypatch.setenv("ZEN70_ENV", "development")
     monkeypatch.delenv("ZEN70_RLS_ALLOW_SOFT_FAIL", raising=False)
 
-    import backend.core.jwt as jwt_mod
-    import backend.core.rls as rls_mod
+    import backend.control_plane.auth.jwt as jwt_mod
+    import backend.platform.db.rls as rls_mod
     import backend.db as db_mod
     import backend.api.deps as deps_mod
     import backend.api.main as main_mod

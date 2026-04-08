@@ -32,15 +32,18 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
     from backend.models.job import Job
 
 from backend.kernel.scheduling.scheduling_constraints import SchedulingConstraint, SchedulingContext
+from backend.platform.redis import SyncRedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,12 @@ def _resolve_tenant_id(value: object) -> str:
     if isinstance(value, str) and value.strip():
         return value
     return "default"
+
+
+def _reservation_store_settings() -> tuple[str, str]:
+    store_type = str(os.getenv("ZEN70_RESERVATION_STORE", "memory")).strip().lower() or "memory"
+    redis_url = str(os.getenv("ZEN70_RESERVATION_STORE_REDIS_URL", "redis://localhost:6379/0")).strip()
+    return store_type, redis_url
 
 
 # =====================================================================
@@ -286,8 +295,8 @@ class RedisReservationStore(ReservationStore):
 
     _PREFIX = "zen70:reservations"
 
-    def __init__(self, redis_client: Any, max_reservations: int = 50) -> None:
-        self._redis = redis_client  # redis.Redis compatible
+    def __init__(self, redis_client: SyncRedisClient, max_reservations: int = 50) -> None:
+        self._redis = redis_client
         self._max = max_reservations
 
     def _data_key(self, job_id: str) -> str:
@@ -302,44 +311,41 @@ class RedisReservationStore(ReservationStore):
     def put(self, reservation: ResourceReservation) -> bool:
         r = self._redis
         # Check current count (approximate 鈥?race is acceptable for capacity limit)
-        current = int(r.get(self._count_key()) or 0)
+        current = int(r.kv.get(self._count_key()) or 0)
         # Idempotent: if already exists, just return True
-        if r.exists(self._data_key(reservation.job_id)):
+        if r.kv.exists(self._data_key(reservation.job_id)):
             return True
         if current >= self._max:
             return False
 
-        pipe = r.pipeline(transaction=True)
-        pipe.set(
+        r.kv.set(
             self._data_key(reservation.job_id),
             json.dumps(reservation.to_dict()),
             ex=max(int((reservation.end_at - datetime.datetime.now(datetime.UTC)).total_seconds()), 60),
         )
-        pipe.zadd(
+        r.sorted_sets.add(
             self._node_key(reservation.tenant_id, reservation.node_id),
             {reservation.job_id: reservation.start_at.timestamp()},
         )
-        pipe.incr(self._count_key())
-        pipe.execute()
+        r.kv.incr(self._count_key())
         return True
 
     def remove(self, job_id: str) -> ResourceReservation | None:
         r = self._redis
-        raw = r.get(self._data_key(job_id))
+        raw = r.kv.get(self._data_key(job_id))
         if raw is None:
             return None
         data = json.loads(raw)
         reservation = ResourceReservation.from_dict(data)
-        pipe = r.pipeline(transaction=True)
-        pipe.delete(self._data_key(job_id))
-        pipe.zrem(self._node_key(reservation.tenant_id, reservation.node_id), job_id)
-        pipe.decr(self._count_key())
-        pipe.execute()
+        r.kv.delete(self._data_key(job_id))
+        r.sorted_sets.remove(self._node_key(reservation.tenant_id, reservation.node_id), job_id)
+        if r.kv.decr(self._count_key()) < 0:
+            r.kv.set(self._count_key(), 0)
         return reservation
 
     def get(self, job_id: str) -> ResourceReservation | None:
         r = self._redis
-        raw = r.get(self._data_key(job_id))
+        raw = r.kv.get(self._data_key(job_id))
         if raw is None:
             return None
         return ResourceReservation.from_dict(json.loads(raw))
@@ -353,13 +359,12 @@ class RedisReservationStore(ReservationStore):
     ) -> list[ResourceReservation]:
         r = self._redis
         min_score = after.timestamp() if after else "-inf"
-        jids = r.zrangebyscore(self._node_key(tenant_id, node_id), min_score, "+inf")
+        jids = r.sorted_sets.range_by_score(self._node_key(tenant_id, node_id), min_score, "+inf")
         result: list[ResourceReservation] = []
-        for jid_bytes in jids:
-            jid = jid_bytes.decode() if isinstance(jid_bytes, bytes) else str(jid_bytes)
-            raw = r.get(self._data_key(jid))
+        for jid in jids:
+            raw = r.kv.get(self._data_key(jid))
             if raw is None:
-                r.zrem(self._node_key(tenant_id, node_id), jid)  # stale index entry
+                r.sorted_sets.remove(self._node_key(tenant_id, node_id), jid)
                 continue
             reservation = ResourceReservation.from_dict(json.loads(raw))
             if after is None or reservation.end_at > after:
@@ -376,30 +381,24 @@ class RedisReservationStore(ReservationStore):
         if tenant_id is not None and node_id is not None:
             return self.get_by_node(node_id, tenant_id=tenant_id, after=after)
 
-        cursor = 0
         result: list[ResourceReservation] = []
-        while True:
-            cursor, keys = self._redis.scan(cursor=cursor, match=f"{self._PREFIX}:data:*", count=100)
-            for raw_key in keys:
-                key = raw_key.decode() if isinstance(raw_key, bytes) else str(raw_key)
-                job_id = key.rsplit(":", 1)[-1]
-                reservation = self.get(job_id)
-                if reservation is None:
-                    continue
-                if tenant_id is not None and reservation.tenant_id != tenant_id:
-                    continue
-                if node_id is not None and reservation.node_id != node_id:
-                    continue
-                if after is not None and reservation.end_at <= after:
-                    continue
-                result.append(reservation)
-            if cursor == 0:
-                break
+        for key in self._redis.kv.scan_prefix(f"{self._PREFIX}:data:"):
+            job_id = key.rsplit(":", 1)[-1]
+            reservation = self.get(job_id)
+            if reservation is None:
+                continue
+            if tenant_id is not None and reservation.tenant_id != tenant_id:
+                continue
+            if node_id is not None and reservation.node_id != node_id:
+                continue
+            if after is not None and reservation.end_at <= after:
+                continue
+            result.append(reservation)
         return sorted(result, key=lambda rv: (rv.start_at, rv.node_id, rv.job_id))
 
     def count(self) -> int:
         r = self._redis
-        return max(int(r.get(self._count_key()) or 0), 0)
+        return max(int(r.kv.get(self._count_key()) or 0), 0)
 
     def cleanup_expired(self, now: datetime.datetime) -> int:
         # Redis TTL on data keys handles most cleanup automatically.
@@ -407,20 +406,15 @@ class RedisReservationStore(ReservationStore):
         r = self._redis
         removed = 0
         # Scan node keys and remove entries whose data has expired
-        cursor = 0
         node_prefix = f"{self._PREFIX}:tenant:"
-        while True:
-            cursor, keys = r.scan(cursor, match=f"{node_prefix}*", count=100)
-            for nkey in keys:
-                members = r.zrangebyscore(nkey, "-inf", "+inf")
-                for jid_bytes in members:
-                    jid = jid_bytes.decode() if isinstance(jid_bytes, bytes) else str(jid_bytes)
-                    if not r.exists(self._data_key(jid)):
-                        r.zrem(nkey, jid)
-                        r.decr(self._count_key())
-                        removed += 1
-            if cursor == 0:
-                break
+        for nkey in r.kv.scan_prefix(node_prefix):
+            members = r.sorted_sets.range_by_score(nkey, "-inf", "+inf")
+            for jid in members:
+                if not r.kv.exists(self._data_key(jid)):
+                    r.sorted_sets.remove(nkey, jid)
+                    if r.kv.decr(self._count_key()) < 0:
+                        r.kv.set(self._count_key(), 0)
+                    removed += 1
         return removed
 
 
@@ -757,17 +751,20 @@ def get_reservation_manager() -> ReservationManager:
         except Exception:
             config = BackfillConfig()
 
-        # Select store backend
+        # Select store backend from compiled runtime env.
         store: ReservationStore | None = None
         try:
-            from backend.core.config import get_config
-
-            store_type = get_config().get("scheduling", {}).get("reservation_store", "memory")
+            store_type, redis_url = _reservation_store_settings()
             if store_type == "redis":
-                import redis as _redis_mod
-
-                redis_url = get_config().get("scheduling", {}).get("reservation_store_redis_url", "redis://localhost:6379/0")
-                redis_client = _redis_mod.Redis.from_url(redis_url, decode_responses=False)
+                parsed = urlparse(redis_url)
+                redis_client = SyncRedisClient(
+                    host=parsed.hostname or "localhost",
+                    port=parsed.port or 6379,
+                    password=parsed.password,
+                    db=int((parsed.path or "/0").lstrip("/") or "0"),
+                    username=parsed.username,
+                )
+                redis_client.connect()
                 store = RedisReservationStore(redis_client, config.max_reservations)
                 logger.info("reservation_store=redis url=%s", redis_url)
         except Exception:

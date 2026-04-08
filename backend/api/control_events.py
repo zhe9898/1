@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import datetime
 import json
@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import Any
 
-from backend.core.redis_client import RedisClient
+from backend.platform.redis.client import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,6 @@ async def publish_control_event(
         **payload,
     }
     try:
-        await redis.publish(channel, json.dumps(message, ensure_ascii=False))
+        await redis.pubsub.publish(channel, json.dumps(message, ensure_ascii=False))
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         logger.debug("publish_control_event failed channel=%s action=%s err=%s", channel, action, exc)

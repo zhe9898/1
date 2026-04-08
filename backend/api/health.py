@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_redis, get_tenant_db
-from backend.core.redis_client import RedisClient
+from backend.platform.redis.client import RedisClient
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
@@ -131,7 +131,7 @@ async def ingest_health_data(
     dedupe_key = payload.idempotency_key or _ingest_fingerprint(tenant_id, user_id, payload)
     if redis is not None:
         cache_key = f"health:ingest:{tenant_id}:{user_id}:{dedupe_key}"
-        accepted = await redis.set(cache_key, now.isoformat(), nx=True, ex=3600)
+        accepted = await redis.kv.set(cache_key, now.isoformat(), nx=True, ex=3600)
         if not accepted:
             return HealthIngestResponse(ingested=0, rejected=0, errors=["Duplicate ingest batch ignored"])
 

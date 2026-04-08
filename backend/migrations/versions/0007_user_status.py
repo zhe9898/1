@@ -1,11 +1,11 @@
-"""Add user status management fields."""
+﻿"""Add user status management fields."""
 
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-from backend.core.migration_schema_guard import SchemaGuard
+from backend.platform.db.schema_guard import SchemaGuard
 
 revision = "0007_user_status"
 down_revision = "0006_failure_taxonomy"
@@ -37,3 +37,4 @@ def downgrade() -> None:
     op.drop_column("users", "suspended_by")
     op.drop_column("users", "suspended_at")
     op.drop_column("users", "status")
+

@@ -96,7 +96,7 @@ async def _apply_role_prompt_override(
     public_cloud_key: str,
 ) -> tuple[str, bytes]:
     """根据 JWT Role 动态覆写 Prompt 大闸，返回 (new_target_url_if_any, new_content)。"""
-    from backend.core.jwt import decode_token
+    from backend.control_plane.auth.jwt import decode_token
 
     new_target_url = ""
     try:
@@ -150,7 +150,7 @@ async def universal_ai_proxy(
     """
 
     from backend.capabilities import get_capabilities_matrix, raise_503_if_pending
-    from backend.core.errors import zen as _zen
+    from backend.kernel.contracts.errors import zen as _zen
 
     # 1. 探针硬件状态拦截 (法典 2.3.2)
     matrix = await get_capabilities_matrix(request)
