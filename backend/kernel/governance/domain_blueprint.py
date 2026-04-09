@@ -72,6 +72,33 @@ EXTERNAL_RUNTIME_INVARIANTS: Final[tuple[ExternalRuntimeInvariant, ...]] = (
             "backend/kernel/governance/architecture_rules.py",
         ),
     ),
+    ExternalRuntimeInvariant(
+        key="control_plane_event_transport_split",
+        statement=(
+            "control-plane formal events publish on registered EventBus subjects, "
+            "while Redis internal coordination channels stay off the browser realtime chain."
+        ),
+        rationale="UI realtime delivery and kernel coordination must not share subjects or transport semantics.",
+        evidence_modules=(
+            "backend/platform/events/channels.py",
+            "backend/platform/events/publisher.py",
+            "backend/platform/events/subscriber.py",
+            "backend/api/routes.py",
+        ),
+    ),
+    ExternalRuntimeInvariant(
+        key="redis_runtime_state_is_ephemeral",
+        statement=(
+            "Redis runtime-state keys remain explicitly ephemeral and non-authoritative, "
+            "even when they participate in safety gates or temporary runtime overrides."
+        ),
+        rationale="Desired state stays in owned aggregates and switch hashes instead of drifting into Redis latches.",
+        evidence_modules=(
+            "backend/platform/redis/runtime_state.py",
+            "backend/sentinel/topology_sentinel.py",
+            "backend/sentinel/routing_operator.py",
+        ),
+    ),
 )
 
 

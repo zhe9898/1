@@ -10,6 +10,8 @@ from backend.kernel.extensions.extension_guard import export_extension_budget_co
 from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
 from backend.kernel.surfaces.registry import export_surface_registry
+from backend.platform.events.channels import export_event_channel_contract
+from backend.platform.redis.runtime_state import export_runtime_state_contract
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +173,31 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
             "backend.tests.unit.test_architecture_governance_gates::test_extension_payload_budget_guard_enforces_64kib_limit",
         ),
     ),
+    ArchitectureGovernanceRule(
+        rule_id="A12",
+        title="Event transport and runtime-state contract",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Formal control-plane events must flow through the registered "
+            "EventBus subjects, Redis-only coordination subjects stay off the "
+            "browser realtime chain, and Redis runtime-state keys remain "
+            "explicitly ephemeral instead of becoming durable authority."
+        ),
+        enforcement_layers=("platform", "sentinel", "control_plane", "iac", "tests"),
+        source_modules=(
+            "backend.platform.events.channels",
+            "backend.platform.events.publisher",
+            "backend.platform.events.subscriber",
+            "backend.platform.redis.runtime_state",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_event_channel_contract_separates_browser_realtime_from_internal_coordination",
+            "backend.tests.unit.test_architecture_governance_gates::test_event_transport_gate_blocks_direct_pubsub_usage_outside_event_interfaces",
+            "backend.tests.unit.test_architecture_governance_gates::test_runtime_state_contract_is_ephemeral_and_non_authoritative",
+            "backend.tests.unit.test_kernel_iac_explicit_contract::test_kernel_iac_runtime_contract_matches_code_backed_event_and_runtime_state_exports",
+        ),
+    ),
 )
 
 
@@ -200,6 +227,8 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
             "aggregate_owner_registry": "backend.kernel.governance.aggregate_owner_registry.export_aggregate_owner_registry",
             "compatibility_rules": "backend.kernel.contracts.status.export_status_compatibility_rules",
             "extension_budget_contract": "backend.kernel.extensions.extension_guard.export_extension_budget_contract",
+            "event_channel_contract": "backend.platform.events.channels.export_event_channel_contract",
+            "runtime_state_contract": "backend.platform.redis.runtime_state.export_runtime_state_contract",
         },
         "registries": {
             "surface_registry": export_surface_registry(),
@@ -209,5 +238,7 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
             "aggregate_owner_registry": export_aggregate_owner_registry(),
             "status_compatibility_rules": export_status_compatibility_rules(),
             "extension_budget_contract": export_extension_budget_contract(),
+            "event_channel_contract": export_event_channel_contract(),
+            "runtime_state_contract": export_runtime_state_contract(),
         },
     }

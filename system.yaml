@@ -56,6 +56,68 @@ sentinel:
     - zen70-redis
   disk_taint_containers: []
   heavy_containers: []
+runtime_contracts:
+  # Formal control-plane events are browser-visible and must flow through EventBus.
+  control_plane_event_channels:
+    - hardware:events
+    - switch:events
+    - node:events
+    - job:events
+    - connector:events
+    - reservation:events
+    - trigger:events
+  browser_realtime_event_channels:
+    - hardware:events
+    - switch:events
+    - node:events
+    - job:events
+    - connector:events
+    - reservation:events
+    - trigger:events
+  # Internal coordination stays Redis-only and must not leak into frontend realtime chains.
+  internal_coordination_channels:
+    - switch:commands
+    - sentinel:signals
+    - routing:meltdown
+  # Redis runtime state is explicit, ephemeral, and never durable authority.
+  authoritative_redis_runtime_state_allowed: false
+  redis_ephemeral_runtime_state:
+    - pattern: zen70:disk:readonly
+      match: exact
+      role: safety-interlock
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral readonly lock asserted by safety guardians to reject mutating API traffic.
+    - pattern: zen70:topology:ups
+      match: exact
+      role: safety-interlock
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral UPS status snapshot used for write-protection gating during power emergencies.
+    - pattern: zen70:taint:disk_pressure
+      match: exact
+      role: safety-interlock
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral disk-pressure taint latch used by sentinel and middleware safety paths.
+    - pattern: hw:gpu
+      match: exact
+      role: observation
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral GPU probe snapshot and taint metadata produced by topology sentinel.
+    - pattern: 'hw:'
+      match: prefix
+      role: observation
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral hardware probe snapshots for mount and device health state.
+    - pattern: 'zen70:sentinel:override:'
+      match: prefix
+      role: runtime-override
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral sentinel safety overrides that temporarily suppress container intent without becoming durable authority.
 services:
   caddy:
     enabled: true
@@ -189,6 +251,8 @@ services:
           memory: 256M
     command:
     - --jetstream
+    - --http_port
+    - '8222'
     - --store_dir
     - /data
     volumes:
@@ -346,6 +410,9 @@ services:
       REDIS_USER: ${REDIS_USER}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
+      EVENT_BUS_BACKEND: nats
+      NATS_URL: nats://nats:4222
+      NATS_CONNECT_TIMEOUT: '5.0'
       BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT: 
         ${BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT:-50}
       BIT_ROT_ALERT_TIMEOUT_SECONDS: ${BIT_ROT_ALERT_TIMEOUT_SECONDS:-5}
@@ -364,6 +431,7 @@ services:
     - backend/sentinel/control_plane_supervisor.py
     depends_on:
     - redis
+    - nats
     - docker-proxy
     volumes:
     - ./backend:/app/backend:ro

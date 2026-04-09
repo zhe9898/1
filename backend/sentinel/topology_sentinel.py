@@ -22,13 +22,16 @@ import uuid
 from pathlib import Path
 from typing import cast
 
+from backend.kernel.contracts.events_schema import SwitchCommandSignalPayload, build_hardware_state_event
+from backend.platform.events.channels import CHANNEL_ROUTING_MELTDOWN, CHANNEL_SENTINEL_SIGNALS, CHANNEL_SWITCH_COMMANDS
+from backend.platform.events.publisher import SyncEventPublisher, event_bus_settings_from_env
+from backend.platform.events.subscriber import SyncInternalSignalSubscriber, SyncSignalSubscription
 from backend.platform.redis import SyncRedisClient
+from backend.platform.redis.constants import CHANNEL_HARDWARE_EVENTS, KEY_DISK_TAINT, KEY_HARDWARE_GPU_STATE, KEY_SWITCH_PREFIX
+from backend.platform.redis.runtime_state import hardware_state_key, sentinel_override_key
 from backend.platform.security.normalization import normalize_metric_integer
 from backend.sentinel.sentinel_helpers import (
     DISK_CRITICAL_THRESHOLD,
-    REDIS_CHANNEL_EVENTS,
-    REDIS_CHANNEL_MELTDOWN,
-    REDIS_KEY_GPU,
     HWState,
     MountPoint,
     _docker_api_get,
@@ -84,6 +87,8 @@ class TopologySentinel:
         self.mounts: list[MountPoint] = list(settings.mounts)
 
         self._redis: SyncRedisClient | None = None
+        self._event_publisher: SyncEventPublisher | None = None
+        self._signal_subscriber: SyncInternalSignalSubscriber | None = None
         self._connect_redis()
 
         if logger:
@@ -106,7 +111,12 @@ class TopologySentinel:
                     password=self.redis_password,
                 )
                 r.connect()
+                previous_redis = self._redis
+                if previous_redis is not None and previous_redis is not r:
+                    with contextlib.suppress(OSError, ValueError, KeyError, RuntimeError, TypeError):
+                        previous_redis.close()
                 self._redis = r
+                self._set_event_publisher(r)
                 if logger:
                     logger.info("Connected to Redis")
                 return
@@ -122,6 +132,49 @@ class TopologySentinel:
         if logger:
             logger.error("Redis unavailable after retries, entering zombie mode (Split-Brain Prevention)")
         self.is_zombie = True
+        self._set_event_publisher(None)
+
+    def _set_event_publisher(self, redis_client: SyncRedisClient | None) -> None:
+        if self._event_publisher is not None:
+            try:
+                self._event_publisher.close()
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError):
+                if logger is not None:
+                    logger.debug("Event publisher close failed during rebind", exc_info=True)
+        self._event_publisher = None
+        self._signal_subscriber = None
+        if redis_client is None:
+            return
+        self._event_publisher = SyncEventPublisher(
+            settings=event_bus_settings_from_env(),
+            redis=redis_client,
+            logger=logger,
+        )
+        self._signal_subscriber = SyncInternalSignalSubscriber(redis_client)
+
+    def _publish_control_event(self, subject: str, payload: dict[str, object]) -> bool:
+        publisher = self._event_publisher
+        if publisher is None:
+            return False
+        return publisher.publish_control(subject, json.dumps(payload))
+
+    def _publish_internal_signal(self, subject: str, payload: dict[str, object]) -> int:
+        publisher = self._event_publisher
+        if publisher is None:
+            return 0
+        return publisher.publish_signal(subject, json.dumps(payload))
+
+    def _publish_route_meltdown(self, container_name: str) -> None:
+        try:
+            receiver_count = self._publish_internal_signal(
+                CHANNEL_ROUTING_MELTDOWN,
+                {"container": container_name, "action": "route_remove"},
+            )
+            if receiver_count == 0 and logger is not None:
+                logger.debug("Meltdown route signal emitted without active routing subscribers")
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+            if logger is not None:
+                logger.debug("Meltdown route event publish failed: %s", exc)
 
     def _redis_ok(self) -> bool:
         """Check Redis health and enter or leave zombie mode accordingly."""
@@ -210,14 +263,12 @@ class TopologySentinel:
         elif action == "start":
             #     ?unpause (    ?pause  ?       ?pause     ?500 (Container is not paused)
             code, body = _docker_api_post(f"/containers/{encoded_name}/unpause")
-            if code not in (204, 500, 304):
-                if logger:
-                    logger.warning("[SafeAction] unpause returned code %s for %s", code, container_name)
+            if code not in (204, 500, 304) and logger:
+                logger.warning("[SafeAction] unpause returned code %s for %s", code, container_name)
             # After unpause, also issue start so exited containers are recovered.
             code2, body2 = _docker_api_post(f"/containers/{encoded_name}/start")
-            if code2 not in (204, 304, 404):
-                if logger:
-                    logger.error("[SafeAction] start failed for %s: %s", container_name, body2[:200])
+            if code2 not in (204, 304, 404) and logger:
+                logger.error("[SafeAction] start failed for %s: %s", container_name, body2[:200])
 
     # -------------------- P0-1       95%           ?3.3 ?--------------------
 
@@ -238,28 +289,31 @@ class TopologySentinel:
         used_pct = (usage.used / usage.total) * 100 if usage.total > 0 else 0
 
         if used_pct >= DISK_CRITICAL_THRESHOLD:
-            if not self.has_disk_taint:
-                if logger:
-                    logger.critical(
-                        "[DISK-TAINT] root disk usage %.1f%% exceeded threshold %.0f%%; taint activated",
-                        used_pct,
-                        DISK_CRITICAL_THRESHOLD,
-                    )
+            if not self.has_disk_taint and logger:
+                logger.critical(
+                    "[DISK-TAINT] root disk usage %.1f%% exceeded threshold %.0f%%; taint activated",
+                    used_pct,
+                    DISK_CRITICAL_THRESHOLD,
+                )
             self.has_disk_taint = True
 
             #     Redis             ?+
             r = self._redis
             if r is not None:
                 try:
-                    event = {
-                        "type": "disk_critical",
+                    signal_payload = {
+                        "source": "topology_sentinel",
+                        "kind": "disk_pressure",
+                        "level": "critical",
                         "used_pct": round(used_pct, 1),
                         "threshold": DISK_CRITICAL_THRESHOLD,
                         "action": "taint_injected",
-                        "timestamp": str(time.time()),
+                        "timestamp": time.time(),
                     }
-                    r.pubsub.publish(REDIS_CHANNEL_EVENTS, json.dumps(event))
-                    r.kv.set("zen70:disk_breaker", "active", ex=300)
+                    receiver_count = self._publish_internal_signal(CHANNEL_SENTINEL_SIGNALS, signal_payload)
+                    if receiver_count == 0 and logger is not None:
+                        logger.warning("[DISK-TAINT] Sentinel signal emitted without subscribers")
+                    r.kv.set(KEY_DISK_TAINT, "active", ex=300)
                 except (OSError, ValueError, KeyError, RuntimeError, TypeError) as pub_err:
                     if logger:
                         logger.error("[DISK-TAINT] Redis publish failed: %s", pub_err)
@@ -276,14 +330,14 @@ class TopologySentinel:
                 r = self._redis
                 if r is not None:
                     with contextlib.suppress(OSError, ValueError, KeyError, RuntimeError, TypeError):
-                        r.kv.delete("zen70:disk_breaker")
+                        r.kv.delete(KEY_DISK_TAINT)
 
     def _get_gpu_taints(self) -> set[str]:
         gpu_taints = set()
         r = self._redis
         if r is not None:
             try:
-                gpu_state_raw = r.hashes.get_all(REDIS_KEY_GPU)
+                gpu_state_raw = r.hashes.get_all(KEY_HARDWARE_GPU_STATE)
                 if gpu_state_raw and gpu_state_raw.get("taint"):
                     gpu_taints.add(gpu_state_raw["taint"])
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
@@ -294,27 +348,99 @@ class TopologySentinel:
     def _get_switch_map(self) -> dict[str, str]:
         return dict(self._switch_map)
 
+    def _find_switch_name_for_target(self, target_name: str) -> str | None:
+        if target_name in self._switch_map:
+            return target_name
+        for switch_name, container_name in self._switch_map.items():
+            if container_name == target_name:
+                return switch_name
+        return None
+
+    def _resolve_container_name(self, target_name: str) -> str:
+        switch_name = self._find_switch_name_for_target(target_name)
+        if switch_name is None:
+            return target_name
+        return self._switch_map.get(switch_name, target_name)
+
+    def _runtime_override_targets(self, target_name: str) -> tuple[str, ...]:
+        switch_name = self._find_switch_name_for_target(target_name)
+        names: list[str] = []
+        if switch_name is not None:
+            names.append(switch_name)
+            container_name = self._switch_map.get(switch_name)
+            if container_name:
+                names.append(container_name)
+        elif target_name:
+            names.append(target_name)
+        return tuple(dict.fromkeys(name for name in names if name))
+
+    def _read_switch_base_state(self, switch_name: str) -> str | None:
+        r = self._redis
+        if r is None:
+            return None
+        try:
+            data = r.hashes.get_all(f"{KEY_SWITCH_PREFIX}{switch_name}")
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+            if logger:
+                logger.debug("switch state read failed for %s: %s", switch_name, exc)
+            return None
+        state = data.get("state")
+        return str(state) if state else None
+
+    def _read_runtime_override(self, switch_name: str, container_name: str) -> str | None:
+        r = self._redis
+        if r is None:
+            return None
+        for target_name in self._runtime_override_targets(switch_name) + self._runtime_override_targets(container_name):
+            try:
+                override = r.kv.get(sentinel_override_key(target_name))
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+                if logger:
+                    logger.debug("runtime override read failed for %s: %s", target_name, exc)
+                return None
+            if override:
+                return str(override)
+        return None
+
+    def _set_runtime_override(self, target_name: str, state: str) -> None:
+        r = self._redis
+        if r is None:
+            return
+        for key_name in self._runtime_override_targets(target_name):
+            try:
+                r.kv.set(sentinel_override_key(key_name), state)
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+                if logger:
+                    logger.debug("runtime override write failed for %s: %s", key_name, exc)
+
+    def _clear_runtime_override(self, target_name: str) -> None:
+        r = self._redis
+        if r is None:
+            return
+        keys = [sentinel_override_key(name) for name in self._runtime_override_targets(target_name)]
+        if not keys:
+            return
+        try:
+            r.kv.delete(*keys)
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+            if logger:
+                logger.debug("runtime override clear failed for %s: %s", target_name, exc)
+
     def _compute_desired_containers(self) -> tuple[set[str], set[str]]:
         """
                            ?(desired_running, managed_by_sentinel)     ?
            (Taint)
         1. GPU         ?          ?OFF
         2.        ? ?DISK_TAINT_AFFECTED           I/O        OFF
-        3.          ?switch_expected  ?       ?"""
+        3.          ?switch:<name>        ? + sentinel runtime override"""
         switch_map = self._get_switch_map()
         gpu_taints = self._get_gpu_taints()
 
-        def _read_expected_state(switch_name: str) -> str | None:
-            expected_state: str | None = None
-            try:
-                if self._redis is not None:
-                    redis_exp = self._redis.kv.get(f"switch_expected:{switch_name}")
-                    if redis_exp:
-                        expected_state = str(redis_exp)
-            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
-                if logger:
-                    logger.debug("switch_expected read failed: %s", e)
-            return expected_state
+        def _read_expected_state(switch_name: str, container_name: str) -> str | None:
+            override_state = self._read_runtime_override(switch_name, container_name)
+            if override_state:
+                return override_state
+            return self._read_switch_base_state(switch_name)
 
         plan = compute_desired_containers(
             switch_map=switch_map,
@@ -344,7 +470,7 @@ class TopologySentinel:
         """
         K3s-Inspired Reconciliation Loop (          ?: Observe -> Diff -> Act
               :           ?                           ?
-              ?(Desired state): yaml     SWITCH_CONTAINER_MAP              ( ?Redis switch_expected:) +     (Taints)    .
+              ?(Desired state): yaml     SWITCH_CONTAINER_MAP + Redis switch:<name> + sentinel runtime overrides + taints.
 
                   (Offline Autonomy):
         zombie mode
@@ -384,14 +510,7 @@ class TopologySentinel:
                 )
             self._safe_container_action(action.container_name, "stop")
             if r is not None:
-                try:
-                    r.pubsub.publish(
-                        REDIS_CHANNEL_MELTDOWN,
-                        json.dumps({"container": action.container_name, "action": "route_remove"}),
-                    )
-                except (OSError, ValueError, KeyError, RuntimeError, TypeError) as pub_err:
-                    if logger:
-                        logger.debug("Meltdown route event publish failed: %s", pub_err)
+                self._publish_route_meltdown(action.container_name)
 
     def _reconcile_loop_offline(self) -> None:
         """
@@ -442,7 +561,7 @@ class TopologySentinel:
         r = self._redis
         if r is None:
             return
-        key = f"hw:{mount.path}"
+        key = hardware_state_key(str(mount.path))
         data: dict[str, str] = {
             "path": str(mount.path),
             "uuid": mount.expected_uuid or "",
@@ -452,13 +571,15 @@ class TopologySentinel:
         }
         try:
             r.hashes.set_mapping(key, data)
-            event = {
-                "type": "hardware_change",
-                "path": str(mount.path),
-                "state": state,
-                "reason": reason,
-            }
-            r.pubsub.publish(REDIS_CHANNEL_EVENTS, json.dumps(event))
+            event = build_hardware_state_event(
+                str(mount.path),
+                state,
+                reason=reason,
+                uuid_val=mount.expected_uuid,
+                timestamp=float(data["timestamp"]),
+            )
+            if not self._publish_control_event(CHANNEL_HARDWARE_EVENTS, event) and logger is not None:
+                logger.warning("Hardware control event publish did not complete for %s", mount.path)
             if logger:
                 logger.info("State updated %s: %s (%s)", mount.path, state, reason)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
@@ -582,7 +703,7 @@ class TopologySentinel:
         current_alive = mount.state_cache[0]
         new_state = HWState.ONLINE if current_alive else HWState.OFFLINE
 
-        key = f"hw:{mount.path}"
+        key = hardware_state_key(str(mount.path))
         cur_state: str | None = None
         r = self._redis
         try:
@@ -602,7 +723,7 @@ class TopologySentinel:
         if self._redis_ok() and r is not None:
             try:
                 gpu_state = self._check_gpu()
-                r.hashes.set_mapping(REDIS_KEY_GPU, gpu_state)
+                r.hashes.set_mapping(KEY_HARDWARE_GPU_STATE, gpu_state)
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
                 if logger:
                     logger.warning("GPU state write failed: %s", e)
@@ -641,57 +762,57 @@ class TopologySentinel:
                 logger.error("Reconcile loop crashed: %s", e, exc_info=True)
 
     def _process_switch_event_message(self, data: str | bytes) -> None:
-        """switch:events                ?Redis"""
+        """Apply Redis-internal switch commands emitted by control-plane producers."""
         if isinstance(data, bytes):
             data = data.decode("utf-8")
         try:
             obj = json.loads(data) if isinstance(data, str) else data
-            from backend.kernel.contracts.events_schema import SwitchEventPayload
-
-            payload = SwitchEventPayload.from_redis_message(cast(dict[str, object], obj))
+            payload = SwitchCommandSignalPayload.from_message(cast(dict[str, object], obj))
             if payload is None:
                 return
             switch_name = payload.effective_switch_name()
             state = payload.state
             if not switch_name or not state:
                 return
+            container_name = self._resolve_container_name(switch_name)
             if logger is not None:
-                logger.info("Setting desired state for %s to %s", switch_name, state)
-            if self._redis is not None:
-                self._redis.kv.set(f"switch_expected:{switch_name}", str(state))
+                logger.info("Applying internal coordination signal for %s to %s", switch_name, state)
+            if state in {"ON", "OFF"}:
+                self._clear_runtime_override(switch_name)
+                return
+            if state == "PAUSE":
+                self._set_runtime_override(switch_name, "OFF")
+                self._safe_container_action(container_name, "stop")
+                self._publish_route_meltdown(container_name)
+                return
+            if state == "RESTART":
+                self._safe_container_action(container_name, "stop")
+                self._safe_container_action(container_name, "start")
         except (json.JSONDecodeError, TypeError) as e:
             if logger is not None:
                 logger.debug("invalid switch event payload: %s", e)
 
     def _redis_listener_thread(self) -> None:
-        """Listen for desired-state switch events from Redis pub/sub."""
-        r = self._redis
-        if r is None or self.is_zombie:
+        """Listen for internal coordination signals through the registered subscriber port."""
+        subscriber = self._signal_subscriber
+        if subscriber is None or self.is_zombie:
             return
-        pubsub = None
+        subscription: SyncSignalSubscription | None = None
         try:
-            pubsub = r.pubsub.session()
-            if pubsub is None:
-                return
-            pubsub.subscribe("switch:events")
+            subscription = subscriber.subscribe((CHANNEL_SWITCH_COMMANDS,))
             if logger is not None:
-                logger.info("Topology sentinel starting declarative Redis pub/sub listener on switch:events")
-            # Use get_message(timeout=...) so shutdown can interrupt the listener promptly.
-            while not self.is_zombie and r and not self._stop_event.is_set():
-                message = pubsub.get_message(timeout=3)
+                logger.info("Topology sentinel starting internal coordination listener on %s", CHANNEL_SWITCH_COMMANDS)
+            while not self.is_zombie and not self._stop_event.is_set():
+                message = subscription.get_message(timeout=3)
                 if message is None:
                     continue
-                if message.get("type") != "message":
-                    continue
-                data = message.get("data")
-                if data:
-                    self._process_switch_event_message(data)
+                self._process_switch_event_message(message.data)
         except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
             if logger is not None:
                 logger.error("Redis listener thread crashed: %s", e)
         finally:
-            if pubsub is not None:
-                pubsub.close()
+            if subscription is not None:
+                subscription.close()
 
     def run(self) -> None:
         """Run the sentinel loop with bounded per-cycle execution time."""
@@ -814,11 +935,17 @@ def main() -> None:
             logger.critical("Unhandled exception: %s", e, exc_info=True)
         sys.exit(1)
     finally:
+        if sentinel._event_publisher is not None:
+            try:
+                sentinel._event_publisher.close()
+            except (OSError, ValueError, RuntimeError, TypeError, ConnectionError):
+                if logger:
+                    logger.debug("Event publisher close failed during shutdown", exc_info=True)
         #     Redis
         if sentinel._redis is not None:
             try:
                 sentinel._redis.close()
-            except Exception:
+            except (OSError, ValueError, RuntimeError, TypeError, ConnectionError):
                 if logger:
                     logger.debug("Redis close failed during shutdown", exc_info=True)
 

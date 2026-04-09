@@ -9,10 +9,65 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError
 
 
-class SwitchEventPayload(BaseModel):
-    """Contract for `switch:events` payloads."""
+def _load_message_object(data: str | bytes | dict[str, object]) -> dict[str, object] | None:
+    if isinstance(data, bytes):
+        data = data.decode("utf-8")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return None
+    return data if isinstance(data, dict) else None
 
-    state: Literal["ON", "OFF", "RESTART"] = Field(..., description="Desired switch state")
+
+class HardwareStateEventPayload(BaseModel):
+    """Contract for formal `hardware:events` payloads."""
+
+    path: str = Field(..., description="Canonical hardware mount or device path")
+    state: str = Field(..., description="online | offline | pending | unknown")
+    reason: str = Field(default="", description="Human-readable reason")
+    uuid: str | None = Field(default=None, description="Optional stable device identifier")
+    timestamp: float | None = Field(default=None, description="Unix timestamp emitted by the producer")
+
+    @classmethod
+    def from_message(cls, data: str | bytes | dict[str, object]) -> HardwareStateEventPayload | None:
+        obj = _load_message_object(data)
+        if obj is None:
+            return None
+        try:
+            return cls.model_validate(obj)
+        except ValidationError:
+            return None
+
+    @classmethod
+    def from_redis_message(cls, data: str | bytes | dict[str, object]) -> HardwareStateEventPayload | None:
+        return cls.from_message(data)
+
+
+def build_hardware_state_event(
+    path: str,
+    state: str,
+    *,
+    reason: str = "",
+    uuid_val: str | None = None,
+    timestamp: float | None = None,
+) -> dict[str, object]:
+    emitted_at = time.time() if timestamp is None else float(timestamp)
+    payload: dict[str, object] = {
+        "path": path,
+        "state": state,
+        "reason": reason,
+        "timestamp": emitted_at,
+    }
+    if uuid_val:
+        payload["uuid"] = uuid_val
+    return payload
+
+
+class SwitchStateEventPayload(BaseModel):
+    """Contract for formal `switch:events` payloads consumed by browser realtime clients."""
+
+    state: Literal["ON", "OFF", "PENDING"] = Field(..., description="Observed or persisted switch state")
     switch: str | None = Field(default=None, description="Canonical switch name")
     name: str | None = Field(default=None, description="Legacy switch field kept for compatibility")
     reason: str = Field(default="", description="Human-readable reason")
@@ -23,36 +78,103 @@ class SwitchEventPayload(BaseModel):
         return self.switch or self.name or None
 
     @classmethod
-    def from_redis_message(cls, data: str | bytes | dict[str, object]) -> SwitchEventPayload | None:
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                return None
-        if not isinstance(data, dict) or "state" not in data:
+    def from_message(cls, data: str | bytes | dict[str, object]) -> SwitchStateEventPayload | None:
+        obj = _load_message_object(data)
+        if obj is None or "state" not in obj:
             return None
         try:
-            return cls.model_validate(data)
+            return cls.model_validate(obj)
         except ValidationError:
             return None
 
+    @classmethod
+    def from_redis_message(cls, data: str | bytes | dict[str, object]) -> SwitchStateEventPayload | None:
+        return cls.from_message(data)
 
-def build_switch_event(
+
+def build_switch_state_event(
     switch_name: str,
-    state: Literal["ON", "OFF", "RESTART"],
+    state: Literal["ON", "OFF", "PENDING"],
+    *,
     reason: str = "",
     updated_by: str = "system",
+    updated_at: float | None = None,
 ) -> dict[str, str]:
     return {
         "switch": switch_name,
         "name": switch_name,
         "state": state,
         "reason": reason,
-        "updated_at": str(time.time()),
+        "updated_at": str(time.time() if updated_at is None else float(updated_at)),
         "updated_by": updated_by,
     }
+
+
+class SwitchCommandSignalPayload(BaseModel):
+    """Contract for Redis-internal `switch:commands` signals."""
+
+    state: Literal["ON", "OFF", "RESTART", "PAUSE"] = Field(..., description="Desired switch command")
+    switch: str | None = Field(default=None, description="Canonical switch name")
+    name: str | None = Field(default=None, description="Legacy switch field kept for compatibility")
+    reason: str = Field(default="", description="Human-readable reason")
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+    def effective_switch_name(self) -> str | None:
+        return self.switch or self.name or None
+
+    @classmethod
+    def from_message(cls, data: str | bytes | dict[str, object]) -> SwitchCommandSignalPayload | None:
+        obj = _load_message_object(data)
+        if obj is None or "state" not in obj:
+            return None
+        try:
+            return cls.model_validate(obj)
+        except ValidationError:
+            return None
+
+    @classmethod
+    def from_redis_message(cls, data: str | bytes | dict[str, object]) -> SwitchCommandSignalPayload | None:
+        return cls.from_message(data)
+
+
+def build_switch_command_signal(
+    switch_name: str,
+    state: Literal["ON", "OFF", "RESTART", "PAUSE"],
+    *,
+    reason: str = "",
+    updated_by: str = "system",
+    updated_at: float | None = None,
+) -> dict[str, str]:
+    return {
+        "switch": switch_name,
+        "name": switch_name,
+        "state": state,
+        "reason": reason,
+        "updated_at": str(time.time() if updated_at is None else float(updated_at)),
+        "updated_by": updated_by,
+    }
+
+
+# Backward-compatible alias for legacy internal switch command payload handling.
+SwitchEventPayload = SwitchCommandSignalPayload
+
+
+def build_switch_event(
+    switch_name: str,
+    state: Literal["ON", "OFF", "RESTART", "PAUSE"],
+    *,
+    reason: str = "",
+    updated_by: str = "system",
+    updated_at: float | None = None,
+) -> dict[str, str]:
+    return build_switch_command_signal(
+        switch_name,
+        state,
+        reason=reason,
+        updated_by=updated_by,
+        updated_at=updated_at,
+    )
 
 
 class SchedulerEventPayload(BaseModel):
@@ -97,22 +219,16 @@ class TriggerEventPayload(BaseModel):
 
     @classmethod
     def from_redis_message(cls, data: str | bytes | dict[str, object]) -> TriggerEventPayload | None:
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                return None
-        if not isinstance(data, dict):
+        obj = _load_message_object(data)
+        if obj is None:
             return None
-        if not isinstance(data.get("trigger"), dict):
+        if not isinstance(obj.get("trigger"), dict):
             return None
-        delivery = data.get("delivery")
+        delivery = obj.get("delivery")
         if delivery is not None and not isinstance(delivery, dict):
             return None
         try:
-            return cls.model_validate(data)
+            return cls.model_validate(obj)
         except ValidationError:
             return None
 
@@ -140,17 +256,11 @@ class ReservationEventPayload(BaseModel):
 
     @classmethod
     def from_redis_message(cls, data: str | bytes | dict[str, object]) -> ReservationEventPayload | None:
-        if isinstance(data, bytes):
-            data = data.decode("utf-8")
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                return None
-        if not isinstance(data, dict) or not isinstance(data.get("reservation"), dict):
+        obj = _load_message_object(data)
+        if obj is None or not isinstance(obj.get("reservation"), dict):
             return None
         try:
-            return cls.model_validate(data)
+            return cls.model_validate(obj)
         except ValidationError:
             return None
 
@@ -168,13 +278,19 @@ class VoiceEventPayload(BaseModel):
 
 
 __all__ = [
+    "HardwareStateEventPayload",
     "ReservationEventPayload",
     "ReservationEventSnapshot",
     "SchedulerEventPayload",
+    "SwitchCommandSignalPayload",
+    "SwitchStateEventPayload",
     "SwitchEventPayload",
     "TriggerEventDeliverySnapshot",
     "TriggerEventPayload",
     "TriggerEventTriggerSnapshot",
     "VoiceEventPayload",
+    "build_hardware_state_event",
+    "build_switch_command_signal",
+    "build_switch_state_event",
     "build_switch_event",
 ]

@@ -13,7 +13,10 @@ from pathlib import Path
 
 import httpx
 
+from backend.platform.events.channels import CHANNEL_ROUTING_MELTDOWN
+from backend.platform.events.subscriber import AsyncInternalSignalSubscriber
 from backend.platform.redis.client import RedisClient
+from backend.platform.redis.runtime_state import sentinel_override_key
 from backend.platform.security.normalization import normalize_loopback_control_url
 
 logging.basicConfig(
@@ -130,20 +133,23 @@ class RoutingOperator:
             return
         logger.error("[Operator] Caddy reload failed: %s - %s", response.status_code, response.text)
 
+    async def _switch_routes_enabled(self, redis_client: RedisClient, switch_name: str) -> bool:
+        switch_state = await redis_client.switches.get(switch_name)
+        if switch_state is None or str(switch_state.get("state") or "").upper() != "ON":
+            return False
+        override = await redis_client.kv.get(sentinel_override_key(switch_name))
+        return not override or str(override).strip().upper() == "ON"
+
     async def _meltdown_listener(self) -> None:
         while True:
-            session = None
+            subscription = None
             try:
                 redis_client = await self._get_redis()
-                session = await redis_client.pubsub.session()
-                if session is None:
-                    await asyncio.sleep(5)
-                    continue
-                await session.subscribe("routing:meltdown")
-                logger.info("[Operator] Meltdown subscriber ready on routing:meltdown")
+                subscription = await AsyncInternalSignalSubscriber(redis_client).subscribe((CHANNEL_ROUTING_MELTDOWN,))
+                logger.info("[Operator] Meltdown subscriber ready on %s", CHANNEL_ROUTING_MELTDOWN)
                 while True:
-                    message = await session.get_message(timeout=1.0)
-                    if message is None or message.get("type") != "message":
+                    message = await subscription.get_message(timeout=1.0)
+                    if message is None:
                         await asyncio.sleep(0.1)
                         continue
                     logger.info("[Operator] Meltdown event received; forcing immediate reconcile")
@@ -154,8 +160,8 @@ class RoutingOperator:
                     await self._redis_client.close()
                     self._redis_client = None
             finally:
-                if session is not None:
-                    await session.close()
+                if subscription is not None:
+                    await subscription.close()
             await asyncio.sleep(5)
 
     async def spin_loop(self) -> None:
@@ -170,8 +176,7 @@ class RoutingOperator:
                 redis_client = await self._get_redis()
                 current_routes: list[dict[str, str]] = []
                 for switch_key, container_name in self.switch_map.items():
-                    state = await redis_client.kv.get(f"switch_expected:{switch_key}")
-                    if state == "ON":
+                    if await self._switch_routes_enabled(redis_client, switch_key):
                         target_port = self.service_ports.get(switch_key, "80")
                         current_routes.append({"path": f"/{switch_key}/*", "target": f"{container_name}:{target_port}"})
 

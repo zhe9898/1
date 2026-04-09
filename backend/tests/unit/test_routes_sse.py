@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from backend.api.routes import (
-    CHANNEL_JOB_EVENTS,
     SSE_PING_KEY_PREFIX,
     SSE_PING_TIMEOUT,
     SSE_PING_TTL,
@@ -16,7 +15,9 @@ from backend.api.routes import (
     _sse_event_generator,
     sse_ping,
 )
+from backend.platform.events.channels import CHANNEL_SWITCH_COMMANDS, CONTROL_PLANE_REALTIME_CHANNELS
 from backend.platform.events.types import ControlEvent
+from backend.platform.redis.client import CHANNEL_JOB_EVENTS
 
 
 @pytest.mark.asyncio
@@ -98,3 +99,7 @@ async def test_sse_event_generator_formats_control_event_messages() -> None:
     assert "event: connected" in connected_frame
     assert f"event: {CHANNEL_JOB_EVENTS}" in event_frame
     assert '{"job_id":"job-1"}' in event_frame
+
+
+def test_sse_realtime_whitelist_excludes_internal_redis_signals() -> None:
+    assert CHANNEL_SWITCH_COMMANDS not in CONTROL_PLANE_REALTIME_CHANNELS

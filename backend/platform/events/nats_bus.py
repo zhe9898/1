@@ -9,6 +9,7 @@ try:
 except ImportError:
     nats = None  # type: ignore[assignment]
 
+from backend.platform.events.channels import is_control_plane_channel
 from backend.platform.events.types import ControlEvent, ControlEventSubscription
 
 
@@ -35,7 +36,7 @@ class NATSEventSubscription(ControlEventSubscription):
     async def get_message(self, timeout: float | None = None) -> ControlEvent | None:
         try:
             return await asyncio.wait_for(self._queue.get(), timeout=timeout or 1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
     async def close(self) -> None:
@@ -61,10 +62,16 @@ class NATSEventBus:
         return cls(client)
 
     async def publish(self, subject: str, payload: str) -> None:
+        if not is_control_plane_channel(subject):
+            raise ValueError(f"subject is not a registered control-plane event channel: {subject}")
         await self._client.publish(subject, payload.encode("utf-8"))
 
     async def subscribe(self, subjects: Sequence[str]) -> NATSEventSubscription:
-        return await NATSEventSubscription.create(self._client, subjects)
+        subject_tuple = tuple(subjects)
+        invalid = [subject for subject in subject_tuple if not is_control_plane_channel(subject)]
+        if invalid:
+            raise ValueError(f"subjects are not registered control-plane event channels: {invalid}")
+        return await NATSEventSubscription.create(self._client, subject_tuple)
 
     async def close(self) -> None:
         is_closed = getattr(self._client, "is_closed", False)

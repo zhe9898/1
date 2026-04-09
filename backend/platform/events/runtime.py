@@ -4,11 +4,14 @@ import asyncio
 import importlib.util
 import logging
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from backend.platform.events.nats_bus import NATSEventBus
 from backend.platform.events.redis_bus import RedisEventBus
 from backend.platform.events.types import ControlEventBus
-from backend.platform.redis.client import RedisClient
+
+if TYPE_CHECKING:
+    from backend.platform.redis.client import RedisClient
 
 _RUNTIME_EVENT_BUS: ControlEventBus | None = None
 

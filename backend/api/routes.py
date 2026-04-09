@@ -11,6 +11,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -23,16 +24,10 @@ from backend.control_plane.auth.access_policy import has_admin_role
 from backend.control_plane.cache_headers import apply_identity_no_store_headers
 from backend.kernel.contracts.errors import zen
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
+from backend.platform.events.channels import CONTROL_PLANE_REALTIME_CHANNELS
 from backend.platform.events.types import ControlEvent, ControlEventBus, ControlEventSubscription
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.client import (
-    CHANNEL_CONNECTOR_EVENTS,
-    CHANNEL_HARDWARE_EVENTS,
-    CHANNEL_JOB_EVENTS,
-    CHANNEL_NODE_EVENTS,
-    CHANNEL_RESERVATION_EVENTS,
-    CHANNEL_SWITCH_EVENTS,
-    CHANNEL_TRIGGER_EVENTS,
     RedisClient,
 )
 
@@ -46,6 +41,11 @@ SSE_PING_KEY_PREFIX = "sse:ping:"
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
+CurrentUserOptionalDependency = Annotated[dict | None, Depends(get_current_user_optional)]
+CurrentUserDependency = Annotated[dict, Depends(get_current_user)]
+RedisDependency = Annotated[RedisClient | None, Depends(get_redis)]
+EventBusDependency = Annotated[ControlEventBus | None, Depends(get_event_bus)]
+ClientTokenQuery = Annotated[str | None, Query(description="Optional SSE client token used for ping correlation")]
 
 
 def _next_sse_ping_deadline() -> str:
@@ -60,7 +60,7 @@ def _next_sse_ping_deadline() -> str:
 async def get_capabilities(
     request: Request,
     response: Response,
-    current_user: dict | None = Depends(get_current_user_optional),
+    current_user: CurrentUserOptionalDependency,
 ) -> dict:
     """
     鏉╂柨娲栬ぐ鎾冲閹碘偓閺堝婀囬崝陇鍏橀崝娑栤偓?
@@ -93,8 +93,8 @@ class SSEPingRequest(BaseModel):
 )
 async def sse_ping(
     body: SSEPingRequest,
-    redis: RedisClient | None = Depends(get_redis),
-    current_user: dict = Depends(get_current_user),
+    redis: RedisDependency,
+    current_user: CurrentUserDependency,
 ) -> dict[str, bool]:
     """
     Frontend clients call this every ~30 seconds to keep the SSE connection
@@ -150,7 +150,7 @@ async def _process_sse_ping_timeout(redis: RedisClient, ping_key: str, conn_id_i
                 SSE_PING_TIMEOUT,
             )
             return True
-    except (OSError, ConnectionError, ValueError, KeyError, RuntimeError, TypeError, asyncio.TimeoutError):
+    except (OSError, ConnectionError, ValueError, KeyError, RuntimeError, TypeError, TimeoutError):
         logger.debug("SSE ping timeout check failed for connection %s", conn_id_inner)
     return False
 
@@ -168,18 +168,7 @@ async def _sse_event_generator(
     conn_id: str,
     ping_key: str,
 ) -> AsyncGenerator[str, None]:
-    """SSE event generator for kernel control-plane events only.
-
-    Subscribed channels:
-    - CHANNEL_NODE_EVENTS: Node registration, heartbeat, drain
-    - CHANNEL_JOB_EVENTS: Job creation, lease, completion, failure
-    - CHANNEL_CONNECTOR_EVENTS: Connector registration, invocation
-    - CHANNEL_RESERVATION_EVENTS: Reservation lifecycle and backfill planning
-    - CHANNEL_TRIGGER_EVENTS: Trigger lifecycle, fire, delivery audit
-
-    Hardware and switch control-plane events are included so the browser can keep
-    capability and switch state aligned with backend-authored reality.
-    """
+    """SSE event generator for browser-visible control-plane events only."""
     try:
         # 妫ｆ牕瀵橀敍姘礀閺?connection_id
         yield f'event: connected\ndata: {{"connection_id":"{conn_id}"}}\n\n'
@@ -196,7 +185,7 @@ async def _sse_event_generator(
                 out_msg = await _format_control_event(message)
                 if out_msg:
                     yield out_msg
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield ": heartbeat\n\n"
             except asyncio.CancelledError:
                 break
@@ -221,10 +210,10 @@ async def _sse_event_generator(
 )
 async def sse_events(
     request: Request,
-    redis: RedisClient | None = Depends(get_redis),
-    event_bus: ControlEventBus | None = Depends(get_event_bus),
-    client_token: str | None = Query(None, description="Optional SSE client token used for ping correlation"),
-    current_user: dict = Depends(get_current_user),
+    redis: RedisDependency,
+    event_bus: EventBusDependency,
+    current_user: CurrentUserDependency,
+    client_token: ClientTokenQuery = None,
 ) -> StreamingResponse:
     """Stream control-plane events over SSE for the authenticated session."""
     del current_user
@@ -242,25 +231,11 @@ async def sse_events(
             status_code=503,
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
-    subscription = await event_bus.subscribe(
-        (
-            CHANNEL_HARDWARE_EVENTS,
-            CHANNEL_SWITCH_EVENTS,
-            CHANNEL_NODE_EVENTS,
-            CHANNEL_JOB_EVENTS,
-            CHANNEL_CONNECTOR_EVENTS,
-            CHANNEL_RESERVATION_EVENTS,
-            CHANNEL_TRIGGER_EVENTS,
-        )
-    )
+    subscription = await event_bus.subscribe(CONTROL_PLANE_REALTIME_CHANNELS)
 
     # Reuse a validated client token when available so reconnects keep the same
     # ping lease; otherwise mint a fresh connection id.
-    conn_id: str
-    if client_token and _UUID_RE.match(client_token):
-        conn_id = client_token
-    else:
-        conn_id = str(uuid.uuid4())
+    conn_id = client_token if client_token and _UUID_RE.match(client_token) else str(uuid.uuid4())
 
     # Register the ping lease before streaming so timeout checks have a stable
     # source of truth even if the client disconnects during setup.

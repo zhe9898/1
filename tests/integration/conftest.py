@@ -8,21 +8,23 @@
 from __future__ import annotations
 
 import os
+import socket
+from collections.abc import Generator
+from urllib.parse import urlparse
+
+import pytest
+import redis
+import requests
 
 # 对 localhost 禁用代理
 if "localhost" in os.getenv("BASE_URL", "http://localhost:8000") or "127.0.0.1" in os.getenv("BASE_URL", ""):
     os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1,::1")
-import time
-from typing import Generator
-
-import pytest
-import requests
-import redis
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_URL = os.getenv("REDIS_URL") or f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
 TEST_MOUNT_PATH = os.getenv("TEST_MOUNT_PATH", "/mnt/test")
 CONTAINER_NAME = os.getenv("CONTAINER_NAME", "")
 PROBE_DEBOUNCE_WAIT = int(os.getenv("PROBE_DEBOUNCE_WAIT", "25"))
@@ -53,9 +55,21 @@ def _redis_ok() -> bool:
         return False
 
 
+def _nats_ok() -> bool:
+    try:
+        parsed = urlparse(NATS_URL)
+        host = parsed.hostname or "localhost"
+        port = int(parsed.port or 4222)
+        with socket.create_connection((host, port), timeout=2):
+            return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 # 用于 skipif：import 时评估一次，避免 fixture 在 collection 阶段未执行
 GATEWAY_OK = _gateway_ok()
 REDIS_OK = _redis_ok()
+NATS_OK = _nats_ok()
 
 
 @pytest.fixture(scope="session")
@@ -68,6 +82,12 @@ def gateway_available() -> bool:
 def redis_available() -> bool:
     """会话级：Redis 是否可用。"""
     return REDIS_OK
+
+
+@pytest.fixture(scope="session")
+def nats_available() -> bool:
+    """会话级：NATS 是否可用。"""
+    return NATS_OK
 
 
 @pytest.fixture(scope="session")

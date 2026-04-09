@@ -92,9 +92,11 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
         return previous
 
     redis_client = AsyncMock()
+    event_bus = AsyncMock()
 
     with (
         patch("backend.workers.control_plane_worker.connect_redis_with_retry", new=AsyncMock(return_value=redis_client)),
+        patch("backend.workers.control_plane_worker.connect_event_bus_with_retry", new=AsyncMock(return_value=event_bus)),
         patch("backend.workers.control_plane_worker.attempt_expiration_worker", new=fake_attempt_expiration_worker),
         patch("backend.workers.control_plane_worker.bitrot_worker", new=fake_bitrot_worker),
         patch("backend.workers.control_plane_worker.health_probe_worker", new=fake_health_probe_worker),
@@ -113,6 +115,7 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
         await asyncio.wait_for(task, timeout=1)
 
     redis_client.close.assert_awaited_once()
+    event_bus.close.assert_awaited_once()
     assert cancelled["attempt-expiration"].is_set()
     assert cancelled["bitrot"].is_set()
     assert cancelled["health-probe"].is_set()

@@ -121,6 +121,46 @@ class TestSwitchEventContract:
         assert restored.effective_switch_name() == original.effective_switch_name()
 
 
+class TestSwitchStateEventContract:
+    def test_valid_state_values(self) -> None:
+        from backend.kernel.contracts.events_schema import SwitchStateEventPayload
+
+        for state in ("ON", "OFF", "PENDING"):
+            payload = SwitchStateEventPayload(state=state)
+            assert payload.state == state
+
+    def test_serialization_roundtrip(self) -> None:
+        from backend.kernel.contracts.events_schema import SwitchStateEventPayload
+
+        original = SwitchStateEventPayload(
+            state="PENDING",
+            switch="media",
+            reason="syncing",
+            updated_by="sentinel",
+        )
+        restored = SwitchStateEventPayload.model_validate_json(original.model_dump_json())
+        assert restored.state == "PENDING"
+        assert restored.effective_switch_name() == "media"
+
+
+class TestHardwareStateEventContract:
+    def test_required_fields(self) -> None:
+        from backend.kernel.contracts.events_schema import HardwareStateEventPayload
+
+        schema = HardwareStateEventPayload.model_json_schema()
+        assert "path" in schema.get("required", [])
+        assert "state" in schema.get("required", [])
+
+    def test_serialization_roundtrip(self) -> None:
+        from backend.kernel.contracts.events_schema import HardwareStateEventPayload
+
+        original = HardwareStateEventPayload(path="/mnt/media", state="online", reason="mounted", uuid="disk-1", timestamp=123.0)
+        restored = HardwareStateEventPayload.model_validate_json(original.model_dump_json())
+        assert restored.path == "/mnt/media"
+        assert restored.state == "online"
+        assert restored.uuid == "disk-1"
+
+
 class TestHealthResponseContract:
     def test_required_fields(self) -> None:
         from backend.api.models import HealthResponse

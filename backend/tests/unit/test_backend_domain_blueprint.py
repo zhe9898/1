@@ -30,6 +30,9 @@ def test_external_invariants_preserve_public_surface_and_policy_chain() -> None:
     assert "backend-driven" in invariants["backend_driven_control_plane"].statement
     assert "PolicyStore plus RuntimePolicyResolver" in invariants["runtime_policy_single_source"].statement
     assert "capability -> surface -> policy -> service contract -> execution contract" in invariants["extensions_follow_contract_chain"].statement
+    assert "EventBus subjects" in invariants["control_plane_event_transport_split"].statement
+    assert "browser realtime chain" in invariants["control_plane_event_transport_split"].statement
+    assert "ephemeral and non-authoritative" in invariants["redis_runtime_state_is_ephemeral"].statement
 
 
 def test_control_plane_split_is_explicitly_three_way() -> None:

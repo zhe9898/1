@@ -76,14 +76,23 @@ async def agent_act(
             results.append(AgentActionResult(switch=action.switch, ok=False, message="switch not allowed"))
             continue
 
+        write_ok = False
         if redis is not None:
-            await redis.switches.set(
+            write_ok = await redis.switches.set(
                 action.switch,
                 action.state,
                 reason=action.reason,
                 updated_by=f"agent:{user_sub}",
             )
+        else:
+            write_ok = False
 
-        results.append(AgentActionResult(switch=action.switch, ok=True))
+        results.append(
+            AgentActionResult(
+                switch=action.switch,
+                ok=write_ok,
+                message="" if write_ok else "switch dispatch failed",
+            )
+        )
 
     return AgentActResponse(results=results)

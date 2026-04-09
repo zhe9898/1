@@ -8,6 +8,8 @@ import pytest
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
+from backend.platform.redis.constants import KEY_DISK_TAINT, KEY_HARDWARE_GPU_STATE
+from backend.platform.redis.runtime_state import sentinel_override_key
 from backend.sentinel.topology_sentinel import (
     MountPoint,
     TopologySentinel,
@@ -68,7 +70,7 @@ def test_topology_sentinel_init_and_redis(mock_env: None, mocker: MockerFixture)
 def test_topology_sentinel_check_disk_usage(mock_env: None, mocker: MockerFixture) -> None:
     mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
-    sentinel._redis.pubsub.publish = MagicMock()  # type: ignore[union-attr]
+    sentinel._event_publisher.publish_signal = MagicMock(return_value=1)  # type: ignore[union-attr]
     sentinel._redis.kv.set = MagicMock()  # type: ignore[union-attr]
     sentinel._redis.kv.delete = MagicMock()  # type: ignore[union-attr]
 
@@ -80,8 +82,8 @@ def test_topology_sentinel_check_disk_usage(mock_env: None, mocker: MockerFixtur
 
     # 验证 Taint 机制：标志位被设置 + Redis 事件发布
     assert sentinel.has_disk_taint is True
-    sentinel._redis.pubsub.publish.assert_called()  # type: ignore[union-attr]
-    sentinel._redis.kv.set.assert_called_with("zen70:disk_breaker", "active", ex=300)  # type: ignore[union-attr]
+    sentinel._event_publisher.publish_signal.assert_called()  # type: ignore[union-attr]
+    sentinel._redis.kv.set.assert_called_with(KEY_DISK_TAINT, "active", ex=300)  # type: ignore[union-attr]
 
     # 验证磁盘恢复时自动清除 Taint
     mock_usage_ok = MagicMock(used=80, total=100)
@@ -95,9 +97,17 @@ def test_topology_sentinel_reconcile_loop(mock_env: None, mocker: MockerFixture)
     sentinel = TopologySentinel()
 
     sentinel._redis.ping.return_value = True  # type: ignore[union-attr]
-    sentinel._redis.kv.get.return_value = "ON"  # type: ignore[union-attr]
-    sentinel._redis.hashes.get_all.return_value = {}  # type: ignore[union-attr]
-    sentinel._redis.pubsub.publish = MagicMock()  # type: ignore[union-attr]
+    sentinel._redis.kv.get.return_value = None  # type: ignore[union-attr]
+
+    def _hash_get_all(key: str) -> dict[str, str]:
+        if key == KEY_HARDWARE_GPU_STATE:
+            return {}
+        if key == "switch:switch1":
+            return {"state": "ON"}
+        return {}
+
+    sentinel._redis.hashes.get_all.side_effect = _hash_get_all  # type: ignore[union-attr]
+    sentinel._event_publisher.publish_signal = MagicMock(return_value=1)  # type: ignore[union-attr]
 
     mocker.patch.object(sentinel, "_get_actual_running_containers", return_value=set())
     mock_action = mocker.patch.object(sentinel, "_safe_container_action")
@@ -141,3 +151,37 @@ def test_topology_sentinel_safe_action(mock_env: None, mocker: MockerFixture) ->
 
     # Test start
     sentinel._safe_container_action("some-container", "start")
+
+
+def test_topology_sentinel_pause_signal_sets_runtime_override_and_stops_container(
+    mock_env: None,
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
+    sentinel = TopologySentinel()
+    sentinel._safe_container_action = MagicMock()
+    sentinel._publish_route_meltdown = MagicMock()
+    sentinel._redis.kv.set = MagicMock()  # type: ignore[union-attr]
+
+    sentinel._process_switch_event_message('{"switch":"switch1","state":"PAUSE"}')
+
+    sentinel._redis.kv.set.assert_any_call(sentinel_override_key("switch1"), "OFF")  # type: ignore[union-attr]
+    sentinel._redis.kv.set.assert_any_call(sentinel_override_key("container1"), "OFF")  # type: ignore[union-attr]
+    sentinel._safe_container_action.assert_called_once_with("container1", "stop")
+    sentinel._publish_route_meltdown.assert_called_once_with("container1")
+
+
+def test_topology_sentinel_restart_signal_restarts_container_without_persisting_override(
+    mock_env: None,
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
+    sentinel = TopologySentinel()
+    sentinel._safe_container_action = MagicMock()
+    sentinel._redis.kv.set = MagicMock()  # type: ignore[union-attr]
+
+    sentinel._process_switch_event_message('{"switch":"container1","state":"RESTART"}')
+
+    sentinel._safe_container_action.assert_any_call("container1", "stop")
+    sentinel._safe_container_action.assert_any_call("container1", "start")
+    sentinel._redis.kv.set.assert_not_called()  # type: ignore[union-attr]

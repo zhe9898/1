@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from backend.platform.events.channels import is_control_plane_channel
 from backend.platform.events.types import ControlEvent, ControlEventSubscription
-from backend.platform.redis.client import RedisClient
+
+if TYPE_CHECKING:
+    from backend.platform.redis.client import RedisClient
 
 
 @dataclass(slots=True)
@@ -37,13 +40,18 @@ class RedisEventBus:
         self._redis = redis
 
     async def publish(self, subject: str, payload: str) -> None:
+        if not is_control_plane_channel(subject):
+            raise ValueError(f"subject is not a registered control-plane event channel: {subject}")
         await self._redis.pubsub.publish(subject, payload)
 
     async def subscribe(self, subjects: Sequence[str]) -> RedisEventSubscription:
+        subject_tuple = tuple(subjects)
+        invalid = [subject for subject in subject_tuple if not is_control_plane_channel(subject)]
+        if invalid:
+            raise ValueError(f"subjects are not registered control-plane event channels: {invalid}")
         pubsub = await self._redis.pubsub.session()
         if pubsub is None:
             raise RuntimeError("Redis pubsub unavailable")
-        subject_tuple = tuple(subjects)
         await pubsub.subscribe(*subject_tuple)
         return RedisEventSubscription(pubsub, subject_tuple)
 

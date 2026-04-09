@@ -272,6 +272,23 @@ class RegistryConfig(TypedDict, total=False):
     url: str
 
 
+class RedisRuntimeStateContract(TypedDict, total=False):
+    pattern: str
+    match: str
+    role: str
+    authoritative: bool
+    decision_gate: bool
+    description: str
+
+
+class RuntimeContractsConfig(TypedDict, total=False):
+    control_plane_event_channels: list[str]
+    browser_realtime_event_channels: list[str]
+    internal_coordination_channels: list[str]
+    authoritative_redis_runtime_state_allowed: bool
+    redis_ephemeral_runtime_state: list[RedisRuntimeStateContract]
+
+
 # ===========================================================================
 # 根配置
 # ===========================================================================
@@ -297,3 +314,4 @@ class SystemConfig(TypedDict, total=False):
     backup: BackupConfig
     secrets: SecretsConfig
     registry: RegistryConfig
+    runtime_contracts: RuntimeContractsConfig

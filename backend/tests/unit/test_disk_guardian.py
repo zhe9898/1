@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from pytest_mock import MockerFixture
 
@@ -75,14 +75,16 @@ def test_check_and_act_warning(mocker: MockerFixture) -> None:
 
 def test_publish_disk_event() -> None:
     mock_redis = MagicMock()
-    mock_redis.pubsub.publish = MagicMock()
-    _publish_disk_event(mock_redis, "critical", 96.0)
-    mock_redis.pubsub.publish.assert_called_once()
-    args, _ = mock_redis.pubsub.publish.call_args
-    assert args[0] == REDIS_CHANNEL_DISK
-    payload = json.loads(args[1])
-    assert payload["level"] == "critical"
-    assert payload["action"] == "readonly_lockdown"
+    with patch("backend.sentinel.disk_guardian.SyncEventPublisher") as publisher_cls:
+        publisher = publisher_cls.return_value
+        publisher.publish_signal = MagicMock(return_value=1)
+        _publish_disk_event(mock_redis, "critical", 96.0)
+        publisher.publish_signal.assert_called_once()
+        args, _ = publisher.publish_signal.call_args
+        assert args[0] == REDIS_CHANNEL_DISK
+        payload = json.loads(args[1])
+        assert payload["level"] == "critical"
+        assert payload["action"] == "readonly_lockdown"
 
 
 def test_set_readonly_flag() -> None:
