@@ -15,7 +15,7 @@ pgvector==0.4.2
 asyncpg==0.31.0
 alembic[tz]==1.18.4
 bcrypt==5.0.0
-cryptography==46.0.6
+cryptography==46.0.7
 python-multipart==0.0.22
 webauthn==2.7.1
 aiomqtt==2.5.1
