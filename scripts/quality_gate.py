@@ -29,9 +29,12 @@ BACKEND_TYPED_PATHS = [
     "backend/capabilities.py",
     "backend/background_tasks.py",
 ]
+# `.env` is intentionally excluded from git-diff drift checks because it carries
+# machine-local secret material and external runtime paths (for example
+# `REDIS_ACL_FILE`). Those values are validated by compiler contract tests, but
+# they are not expected to be byte-for-byte identical across Windows/Linux CI.
 IAC_DRIFT_TARGETS = [
     "docker-compose.yml",
-    ".env",
     "config/Caddyfile",
 ]
 OPENAPI_DRIFT_TARGETS = [
