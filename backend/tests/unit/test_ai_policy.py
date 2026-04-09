@@ -45,3 +45,25 @@ def test_apply_prompt_override_injects_system_message_and_response_format() -> N
     assert payload["messages"][0]["role"] == "system"
     assert payload["messages"][1]["content"] == "turn the light on"
     assert payload["response_format"] == {"type": "json_object"}
+
+
+def test_non_chat_requests_do_not_apply_role_prompt_override() -> None:
+    policy = resolve_ai_proxy_policy(
+        {"role": "family_child", "ai_route_preference": "cloud"},
+        method="POST",
+        path="v1/images/generations",
+    )
+
+    assert policy.route_preference == "cloud"
+    assert policy.prompt_override is None
+
+
+def test_non_post_chat_requests_do_not_apply_role_prompt_override() -> None:
+    policy = resolve_ai_proxy_policy(
+        {"role": "elder", "ai_route_preference": "auto"},
+        method="GET",
+        path="v1/chat/completions",
+    )
+
+    assert policy.route_preference == "auto"
+    assert policy.prompt_override is None

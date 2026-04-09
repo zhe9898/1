@@ -137,6 +137,28 @@ def test_quality_gate_is_the_single_source_of_ci_frontend_commands() -> None:
             )
 
 
+def test_frontend_coverage_thresholds_do_not_drift_below_current_baseline() -> None:
+    vitest_config = (REPO_ROOT / "frontend" / "vitest.config.ts").read_text(encoding="utf-8")
+    thresholds_match = re.search(r"thresholds:\s*\{(?P<body>.*?)\n\s*\}", vitest_config, re.DOTALL)
+    assert thresholds_match, "frontend/vitest.config.ts must define coverage thresholds"
+
+    thresholds_body = thresholds_match.group("body")
+    minimums = {
+        "lines": 57.9,
+        "functions": 68.8,
+        "branches": 64.0,
+        "statements": 57.9,
+    }
+    for metric, minimum in minimums.items():
+        metric_match = re.search(rf"{metric}:\s*(?P<value>\d+(?:\.\d+)?)", thresholds_body)
+        assert metric_match, f"frontend coverage threshold missing for {metric}"
+        actual = float(metric_match.group("value"))
+        assert actual >= minimum, (
+            f"frontend coverage threshold for {metric} drifted below the locked baseline: "
+            f"{actual} < {minimum}"
+        )
+
+
 def test_pre_push_gate_delegates_to_shared_quality_gate() -> None:
     pre_push_gate = (REPO_ROOT / "scripts" / "pre_push_gate.py").read_text(encoding="utf-8")
     assert "quality_gate.py" in pre_push_gate

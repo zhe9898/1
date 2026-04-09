@@ -293,6 +293,49 @@ def test_platform_redis_gate_blocks_client_module_escape_imports() -> None:
     assert violations == []
 
 
+def test_ai_gateway_prompt_policy_stays_in_control_plane_auth_boundary() -> None:
+    ai_router_path = BACKEND_ROOT / "ai_router.py"
+    source = ai_router_path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(ai_router_path))
+
+    ai_policy_import_seen = False
+    forbidden_imports = {
+        "backend.control_plane.auth.role_claims",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module == "backend.control_plane.auth.ai_policy":
+                imported_names = {alias.name for alias in node.names}
+                assert imported_names == {"apply_prompt_override", "resolve_ai_proxy_policy"}
+                ai_policy_import_seen = True
+            if node.module in forbidden_imports:
+                message = "backend/ai_router.py must not bypass AI policy by importing role-claim helpers directly: " f"{node.module}"
+                raise AssertionError(message)
+
+    assert ai_policy_import_seen, "backend/ai_router.py must import AI prompt policy through control_plane.auth.ai_policy"
+
+    forbidden_literals = (
+        "family learning guide",
+        "Never invent concrete device IDs",
+        '"intent":"device_control"',
+        "light_living_1",
+    )
+    for literal in forbidden_literals:
+        assert literal not in source, (
+            "backend/ai_router.py must not embed role-specific prompt text or device-control schema; "
+            "keep those contracts in backend/control_plane/auth/ai_policy.py"
+        )
+
+    forbidden_role_access = (
+        'current_user.get("role")',
+        "current_user.get('role')",
+        'current_user["role"]',
+        "current_user['role']",
+    )
+    for pattern in forbidden_role_access:
+        assert pattern not in source, "backend/ai_router.py must not branch on role claims directly; " "use resolve_ai_proxy_policy() instead"
+
+
 def test_state_path_gate_only_allows_owner_services_for_core_field_writes() -> None:
     violations: list[str] = []
     for path in _python_sources("api", "control_plane", "core", "kernel", "workers"):
