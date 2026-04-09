@@ -274,6 +274,20 @@ class TestValidation:
         assert any("max_candidate_pairs_per_dispatch" in e for e in errors)
         assert any("plan_affinity_bonus" in e for e in errors)
 
+    def test_dispatch_starvation_rescue_limits_must_be_consistent(self):
+        from backend.kernel.policy.types import DispatchConfig
+
+        policy = SchedulingPolicy(
+            dispatch=DispatchConfig(
+                starvation_rescue_multiplier=-1,
+                starvation_rescue_min=8,
+                starvation_rescue_max=4,
+            )
+        )
+        errors = validate_policy(policy)
+        assert any("starvation_rescue_multiplier" in e for e in errors)
+        assert any("starvation_rescue_max < starvation_rescue_min" in e for e in errors)
+
 
 # =====================================================================
 # Diff generation

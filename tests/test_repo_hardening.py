@@ -91,6 +91,59 @@ def test_python_ci_workflows_use_hashed_lockfile() -> None:
     assert not violations, f"Python CI workflows must install from the hashed lockfile: {violations}"
 
 
+def test_quality_gate_is_the_single_source_of_ci_backend_commands() -> None:
+    quality_gate = REPO_ROOT / "scripts" / "quality_gate.py"
+    assert quality_gate.exists(), "scripts/quality_gate.py must exist as the canonical CI quality entrypoint"
+
+    flake8_config = (REPO_ROOT / ".flake8").read_text(encoding="utf-8")
+    assert "max-line-length = 160" in flake8_config
+    assert "max-complexity = 15" in flake8_config
+    assert "extend-ignore = E203,W503" in flake8_config
+
+    for workflow_name in ("ci.yml", "compliance.yml"):
+        text = (WORKFLOW_DIR / workflow_name).read_text(encoding="utf-8")
+        assert "python scripts/quality_gate.py backend-ci" in text, (
+            f"{workflow_name} must route backend quality checks through scripts/quality_gate.py"
+        )
+        forbidden_inline = [
+            "black --check",
+            "isort --check-only",
+            "flake8 --",
+            "mypy --config-file",
+            "python scripts/compiler.py system.yaml -o .",
+            "python scripts/generate_contracts.py",
+        ]
+        for token in forbidden_inline:
+            assert token not in text, (
+                f"{workflow_name} must not inline backend quality commands once the shared gate exists: {token}"
+            )
+
+
+def test_quality_gate_is_the_single_source_of_ci_frontend_commands() -> None:
+    for workflow_name in ("ci.yml", "compliance.yml"):
+        text = (WORKFLOW_DIR / workflow_name).read_text(encoding="utf-8")
+        assert "python scripts/quality_gate.py frontend-ci" in text, (
+            f"{workflow_name} must route frontend quality checks through scripts/quality_gate.py"
+        )
+        forbidden_inline = [
+            "npm audit --audit-level=high",
+            "npm run lint",
+            "npm run test:coverage",
+            "npm run build",
+        ]
+        for token in forbidden_inline:
+            assert token not in text, (
+                f"{workflow_name} must not inline frontend quality commands once the shared gate exists: {token}"
+            )
+
+
+def test_pre_push_gate_delegates_to_shared_quality_gate() -> None:
+    pre_push_gate = (REPO_ROOT / "scripts" / "pre_push_gate.py").read_text(encoding="utf-8")
+    assert "quality_gate.py" in pre_push_gate
+    assert "\"backend-ci\", \"frontend-ci\"" in pre_push_gate or "'backend-ci', 'frontend-ci'" in pre_push_gate
+    assert "backend/core/governance_facade.py" not in pre_push_gate
+
+
 def test_offline_release_workflow_uses_immutable_release_tags_and_clean_bundle_inputs() -> None:
     text = (WORKFLOW_DIR / "build_offline_v2_9.yml").read_text(encoding="utf-8")
     assert "RELEASE_SERIES:" in text, "offline bundle workflow must distinguish release series from frozen release tags"
@@ -229,6 +282,7 @@ _BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
 _BACKEND_TEST_ALLOWLIST: dict[str, str] = {
     "tests/unit/test_scheduling_governance.py": "Scheduling governance intentionally keeps broad scenario coverage in one test file for now.",
     "tests/unit/test_scheduler_auto_tune.py": "scheduler auto-tune integration coverage is intentionally kept together for now.",
+    "tests/unit/test_scheduling_policy_store.py": "Scheduling policy store still keeps broad contract, validation, and loading coverage together for now.",
 }
 
 

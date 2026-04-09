@@ -132,6 +132,12 @@ def validate_policy(policy: SchedulingPolicy) -> list[str]:  # noqa: C901
     dc = policy.dispatch
     if dc.candidate_max < dc.candidate_min:
         errors.append("dispatch.candidate_max < candidate_min")
+    if dc.starvation_rescue_multiplier < 0:
+        errors.append(f"dispatch.starvation_rescue_multiplier < 0: {dc.starvation_rescue_multiplier}")
+    if dc.starvation_rescue_min < 0:
+        errors.append(f"dispatch.starvation_rescue_min < 0: {dc.starvation_rescue_min}")
+    if dc.starvation_rescue_max < dc.starvation_rescue_min:
+        errors.append("dispatch.starvation_rescue_max < starvation_rescue_min")
     if not 0.0 <= dc.default_reliability_score <= 1.0:
         errors.append(f"dispatch.default_reliability_score out of [0,1]: {dc.default_reliability_score}")
     if dc.dlq_scan_limit < 1:

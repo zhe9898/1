@@ -1,4 +1,7 @@
 [flake8]
+max-line-length = 160
+max-complexity = 15
+extend-ignore = E203,W503
 exclude =
     backend/kernel/scheduling/gen_grpc,
     */kernel/scheduling/gen_grpc/*

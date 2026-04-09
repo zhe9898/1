@@ -4,6 +4,7 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 from sqlalchemy import Integer, case, func, literal, or_, select
@@ -107,6 +108,60 @@ def _get_dispatch_config() -> DispatchConfig:
     return get_policy_store().active.dispatch
 
 
+def _build_dispatch_candidate_where(*, tenant_id: str, now: Any) -> list[Any]:
+    return [
+        Job.tenant_id == tenant_id,
+        or_(
+            (Job.status == "pending") & (or_(Job.retry_at.is_(None), Job.retry_at <= now)),
+            (Job.status == "leased") & (Job.leased_until.is_not(None)) & (Job.leased_until < now),
+        ),
+        or_(Job.deadline_at.is_(None), Job.deadline_at > now),
+    ]
+
+
+def _build_effective_priority_expression(*, now: Any) -> Any:
+    from backend.kernel.policy.policy_store import get_policy_store
+
+    queue_config = get_policy_store().active.queue
+    age_seconds = func.greatest(func.extract("epoch", literal(now) - Job.created_at), literal(0))
+    layers = queue_config.priority_layers
+    layer_muls = queue_config.layer_aging_multipliers
+    sorted_layers = sorted(layers.items(), key=lambda kv: kv[1][0], reverse=True)
+    case_whens = [(Job.priority >= lo, literal(float(layer_muls.get(name, 1.0)))) for name, (lo, _hi) in sorted_layers[:-1]]
+    else_mul = float(layer_muls.get(sorted_layers[-1][0], 1.0)) if sorted_layers else 1.0
+    layer_multiplier = case(*case_whens, else_=literal(else_mul))
+
+    aging_interval = float(queue_config.aging.interval_seconds)
+    bonus_per_interval = float(queue_config.aging.bonus_per_interval)
+    aging_cap = float(queue_config.aging.max_bonus)
+    aging_bonus = func.least(
+        func.sqrt(age_seconds / literal(aging_interval)) * layer_multiplier * literal(bonus_per_interval),
+        literal(aging_cap),
+    )
+    return func.least(Job.priority + func.cast(aging_bonus, Integer), literal(100))
+
+
+def _get_starvation_rescue_limit(*, payload_limit: int, dispatch_config: DispatchConfig) -> int:
+    if dispatch_config.starvation_rescue_max <= 0:
+        return 0
+    scaled_limit = max(
+        payload_limit * max(dispatch_config.starvation_rescue_multiplier, 0),
+        dispatch_config.starvation_rescue_min,
+    )
+    return min(scaled_limit, dispatch_config.starvation_rescue_max)
+
+
+def _merge_dispatch_candidates(primary: list[Job], rescue: list[Job]) -> list[Job]:
+    merged: list[Job] = []
+    seen_job_ids: set[str] = set()
+    for candidate in [*primary, *rescue]:
+        if candidate.job_id in seen_job_ids:
+            continue
+        seen_job_ids.add(candidate.job_id)
+        merged.append(candidate)
+    return merged
+
+
 async def _publish_reservation_event(
     redis: RedisClient | None,
     action: str,
@@ -155,35 +210,49 @@ async def _query_dispatch_candidates(
     accepted_kinds: set[str],
     candidate_limit: int,
 ) -> list[Job]:
-    base_where = [
-        Job.tenant_id == tenant_id,
-        or_(
-            (Job.status == "pending") & (or_(Job.retry_at.is_(None), Job.retry_at <= now)),
-            (Job.status == "leased") & (Job.leased_until.is_not(None)) & (Job.leased_until < now),
-        ),
-        or_(Job.deadline_at.is_(None), Job.deadline_at > now),
-    ]
-    age_seconds = func.greatest(func.extract("epoch", literal(now) - Job.created_at), literal(0))
+    base_where = _build_dispatch_candidate_where(tenant_id=tenant_id, now=now)
+    effective_priority = _build_effective_priority_expression(now=now)
+    query = (
+        select(Job)
+        .where(*base_where)
+        .with_for_update(skip_locked=True)
+        .order_by(effective_priority.desc(), Job.created_at.asc(), Job.job_id.asc())
+        .limit(candidate_limit)
+    )
+    if accepted_kinds:
+        query = query.where(Job.kind.in_(accepted_kinds))
 
-    from backend.kernel.policy.policy_store import get_policy_store as get_policy_store
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def _query_starved_dispatch_candidates(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    now: Any,
+    accepted_kinds: set[str],
+    rescue_limit: int,
+) -> list[Job]:
+    if rescue_limit <= 0:
+        return []
+
+    from backend.kernel.policy.policy_store import get_policy_store
 
     queue_config = get_policy_store().active.queue
-    layers = queue_config.priority_layers
-    layer_muls = queue_config.layer_aging_multipliers
-    sorted_layers = sorted(layers.items(), key=lambda kv: kv[1][0], reverse=True)
-    case_whens = [(Job.priority >= lo, literal(float(layer_muls.get(name, 1.0)))) for name, (lo, _hi) in sorted_layers[:-1]]
-    else_mul = float(layer_muls.get(sorted_layers[-1][0], 1.0)) if sorted_layers else 1.0
-    layer_multiplier = case(*case_whens, else_=literal(else_mul))
+    starvation_threshold_seconds = max(int(queue_config.starvation_threshold_seconds), 0)
+    if starvation_threshold_seconds <= 0:
+        return []
 
-    aging_interval = float(queue_config.aging.interval_seconds)
-    aging_cap = float(queue_config.aging.max_bonus) * max(layer_muls.values(), default=1.0)
-    aging_bonus = func.least(
-        func.sqrt(age_seconds / literal(aging_interval)) * layer_multiplier,
-        literal(aging_cap),
+    base_where = _build_dispatch_candidate_where(tenant_id=tenant_id, now=now)
+    starvation_cutoff = now - timedelta(seconds=starvation_threshold_seconds)
+    query = (
+        select(Job)
+        .where(*base_where, Job.created_at <= starvation_cutoff)
+        .with_for_update(skip_locked=True)
+        .order_by(Job.created_at.asc(), Job.priority.desc(), Job.job_id.asc())
+        .limit(rescue_limit)
     )
-    effective_priority = func.least(Job.priority + func.cast(aging_bonus, Integer), literal(100))
-
-    query = select(Job).where(*base_where).with_for_update(skip_locked=True).order_by(effective_priority.desc(), Job.created_at.asc()).limit(candidate_limit)
     if accepted_kinds:
         query = query.where(Job.kind.in_(accepted_kinds))
 
@@ -300,6 +369,33 @@ async def _build_candidate_context(
         accepted_kinds=accepted_kinds,
         candidate_limit=candidate_limit,
     )
+    starvation_rescue_limit = 0
+    starvation_rescue_added = 0
+    if len(candidates) >= candidate_limit:
+        dispatch_config = _get_dispatch_config()
+        starvation_rescue_limit = _get_starvation_rescue_limit(
+            payload_limit=payload.limit,
+            dispatch_config=dispatch_config,
+        )
+        if starvation_rescue_limit > 0:
+            starvation_rescue_candidates = await _query_starved_dispatch_candidates(
+                db,
+                tenant_id=payload.tenant_id,
+                now=now,
+                accepted_kinds=accepted_kinds,
+                rescue_limit=starvation_rescue_limit,
+            )
+            merged_candidates = _merge_dispatch_candidates(candidates, starvation_rescue_candidates)
+            starvation_rescue_added = max(len(merged_candidates) - len(candidates), 0)
+            candidates = merged_candidates
+
+    audit.context["candidate_window"] = {
+        "primary_limit": candidate_limit,
+        "primary_count": len(candidates) - starvation_rescue_added,
+        "starvation_rescue_limit": starvation_rescue_limit,
+        "starvation_rescue_added": starvation_rescue_added,
+        "total_candidates_before_filters": len(candidates),
+    }
     candidates = await _filter_dispatch_candidates(
         candidates,
         governance=governance,

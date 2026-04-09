@@ -294,6 +294,9 @@ class DispatchConfig:
     candidate_multiplier: int = 40
     candidate_min: int = 40
     candidate_max: int = 200
+    starvation_rescue_multiplier: int = 4
+    starvation_rescue_min: int = 16
+    starvation_rescue_max: int = 128
     burst_throttle_divisor: int = 2
     burst_throttle_floor: int = 10
     default_reliability_score: float = 0.85
