@@ -4,7 +4,8 @@
 import warnings
 
 import grpc
-import placement_pb2 as placement__pb2
+
+from backend.kernel.scheduling.gen_grpc import placement_pb2 as placement__pb2
 
 GRPC_GENERATED_VERSION = "1.80.0"
 GRPC_VERSION = grpc.__version__

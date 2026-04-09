@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import builtins
+import importlib
+import sys
 from types import SimpleNamespace
 
 from backend.kernel.scheduling.placement_grpc_client import _job_to_proto
@@ -69,3 +72,21 @@ def test_job_to_proto_preserves_explicit_queue_contract() -> None:
 
     assert proto.queue_class == "batch"
     assert proto.worker_pool == "batch"
+
+
+def test_generated_proto_package_does_not_require_grpc_for_message_import(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
+        if name == "grpc":
+            raise ModuleNotFoundError("No module named 'grpc'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.delitem(sys.modules, "grpc", raising=False)
+    monkeypatch.delitem(sys.modules, "backend.kernel.scheduling.gen_grpc", raising=False)
+    monkeypatch.delitem(sys.modules, "backend.kernel.scheduling.gen_grpc.placement_pb2", raising=False)
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    placement_pb2 = importlib.import_module("backend.kernel.scheduling.gen_grpc.placement_pb2")
+
+    assert hasattr(placement_pb2, "JobSpec")
