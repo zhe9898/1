@@ -74,7 +74,13 @@ async def test_process_pending_assets_success(
     ai_worker.HAS_MODEL = True
 
     mocker.patch("backend.workers.ai_worker.Path.exists", return_value=True)
-    mocker.patch("backend.workers.ai_worker.Image.open")
+    mock_image = MagicMock()
+    mock_image_ctx = MagicMock()
+    mock_image_ctx.__enter__.return_value = mock_image
+    mock_image_ctx.__exit__.return_value = False
+    mock_image_adapter = MagicMock()
+    mock_image_adapter.open.return_value = mock_image_ctx
+    mocker.patch("backend.workers.ai_worker.Image", mock_image_adapter)
 
     count = await process_pending_assets(tenant_id="tenant-a")
     rendered = str(mock_session.execute.await_args.args[0])
@@ -106,6 +112,37 @@ async def test_process_pending_assets_no_model(
     ai_worker.HAS_MODEL = False
 
     count = await process_pending_assets(tenant_id="tenant-a")
+    assert count == 0
+    assert mock_asset.embedding_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_process_pending_assets_without_pillow_marks_asset_failed(
+    mocker: MockerFixture,
+) -> None:
+    mock_session = AsyncMock()
+    mocker.patch(
+        "backend.workers.ai_worker.AsyncSessionLocal",
+        return_value=mock_session,
+    )
+    mock_session.__aenter__.return_value = mock_session
+
+    mock_asset = MagicMock()
+    mock_asset.embedding_status = "pending"
+    mock_asset.asset_type = "image/jpeg"
+    mock_asset.file_path = "/tmp/fake.jpg"
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [mock_asset]
+    mock_session.execute.return_value = mock_result
+
+    mocker.patch("backend.workers.ai_worker.get_model", return_value=MagicMock())
+    mocker.patch("backend.workers.ai_worker.Path.exists", return_value=True)
+    mocker.patch("backend.workers.ai_worker.Image", None)
+    ai_worker.HAS_MODEL = True
+
+    count = await process_pending_assets(tenant_id="tenant-a")
+
     assert count == 0
     assert mock_asset.embedding_status == "failed"
 
