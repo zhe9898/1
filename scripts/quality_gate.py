@@ -48,6 +48,26 @@ OPENAPI_DRIFT_TARGETS = [
 ]
 
 
+def _is_github_actions() -> bool:
+    return os.getenv("GITHUB_ACTIONS", "").strip().lower() == "true"
+
+
+def _escape_github_actions_property(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A").replace(":", "%3A").replace(",", "%2C")
+
+
+def _escape_github_actions_message(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _emit_github_actions_error(title: str, message: str) -> None:
+    if not _is_github_actions():
+        return
+    escaped_title = _escape_github_actions_property(title)
+    escaped_message = _escape_github_actions_message(message)
+    print(f"::error title={escaped_title}::{escaped_message}")
+
+
 def _node_binary(name: str) -> str:
     if os.name == "nt":
         return f"{name}.cmd"
@@ -91,6 +111,10 @@ def _run_step(step: CommandStep) -> int:
         )
         if result.returncode == 0:
             return 0
+        _emit_github_actions_error(
+            title="quality-gate-step-failed",
+            message=f"{step.name} failed with exit code {result.returncode}",
+        )
         if attempt == attempts:
             return int(result.returncode)
         if step.retry_delay_seconds > 0:
