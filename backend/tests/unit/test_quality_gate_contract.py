@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts import quality_gate
 from scripts.quality_gate import IAC_DRIFT_TARGETS
 
@@ -29,3 +31,24 @@ def test_github_actions_error_annotation_is_silent_outside_ci(monkeypatch, capsy
 
     captured = capsys.readouterr()
     assert captured.out == ""
+
+
+def test_pytest_failure_annotations_emit_failed_case_names(monkeypatch, capsys, tmp_path: Path) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    junit_path = tmp_path / "pytest-results.xml"
+    junit_path.write_text(
+        """
+<testsuite tests="1" failures="1" errors="0">
+  <testcase classname="backend.tests.unit.test_linux_only" name="test_runtime_contract">
+    <failure message="AssertionError: linux mismatch">traceback</failure>
+  </testcase>
+</testsuite>
+""".strip(),
+        encoding="utf-8",
+    )
+
+    quality_gate._emit_pytest_failure_annotations(junit_path)  # noqa: SLF001
+
+    captured = capsys.readouterr()
+    assert "backend.tests.unit.test_linux_only::test_runtime_contract" in captured.out
+    assert "AssertionError: linux mismatch" in captured.out

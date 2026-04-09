@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -46,6 +47,7 @@ OPENAPI_DRIFT_TARGETS = [
     "docs/openapi-full.json",
     "docs/openapi.json",
 ]
+BACKEND_PYTEST_JUNIT_PATH = BACKEND_DIR / "pytest-results.xml"
 
 
 def _is_github_actions() -> bool:
@@ -66,6 +68,34 @@ def _emit_github_actions_error(title: str, message: str) -> None:
     escaped_title = _escape_github_actions_property(title)
     escaped_message = _escape_github_actions_message(message)
     print(f"::error title={escaped_title}::{escaped_message}")
+
+
+def _emit_pytest_failure_annotations(junit_path: Path, max_failures: int = 10) -> None:
+    if not _is_github_actions() or not junit_path.exists():
+        return
+    try:
+        root = ET.fromstring(junit_path.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError) as exc:
+        _emit_github_actions_error("pytest-failed", f"failed to parse {junit_path.name}: {exc}")
+        return
+
+    reported = 0
+    for testcase in root.iter("testcase"):
+        node_id = testcase.get("classname", "").strip()
+        test_name = testcase.get("name", "").strip()
+        display_name = "::".join(part for part in (node_id, test_name) if part)
+        if not display_name:
+            display_name = "unknown pytest testcase"
+        for outcome_name in ("failure", "error"):
+            outcome = testcase.find(outcome_name)
+            if outcome is None:
+                continue
+            detail = (outcome.get("message") or outcome.text or "").strip()
+            detail_line = detail.splitlines()[0] if detail else f"pytest reported {outcome_name}"
+            _emit_github_actions_error("pytest-failed", f"{display_name}: {detail_line[:400]}")
+            reported += 1
+            if reported >= max_failures:
+                return
 
 
 def _node_binary(name: str) -> str:
@@ -110,7 +140,11 @@ def _run_step(step: CommandStep) -> int:
             check=False,
         )
         if result.returncode == 0:
+            if step.name == "backend:pytest":
+                BACKEND_PYTEST_JUNIT_PATH.unlink(missing_ok=True)
             return 0
+        if step.name == "backend:pytest":
+            _emit_pytest_failure_annotations(BACKEND_PYTEST_JUNIT_PATH)
         _emit_github_actions_error(
             title="quality-gate-step-failed",
             message=f"{step.name} failed with exit code {result.returncode}",
@@ -203,6 +237,7 @@ def _backend_ci_steps() -> list[CommandStep]:
                 "--cov-report=term-missing",
                 "--cov-report=xml:backend/coverage-backend.xml",
                 "--cov-fail-under=70",
+                "--junitxml=backend/pytest-results.xml",
             ),
             cwd=REPO_ROOT,
             extra_env=test_env,
