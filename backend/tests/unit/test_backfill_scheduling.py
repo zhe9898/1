@@ -484,6 +484,24 @@ class TestSingleton:
         mgr2 = get_reservation_manager()
         assert mgr1 is not mgr2
 
+    def test_explicit_redis_store_failure_does_not_silently_fallback(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("ZEN70_RESERVATION_STORE", "redis")
+        monkeypatch.setenv("ZEN70_RESERVATION_STORE_REDIS_URL", "redis://bad-host:6379/0")
+
+        def _raise_connect(self) -> None:  # type: ignore[no-untyped-def]
+            raise RuntimeError("redis unavailable")
+
+        monkeypatch.setattr("backend.kernel.scheduling.backfill_scheduling.SyncRedisClient.connect", _raise_connect)
+
+        with pytest.raises(RuntimeError, match="ZEN-BACKFILL-STORE-UNAVAILABLE"):
+            get_reservation_manager()
+
+    def test_invalid_store_type_raises_instead_of_falling_back(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("ZEN70_RESERVATION_STORE", "mystery")
+
+        with pytest.raises(RuntimeError, match="ZEN-BACKFILL-STORE-INVALID"):
+            get_reservation_manager()
+
 
 # =====================================================================
 # InMemoryReservationStore

@@ -98,7 +98,6 @@ async def _cancel_job_reservation(
     if not reservation_mgr.cancel_reservation(job_id):
         return
     await deps.publish_control_event(
-        redis,
         CHANNEL_RESERVATION_EVENTS,
         "canceled",
         {
@@ -220,7 +219,7 @@ async def complete_job_callback(
     )
     response = deps.to_response(job, now=now)
     await db.commit()
-    await deps.publish_control_event(redis, CHANNEL_JOB_EVENTS, "completed", {"job": response.model_dump(mode="json")})
+    await deps.publish_control_event(CHANNEL_JOB_EVENTS, "completed", {"job": response.model_dump(mode="json")})
 
     failure_control_plane = deps.get_failure_control_plane()
     await failure_control_plane.record_success(node_id=payload.node_id, now=now)
@@ -316,7 +315,6 @@ async def fail_job_callback(
         response = deps.to_response(job, now=now)
         await db.commit()
         await deps.publish_control_event(
-            redis,
             CHANNEL_JOB_EVENTS,
             "requeued",
             {"job": response.model_dump(mode="json"), "failure_category": failure_category_str},
@@ -352,7 +350,6 @@ async def fail_job_callback(
     response = deps.to_response(job, now=now)
     await db.commit()
     await deps.publish_control_event(
-        redis,
         CHANNEL_JOB_EVENTS,
         "failed",
         {"job": response.model_dump(mode="json"), "failure_category": failure_category_str, "will_retry": False},
@@ -391,7 +388,7 @@ async def report_job_progress_callback(
     )
     response = deps.to_response(job, now=now)
     await db.commit()
-    await deps.publish_control_event(redis, CHANNEL_JOB_EVENTS, "progress", {"job": response.model_dump(mode="json")})
+    await deps.publish_control_event(CHANNEL_JOB_EVENTS, "progress", {"job": response.model_dump(mode="json")})
     return response
 
 
@@ -425,7 +422,6 @@ async def renew_job_lease_callback(
     response = deps.to_lease_response(job, now=now)
     await db.commit()
     await deps.publish_control_event(
-        redis,
         CHANNEL_JOB_EVENTS,
         "renewed",
         {"job": deps.to_response(job, now=now).model_dump(mode="json")},
@@ -475,7 +471,7 @@ async def cancel_job_by_operator(
     )
     response = deps.to_response(job, now=now)
     await db.commit()
-    await deps.publish_control_event(redis, CHANNEL_JOB_EVENTS, "canceled", {"job": response.model_dump(mode="json")})
+    await deps.publish_control_event(CHANNEL_JOB_EVENTS, "canceled", {"job": response.model_dump(mode="json")})
     return response
 
 
@@ -515,7 +511,6 @@ async def retry_job_by_operator(
     response = deps.to_response(job, now=now)
     await db.commit()
     await deps.publish_control_event(
-        redis,
         CHANNEL_JOB_EVENTS,
         "manual-retry",
         {"job": response.model_dump(mode="json")},

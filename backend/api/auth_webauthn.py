@@ -435,10 +435,12 @@ async def login_complete(
         tenant_id=tenant_id,
         user_id=str(cred.user_id),
         username=req.username,
-        access_token=issued_token.access_token,
+        session_id=issued_token.session_id,
+        token_id=issued_token.token_id,
         ip_address=cip,
         user_agent=request.headers.get("user-agent"),
         auth_method="webauthn",
+        redis=redis,
     )
     set_auth_cookie(response, issued_token.access_token)
     clear_webauthn_flow_session(response)

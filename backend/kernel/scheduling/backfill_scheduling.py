@@ -60,6 +60,29 @@ def _reservation_store_settings() -> tuple[str, str]:
     return store_type, redis_url
 
 
+def _build_reservation_store(config: BackfillConfig) -> ReservationStore | None:
+    store_type, redis_url = _reservation_store_settings()
+    if store_type == "memory":
+        return None
+    if store_type != "redis":
+        raise RuntimeError(f"ZEN-BACKFILL-STORE-INVALID: unsupported reservation store '{store_type}'")
+
+    parsed = urlparse(redis_url)
+    redis_client = SyncRedisClient(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        password=parsed.password,
+        db=int((parsed.path or "/0").lstrip("/") or "0"),
+        username=parsed.username,
+    )
+    try:
+        redis_client.connect()
+    except Exception as exc:
+        raise RuntimeError(f"ZEN-BACKFILL-STORE-UNAVAILABLE: reservation_store=redis but Redis initialization failed for {redis_url}") from exc
+    logger.info("reservation_store=redis url=%s", redis_url)
+    return RedisReservationStore(redis_client, config.max_reservations)
+
+
 # =====================================================================
 # Configuration
 # =====================================================================
@@ -752,23 +775,7 @@ def get_reservation_manager() -> ReservationManager:
             config = BackfillConfig()
 
         # Select store backend from compiled runtime env.
-        store: ReservationStore | None = None
-        try:
-            store_type, redis_url = _reservation_store_settings()
-            if store_type == "redis":
-                parsed = urlparse(redis_url)
-                redis_client = SyncRedisClient(
-                    host=parsed.hostname or "localhost",
-                    port=parsed.port or 6379,
-                    password=parsed.password,
-                    db=int((parsed.path or "/0").lstrip("/") or "0"),
-                    username=parsed.username,
-                )
-                redis_client.connect()
-                store = RedisReservationStore(redis_client, config.max_reservations)
-                logger.info("reservation_store=redis url=%s", redis_url)
-        except Exception:
-            logger.debug("reservation_store=memory (redis not available or not configured)")
+        store = _build_reservation_store(config)
 
         _reservation_manager = ReservationManager(config, store=store)
     return _reservation_manager

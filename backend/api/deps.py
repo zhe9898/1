@@ -4,23 +4,23 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any, Callable
 
 from fastapi import Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.auth_cookies import get_auth_cookie_token, set_auth_cookie
 from backend.control_plane.auth.access_policy import require_admin_role
 from backend.control_plane.auth.jwt import decode_token
+from backend.control_plane.auth.subject_authority import assert_token_subject_active
 from backend.db import get_db_session
 from backend.kernel.contracts.errors import zen
 from backend.kernel.topology.node_auth import authenticate_node_request
-from backend.models.user import User
 from backend.platform.db.rls import assert_rls_ready, set_tenant_context
+from backend.platform.events.types import ControlEventBus
 from backend.platform.redis.client import RedisClient
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,9 @@ def get_settings() -> dict[str, object]:
         "redis_port": int(os.getenv("REDIS_PORT", "6379")),
         "redis_password": os.getenv("REDIS_PASSWORD") or None,
         "redis_db": int(os.getenv("REDIS_DB", "0")),
+        "event_bus_backend": os.getenv("EVENT_BUS_BACKEND", ""),
+        "nats_url": os.getenv("NATS_URL", ""),
+        "nats_connect_timeout": float(os.getenv("NATS_CONNECT_TIMEOUT", "5.0")),
         "cors_origins": [origin.strip() for origin in cors.split(",") if origin.strip()] if cors else [],
         "postgres_dsn": os.getenv("POSTGRES_DSN") or None,
         "log_level": os.getenv("LOG_LEVEL", "INFO"),
@@ -46,6 +49,10 @@ def get_settings() -> dict[str, object]:
 
 def get_redis(request: Request) -> RedisClient | None:
     return getattr(request.app.state, "redis", None)
+
+
+def get_event_bus(request: Request) -> ControlEventBus | None:
+    return getattr(request.app.state, "event_bus", None)
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
@@ -98,10 +105,10 @@ async def get_current_user(
         raise zen("ZEN-AUTH-401", "Missing or invalid token", status_code=401)
 
     redis_client = get_redis(request)
-    payload, new_token = await decode_token(access_token, redis_conn=redis_client.kv if redis_client else None)
+    payload, new_token = await decode_token(access_token, redis_conn=redis_client.kv if redis_client else None, db=db)
     if db is None:
         raise zen("ZEN-BUS-5030", "Database unavailable for token subject validation", status_code=503)
-    await _assert_token_subject_active(db, payload)
+    await assert_token_subject_active(db, payload)
     if new_token:
         set_auth_cookie(response, new_token)
     return payload
@@ -215,6 +222,7 @@ async def get_current_user_optional(
     request: Request,
     response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession | None = Depends(get_db_optional),
 ) -> dict | None:
     del credentials
     access_token = get_auth_cookie_token(request) or ""
@@ -222,7 +230,11 @@ async def get_current_user_optional(
         return None
     try:
         redis_client = get_redis(request)
-        payload, new_token = await decode_token(access_token, redis_conn=redis_client.kv if redis_client else None)
+        payload, new_token = await decode_token(access_token, redis_conn=redis_client.kv if redis_client else None, db=db)
+        if db is None:
+            logger.debug("optional auth skipped because database subject validation is unavailable")
+            return None
+        await assert_token_subject_active(db, payload)
         if new_token:
             set_auth_cookie(response, new_token)
         return payload
@@ -283,27 +295,3 @@ def require_scope(required_scope: str) -> Callable[..., Any]:
         return current_user
 
     return _check_scope
-
-
-async def _assert_token_subject_active(db: AsyncSession, payload: Mapping[str, object]) -> None:
-    subject = str(payload.get("sub") or "").strip()
-    tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
-    if not subject:
-        raise zen("ZEN-AUTH-401", "Invalid token subject", status_code=401)
-
-    await set_tenant_context(db, tenant_id)
-    query = select(User).where(User.tenant_id == tenant_id)
-    if subject.isdigit():
-        query = query.where(User.id == int(subject))
-    else:
-        query = query.where(User.username == subject)
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise zen("ZEN-AUTH-401", "Token subject no longer exists", status_code=401)
-
-    is_active = bool(getattr(user, "is_active", False))
-    raw_status = getattr(user, "status", None)
-    status_value = raw_status.lower() if isinstance(raw_status, str) and raw_status else "active"
-    if not is_active or status_value != "active":
-        raise zen("ZEN-AUTH-401", "Account is disabled", status_code=401, recovery_hint="Re-authenticate after account reactivation")

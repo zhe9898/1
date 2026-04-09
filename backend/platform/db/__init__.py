@@ -4,7 +4,6 @@ from backend.platform.db.alembic_runtime import (
     run_alembic_env,
     run_migrations_offline,
     run_migrations_online,
-    start_migration_lock_watchdog,
 )
 from backend.platform.db.migration_governance import ordered_migration_chains, runtime_managed_migration_chains
 from backend.platform.db.migration_runner import run_governed_migrations
@@ -22,5 +21,4 @@ __all__ = (
     "run_migrations_offline",
     "run_migrations_online",
     "runtime_managed_migration_chains",
-    "start_migration_lock_watchdog",
 )

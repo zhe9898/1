@@ -23,6 +23,7 @@ CORE_SERVICES: tuple[str, ...] = (
     "caddy",
     "gateway",
     "redis",
+    "nats",
     "postgres",
     "sentinel",
     "docker-proxy",

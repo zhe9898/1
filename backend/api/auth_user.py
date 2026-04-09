@@ -17,6 +17,8 @@ from backend.api.models.auth import AiRoutePreferenceRequest, AuthSessionRespons
 from backend.control_plane.auth.auth_helpers import CODE_BAD_REQUEST, CODE_NOT_FOUND, log_auth, request_id, zen
 from backend.control_plane.auth.permissions import filter_valid_scopes
 from backend.control_plane.auth.role_claims import normalize_ai_route_preference, normalize_role_name
+from backend.control_plane.auth.sessions import rotate_session_credentials
+from backend.control_plane.cache_headers import apply_identity_no_store_headers
 from backend.models.user import User, WebAuthnCredential
 
 router = APIRouter()
@@ -56,6 +58,9 @@ async def update_ai_preference(
         await get_user_scopes(db, tenant_id=user.tenant_id, user_id=str(user.id)),
         user.role,
     )
+    session_id = str(current_user.get("sid") or "").strip()
+    if not session_id:
+        raise zen("ZEN-AUTH-401", "Session context is missing", status.HTTP_401_UNAUTHORIZED)
 
     issued_token = issue_auth_token(
         sub=str(user.id),
@@ -64,6 +69,15 @@ async def update_ai_preference(
         tenant_id=user.tenant_id,
         ai_route_preference=user.ai_route_preference,
         scopes=user_scopes,
+        session_id=session_id,
+    )
+    await rotate_session_credentials(
+        db,
+        tenant_id=user.tenant_id,
+        user_id=str(user.id),
+        session_id=issued_token.session_id,
+        new_jti=issued_token.token_id,
+        expires_in_seconds=issued_token.expires_in,
     )
     set_auth_cookie(response, issued_token.access_token)
     return build_authenticated_session_response(
@@ -79,8 +93,10 @@ async def update_ai_preference(
 
 @router.get("/session", response_model=AuthSessionResponse)
 async def get_auth_session(
+    response: Response,
     current_user: dict[str, object] | None = Depends(get_current_user_optional),
 ) -> AuthSessionResponse:
+    apply_identity_no_store_headers(response)
     if not current_user:
         return AuthSessionResponse(authenticated=False)
 

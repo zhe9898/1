@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import bcrypt
 import pytest
@@ -78,6 +78,8 @@ async def test_pin_login_propagates_real_role_and_tenant() -> None:
         tenant_id="tenant-alpha",
         ai_route_preference="cloud",
         scopes=sorted(ALLOWED_SCOPES),
+        session_id=ANY,
+        token_id=ANY,
     )
 
 

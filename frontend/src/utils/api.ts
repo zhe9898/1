@@ -6,7 +6,16 @@
  */
 
 /** API 基地址，SSE 等需完整 URL 时使用 */
-export const API_BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api").replace(/\/$/, "");
+function resolveApiBase(): string {
+  const envCandidate = (import.meta as { env?: unknown }).env;
+  if (typeof envCandidate !== "object" || envCandidate === null) {
+    return "/api";
+  }
+  const apiBase = (envCandidate as { VITE_API_BASE_URL?: string }).VITE_API_BASE_URL;
+  return (apiBase ?? "/api").replace(/\/$/, "");
+}
+
+export const API_BASE = resolveApiBase();
 const toPathSegment = (value: string | number): string => String(value);
 
 // ---------------------------------------------------------------------------

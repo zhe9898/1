@@ -103,7 +103,7 @@ async def _publish_reservation_event(
     }
     if reason:
         payload["reason"] = reason
-    await publish_control_event(redis, CHANNEL_RESERVATION_EVENTS, action, payload)
+    await publish_control_event(CHANNEL_RESERVATION_EVENTS, action, payload)
 
 
 async def _get_job_for_tenant(db: AsyncSession, tenant_id: str, job_id: str) -> Job:

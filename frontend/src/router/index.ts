@@ -5,26 +5,17 @@ import type { ControlPlaneSurfaceSpec } from "@/config/controlPlane";
 import { http } from "@/utils/http";
 import { CONSOLE } from "@/utils/api";
 
-// ── Kernel + Control Plane Architecture ──────────────────────────────────────
-//
-// KERNEL routes  → always registered, never removed, pre-auth accessible.
-//                  (login, invite)
-//
-// CONTROL PLANE  → fetched from backend /api/v1/console/surfaces on every
-// routes           distinct identity (sub:role). Backend is the single source
-//                  of truth (ADR 0011). Static JSON is the offline fallback.
-//
-// When the authenticated identity changes (login, logout, role change), the
-// control-plane surfaces are re-fetched so that admin vs non-admin surfaces
-// are always in sync with the backend's authoritative view.
-// ─────────────────────────────────────────────────────────────────────────────
+// Kernel routes are always present. Control-plane routes are backend-driven and
+// refreshed whenever the authenticated identity changes.
 
 /**
  * Opaque key identifying the currently loaded control-plane surface set.
- * Format: "<sub>:<role>" — changes on login, logout, or role change.
+ * Format: "<sub>:<role>" and changes on login, logout, or role change.
  * null = surfaces have never been loaded for the current identity.
  */
 let _surfacesLoadedForIdentity: string | null = null;
+let _surfacesLoadingForIdentity: string | null = null;
+let _surfacesLoadingPromise: Promise<boolean> | null = null;
 
 /** Derive a stable identity key from the auth store for surface cache keying. */
 function identityKey(auth: ReturnType<typeof useAuthStore>): string | null {
@@ -35,10 +26,54 @@ function redirectAfterLogin(auth: ReturnType<typeof useAuthStore>): { name: stri
   return auth.isAuthenticated ? { name: "dashboard" } : { name: "login" };
 }
 
+async function fetchControlPlaneSurfaces(): Promise<ControlPlaneSurfaceSpec[]> {
+  const response = await http.get<{ surfaces: ControlPlaneSurfaceSpec[] }>(CONSOLE.surfaces);
+  return response.data.surfaces;
+}
+
+export function resetControlPlaneSurfaceSyncState(): void {
+  _surfacesLoadedForIdentity = null;
+  _surfacesLoadingForIdentity = null;
+  _surfacesLoadingPromise = null;
+}
+
+export async function syncControlPlaneSurfacesForIdentity(
+  targetRouter: ReturnType<typeof createRouter>,
+  currentIdentity: string | null,
+  fetchSurfaces: () => Promise<ControlPlaneSurfaceSpec[]> = fetchControlPlaneSurfaces,
+): Promise<boolean> {
+  if (currentIdentity === null) {
+    resetControlPlaneSurfaceSyncState();
+    return false;
+  }
+  if (currentIdentity === _surfacesLoadedForIdentity) {
+    return false;
+  }
+  if (_surfacesLoadingPromise && _surfacesLoadingForIdentity === currentIdentity) {
+    return await _surfacesLoadingPromise;
+  }
+
+  _surfacesLoadingForIdentity = currentIdentity;
+  _surfacesLoadingPromise = (async () => {
+    try {
+      const surfaces = await fetchSurfaces();
+      addControlPlaneRoutesFromSurfaces(targetRouter, surfaces);
+      _surfacesLoadedForIdentity = currentIdentity;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _surfacesLoadingForIdentity = null;
+      _surfacesLoadingPromise = null;
+    }
+  })();
+
+  return await _surfacesLoadingPromise;
+}
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // ── Kernel routes (permanent, pre-auth) ────────────────────────────────
     {
       path: "/login",
       name: "login",
@@ -51,14 +86,6 @@ export const router = createRouter({
       component: () => import("@/views/InviteView.vue"),
       meta: { title: "Invite" },
     },
-
-    // Old paths (/family /elderly /kids /gallery /media /iot /board etc.) now return 404.
-
-    // ── Control-plane fallback routes ──────────────────────────────────────
-    // Built from the bundled controlPlaneSurfaces.json so the app works
-    // offline or before the first backend round-trip completes.
-    // addControlPlaneRoutesFromSurfaces() updates these with the authoritative
-    // backend definition on every authenticated session.
     ...getControlPlaneRoutes(),
   ],
 });
@@ -69,29 +96,14 @@ router.beforeEach(async (to, _from, next) => {
     await auth.hydrateSession();
   }
 
-  // ── Control Plane Surface Sync ────────────────────────────────────────────
-  // Fetch authoritative surfaces from the backend whenever the authenticated
-  // identity changes (fresh login, role change, or returning after logout).
-  // This ensures admin surfaces (e.g. settings) appear only for admin roles
-  // and disappear when the same browser session switches to a guest identity.
   const currentIdentity = identityKey(auth);
-  if (currentIdentity !== null && currentIdentity !== _surfacesLoadedForIdentity) {
-    _surfacesLoadedForIdentity = currentIdentity; // guard against concurrent navigations
-    try {
-      const response = await http.get<{ surfaces: ControlPlaneSurfaceSpec[] }>(CONSOLE.surfaces);
-      const surfaces = response.data.surfaces;
-      addControlPlaneRoutesFromSurfaces(router, surfaces);
-      // Force Vue Router to re-resolve the target path with the newly registered
-      // routes in place; without this the navigation would 404 on fresh routes.
-      next(to.fullPath);
-      return;
-    } catch {
-      // Backend unreachable — static fallback routes remain active.
-      // Identity is already recorded so we don't retry on every navigation.
-    }
+  const refreshed = await syncControlPlaneSurfacesForIdentity(router, currentIdentity);
+  if (refreshed) {
+    // Re-resolve after new backend-authoritative routes have been mounted.
+    next(to.fullPath);
+    return;
   }
 
-  // ── Standard Auth Guards ──────────────────────────────────────────────────
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     next({ name: "login" });
   } else if (

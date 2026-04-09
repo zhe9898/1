@@ -8,7 +8,7 @@ from __future__ import annotations
 import datetime
 import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,7 @@ from backend.api.jobs.helpers import _build_job_actions
 from backend.api.nodes import _build_node_actions
 from backend.api.ui_contracts import StatusView
 from backend.control_plane.auth.access_policy import has_admin_role
+from backend.control_plane.cache_headers import apply_identity_no_store_headers
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
 from backend.control_plane.console.state_views import (
     connector_status_view,
@@ -68,6 +69,7 @@ router = APIRouter(prefix="/api/v1/console", tags=["console"])
 
 @router.get("/surfaces", response_model=ControlPlaneSurfacesResponse)
 async def get_control_plane_surfaces(
+    response: Response,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> ControlPlaneSurfacesResponse:
     """Get control-plane surfaces (backend is the single source of truth).
@@ -75,6 +77,7 @@ async def get_control_plane_surfaces(
     Frontend should fetch surfaces from this endpoint instead of reading
     frontend/src/config/controlPlaneSurfaces.json.
     """
+    apply_identity_no_store_headers(response)
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
     is_admin = has_admin_role(current_user)
 
@@ -104,8 +107,10 @@ async def get_control_plane_surfaces(
 
 @router.get("/menu", response_model=ConsoleMenuResponse)
 async def get_console_menu(
+    response: Response,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> ConsoleMenuResponse:
+    apply_identity_no_store_headers(response)
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
     is_admin = has_admin_role(current_user)
     return build_menu_response(runtime_profile, is_admin=is_admin)

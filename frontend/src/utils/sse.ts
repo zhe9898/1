@@ -16,6 +16,7 @@ import { logError, logWarn } from "@/utils/logger";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
+const FALLBACK_RETRY_MS = 30000;
 const MAX_RETRIES = 10;
 const PING_INTERVAL_MS = 30_000;
 const MAX_PING_FAILURES = 3;
@@ -73,6 +74,7 @@ function parseFrame(frame: string): ParsedFrame | null {
 
 export interface SSEOptions {
   onFallbackOffline?: () => void;
+  onRecovered?: () => void;
 }
 
 export function createSSE(
@@ -95,6 +97,7 @@ export function createSSE(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let abortController: AbortController | null = null;
   let suppressReconnect = false;
+  let fallbackOffline = false;
 
   function stopPing(): void {
     if (pingTimer !== null) {
@@ -123,12 +126,16 @@ export function createSSE(
     if (closed) {
       return;
     }
+    let delay = FALLBACK_RETRY_MS;
     if (attempt >= MAX_RETRIES) {
-      options.onFallbackOffline?.();
-      return;
+      if (!fallbackOffline) {
+        fallbackOffline = true;
+        options.onFallbackOffline?.();
+      }
+    } else {
+      delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
+      attempt += 1;
     }
-    const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
-    attempt += 1;
     stopReconnectTimer();
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -162,8 +169,13 @@ export function createSSE(
 
   function handleParsedFrame(parsed: ParsedFrame): void {
     if (parsed.event === "connected") {
+      const recovered = fallbackOffline || attempt > 0;
       attempt = 0;
+      fallbackOffline = false;
       startPing();
+      if (recovered) {
+        options.onRecovered?.();
+      }
       return;
     }
     if (!channels.includes(parsed.event as SSEChannel)) {
@@ -279,6 +291,7 @@ export function createSSE(
     }
     if (!closed) {
       attempt = 0;
+      fallbackOffline = false;
       void connect();
     }
   }

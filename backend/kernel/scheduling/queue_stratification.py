@@ -9,6 +9,7 @@ priority tiers.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,6 +17,8 @@ from threading import RLock
 from typing import Final, Sequence, TypedDict
 
 from backend.kernel.policy.types import QueueConfig
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Priority Layer Definitions 鈥?resolved from policy store
@@ -367,32 +370,41 @@ class GlobalFairScheduler:
         import time
 
         now = time.monotonic()
-        _qc = _get_queue_config()
+        qc_defaults = QueueConfig()
         if self._default_service_class is None:
-            self._default_service_class = _qc.default_service_class
+            self.__class__._default_service_class = qc_defaults.default_service_class
         if self._cache_ttl is None:
-            self._cache_ttl = _qc.tenant_cache_ttl_seconds
-        if self._cache is not None and (now - self._cache_ts) < self._cache_ttl:
+            self.__class__._cache_ttl = qc_defaults.tenant_cache_ttl_seconds
+        cache_ttl = self._cache_ttl
+        if cache_ttl is None:
+            raise RuntimeError("ZEN-SCHED-QUOTA-LOAD-FAILED: tenant quota cache TTL is not initialized")
+        if self._cache is not None and (now - self._cache_ts) < cache_ttl:
             return self._cache
 
         quotas: dict[str, TenantQuota] = {}
         try:
             from backend.kernel.policy.policy_store import get_policy_store
 
+            _qc = _get_queue_config()
             store = get_policy_store()
             self.__class__._default_service_class = store.default_service_class_override or _qc.default_service_class
+            self.__class__._cache_ttl = _qc.tenant_cache_ttl_seconds
             raw_quotas = store.tenant_quotas_config
+            service_class_config = _get_service_class_config()
             for tenant_id, cfg in raw_quotas.items():
                 if isinstance(cfg, dict):
                     sc = str(cfg.get("service_class", self._default_service_class))
-                    sc_defaults = _get_service_class_config().get(sc, _get_service_class_config()["standard"])
+                    sc_defaults = service_class_config.get(sc, service_class_config["standard"])
                     quotas[tenant_id] = TenantQuota(
                         max_jobs_per_round=int(cfg.get("max_jobs_per_round", sc_defaults["max_jobs_per_round"])),
                         weight=float(sc_defaults["weight"]),  # type: ignore[arg-type]
                         service_class=sc,
                     )
-        except Exception:
-            pass  # Fall back to defaults on config read failure
+        except Exception as exc:
+            if self._cache is not None:
+                logger.warning("Failed to refresh tenant quotas from the policy store; reusing stale cache", exc_info=True)
+                return self._cache
+            raise RuntimeError("ZEN-SCHED-QUOTA-LOAD-FAILED: unable to load tenant quotas from the policy store") from exc
 
         self.__class__._cache = quotas
         self.__class__._cache_ts = now

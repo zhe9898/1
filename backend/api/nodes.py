@@ -192,7 +192,6 @@ async def drain_node(
     await db.flush()
     response = _to_response(node, now=now)
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         "drain",
         {"node": response.model_dump(mode="json")},
@@ -215,7 +214,6 @@ async def undrain_node(
     await db.flush()
     response = _to_response(node, now=now)
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         "undrain",
         {"node": response.model_dump(mode="json")},
@@ -241,7 +239,6 @@ async def self_drain_node(
     await db.flush()
     response = _to_response(node, now=now)
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         "drain",
         {"node": response.model_dump(mode="json")},
@@ -300,7 +297,6 @@ async def register_node(
     await db.flush()
     response = _to_response(node, now=now)
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         event_action,
         {"node": response.model_dump(mode="json")},
@@ -352,7 +348,6 @@ async def heartbeat_node(
     active_counts = await _get_active_lease_counts(db, tenant_id=payload.tenant_id, node_ids=[node.node_id], now=now)
     response = _to_response(node, active_lease_count=active_counts.get(node.node_id, 0), now=now)
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         "heartbeat",
         {"node": response.model_dump(mode="json")},

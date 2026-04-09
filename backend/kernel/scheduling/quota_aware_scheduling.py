@@ -306,8 +306,9 @@ def load_resource_quotas() -> dict[str, ResourceQuotaLimit]:
                     max_concurrent_jobs=int(cfg.get("max_concurrent_jobs", -1)),
                 )
         return quotas
-    except Exception:
-        return dict(_DEFAULT_RESOURCE_QUOTAS)
+    except Exception as exc:
+        logger.error("Failed to load resource quota config from the policy store", exc_info=True)
+        raise RuntimeError("ZEN-SCHED-RESOURCE-QUOTA-LOAD-FAILED: resource quota config is unavailable") from exc
 
 
 def build_quota_accounts(

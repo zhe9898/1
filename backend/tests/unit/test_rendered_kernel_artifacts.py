@@ -13,6 +13,7 @@ KERNEL_SERVICES = {
     "caddy",
     "docker-proxy",
     "gateway",
+    "nats",
     "postgres",
     "redis",
     "runner-agent",

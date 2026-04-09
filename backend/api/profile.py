@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
 from backend.api.deps import get_current_user_optional
 from backend.api.ui_contracts import StatusView
 from backend.control_plane.auth.access_policy import has_admin_role
+from backend.control_plane.cache_headers import apply_identity_no_store_headers
 from backend.control_plane.console.manifest_service import (
     get_control_plane_capability_keys,
     get_control_plane_route_names,
@@ -102,8 +103,10 @@ def _build_pack_contracts(requested_pack_keys: tuple[str, ...], resolved_pack_ke
 
 @router.get("/profile", response_model=GatewayProfileResponse)
 async def get_profile(
+    response: Response,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> GatewayProfileResponse:
+    apply_identity_no_store_headers(response)
     raw_profile = os.getenv("GATEWAY_PROFILE", "gateway-kernel")
     raw_packs = os.getenv("GATEWAY_PACKS", "")
     runtime_profile = normalize_gateway_profile(raw_profile)

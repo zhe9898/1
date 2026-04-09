@@ -280,7 +280,6 @@ async def upsert_trigger(
     response = _to_trigger_response(trigger)
     await db.commit()
     await publish_control_event(
-        redis,
         CHANNEL_TRIGGER_EVENTS,
         action,
         {"trigger": response.model_dump(mode="json")},
@@ -332,7 +331,7 @@ async def activate_trigger(
     await db.flush()
     response = _to_trigger_response(trigger)
     await db.commit()
-    await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "activated", {"trigger": response.model_dump(mode="json")})
+    await publish_control_event(CHANNEL_TRIGGER_EVENTS, "activated", {"trigger": response.model_dump(mode="json")})
     return response
 
 
@@ -352,7 +351,7 @@ async def pause_trigger(
     await db.flush()
     response = _to_trigger_response(trigger)
     await db.commit()
-    await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "paused", {"trigger": response.model_dump(mode="json")})
+    await publish_control_event(CHANNEL_TRIGGER_EVENTS, "paused", {"trigger": response.model_dump(mode="json")})
     return response
 
 

@@ -11,24 +11,27 @@ import re
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.api.deps import get_current_user, get_current_user_optional, get_redis
+from backend.api.deps import get_current_user, get_current_user_optional, get_event_bus, get_redis
 from backend.api.models import CapabilityResponse
 from backend.capabilities import build_public_capability_matrix
 from backend.control_plane.auth.access_policy import has_admin_role
+from backend.control_plane.cache_headers import apply_identity_no_store_headers
 from backend.kernel.contracts.errors import zen
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
+from backend.platform.events.types import ControlEvent, ControlEventBus, ControlEventSubscription
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.client import (
     CHANNEL_CONNECTOR_EVENTS,
+    CHANNEL_HARDWARE_EVENTS,
     CHANNEL_JOB_EVENTS,
     CHANNEL_NODE_EVENTS,
     CHANNEL_RESERVATION_EVENTS,
+    CHANNEL_SWITCH_EVENTS,
     CHANNEL_TRIGGER_EVENTS,
     RedisClient,
 )
@@ -56,6 +59,7 @@ def _next_sse_ping_deadline() -> str:
 )
 async def get_capabilities(
     request: Request,
+    response: Response,
     current_user: dict | None = Depends(get_current_user_optional),
 ) -> dict:
     """
@@ -63,6 +67,7 @@ async def get_capabilities(
     濞夋洖鍚€ 2.3.1閿涙矮绶甸崜宥囶伂 v-for 閸斻劍鈧焦瑕嗛弻鎾扁偓?    濞夋洖鍚€ 3.2.5閿涙瓓edis 婢惰精浠堥弮鎯扮箲閸?All-OFF 閻晠妯€楠炶泛鐢?X-ZEN70-Bus-Status: not-ready閵?
     娣囶喖顦查敍姘閸?redis is None 閺冩儼绻戦崶鐐碘敄 {}閿涘苯顕遍懛鏉戝缁?閺嗗倹妫ら懗钘夊閺佺増宓?閵?    閻滄澘婀挧?capabilities.get_capabilities_matrix()閿涘edis 娑撳秴褰查悽銊︽閸ョ偤鈧偓 ALL_OFF_MATRIX閵?"""
     del request
+    apply_identity_no_store_headers(response)
     runtime_profile = normalize_gateway_profile(os.getenv("GATEWAY_PROFILE", "gateway-kernel"))
     is_admin = has_admin_role(current_user)
     matrix = build_public_capability_matrix(runtime_profile, is_admin=is_admin)
@@ -150,17 +155,19 @@ async def _process_sse_ping_timeout(redis: RedisClient, ping_key: str, conn_id_i
     return False
 
 
-async def _process_pubsub_message(message: dict | None) -> str | None:
-    if message and message.get("type") == "message":
-        channel_raw = message.get("channel", "")
-        data_raw = message.get("data", "{}")
-        channel = channel_raw.decode("utf-8", errors="replace") if isinstance(channel_raw, bytes) else str(channel_raw)
-        data = data_raw.decode("utf-8", errors="replace") if isinstance(data_raw, bytes) else str(data_raw)
-        return f"event: {channel}\ndata: {data}\n\n"
+async def _format_control_event(message: ControlEvent | None) -> str | None:
+    if message is not None:
+        return f"event: {message.subject}\ndata: {message.data}\n\n"
     return ": heartbeat\n\n"
 
 
-async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any, conn_id: str, ping_key: str) -> AsyncGenerator[str, None]:
+async def _sse_event_generator(
+    request: Request,
+    redis: RedisClient,
+    subscription: ControlEventSubscription,
+    conn_id: str,
+    ping_key: str,
+) -> AsyncGenerator[str, None]:
     """SSE event generator for kernel control-plane events only.
 
     Subscribed channels:
@@ -170,16 +177,10 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
     - CHANNEL_RESERVATION_EVENTS: Reservation lifecycle and backfill planning
     - CHANNEL_TRIGGER_EVENTS: Trigger lifecycle, fire, delivery audit
 
-    Business/IoT channels (hardware, switch) are NOT subscribed in default kernel.
+    Hardware and switch control-plane events are included so the browser can keep
+    capability and switch state aligned with backend-authored reality.
     """
     try:
-        await pubsub.subscribe(
-            CHANNEL_NODE_EVENTS,
-            CHANNEL_JOB_EVENTS,
-            CHANNEL_CONNECTOR_EVENTS,
-            CHANNEL_RESERVATION_EVENTS,
-            CHANNEL_TRIGGER_EVENTS,
-        )
         # 妫ｆ牕瀵橀敍姘礀閺?connection_id
         yield f'event: connected\ndata: {{"connection_id":"{conn_id}"}}\n\n'
         while True:
@@ -191,11 +192,8 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
                 break
 
             try:
-                message_dict = await asyncio.wait_for(
-                    pubsub.get_message(timeout=1.0, ignore_subscribe_messages=True),
-                    timeout=2.0,
-                )
-                out_msg = await _process_pubsub_message(message_dict)
+                message = await asyncio.wait_for(subscription.get_message(timeout=1.0), timeout=2.0)
+                out_msg = await _format_control_event(message)
                 if out_msg:
                     yield out_msg
             except asyncio.TimeoutError:
@@ -212,19 +210,9 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
         except (OSError, ValueError, KeyError, RuntimeError, TypeError):
             logger.debug("Failed to delete SSE ping key during cleanup")
         try:
-            await pubsub.unsubscribe(
-                CHANNEL_NODE_EVENTS,
-                CHANNEL_JOB_EVENTS,
-                CHANNEL_CONNECTOR_EVENTS,
-                CHANNEL_RESERVATION_EVENTS,
-                CHANNEL_TRIGGER_EVENTS,
-            )
+            await subscription.close()
         except (ConnectionError, asyncio.CancelledError):
-            logger.debug("PubSub unsubscribe failed during SSE cleanup")
-        try:
-            await pubsub.close()
-        except (ConnectionError, asyncio.CancelledError):
-            logger.debug("PubSub close failed during SSE cleanup")
+            logger.debug("Event bus subscription close failed during SSE cleanup")
 
 
 @router.get(
@@ -234,10 +222,12 @@ async def _sse_event_generator(request: Request, redis: RedisClient, pubsub: Any
 async def sse_events(
     request: Request,
     redis: RedisClient | None = Depends(get_redis),
+    event_bus: ControlEventBus | None = Depends(get_event_bus),
     client_token: str | None = Query(None, description="Optional SSE client token used for ping correlation"),
     current_user: dict = Depends(get_current_user),
 ) -> StreamingResponse:
     """Stream control-plane events over SSE for the authenticated session."""
+    del current_user
     if redis is None:
         raise zen(
             "ZEN-SSE-5001",
@@ -245,14 +235,24 @@ async def sse_events(
             status_code=503,
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
-    pubsub = await redis.pubsub.session()
-    if pubsub is None:
+    if event_bus is None:
         raise zen(
             "ZEN-SSE-5002",
-            "Redis pubsub unavailable",
+            "Event bus unavailable",
             status_code=503,
             recovery_hint="Wait for bus ready and retry; do not loop",
         )
+    subscription = await event_bus.subscribe(
+        (
+            CHANNEL_HARDWARE_EVENTS,
+            CHANNEL_SWITCH_EVENTS,
+            CHANNEL_NODE_EVENTS,
+            CHANNEL_JOB_EVENTS,
+            CHANNEL_CONNECTOR_EVENTS,
+            CHANNEL_RESERVATION_EVENTS,
+            CHANNEL_TRIGGER_EVENTS,
+        )
+    )
 
     # Reuse a validated client token when available so reconnects keep the same
     # ping lease; otherwise mint a fresh connection id.
@@ -271,7 +271,7 @@ async def sse_events(
         logger.warning("SSE initial ping registration failed: %s", exc)
 
     return StreamingResponse(
-        _sse_event_generator(request, redis, pubsub, conn_id, ping_key),
+        _sse_event_generator(request, redis, subscription, conn_id, ping_key),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

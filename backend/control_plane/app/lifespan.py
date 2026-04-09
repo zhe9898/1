@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from backend.api.deps import get_settings
 from backend.kernel.extensions.extension_sdk import bootstrap_extension_runtime
+from backend.platform.events.runtime import connect_event_bus_with_retry, resolve_event_bus_backend, set_runtime_event_bus
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.runtime import connect_redis_with_retry
 
@@ -83,6 +84,13 @@ async def lifespan(app: FastAPI) -> object:
     app.state.redis = await connect_redis_with_retry(settings, logger=logger)
     if app.state.redis is None:
         logger.error("Redis unavailable after retries; API will run with degraded capabilities")
+    app.state.event_bus = await connect_event_bus_with_retry(settings, redis=app.state.redis, logger=logger)
+    set_runtime_event_bus(app.state.event_bus)
+    if app.state.event_bus is None:
+        configured_event_bus = resolve_event_bus_backend(settings)
+        if configured_event_bus == "nats":
+            raise RuntimeError("NATS event bus is required but unavailable")
+        logger.error("Event bus unavailable after retries; realtime streams will run degraded")
 
     bootstrap_extension_runtime()
 
@@ -124,4 +132,11 @@ async def lifespan(app: FastAPI) -> object:
             except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
                 logger.warning("Error closing Redis during shutdown: %s", exc)
             app.state.redis = None
+        if getattr(app.state, "event_bus", None) is not None:
+            try:
+                await app.state.event_bus.close()
+            except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+                logger.warning("Error closing event bus during shutdown: %s", exc)
+            app.state.event_bus = None
+        set_runtime_event_bus(None)
         logger.info("Graceful shutdown complete")

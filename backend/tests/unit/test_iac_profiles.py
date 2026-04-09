@@ -29,7 +29,7 @@ def _render_services(profile: str, overrides: dict[str, Any] | None = None) -> d
 def test_gateway_kernel_profile_renders_minimal_service_set() -> None:
     services = _render_services("gateway-kernel")
 
-    assert set(services) == {"caddy", "gateway", "postgres", "redis", "sentinel", "docker-proxy", "runner-agent"}
+    assert set(services) == {"caddy", "gateway", "postgres", "redis", "nats", "sentinel", "docker-proxy", "runner-agent"}
     assert "target: gateway-kernel" in services["gateway"]["build_block"]
 
 

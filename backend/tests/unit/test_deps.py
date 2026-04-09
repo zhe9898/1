@@ -12,10 +12,42 @@ SECRET = "test-secret-deps-32bytes!!!!!!!!"
 ALG = "HS256"
 
 
-def _token(sub: str = "user1", role: str = "admin", expired: bool = False) -> str:
+def _token(
+    sub: str = "user1",
+    role: str = "admin",
+    expired: bool = False,
+    *,
+    sid: str = "session-1",
+    jti: str = "jti-1",
+) -> str:
     now = datetime.now(UTC)
     exp = now - timedelta(minutes=1) if expired else now + timedelta(minutes=15)
-    return pyjwt.encode({"sub": sub, "role": role, "tenant_id": "default", "iat": now, "exp": exp}, SECRET, algorithm=ALG)
+    return pyjwt.encode(
+        {"sub": sub, "role": role, "tenant_id": "default", "sid": sid, "jti": jti, "iat": now, "exp": exp},
+        SECRET,
+        algorithm=ALG,
+    )
+
+
+def _auth_db(*, sub: str, sid: str = "session-1", jti: str = "jti-1", is_active: bool = True, status: str = "active") -> AsyncMock:
+    db = AsyncMock()
+    session_row = MagicMock(
+        session_id=sid,
+        tenant_id="default",
+        user_id=sub,
+        jti=jti,
+        is_active=True,
+        expires_at=datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=15),
+    )
+    user_row = MagicMock(is_active=is_active, status=status)
+    db.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=session_row)))),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=user_row)),
+        ]
+    )
+    db.flush = AsyncMock()
+    return db
 
 
 class TestGetCurrentUser:
@@ -31,10 +63,10 @@ class TestGetCurrentUser:
         response = MagicMock()
         response.headers = {}
 
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=MagicMock(is_active=True, status="active"))))
+        db = _auth_db(sub="alice")
 
-        result = await get_current_user(request, response, None, db)
+        with patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()):
+            result = await get_current_user(request, response, None, db)
         assert result["sub"] == "alice"
         assert result["role"] == "admin"
 
@@ -47,7 +79,10 @@ class TestGetCurrentUser:
         response = MagicMock()
         db = AsyncMock()
 
-        with pytest.raises(HTTPException) as exc_info:
+        with (
+            patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await get_current_user(request, response, None, db)
         assert exc_info.value.status_code == 401
 
@@ -78,10 +113,12 @@ class TestGetCurrentUser:
         response = MagicMock()
         response.headers = {}
 
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=MagicMock(is_active=False, status="suspended"))))
+        db = _auth_db(sub="alice", is_active=False, status="suspended")
 
-        with pytest.raises(HTTPException) as exc_info:
+        with (
+            patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await get_current_user(request, response, None, db)
         assert exc_info.value.status_code == 401
 
@@ -97,10 +134,10 @@ class TestGetCurrentUser:
         response = MagicMock()
         response.headers = {}
 
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=MagicMock(is_active=True, status="active"))))
+        db = _auth_db(sub="cookie-user")
 
-        result = await get_current_user(request, response, None, db)
+        with patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()):
+            result = await get_current_user(request, response, None, db)
         assert result["sub"] == "cookie-user"
 
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
@@ -162,8 +199,10 @@ class TestGetCurrentUserOptional:
         request.app.state.redis = None
         response = MagicMock()
         response.headers = {}
+        db = _auth_db(sub="bob")
 
-        result = await get_current_user_optional(request, response, None)
+        with patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()):
+            result = await get_current_user_optional(request, response, None, db)
         assert result is not None
         assert result["sub"] == "bob"
 
@@ -174,7 +213,7 @@ class TestGetCurrentUserOptional:
         request = MagicMock()
         request.cookies = {}
         response = MagicMock()
-        result = await get_current_user_optional(request, response, None)
+        result = await get_current_user_optional(request, response, None, None)
         assert result is None
 
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
@@ -187,8 +226,7 @@ class TestGetCurrentUserOptional:
         request.cookies = {"zen70_access_token": _token(expired=True)}
         request.app.state.redis = None
         response = MagicMock()
-
-        result = await get_current_user_optional(request, response, None)
+        result = await get_current_user_optional(request, response, None, None)
         assert result is None
 
     @pytest.mark.anyio
@@ -202,7 +240,7 @@ class TestGetCurrentUserOptional:
         response.headers = {}
 
         with patch("backend.api.deps.decode_token", new=AsyncMock(side_effect=RuntimeError("decoder exploded"))):
-            result = await get_current_user_optional(request, response, None)
+            result = await get_current_user_optional(request, response, None, None)
 
         assert result is None
 
@@ -217,10 +255,30 @@ class TestGetCurrentUserOptional:
         request.app.state.redis = None
         response = MagicMock()
         response.headers = {}
+        db = _auth_db(sub="cookie-optional")
 
-        result = await get_current_user_optional(request, response, None)
+        with patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()):
+            result = await get_current_user_optional(request, response, None, db)
         assert result is not None
         assert result["sub"] == "cookie-optional"
+
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
+    @pytest.mark.anyio
+    async def test_disabled_user_token_returns_none(self) -> None:
+        from backend.api.deps import get_current_user_optional
+
+        request = MagicMock()
+        request.cookies = {"zen70_access_token": _token("disabled-user")}
+        request.app.state.redis = None
+        response = MagicMock()
+        response.headers = {}
+        db = _auth_db(sub="disabled-user", is_active=False, status="disabled")
+
+        with patch("backend.control_plane.auth.subject_authority.set_tenant_context", new=AsyncMock()):
+            result = await get_current_user_optional(request, response, None, db)
+
+        assert result is None
 
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
@@ -236,7 +294,7 @@ class TestGetCurrentUserOptional:
         response = MagicMock()
         response.headers = {}
 
-        result = await get_current_user_optional(request, response, cred)
+        result = await get_current_user_optional(request, response, cred, None)
         assert result is None
 
 

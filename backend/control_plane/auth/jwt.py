@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 import jwt
 from fastapi import status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.kernel.contracts.errors import zen
 from backend.platform.redis._shared import REDIS_OPERATION_ERRORS
@@ -24,7 +25,7 @@ _INITIAL_PREVIOUS = _PREVIOUS
 _INITIAL_EXPIRE_MINUTES = _EXPIRE_MINUTES
 
 # When True, token revocation check fails CLOSED (deny) if Redis is unavailable.
-_REVOCATION_STRICT = os.getenv("REDIS_REQUIRED_FOR_TOKEN_REVOCATION", "1").strip().lower() in (
+_REVOCATION_STRICT = os.getenv("REDIS_REQUIRED_FOR_TOKEN_REVOCATION", "0").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -114,6 +115,8 @@ def create_access_token(
     expires_delta: timedelta | None = None,
     *,
     use_current_secret: bool = True,
+    token_id: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     _assert_production_secret_safety()
     to_encode = data.copy()
@@ -122,14 +125,21 @@ def create_access_token(
     to_encode["exp"] = expire
     to_encode["iat"] = issued_at
     to_encode["nbf"] = issued_at
-    to_encode["jti"] = uuid.uuid4().hex
+    to_encode["jti"] = token_id or uuid.uuid4().hex
+    if session_id:
+        to_encode["sid"] = session_id
     current_secret = _resolved_current_secret()
     previous_secret = _resolved_previous_secret()
     secret = current_secret if use_current_secret else (previous_secret or current_secret)
     return jwt.encode(to_encode, secret, algorithm=ALGORITHM)
 
 
-async def decode_token(token: str, *, redis_conn: RedisBlacklistStore | None = None) -> tuple[dict[str, object], str | None]:
+async def decode_token(
+    token: str,
+    *,
+    redis_conn: RedisBlacklistStore | None = None,
+    db: AsyncSession | None = None,
+) -> tuple[dict[str, object], str | None]:
     _assert_production_secret_safety()
     if not token or not token.strip():
         exc = zen("ZEN-AUTH-401", "Missing or invalid token", status_code=status.HTTP_401_UNAUTHORIZED)
@@ -141,16 +151,18 @@ async def decode_token(token: str, *, redis_conn: RedisBlacklistStore | None = N
 
     try:
         payload = jwt.decode(token, current_secret, algorithms=[ALGORITHM], options={"verify_nbf": True})
+        session = await _ensure_token_session_active(payload, db=db)
         await _ensure_token_not_revoked(payload, redis_conn=redis_conn)
-        return payload, await _maybe_rotate_token(payload, redis_conn=redis_conn)
+        return payload, await _maybe_rotate_token(payload, redis_conn=redis_conn, db=db, session=session)
     except jwt.InvalidTokenError:
         logging.getLogger("zen70.jwt").debug("Token validation failed with current secret, trying previous")
 
     if previous_secret:
         try:
             payload = jwt.decode(token, previous_secret, algorithms=[ALGORITHM], options={"verify_nbf": True})
+            session = await _ensure_token_session_active(payload, db=db)
             await _ensure_token_not_revoked(payload, redis_conn=redis_conn)
-            return payload, await _force_rotate_token(payload, redis_conn=redis_conn)
+            return payload, await _force_rotate_token(payload, redis_conn=redis_conn, db=db, session=session)
         except jwt.InvalidTokenError:
             logging.getLogger("zen70.jwt").debug("Token validation also failed with previous secret")
 
@@ -173,7 +185,25 @@ async def _ensure_token_not_revoked(
         raise exc
 
 
-async def _maybe_rotate_token(payload: dict[str, object], *, redis_conn: RedisBlacklistStore | None) -> str | None:
+async def _ensure_token_session_active(
+    payload: dict[str, object],
+    *,
+    db: AsyncSession | None,
+) -> object | None:
+    if db is None:
+        return None
+    from backend.control_plane.auth.sessions import validate_session_claims
+
+    return await validate_session_claims(db, payload)
+
+
+async def _maybe_rotate_token(
+    payload: dict[str, object],
+    *,
+    redis_conn: RedisBlacklistStore | None,
+    db: AsyncSession | None,
+    session: object | None,
+) -> str | None:
     exp = payload.get("exp")
     iat = payload.get("iat")
     if isinstance(exp, bool) or isinstance(iat, bool):
@@ -189,16 +219,26 @@ async def _maybe_rotate_token(payload: dict[str, object], *, redis_conn: RedisBl
     return await _issue_rotated_token(
         payload,
         redis_conn=redis_conn,
+        db=db,
+        session=session,
         ttl_seconds=int(max(exp_seconds - current_timestamp, 1)),
     )
 
 
-async def _force_rotate_token(payload: dict[str, object], *, redis_conn: RedisBlacklistStore | None) -> str | None:
+async def _force_rotate_token(
+    payload: dict[str, object],
+    *,
+    redis_conn: RedisBlacklistStore | None,
+    db: AsyncSession | None,
+    session: object | None,
+) -> str | None:
     exp = payload.get("exp", 0)
     exp_seconds = float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else 0.0
     return await _issue_rotated_token(
         payload,
         redis_conn=redis_conn,
+        db=db,
+        session=session,
         ttl_seconds=int(max(exp_seconds - _now().timestamp(), 60)),
     )
 
@@ -207,31 +247,50 @@ async def _issue_rotated_token(
     payload: dict[str, object],
     *,
     redis_conn: RedisBlacklistStore | None,
+    db: AsyncSession | None,
+    session: object | None,
     ttl_seconds: int,
 ) -> str | None:
     old_jti = payload.get("jti")
-    if old_jti is not None and not await _blacklist_jti(redis_conn, old_jti, ttl_seconds):
-        logging.getLogger("zen70.jwt").warning(
-            "token rotation skipped because prior jti could not be blacklisted: jti=%s ttl=%ds",
-            old_jti,
-            ttl_seconds,
-        )
-        return None
-    return create_access_token(
+    if old_jti is not None:
+        await _blacklist_jti(redis_conn, old_jti, ttl_seconds)
+    new_jti = uuid.uuid4().hex
+    new_token = create_access_token(
         {key: value for key, value in payload.items() if key not in ("exp", "iat", "nbf", "jti")},
         use_current_secret=True,
+        token_id=new_jti,
+        session_id=_session_id_from_payload(payload),
     )
+    if db is not None and session is not None:
+        from backend.control_plane.auth.sessions import rotate_session_credentials
+
+        session_id = getattr(session, "session_id", "")
+        tenant_id = getattr(session, "tenant_id", "")
+        user_id = getattr(session, "user_id", "")
+        if session_id and tenant_id and user_id:
+            await rotate_session_credentials(
+                db,
+                tenant_id=str(tenant_id),
+                user_id=str(user_id),
+                session_id=str(session_id),
+                new_jti=new_jti,
+                expires_in_seconds=get_access_token_expire_seconds(),
+            )
+    return new_token
+
+
+def _session_id_from_payload(payload: dict[str, object]) -> str | None:
+    sid = payload.get("sid")
+    if isinstance(sid, str):
+        normalized = sid.strip()
+        return normalized or None
+    return None
 
 
 async def _blacklist_jti(redis_conn: RedisBlacklistStore | None, jti: object | None, ttl_seconds: int) -> bool:
     if jti is None:
         return True
     if redis_conn is None:
-        logging.getLogger("zen70.jwt").warning(
-            "jti blacklist write skipped (Redis unavailable): jti=%s ttl=%ds",
-            jti,
-            ttl_seconds,
-        )
         return False
     try:
         await redis_conn.set(f"jwt:blacklist:{jti}", "1", ex=max(ttl_seconds, 1))
@@ -251,16 +310,13 @@ async def is_jti_blacklisted(redis_conn: RedisBlacklistStore | None, jti: object
         return False
     if redis_conn is None:
         if revocation_strict:
-            logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis unavailable in strict mode, denying token jti=%s", jti)
-            return True
+            logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis unavailable for jti=%s", jti)
         return False
     try:
         return await redis_conn.get(f"jwt:blacklist:{jti}") is not None
     except REDIS_OPERATION_ERRORS as exc:
         if revocation_strict:
-            logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis error in strict mode, denying token jti=%s: %s", jti, exc)
-            return True
-        logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis error, failing open for jti=%s: %s", jti, exc)
+            logging.getLogger("zen70.jwt").warning("is_jti_blacklisted: Redis error for jti=%s: %s", jti, exc)
         return False
 
 

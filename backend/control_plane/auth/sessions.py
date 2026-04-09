@@ -1,10 +1,11 @@
-"""Session management core logic."""
+"""Session management core logic with Postgres-backed authority."""
 
 from __future__ import annotations
 
 import datetime
 import logging
 import uuid
+from collections.abc import Mapping
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,27 +16,29 @@ from backend.models.session import Session
 _logger = logging.getLogger(__name__)
 
 
-async def _blacklist_session_jti(
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+
+
+async def _best_effort_blacklist_session_jti(
     redis: object | None,
     jti: str,
     expires_at: datetime.datetime,
 ) -> None:
-    """Blacklist the JWT jti associated with a revoked session.
-
-    This closes the loop: revoking a sessions also invalidates the JWT
-    immediately, instead of waiting for the token's natural expiry.
-    """
-    if redis is None or not jti:
+    """Best-effort Redis acceleration for revoked or rotated JWT ids."""
+    if not jti:
+        return
+    if redis is None:
         return
     try:
-        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        now = _utcnow()
         remaining_seconds = max(int((expires_at - now).total_seconds()), 1)
         redis_kv = getattr(redis, "kv", None)
         if redis_kv is None:
             return
         await redis_kv.set(f"jwt:blacklist:{jti}", "1", ex=remaining_seconds)
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
-        _logger.warning("Failed to blacklist jti=%s: %s", jti, exc)
+        _logger.warning("session jti blacklist acceleration failed for %s: %s", jti, exc)
 
 
 def _derive_device_name(user_agent: str | None) -> str | None:
@@ -81,12 +84,14 @@ async def create_session(
     tenant_id: str,
     user_id: str,
     username: str,
+    session_id: str | None = None,
     jti: str,
     ip_address: str | None,
     user_agent: str | None,
     auth_method: str,
     expires_in_seconds: int,
     max_concurrent: int = 10,
+    redis: object | None = None,
 ) -> Session:
     """Create a new session after successful login.
 
@@ -105,7 +110,7 @@ async def create_session(
     Returns:
         Created Session object
     """
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = _utcnow()
     expires_at = now + datetime.timedelta(seconds=expires_in_seconds)
 
     # Evict oldest sessions if over limit
@@ -128,9 +133,10 @@ async def create_session(
             old_session.is_active = False
             old_session.revoked_at = now
             old_session.revoked_by = "system:concurrent_limit"
+            await _best_effort_blacklist_session_jti(redis, old_session.jti, old_session.expires_at)
 
     session = Session(
-        session_id=uuid.uuid4().hex,
+        session_id=session_id or uuid.uuid4().hex,
         tenant_id=tenant_id,
         user_id=user_id,
         username=username,
@@ -145,6 +151,71 @@ async def create_session(
         expires_at=expires_at,
     )
     db.add(session)
+    await db.flush()
+    return session
+
+
+async def validate_session_claims(
+    db: AsyncSession,
+    payload: Mapping[str, object],
+) -> Session | None:
+    """Validate sid/jti claims against the authoritative sessions table."""
+    session_id = str(payload.get("sid") or "").strip()
+    jti = str(payload.get("jti") or "").strip()
+    tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
+    user_id = str(payload.get("sub") or "").strip()
+    if not session_id:
+        raise zen("ZEN-AUTH-401", "Session token is missing sid", status_code=401)
+    if not jti or not user_id:
+        raise zen("ZEN-AUTH-401", "Invalid session token", status_code=401)
+
+    result = await db.execute(
+        select(Session).where(
+            Session.session_id == session_id,
+            Session.tenant_id == tenant_id,
+        )
+    )
+    session = result.scalars().first()
+    if session is None or session.user_id != user_id:
+        raise zen("ZEN-AUTH-401", "Session not found", status_code=401)
+
+    now = _utcnow()
+    if not session.is_active or session.expires_at <= now:
+        raise zen("ZEN-AUTH-401", "Session has expired or been revoked", status_code=401)
+    if session.jti != jti:
+        raise zen("ZEN-AUTH-401", "Session token has been rotated or revoked", status_code=401)
+
+    session.last_seen_at = now
+    await db.flush()
+    return session
+
+
+async def rotate_session_credentials(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    user_id: str,
+    session_id: str,
+    new_jti: str,
+    expires_in_seconds: int,
+) -> Session:
+    """Persist the newest token identity for an existing active session."""
+    result = await db.execute(
+        select(Session).where(
+            Session.session_id == session_id,
+            Session.tenant_id == tenant_id,
+        )
+    )
+    session = result.scalars().first()
+    if session is None or session.user_id != user_id:
+        raise zen("ZEN-AUTH-401", "Session not found", status_code=401)
+    if not session.is_active:
+        raise zen("ZEN-AUTH-401", "Session has been revoked", status_code=401)
+
+    now = _utcnow()
+    session.jti = new_jti
+    session.last_seen_at = now
+    session.expires_at = now + datetime.timedelta(seconds=expires_in_seconds)
     await db.flush()
     return session
 
@@ -186,14 +257,13 @@ async def revoke_session(
     if not session.is_active:
         raise zen("ZEN-SESSION-4090", "Session already revoked", status_code=409)
 
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = _utcnow()
     session.is_active = False
     session.revoked_at = now
     session.revoked_by = revoked_by
     await db.flush()
 
-    # Close the loop: blacklist the JWT so it's rejected immediately
-    await _blacklist_session_jti(redis, session.jti, session.expires_at)
+    await _best_effort_blacklist_session_jti(redis, session.jti, session.expires_at)
 
     return session
 
@@ -220,7 +290,7 @@ async def revoke_all_user_sessions(
     Returns:
         Number of sessions revoked
     """
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = _utcnow()
     result = await db.execute(
         select(Session).where(
             and_(
@@ -238,8 +308,7 @@ async def revoke_all_user_sessions(
         session.is_active = False
         session.revoked_at = now
         session.revoked_by = revoked_by
-        # Close the loop: blacklist JWT immediately
-        await _blacklist_session_jti(redis, session.jti, session.expires_at)
+        await _best_effort_blacklist_session_jti(redis, session.jti, session.expires_at)
         count += 1
     await db.flush()
     return count

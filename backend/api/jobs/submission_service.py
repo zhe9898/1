@@ -336,7 +336,6 @@ async def execute_job_submission(
     )
     response = deps.to_response(job)
     await deps.publish_control_event(
-        redis,
         CHANNEL_JOB_EVENTS,
         "created",
         {"job": response.model_dump(mode="json")},

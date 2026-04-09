@@ -359,7 +359,13 @@ async def test_webauthn_login_complete_warns_when_authenticator_has_no_counter()
         username="shared-user",
         credential={"id": "cred-1"},
     )
-    token_response = SimpleNamespace(access_token="tok", token_type="bearer", expires_in=900)
+    token_response = SimpleNamespace(
+        access_token="tok",
+        token_type="bearer",
+        expires_in=900,
+        session_id="session-1",
+        token_id="token-1",
+    )
 
     with (
         patch("backend.api.auth.check_webauthn_rate_limit", new=AsyncMock()),
@@ -438,7 +444,16 @@ async def test_update_ai_preference_commits_before_issuing_new_token() -> None:
     user.ai_route_preference = "auto"
 
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=_scalar_result(user))
+    session = MagicMock()
+    session.session_id = "session-1"
+    session.tenant_id = "tenant-a"
+    session.user_id = "7"
+    session_result = MagicMock()
+    session_scalar = MagicMock()
+    session_scalar.first.return_value = session
+    session_result.scalars.return_value = session_scalar
+    db.execute = AsyncMock(side_effect=[_scalar_result(user), session_result])
+    db.flush = AsyncMock()
 
     with (
         patch("backend.control_plane.auth.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
@@ -449,7 +464,7 @@ async def test_update_ai_preference_commits_before_issuing_new_token() -> None:
             request,
             MagicMock(),
             db=db,
-            current_user={"username": "alice", "tenant_id": "tenant-a"},
+            current_user={"username": "alice", "tenant_id": "tenant-a", "sid": "session-1"},
         )
 
     assert result.authenticated is True

@@ -4,8 +4,6 @@ ZEN70 Auth Shared - shared helpers used across auth modules.
 
 from __future__ import annotations
 
-import base64
-import json
 import logging
 import sys
 
@@ -102,49 +100,31 @@ def enforce_admin_scope(current_admin: dict[str, str], tenant_id: str, *, action
         )
 
 
-def extract_jti_from_token(access_token: str) -> str | None:
-    try:
-        parts = access_token.split(".")
-        if len(parts) != 3:
-            return None
-        payload_b64 = parts[1]
-        padding = 4 - len(payload_b64) % 4
-        if padding != 4:
-            payload_b64 += "=" * padding
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        jti: str | None = payload.get("jti")
-        return jti
-    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, KeyError, TypeError):
-        return None
-
-
 async def register_login_session(
     db: AsyncSession,
     *,
     tenant_id: str,
     user_id: str,
     username: str,
-    access_token: str,
+    session_id: str,
+    token_id: str,
     ip_address: str | None,
     user_agent: str | None,
     auth_method: str,
+    redis: object | None = None,
 ) -> None:
-    jti = extract_jti_from_token(access_token)
-    if not jti:
-        return
-    try:
-        from backend.control_plane.auth.sessions import create_session
+    from backend.control_plane.auth.sessions import create_session
 
-        await create_session(
-            db,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            username=username,
-            jti=jti,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            auth_method=auth_method,
-            expires_in_seconds=get_access_token_expire_seconds(),
-        )
-    except Exception:
-        _logger.warning("Session creation failed (best-effort); login proceeds without session tracking", exc_info=True)
+    await create_session(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        username=username,
+        session_id=session_id,
+        jti=token_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        auth_method=auth_method,
+        expires_in_seconds=get_access_token_expire_seconds(),
+        redis=redis,
+    )

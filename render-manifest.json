@@ -1,5 +1,5 @@
 {
-  "rendered_at": "2026-04-08 01:41:02",
+  "rendered_at": "2026-04-09 09:36:44",
   "source": "system.yaml",
   "product": "ZEN70 Gateway Kernel",
   "profile": "gateway-kernel",
@@ -12,6 +12,7 @@
     "caddy",
     "docker-proxy",
     "gateway",
+    "nats",
     "postgres",
     "redis",
     "runner-agent",

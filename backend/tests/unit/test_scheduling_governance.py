@@ -443,6 +443,36 @@ class TestPlacementPolicyLoader:
         assert pp is not None
         assert hasattr(pp, "policies")
 
+    def test_policy_store_load_failure_raises_instead_of_silent_fallback(self, monkeypatch: pytest.MonkeyPatch):
+        from backend.kernel.scheduling.placement_policy import load_placement_policies
+
+        def _raise_policy_store() -> object:
+            raise RuntimeError("policy store unavailable")
+
+        monkeypatch.setattr("backend.kernel.policy.policy_store.get_policy_store", _raise_policy_store)
+
+        with pytest.raises(RuntimeError, match="ZEN-SCHED-PLACEMENT-POLICY-LOAD-FAILED"):
+            load_placement_policies()
+
+    def test_invalid_policy_config_raises_instead_of_skipping_entry(self, monkeypatch: pytest.MonkeyPatch):
+        from types import SimpleNamespace
+
+        from backend.kernel.scheduling.placement_policy import load_placement_policies
+
+        policy_store = SimpleNamespace(
+            placement_policies_config=[
+                {
+                    "name": "resource_reservation",
+                    "enabled": True,
+                    "config": {"unexpected": 1},
+                },
+            ]
+        )
+        monkeypatch.setattr("backend.kernel.policy.policy_store.get_policy_store", lambda: policy_store)
+
+        with pytest.raises(RuntimeError, match="ZEN-SCHED-PLACEMENT-POLICY-INIT-FAILED"):
+            load_placement_policies()
+
 
 # =====================================================================
 # Integration: scoring includes placement policy adjustment

@@ -10,6 +10,7 @@ from backend.api.jobs.models import JobPullRequest
 from backend.api.jobs.pull_service import (
     PullJobsDependencies,
     _build_candidate_context,
+    _build_quota_context,
     _get_starvation_rescue_limit,
 )
 from backend.kernel.policy.types import DispatchConfig
@@ -224,3 +225,15 @@ async def test_build_candidate_context_skips_starvation_rescue_when_primary_wind
     query_rescue.assert_not_awaited()
     assert audit.context["candidate_window"]["starvation_rescue_added"] == 0
     assert audit.context["candidate_window"]["starvation_rescue_limit"] == 0
+
+
+def test_build_quota_context_raises_when_quota_contract_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_unavailable(_leased_jobs: list[Job]) -> dict[str, object]:
+        raise RuntimeError("quota contract unavailable")
+
+    monkeypatch.setattr("backend.kernel.scheduling.quota_aware_scheduling.build_quota_accounts", _raise_unavailable)
+
+    with pytest.raises(RuntimeError, match="quota contract unavailable"):
+        _build_quota_context([])

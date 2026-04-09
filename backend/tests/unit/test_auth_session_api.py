@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from backend.api.deps import get_current_user_optional
+from backend.api.deps import get_current_user_optional, get_settings
 from backend.api.main import app
+from backend.control_plane.app.factory import create_app
+
+
+def _assert_identity_cache_headers(response) -> None:
+    assert response.headers.get("cache-control") == "no-store, private"
+    assert response.headers.get("pragma") == "no-cache"
+    assert response.headers.get("expires") == "0"
+    vary = response.headers.get("vary", "").lower()
+    assert "cookie" in vary
 
 
 def test_auth_session_reports_anonymous_state() -> None:
@@ -18,6 +27,7 @@ def test_auth_session_reports_anonymous_state() -> None:
         app.dependency_overrides.pop(get_current_user_optional, None)
 
     assert response.status_code == 200
+    _assert_identity_cache_headers(response)
     data = response.json()["data"]
     assert data["authenticated"] is False
     assert data["sub"] is None
@@ -43,6 +53,7 @@ def test_auth_session_reports_cookie_backed_identity_claims() -> None:
         app.dependency_overrides.pop(get_current_user_optional, None)
 
     assert response.status_code == 200
+    _assert_identity_cache_headers(response)
     data = response.json()["data"]
     assert data["authenticated"] is True
     assert data["sub"] == "user-7"
@@ -71,7 +82,27 @@ def test_auth_session_normalizes_role_aliases_and_invalid_ai_preference() -> Non
         app.dependency_overrides.pop(get_current_user_optional, None)
 
     assert response.status_code == 200
+    _assert_identity_cache_headers(response)
     data = response.json()["data"]
     assert data["role"] == "child"
     assert data["scopes"] == ["write:jobs"]
     assert data["ai_route_preference"] == "auto"
+
+
+def test_auth_session_cors_preflight_allows_x_requested_with() -> None:
+    get_settings.cache_clear()
+    cors_app = create_app()
+    client = TestClient(cors_app)
+    response = client.options(
+        "/api/v1/auth/session",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-Requested-With",
+        },
+    )
+
+    assert response.status_code == 200
+    allow_headers = response.headers.get("access-control-allow-headers", "").lower()
+    assert "x-requested-with" in allow_headers
+    get_settings.cache_clear()

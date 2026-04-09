@@ -111,7 +111,6 @@ async def approve_node(
     response = _to_approval_response(node)
     await db.commit()
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         "approved",
         {"node_id": node.node_id, "approved_by": current_user["username"]},
@@ -150,7 +149,6 @@ async def reject_node(
     response = _to_approval_response(node)
     await db.commit()
     await publish_control_event(
-        redis,
         CHANNEL_NODE_EVENTS,
         "rejected",
         {"node_id": node.node_id, "rejected_by": current_user["username"]},

@@ -175,6 +175,38 @@ services:
       options:
         max-size: 10m
         max-file: '3'
+  nats:
+    enabled: true
+    container_name: zen70-nats
+    image: nats:2.12.5-alpine@sha256:f550232ddb35ba6a2ab2eecca2ec07f4c07bbfc330d52615805129984b75dd4a
+    restart: unless-stopped
+    networks:
+    - backend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    command:
+    - --jetstream
+    - --store_dir
+    - /data
+    volumes:
+    - nats_data:/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --spider -q http://127.0.0.1:8222/healthz || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   gateway:
     enabled: true
     container_name: zen70-gateway
@@ -202,8 +234,12 @@ services:
       GATEWAY_PROFILE: ${GATEWAY_PROFILE}
       GATEWAY_PACKS: ${GATEWAY_PACKS}
       POSTGRES_DSN: ${POSTGRES_DSN}
+      EVENT_BUS_BACKEND: nats
+      NATS_URL: nats://nats:4222
+      NATS_CONNECT_TIMEOUT: '5.0'
     depends_on:
     - redis
+    - nats
     ulimits:
       nofile:
         soft: 65536
@@ -620,6 +656,9 @@ storage:
   redis_data:
     path: /data
     backup_tier: critical
+  nats_data:
+    path: /data/nats
+    backup_tier: ephemeral
   ephemeral:
     path: /tmp/zen70-cache
     backup_tier: ephemeral

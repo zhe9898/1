@@ -43,6 +43,8 @@ def _mock_db(user: Any = None) -> AsyncMock:
     result = MagicMock()
     result.scalar_one_or_none.return_value = user
     db.execute = AsyncMock(return_value=result)
+    db.add = MagicMock()
+    db.flush = AsyncMock()
     return db
 
 

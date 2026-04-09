@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import uuid
 from dataclasses import dataclass
 
 from backend.control_plane.auth.auth_helpers import token_response as _token_response_impl
@@ -22,6 +23,8 @@ def _auth_mod() -> object:  # noqa: ANN202
 class IssuedAuthToken:
     access_token: str
     expires_in: int
+    session_id: str
+    token_id: str
 
 
 def issue_auth_token(
@@ -32,10 +35,16 @@ def issue_auth_token(
     tenant_id: str = "default",
     ai_route_preference: str = "auto",
     scopes: list[str] | None = None,
+    session_id: str | None = None,
+    token_id: str | None = None,
 ) -> IssuedAuthToken:
+    resolved_session_id = session_id or uuid.uuid4().hex
+    resolved_token_id = token_id or uuid.uuid4().hex
     token_kwargs: dict[str, object] = {
         "tenant_id": tenant_id,
         "ai_route_preference": ai_route_preference,
+        "session_id": resolved_session_id,
+        "token_id": resolved_token_id,
     }
     if scopes is not None:
         token_kwargs["scopes"] = scopes
@@ -49,4 +58,6 @@ def issue_auth_token(
     return IssuedAuthToken(
         access_token=str(body["access_token"]),
         expires_in=expires_in,
+        session_id=resolved_session_id,
+        token_id=resolved_token_id,
     )

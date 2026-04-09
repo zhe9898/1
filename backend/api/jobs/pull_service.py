@@ -177,7 +177,7 @@ async def _publish_reservation_event(
     }
     if reason:
         payload["reason"] = reason
-    await publish_control_event(redis, CHANNEL_RESERVATION_EVENTS, action, payload)
+    await publish_control_event(CHANNEL_RESERVATION_EVENTS, action, payload)
 
 
 async def _cleanup_expired_reservations(
@@ -328,22 +328,19 @@ def _group_active_jobs_by_node(leased_jobs: list[Job]) -> dict[str, list[Job]]:
 
 
 def _build_quota_context(leased_jobs: list[Job]) -> dict[str, object]:
+    from backend.kernel.scheduling.quota_aware_scheduling import FairShareCalculator, ResourceUsage, build_quota_accounts
+
     extra_ctx: dict[str, object] = {}
-    try:
-        from backend.kernel.scheduling.quota_aware_scheduling import FairShareCalculator, ResourceUsage, build_quota_accounts
+    quota_accounts = build_quota_accounts(leased_jobs)
+    extra_ctx["_quota_accounts"] = quota_accounts
 
-        quota_accounts = build_quota_accounts(leased_jobs)
-        extra_ctx["_quota_accounts"] = quota_accounts
-
-        cluster_totals = ResourceUsage()
-        for account in quota_accounts.values():
-            cluster_totals.cpu_cores += account.usage.cpu_cores
-            cluster_totals.memory_mb += account.usage.memory_mb
-            cluster_totals.gpu_vram_mb += account.usage.gpu_vram_mb
-            cluster_totals.concurrent_jobs += account.usage.concurrent_jobs
-        extra_ctx["_fair_share_ratios"] = FairShareCalculator.compute_fair_shares(quota_accounts, cluster_totals)
-    except Exception:
-        extra_ctx["_fair_share_ratios"] = {}
+    cluster_totals = ResourceUsage()
+    for account in quota_accounts.values():
+        cluster_totals.cpu_cores += account.usage.cpu_cores
+        cluster_totals.memory_mb += account.usage.memory_mb
+        cluster_totals.gpu_vram_mb += account.usage.gpu_vram_mb
+        cluster_totals.concurrent_jobs += account.usage.concurrent_jobs
+    extra_ctx["_fair_share_ratios"] = FairShareCalculator.compute_fair_shares(quota_accounts, cluster_totals)
     return extra_ctx
 
 
@@ -942,7 +939,6 @@ async def execute_pull_jobs(
         await db.commit()
         if responses:
             await deps.publish_control_event(
-                redis,
                 CHANNEL_JOB_EVENTS,
                 "leased",
                 {

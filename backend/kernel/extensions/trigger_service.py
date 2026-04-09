@@ -341,7 +341,7 @@ async def fire_trigger(
         )
         await db.flush()
         await db.commit()
-        await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
+        await publish_control_event(CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
         raise
     except ValueError as exc:
         failed_at = _utcnow()
@@ -354,7 +354,7 @@ async def fire_trigger(
         )
         await db.flush()
         await db.commit()
-        await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
+        await publish_control_event(CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
         raise zen(
             "ZEN-TRIG-4002",
             str(exc),
@@ -373,7 +373,7 @@ async def fire_trigger(
         )
         await db.flush()
         await db.commit()
-        await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
+        await publish_control_event(CHANNEL_TRIGGER_EVENTS, "delivery_failed", _delivery_event_payload(trigger, delivery))
         raise zen(
             "ZEN-TRIG-5001",
             "Trigger delivery failed",
@@ -395,5 +395,5 @@ async def fire_trigger(
     )
     await db.flush()
     await db.commit()
-    await publish_control_event(redis, CHANNEL_TRIGGER_EVENTS, "fired", _delivery_event_payload(trigger, delivery))
+    await publish_control_event(CHANNEL_TRIGGER_EVENTS, "fired", _delivery_event_payload(trigger, delivery))
     return delivery

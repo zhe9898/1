@@ -77,6 +77,12 @@ export function useAppRuntime({
         onFallbackOffline: () => {
           capsStore.isOffline = true;
         },
+        onRecovered: () => {
+          capsStore.isOffline = false;
+          void capsStore.syncOnReconnect();
+          void consoleStore.refresh();
+          void switchStore.loadCached();
+        },
       },
     );
   }
@@ -98,7 +104,11 @@ export function useAppRuntime({
   }
 
   function handleOnline() {
+    capsStore.isOffline = false;
     void capsStore.syncOnReconnect();
+    void consoleStore.refresh();
+    void switchStore.loadCached();
+    startRealtime();
   }
 
   function maybeInitWebPush() {

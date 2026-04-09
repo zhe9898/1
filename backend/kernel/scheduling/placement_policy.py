@@ -375,8 +375,8 @@ def load_placement_policies() -> CompositePlacementPolicy:
         from backend.kernel.policy.policy_store import get_policy_store
 
         policies_config = get_policy_store().placement_policies_config
-    except Exception:
-        logger.warning("Failed to load placement policies from policy store, falling back to defaults", exc_info=True)
+    except Exception as exc:
+        raise RuntimeError("ZEN-SCHED-PLACEMENT-POLICY-LOAD-FAILED: unable to load placement policies from the policy store") from exc
 
     policies: list[PlacementPolicy] = []
     if policies_config:
@@ -388,8 +388,8 @@ def load_placement_policies() -> CompositePlacementPolicy:
             cfg = entry.get("config", {}) or {}
             try:
                 policies.append(_BUILTIN_POLICIES[name](**cfg))
-            except Exception:
-                logger.warning("Failed to instantiate placement policy '%s'", name, exc_info=True)
+            except Exception as exc:
+                raise RuntimeError(f"ZEN-SCHED-PLACEMENT-POLICY-INIT-FAILED: failed to instantiate placement policy '{name}'") from exc
     else:
         # Default policy set: resource reservation + cloud overflow preference
         policies.append(ResourceReservationPolicy())

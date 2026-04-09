@@ -296,10 +296,12 @@ async def invite_webauthn_register_complete(
         tenant_id=user.tenant_id,
         user_id=str(user.id),
         username=user.username,
-        access_token=issued_token.access_token,
+        session_id=issued_token.session_id,
+        token_id=issued_token.token_id,
         ip_address=client_ip(request),
         user_agent=request.headers.get("user-agent"),
         auth_method="invite_webauthn",
+        redis=redis,
     )
     set_auth_cookie(response, issued_token.access_token)
     return build_authenticated_session_response(
@@ -364,10 +366,12 @@ async def invite_fallback_login(
         tenant_id=user.tenant_id,
         user_id=str(user.id),
         username=user.username,
-        access_token=issued_token.access_token,
+        session_id=issued_token.session_id,
+        token_id=issued_token.token_id,
         ip_address=cip,
         user_agent=request.headers.get("user-agent"),
         auth_method="invite_fallback",
+        redis=redis,
     )
     set_auth_cookie(response, issued_token.access_token)
     return build_authenticated_session_response(

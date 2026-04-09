@@ -111,7 +111,6 @@ async def update_job_priority(
 
     # Publish event
     await publish_control_event(
-        redis,
         CHANNEL_JOB_EVENTS,
         "priority_updated",
         {

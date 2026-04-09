@@ -163,7 +163,6 @@ async def upsert_connector(
     await db.flush()
     response = _to_response(connector)
     await publish_control_event(
-        redis,
         CHANNEL_CONNECTOR_EVENTS,
         action,
         {"connector": response.model_dump(mode="json")},
@@ -248,7 +247,6 @@ async def invoke_connector(
         message="job queued",
     )
     await publish_control_event(
-        redis,
         CHANNEL_CONNECTOR_EVENTS,
         "invoked",
         {
@@ -310,7 +308,6 @@ async def test_connector(
         checked_at=checked_at,
     )
     await publish_control_event(
-        redis,
         CHANNEL_CONNECTOR_EVENTS,
         "tested",
         {

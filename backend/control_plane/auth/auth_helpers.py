@@ -99,6 +99,8 @@ def token_response(
     tenant_id: str = "default",
     ai_route_preference: str = "auto",
     scopes: list[str] | None = None,
+    session_id: str | None = None,
+    token_id: str | None = None,
     **kwargs: object,
 ) -> dict[str, str | int]:
     """Sanitized legacy docstring."""
@@ -113,7 +115,7 @@ def token_response(
         "ai_route_preference": normalized_ai_route_preference,
         "scopes": sanitized_scopes,
     }
-    access_token = create_access_token(data=data)
+    access_token = create_access_token(data=data, session_id=session_id, token_id=token_id)
     return {
         "access_token": access_token,
         "token_type": "bearer",

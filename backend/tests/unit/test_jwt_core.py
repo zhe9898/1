@@ -200,10 +200,10 @@ class TestGetAccessTokenExpireSeconds:
 class TestRevocationChecks:
     @pytest.mark.asyncio
     @patch("backend.control_plane.auth.jwt._resolved_revocation_strict", return_value=True)
-    async def test_blacklist_check_denies_when_redis_is_unavailable(self, _mock_strict: object) -> None:
+    async def test_blacklist_check_fails_open_when_redis_is_unavailable(self, _mock_strict: object) -> None:
         from backend.control_plane.auth.jwt import is_jti_blacklisted
 
-        assert await is_jti_blacklisted(None, "jti-1") is True
+        assert await is_jti_blacklisted(None, "jti-1") is False
 
     @pytest.mark.asyncio
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
@@ -223,7 +223,7 @@ class TestRevocationChecks:
     @pytest.mark.asyncio
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
-    async def test_half_life_rotation_skips_new_token_when_blacklist_write_fails(self) -> None:
+    async def test_half_life_rotation_still_reissues_token_when_blacklist_write_fails(self) -> None:
         from backend.control_plane.auth.jwt import decode_token
 
         redis = AsyncMock()
@@ -233,7 +233,7 @@ class TestRevocationChecks:
         payload, new_token = await decode_token(_half_life_token(), redis_conn=redis)
 
         assert payload["sub"] == "user1"
-        assert new_token is None
+        assert new_token is not None
 
     @pytest.mark.asyncio
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
