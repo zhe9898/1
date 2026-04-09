@@ -11906,6 +11906,7 @@
           "reset_retry_count": {
             "type": "boolean",
             "title": "Reset Retry Count",
+            "description": "When true, replay the DLQ job with a fresh automatic retry budget and reset attempt counters.",
             "default": true
           },
           "increase_max_retries": {
@@ -11919,7 +11920,8 @@
                 "type": "null"
               }
             ],
-            "title": "Increase Max Retries"
+            "title": "Increase Max Retries",
+            "description": "Optional additive retry budget granted before the replay is returned to pending."
           },
           "reason": {
             "type": "string",

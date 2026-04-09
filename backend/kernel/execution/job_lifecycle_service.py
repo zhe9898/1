@@ -12,6 +12,35 @@ from backend.models.job_attempt import JobAttempt
 
 class JobLifecycleService:
     @staticmethod
+    async def _reset_for_fresh_attempt(
+        db: AsyncSession,
+        *,
+        job: Job,
+        now: datetime.datetime,
+        reset_retry_budget: bool,
+    ) -> None:
+        """Reset runtime state for a fresh replay or manual retry cycle."""
+        await LeaseService.reset_lease_projection(
+            db,
+            job=job,
+            now=now,
+            reset_attempt=True,
+        )
+        job.status = "pending"
+        job.node_id = None
+        job.retry_at = None
+        job.result = None
+        job.error_message = None
+        job.failure_category = None
+        job.started_at = None
+        job.completed_at = None
+        if reset_retry_budget:
+            job.retry_count = 0
+            job.attempt_count = 0
+        job.updated_at = now
+        await db.flush()
+
+    @staticmethod
     async def expire_lease(
         db: AsyncSession,
         *,
@@ -147,23 +176,12 @@ class JobLifecycleService:
         job: Job,
         now: datetime.datetime,
     ) -> None:
-        await LeaseService.reset_lease_projection(
+        await JobLifecycleService._reset_for_fresh_attempt(
             db,
             job=job,
             now=now,
-            reset_attempt=True,
+            reset_retry_budget=True,
         )
-        job.status = "pending"
-        job.node_id = None
-        job.retry_at = None
-        job.result = None
-        job.error_message = None
-        job.started_at = None
-        job.completed_at = None
-        job.retry_count = 0
-        job.attempt_count = 0
-        job.updated_at = now
-        await db.flush()
 
     @staticmethod
     async def requeue_from_dead_letter(
@@ -174,18 +192,14 @@ class JobLifecycleService:
         reset_retry_count: bool,
         increase_max_retries: int | None,
     ) -> None:
-        await LeaseService.reset_lease_projection(db, job=job, now=now)
-        if reset_retry_count:
-            job.retry_count = 0
+        await JobLifecycleService._reset_for_fresh_attempt(
+            db,
+            job=job,
+            now=now,
+            reset_retry_budget=reset_retry_count,
+        )
         if increase_max_retries is not None:
             job.max_retries = job.max_retries + increase_max_retries
-        job.status = "pending"
-        job.node_id = None
-        job.started_at = None
-        job.completed_at = None
-        job.error_message = None
-        job.failure_category = None
-        job.updated_at = now
         await db.flush()
 
     @staticmethod

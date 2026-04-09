@@ -97,8 +97,16 @@ class JobActionRequest(BaseModel):
 
 
 class JobRequeueRequest(BaseModel):
-    reset_retry_count: bool = Field(default=True)
-    increase_max_retries: int | None = Field(default=None, ge=0, le=10)
+    reset_retry_count: bool = Field(
+        default=True,
+        description="When true, replay the DLQ job with a fresh automatic retry budget and reset attempt counters.",
+    )
+    increase_max_retries: int | None = Field(
+        default=None,
+        ge=0,
+        le=10,
+        description="Optional additive retry budget granted before the replay is returned to pending.",
+    )
     reason: str = Field(..., min_length=1, max_length=255)
 
 
