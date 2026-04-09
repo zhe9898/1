@@ -8,7 +8,14 @@ COPY backend/requirements-iot.txt backend/requirements-iot.txt
 COPY backend/requirements-ai.txt backend/requirements-ai.txt
 COPY backend/requirements-media.txt backend/requirements-media.txt
 
-RUN groupadd -r -g 1000 appgroup && useradd -r -u 1000 -g appgroup -s /sbin/nologin appuser
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+        libssl3t64 \
+        openssl \
+        openssl-provider-legacy \
+    && groupadd -r -g 1000 appgroup \
+    && useradd -r -u 1000 -g appgroup -s /sbin/nologin appuser \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG CACHEBUST=1
 COPY --chown=appuser:appgroup backend ./backend
