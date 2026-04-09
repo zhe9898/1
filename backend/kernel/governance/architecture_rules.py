@@ -10,6 +10,7 @@ from backend.kernel.extensions.extension_guard import export_extension_budget_co
 from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
 from backend.kernel.surfaces.registry import export_surface_registry
+from backend.kernel.topology.runtime_contracts import export_runtime_contract_taxonomy
 from backend.platform.events.channels import export_event_channel_contract
 from backend.platform.redis.runtime_state import export_runtime_state_contract
 
@@ -198,6 +199,29 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
             "backend.tests.unit.test_kernel_iac_explicit_contract::test_kernel_iac_runtime_contract_matches_code_backed_event_and_runtime_state_exports",
         ),
     ),
+    ArchitectureGovernanceRule(
+        rule_id="A13",
+        title="Runtime persona/executor/workload authority contract",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Control-plane persona selectors stay distinct from kernel executor contracts and workload kinds, "
+            "with node registration projecting the explicit contract once and both Python and fast-path placement "
+            "consuming the same authority boundary."
+        ),
+        enforcement_layers=("control_plane", "kernel", "fast_path", "iac", "tests"),
+        source_modules=(
+            "backend.kernel.topology.runtime_contracts",
+            "backend.api.nodes_helpers",
+            "backend.kernel.scheduling.job_scheduler",
+            "backend.kernel.scheduling.placement_grpc_client",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_runtime_contract_taxonomy_exports_persona_executor_and_workload_layers",
+            "backend.tests.unit.test_architecture_governance_gates::test_runtime_contract_gate_blocks_hidden_persona_literals_in_scheduler_paths",
+            "backend.tests.unit.test_kernel_iac_explicit_contract::test_kernel_iac_runtime_contract_matches_code_backed_runtime_taxonomy_export",
+        ),
+    ),
 )
 
 
@@ -229,6 +253,7 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
             "extension_budget_contract": "backend.kernel.extensions.extension_guard.export_extension_budget_contract",
             "event_channel_contract": "backend.platform.events.channels.export_event_channel_contract",
             "runtime_state_contract": "backend.platform.redis.runtime_state.export_runtime_state_contract",
+            "runtime_contract_taxonomy": "backend.kernel.topology.runtime_contracts.export_runtime_contract_taxonomy",
         },
         "registries": {
             "surface_registry": export_surface_registry(),
@@ -240,5 +265,6 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
             "extension_budget_contract": export_extension_budget_contract(),
             "event_channel_contract": export_event_channel_contract(),
             "runtime_state_contract": export_runtime_state_contract(),
+            "runtime_contract_taxonomy": export_runtime_contract_taxonomy(),
         },
     }

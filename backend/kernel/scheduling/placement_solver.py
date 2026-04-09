@@ -32,6 +32,7 @@ from backend.kernel.scheduling.scheduling_candidates import (
     _text_attr,
     batch_eligible_counts,
 )
+from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract_from_record
 from backend.models.job import Job
 
 if TYPE_CHECKING:
@@ -39,6 +40,41 @@ if TYPE_CHECKING:
     from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
 
 logger = logging.getLogger(__name__)
+
+
+def _routing_group_node_score(
+    node: SchedulerNodeSnapshot,
+    job: Job,
+    remaining_capacity: int,
+    *,
+    binpack: bool,
+) -> float:
+    """Mirror the Go fast-path node ranking so fallback placement stays aligned."""
+    capacity = max(node.max_concurrency, 1)
+    load_ratio = remaining_capacity / capacity
+
+    if binpack:
+        base = (1.0 - load_ratio) * 10.0
+    else:
+        base = load_ratio * 10.0
+    base += float(node.reliability_score)
+
+    data_locality_key = _text_attr(_job_attr(job, "data_locality_key"))
+    if data_locality_key and data_locality_key in node.cached_data_keys:
+        base += 3.0
+
+    thermal_sensitivity = _text_attr(_job_attr(job, "thermal_sensitivity"))
+    if thermal_sensitivity == "high":
+        if node.thermal_state == "cool":
+            base += 2.0
+        elif node.thermal_state in {"hot", "throttling"}:
+            base -= 2.0
+
+    max_latency_ms = max(_int_attr(_job_attr(job, "max_network_latency_ms")), 0)
+    if max_latency_ms > 0 and node.network_latency_ms > 0 and node.network_latency_ms * 2 <= max_latency_ms:
+        base += 1.0
+
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +319,9 @@ class PlacementSolver:
             if not eligible_nodes:
                 continue
 
+            queue_class, _worker_pool = resolve_job_queue_contract_from_record(first_job)
+            binpack = queue_class == "batch"
+
             # Filter to nodes that still have capacity in the shared map.
             ordered_node_ids: list[str] = [n.node_id for n in eligible_nodes if global_remaining_cap.get(n.node_id, 0) > 0]
             if not ordered_node_ids:
@@ -290,15 +329,22 @@ class PlacementSolver:
 
             total_feasible_pairs += len(group_jobs) * len(eligible_nodes)
 
-            # Order nodes: prefer under-loaded nodes first to spread load.
-            # Pre-compute sort keys to avoid repeated dict lookups per comparison.
-            node_sort_keys = [
-                (global_remaining_cap[nid] / max(node_index[nid].max_concurrency, 1), -float(node_index[nid].reliability_score), nid)
-                for nid in ordered_node_ids
-            ]
-            ordered_node_ids = [nid for _, nid in sorted(zip(node_sort_keys, ordered_node_ids))]
+            # Order nodes using the same context-aware score as the Go fast path.
+            ordered_node_ids.sort(
+                key=lambda nid: (
+                    -_routing_group_node_score(
+                        node_index[nid],
+                        first_job,
+                        global_remaining_cap[nid],
+                        binpack=binpack,
+                    ),
+                    nid,
+                )
+            )
 
             group_total_remaining = sum(global_remaining_cap[nid] for nid in ordered_node_ids)
+
+            group_jobs.sort(key=lambda job: -_int_attr(_job_attr(job, "priority")))
 
             # Build gang/solo assignment units for this group.
             job_units: list[tuple[str | None, list[Job]]] = []

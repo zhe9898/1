@@ -61,14 +61,45 @@ _DEFAULT_CONTRACTS: dict[str, ExecutorContract] = {
     "docker": ExecutorContract(
         name="docker",
         description="Container-based execution via Docker Engine",
-        supported_kinds=frozenset({"shell.exec", "container.run", "http.request", "healthcheck"}),
+        supported_kinds=frozenset(
+            {
+                "alert.notify",
+                "connector.invoke",
+                "container.run",
+                "cron.tick",
+                "cron.trigger",
+                "data.sync",
+                "docker.exec",
+                "file.transfer",
+                "healthcheck",
+                "http.request",
+                "noop",
+                "script.run",
+                "shell.exec",
+            }
+        ),
         min_memory_mb=256,
         stability_tier="ga",
     ),
     "process": ExecutorContract(
         name="process",
         description="Direct process execution on host OS",
-        supported_kinds=frozenset({"shell.exec", "script.run"}),
+        supported_kinds=frozenset(
+            {
+                "alert.notify",
+                "connector.invoke",
+                "cron.tick",
+                "cron.trigger",
+                "data.sync",
+                "file.transfer",
+                "healthcheck",
+                "http.request",
+                "noop",
+                "script.run",
+                "shell.exec",
+                "wasm.run",
+            }
+        ),
         min_memory_mb=64,
         stability_tier="ga",
     ),
@@ -125,11 +156,18 @@ _DEFAULT_CONTRACTS: dict[str, ExecutorContract] = {
         description="Lightweight on-device executor for constrained IoT/edge nodes",
         supported_kinds=frozenset(
             {
+                "alert.notify",
+                "connector.invoke",
                 "shell.exec",
+                "http.request",
+                "noop",
+                "script.run",
                 "iot.collect",
                 "healthcheck",
                 "data.sync",
+                "file.transfer",
                 "cron.tick",
+                "wasm.run",
             }
         ),
         min_memory_mb=32,
@@ -138,7 +176,7 @@ _DEFAULT_CONTRACTS: dict[str, ExecutorContract] = {
     ),
     "unknown": ExecutorContract(
         name="unknown",
-        description="Fallback for unregistered executors 鈥?accepts all kinds",
+        description="Fallback for unregistered executors - accepts all kinds",
         supported_kinds=frozenset(),  # empty = accept all (permissive fallback)
         stability_tier="ga",
     ),

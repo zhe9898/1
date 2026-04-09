@@ -30,6 +30,13 @@ from backend.kernel.contracts.protocol_version import validate_lease_version, va
 from backend.kernel.contracts.status import normalize_persisted_status
 from backend.kernel.scheduling.worker_pool import infer_node_worker_pools
 from backend.kernel.topology.node_auth import generate_node_token, hash_node_token
+from backend.kernel.topology.runtime_contracts import (
+    EXECUTOR_CONTRACT_METADATA_KEY,
+    EXECUTOR_CONTRACT_SOURCE_METADATA_KEY,
+    RUNTIME_PERSONA_METADATA_KEY,
+    resolve_node_runtime_contract,
+    resolve_persisted_node_runtime_contract,
+)
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -93,6 +100,7 @@ def _to_response(node: Node, *, active_lease_count: int = 0, now: datetime.datet
     drain_status = node.drain_status or "active"
     heartbeat_state = node_heartbeat_state(node.last_seen_at, current_time)
     capacity_state = node_capacity_state(active_lease_count, max_concurrency)
+    runtime_contract = resolve_persisted_node_runtime_contract(persona=node.executor, metadata=dict(node.metadata_json or {}))
     return NodeResponse(
         node_id=node.node_id,
         name=node.name,
@@ -100,6 +108,8 @@ def _to_response(node: Node, *, active_lease_count: int = 0, now: datetime.datet
         address=node.address,
         profile=node.profile,
         executor=node.executor,
+        executor_contract=runtime_contract.executor_contract,
+        supported_workload_kinds=list(runtime_contract.supported_workload_kinds),
         os=node.os,
         arch=node.arch,
         zone=node.zone,
@@ -170,7 +180,6 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
     node.node_type = payload.node_type
     node.address = payload.address
     node.profile = payload.profile
-    node.executor = payload.executor
     node.os = payload.os
     node.arch = payload.arch
     node.zone = payload.zone
@@ -215,9 +224,11 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
     node.last_seen_at = now
     node.updated_at = now
 
-    # 鈹€鈹€ Device profile: honour explicit value or auto-infer 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # Runtime contract and device profile defaults are resolved explicitly so
+    # control-plane personas never get silently rewritten into executor values.
     current_meta: dict[str, object] = dict(node.metadata_json or {})
     explicit_profile = str(current_meta.get("device_profile", "")).strip()
+    profile_default_executor_contract: str | None = None
     if not explicit_profile:
         from backend.kernel.topology.device_profiles import apply_profile_defaults, get_device_profile, infer_device_profile
 
@@ -235,14 +246,30 @@ def _apply_contract(node: Node, payload: NodeContractPayload, status: str, now: 
 
         profile_obj = get_device_profile(explicit_profile)
     if profile_obj is not None:
+        profile_default_executor_contract = profile_obj.default_executor
+
+    runtime_contract = resolve_node_runtime_contract(
+        declared_persona=payload.executor,
+        declared_executor_contract=getattr(payload, "executor_contract", None),
+        node_type=node.node_type or "",
+        operating_system=node.os or "",
+        zone=node.zone,
+        metadata=current_meta,
+        capabilities=list(node.capabilities or []),
+        profile_default_executor_contract=profile_default_executor_contract,
+    )
+    node.executor = runtime_contract.persona
+    current_meta[RUNTIME_PERSONA_METADATA_KEY] = runtime_contract.persona
+    current_meta[EXECUTOR_CONTRACT_METADATA_KEY] = runtime_contract.executor_contract
+    current_meta[EXECUTOR_CONTRACT_SOURCE_METADATA_KEY] = runtime_contract.source
+
+    if profile_obj is not None:
         overrides = apply_profile_defaults(
             profile_obj,
-            executor=node.executor or "",
+            executor=runtime_contract.executor_contract,
             zone=node.zone,
             max_concurrency=int(node.max_concurrency or 1),
         )
-        if "executor" in overrides:
-            node.executor = str(overrides["executor"])
         if "zone" in overrides:
             node.zone = str(overrides["zone"])
         if "max_concurrency" in overrides:

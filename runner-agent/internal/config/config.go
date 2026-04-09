@@ -28,6 +28,7 @@ type Config struct {
 	NodeType          string
 	Profile           string
 	Executor          string
+	ExecutorContract  string
 	OperatingSystem   string
 	Architecture      string
 	Zone              string
@@ -51,7 +52,7 @@ type Config struct {
 	CloudConnectivity  string
 	// Cloud elasticity: when set, the agent presents this token at registration
 	// so the backend can auto-activate this node without manual admin approval.
-	CloudToken        string
+	CloudToken string
 	// DeviceProfile is the hardware classification reported to the backend.
 	// When empty, Load() auto-detects the profile via /proc/cpuinfo and DMI.
 	DeviceProfile     string
@@ -83,6 +84,7 @@ func Load() Config {
 		NodeType:           getenv("RUNNER_NODE_TYPE", "runner"),
 		Profile:            getenv("RUNNER_PROFILE", "go-runner"),
 		Executor:           getenv("RUNNER_EXECUTOR", "go-native"),
+		ExecutorContract:   strings.TrimSpace(os.Getenv("RUNNER_EXECUTOR_CONTRACT")),
 		OperatingSystem:    getenv("RUNNER_OS", runtime.GOOS),
 		Architecture:       arch,
 		Zone:               strings.TrimSpace(os.Getenv("RUNNER_ZONE")),

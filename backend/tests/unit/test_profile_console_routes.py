@@ -68,11 +68,13 @@ def test_profile_endpoint_reports_public_profile(monkeypatch) -> None:
             "required_capabilities": ["iot.adapter"],
             "target_zone": "home",
             "target_executors": [],
+            "target_executor_contracts": [],
         }
         assert pack_map["health-pack"]["selector"] == {
             "required_capabilities": ["health.ingest"],
             "target_zone": "mobile",
             "target_executors": ["swift-native", "kotlin-native"],
+            "target_executor_contracts": ["process"],
         }
         assert data["cluster_enabled"] is False
     finally:
@@ -104,6 +106,7 @@ def test_profile_endpoint_reports_selected_pack_contracts(monkeypatch) -> None:
         assert pack_map["iot-pack"]["services"] == ["mosquitto"]
         assert pack_map["health-pack"]["services"] == []
         assert pack_map["health-pack"]["selector"]["target_executors"] == ["swift-native", "kotlin-native"]
+        assert pack_map["health-pack"]["selector"]["target_executor_contracts"] == ["process"]
         assert "iot" in data["router_names"]
         assert "scheduler" in data["router_names"]
     finally:

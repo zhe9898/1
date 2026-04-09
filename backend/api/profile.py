@@ -21,6 +21,7 @@ from backend.kernel.topology.profile_selection import (
     normalize_gateway_pack_keys,
     resolve_runtime_pack_keys,
 )
+from backend.kernel.topology.runtime_contracts import get_runtime_persona_contract
 
 router = APIRouter(prefix="/api/v1", tags=["profile"])
 
@@ -29,6 +30,7 @@ class GatewayPackSelectorResponse(BaseModel):
     required_capabilities: list[str] = Field(default_factory=list)
     target_zone: str | None = None
     target_executors: list[str] = Field(default_factory=list)
+    target_executor_contracts: list[str] = Field(default_factory=list)
 
 
 class GatewayPackResponse(BaseModel):
@@ -92,6 +94,14 @@ def _build_pack_contracts(requested_pack_keys: tuple[str, ...], resolved_pack_ke
                     required_capabilities=list(definition.selector.required_capabilities),
                     target_zone=definition.selector.target_zone,
                     target_executors=list(definition.selector.target_executors),
+                    target_executor_contracts=sorted(
+                        {
+                            contract.default_executor_contract
+                            for persona in definition.selector.target_executors
+                            for contract in [get_runtime_persona_contract(persona)]
+                            if contract is not None
+                        }
+                    ),
                 ),
                 deployment_boundary=definition.deployment_boundary,
                 runtime_owner=definition.runtime_owner,

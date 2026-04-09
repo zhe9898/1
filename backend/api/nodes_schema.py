@@ -13,6 +13,13 @@ from urllib.parse import urlparse
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.topology.runtime_contracts import (
+    control_plane_persona_options,
+    executor_contract_options,
+    node_executor_contract,
+    persona_supports_android,
+    persona_supports_ios,
+)
 from backend.models.node import Node
 
 from .nodes_models import BootstrapReceipt
@@ -48,6 +55,11 @@ def _resource_schema() -> ResourceSchemaResponse:
                 "accepted_kinds": "tags",
                 "worker_pools": "tags",
                 "metadata": "json",
+            },
+            "runtime_contract_semantics": {
+                "executor": "control-plane-persona",
+                "executor_contract": "kernel-canonical-executor-contract",
+                "accepted_kinds": "workload-kind-allowlist",
             },
             "secret_delivery": {
                 "field": "node_token",
@@ -98,19 +110,18 @@ def _resource_schema() -> ResourceSchemaResponse:
                     FormFieldSchema(key="profile", label="Profile", value="go-runner", required=True),
                     FormFieldSchema(
                         key="executor",
-                        label="Executor",
+                        label="Runtime Persona",
                         input_type="select",
                         value="go-native",
-                        options=[
-                            FormFieldOption(value="go-native", label="Go Native"),
-                            FormFieldOption(value="python-runner", label="Python Runner"),
-                            FormFieldOption(value="shell", label="Shell"),
-                            FormFieldOption(value="swift-native", label="Swift Native"),
-                            FormFieldOption(value="kotlin-native", label="Kotlin Native"),
-                            FormFieldOption(value="vector-worker", label="Vector Worker"),
-                            FormFieldOption(value="search-service", label="Search Service"),
-                            FormFieldOption(value="unknown", label="Unknown"),
-                        ],
+                        options=[FormFieldOption(value=value, label=label) for value, label in control_plane_persona_options()],
+                    ),
+                    FormFieldSchema(
+                        key="executor_contract",
+                        label="Executor Contract",
+                        input_type="select",
+                        value="",
+                        options=[FormFieldOption(value="", label="Auto from Persona Contract")]
+                        + [FormFieldOption(value=value, label=label) for value, label in executor_contract_options()],
                     ),
                     FormFieldSchema(
                         key="os",
@@ -217,12 +228,14 @@ def _bootstrap_requires_insecure_http_opt_in(gateway_base_url: str) -> bool:
 def _build_bootstrap_commands(node: Node, node_token: str) -> dict[str, str]:
     gateway_base_url = _build_bootstrap_gateway_base_url()
     token_value = _bootstrap_token_value(node_token)
+    executor_contract = node_executor_contract(node)
     powershell_lines = [
         f'$env:RUNNER_NODE_ID="{node.node_id}"',
         f'$env:RUNNER_TENANT_ID="{node.tenant_id}"',
         f'$env:NODE_TOKEN="{token_value}"',
         f'$env:GATEWAY_BASE_URL="{gateway_base_url}"',
         f'$env:RUNNER_EXECUTOR="{node.executor}"',
+        f'$env:RUNNER_EXECUTOR_CONTRACT="{executor_contract}"',
     ]
     unix_lines = [
         f'export RUNNER_NODE_ID="{node.node_id}"',
@@ -230,6 +243,7 @@ def _build_bootstrap_commands(node: Node, node_token: str) -> dict[str, str]:
         f'export NODE_TOKEN="{token_value}"',
         f'export GATEWAY_BASE_URL="{gateway_base_url}"',
         f'export RUNNER_EXECUTOR="{node.executor}"',
+        f'export RUNNER_EXECUTOR_CONTRACT="{executor_contract}"',
     ]
     if _bootstrap_requires_insecure_http_opt_in(gateway_base_url):
         powershell_lines.append('$env:RUNNER_ALLOW_INSECURE_HTTP="true"')
@@ -248,6 +262,10 @@ def _bootstrap_notes() -> list[str]:
         (
             "The machine channel requires HTTPS by default. Only local development may opt "
             "into http://127.0.0.1... together with RUNNER_ALLOW_INSECURE_HTTP=true."
+        ),
+        (
+            "RUNNER_EXECUTOR is the control-plane persona, while RUNNER_EXECUTOR_CONTRACT pins the canonical "
+            "execution contract used for workload-kind compatibility."
         ),
         ("Keep RUNNER_TENANT_ID alongside the node token so the machine channel is scoped " "to the tenant context before authentication completes."),
         (
@@ -303,10 +321,11 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
         "node_token": _bootstrap_token_value(node_token),
         "gateway_base_url": gateway_base_url,
         "executor": node.executor,
+        "executor_contract": node_executor_contract(node),
         "zone": node.zone or "mobile",
     }
-    if node.node_type == "native-client" or node.os in {"ios", "android"} or node.executor in {"swift-native", "kotlin-native"}:
-        if node.os in {"ios", "unknown"} or node.executor == "swift-native" or node.node_type == "native-client":
+    if node.node_type == "native-client" or node.os in {"ios", "android"} or persona_supports_ios(node.executor) or persona_supports_android(node.executor):
+        if node.os in {"ios", "unknown"} or persona_supports_ios(node.executor) or node.node_type == "native-client":
             receipts.append(
                 BootstrapReceipt(
                     key="ios-native",
@@ -321,13 +340,14 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                         f'  "gateway_base_url": "{native_common["gateway_base_url"]}",\n'
                         '  "native_bridge": ["health.ingest", "notify.push", "device.local"],\n'
                         f'  "executor": "{native_common["executor"]}",\n'
+                        f'  "executor_contract": "{native_common["executor_contract"]}",\n'
                         f'  "zone": "{native_common["zone"]}"\n'
                         "}"
                     ),
                     notes=IOS_NATIVE_NOTES,
                 )
             )
-        if node.os in {"android", "unknown"} or node.executor == "kotlin-native" or node.node_type == "native-client":
+        if node.os in {"android", "unknown"} or persona_supports_android(node.executor) or node.node_type == "native-client":
             receipts.append(
                 BootstrapReceipt(
                     key="android-native",
@@ -342,6 +362,7 @@ def _build_bootstrap_receipts(node: Node, node_token: str) -> list[BootstrapRece
                         f'  "gateway_base_url": "{native_common["gateway_base_url"]}",\n'
                         '  "native_bridge": ["health.ingest", "notify.push", "device.local"],\n'
                         f'  "executor": "{native_common["executor"]}",\n'
+                        f'  "executor_contract": "{native_common["executor_contract"]}",\n'
                         f'  "zone": "{native_common["zone"]}"\n'
                         "}"
                     ),

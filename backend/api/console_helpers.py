@@ -447,7 +447,7 @@ def selector_summary(job: Job) -> list[str]:
     if job.target_arch:
         selectors.append(f"arch={job.target_arch}")
     if job.target_executor:
-        selectors.append(f"executor={job.target_executor}")
+        selectors.append(f"persona={job.target_executor}")
     if job.target_zone:
         selectors.append(f"zone={job.target_zone}")
     if job.required_capabilities:

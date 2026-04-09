@@ -64,6 +64,7 @@ from backend.kernel.contracts.status import canonicalize_status
 from backend.kernel.scheduling.quota_service import check_node_quota
 from backend.kernel.topology.node_auth import authenticate_node_request
 from backend.kernel.topology.node_enrollment_service import NodeEnrollmentService
+from backend.kernel.topology.runtime_contracts import node_executor_contract
 from backend.models.node import Node
 from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
 from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
@@ -73,6 +74,27 @@ router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
 
 def _cloud_auto_approve_token() -> str:
     return os.environ.get("CLOUD_AUTO_APPROVE_TOKEN", "").strip()
+
+
+def _log_executor_contract_warnings(node: Node) -> None:
+    from backend.kernel.topology.executor_registry import get_executor_registry
+
+    executor_contract = node_executor_contract(node)
+    warnings = get_executor_registry().validate_node_executor(
+        executor_contract,
+        memory_mb=node.memory_mb,
+        cpu_cores=node.cpu_cores,
+        gpu_vram_mb=node.gpu_vram_mb,
+    )
+    if warnings:
+        import logging as _log
+
+        _log.getLogger("api.nodes").warning(
+            "Executor contract warnings for node %s (%s): %s",
+            node.node_id,
+            executor_contract,
+            "; ".join(warnings),
+        )
 
 
 @router.get("/schema", response_model=ResourceSchemaResponse)
@@ -261,25 +283,6 @@ async def register_node(
         tenant_id=payload.tenant_id,
     )
     now = _utcnow()
-
-    # 閳光偓閳光偓 Executor contract validation (non-blocking) 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
-    from backend.kernel.topology.executor_registry import get_executor_registry
-
-    _exec_warnings = get_executor_registry().validate_node_executor(
-        node.executor,
-        memory_mb=node.memory_mb,
-        cpu_cores=node.cpu_cores,
-        gpu_vram_mb=node.gpu_vram_mb,
-    )
-    if _exec_warnings:
-        import logging as _log
-
-        _log.getLogger("api.nodes").warning(
-            "Executor contract warnings for node %s: %s",
-            node.node_id,
-            "; ".join(_exec_warnings),
-        )
-
     configured_cloud_token = _cloud_auto_approve_token()
     node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
     expected_hash = hashlib.sha256(configured_cloud_token.encode()).hexdigest()
@@ -293,6 +296,7 @@ async def register_node(
         now=now,
         cloud_auto_approved=cloud_auto_approved,
     )
+    _log_executor_contract_warnings(node)
 
     await db.flush()
     response = _to_response(node, now=now)
@@ -342,6 +346,7 @@ async def heartbeat_node(
 
     now = _utcnow()
     _apply_contract(node, payload, payload.status, now)
+    _log_executor_contract_warnings(node)
     node.health_reason = payload.health_reason
 
     await db.flush()

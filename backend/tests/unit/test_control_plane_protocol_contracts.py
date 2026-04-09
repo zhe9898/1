@@ -562,7 +562,8 @@ async def test_register_node_persists_strong_contract_fields(monkeypatch: pytest
         node_token="node-token",
     )
 
-    assert response.executor == "edge-native"
+    assert response.executor == "go-native"
+    assert response.executor_contract == "edge-native"
     assert response.os == "darwin"
     assert response.arch == "arm64"
     assert response.protocol_version == "runner.v1"

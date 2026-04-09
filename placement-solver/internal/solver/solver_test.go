@@ -11,23 +11,23 @@ import (
 
 func makeNode(id string, maxConc int32) *pb.NodeSpec {
 	return &pb.NodeSpec{
-		NodeId:           id,
-		Os:               "linux",
-		Arch:             "amd64",
-		Executor:         "docker",
-		Zone:             fmt.Sprintf("z%d", len(id)%4),
-		Capabilities:     []string{"shell", "docker"},
-		AcceptedKinds:    []string{"shell.exec"},
-		WorkerPools:      []string{"batch"},
-		MaxConcurrency:   maxConc,
-		ActiveLeaseCount: 0,
-		CpuCores:         16,
-		MemoryMb:         32768,
-		ReliabilityScore: 0.95,
-		EnrollmentStatus: "active",
-		Status:           "online",
-		DrainStatus:      "active",
-		NetworkLatencyMs: 10,
+		NodeId:             id,
+		Os:                 "linux",
+		Arch:               "amd64",
+		Executor:           "docker",
+		Zone:               fmt.Sprintf("z%d", len(id)%4),
+		Capabilities:       []string{"shell", "docker"},
+		AcceptedKinds:      []string{"shell.exec"},
+		WorkerPools:        []string{"batch"},
+		MaxConcurrency:     maxConc,
+		ActiveLeaseCount:   0,
+		CpuCores:           16,
+		MemoryMb:           32768,
+		ReliabilityScore:   0.95,
+		EnrollmentStatus:   "active",
+		Status:             "online",
+		DrainStatus:        "active",
+		NetworkLatencyMs:   10,
 		PowerCapacityWatts: 200,
 		CurrentPowerWatts:  80,
 		ThermalState:       "normal",
@@ -142,6 +142,25 @@ func TestSolve_DrainedNode(t *testing.T) {
 	})
 	if len(res.Assignments) != 0 {
 		t.Errorf("expected 0 assignments for draining node, got %d", len(res.Assignments))
+	}
+}
+
+// TestSolve_ApprovedNodesAreEligible verifies backend-approved nodes are
+// treated as live by the Go fast path. The backend control plane persists
+// "approved", while older standalone tests used "active".
+func TestSolve_ApprovedNodesAreEligible(t *testing.T) {
+	n := makeNode("n0", 16)
+	n.EnrollmentStatus = "approved"
+	res := solver.Solve(&pb.SolveRequest{
+		Jobs:          []*pb.JobSpec{makeJob("j0", "shell.exec", 50)},
+		Nodes:         []*pb.NodeSpec{n},
+		AcceptedKinds: []string{"shell.exec"},
+	})
+	if len(res.Assignments) != 1 {
+		t.Fatalf("expected 1 assignment for approved node, got %d", len(res.Assignments))
+	}
+	if got := res.Assignments["j0"]; got != "n0" {
+		t.Fatalf("expected j0 -> n0, got %q", got)
 	}
 }
 

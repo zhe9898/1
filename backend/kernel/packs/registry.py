@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
+from backend.kernel.topology.runtime_contracts import (
+    KOTLIN_NATIVE_PERSONA,
+    SEARCH_SERVICE_PERSONA,
+    SWIFT_NATIVE_PERSONA,
+    VECTOR_WORKER_PERSONA,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PackSelectorContract:
@@ -80,7 +87,7 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         selector=PackSelectorContract(
             required_capabilities=("health.ingest",),
             target_zone="mobile",
-            target_executors=("swift-native", "kotlin-native"),
+            target_executors=(SWIFT_NATIVE_PERSONA, KOTLIN_NATIVE_PERSONA),
         ),
         deployment_boundary="Uses native clients and connector ingestion; health libraries do not enter the Python gateway runtime.",
         runtime_owner="native-client",
@@ -96,7 +103,7 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         selector=PackSelectorContract(
             required_capabilities=("vector.search",),
             target_zone="search",
-            target_executors=("vector-worker", "search-service"),
+            target_executors=(VECTOR_WORKER_PERSONA, SEARCH_SERVICE_PERSONA),
         ),
         deployment_boundary="Runs as worker/search services and keeps semantic workloads out of the default kernel path.",
         runtime_owner="worker-service",

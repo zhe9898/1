@@ -281,12 +281,44 @@ class RedisRuntimeStateContract(TypedDict, total=False):
     description: str
 
 
+class RuntimeAuthorityBoundaryContract(TypedDict, total=False):
+    layer: str
+    owner: str
+    authority: str
+    non_authority_roles: list[str]
+
+
+class ControlPlanePersonaContract(TypedDict, total=False):
+    key: str
+    label: str
+    description: str
+    default_executor_contract: str
+    allowed_executor_contracts: list[str]
+    default_node_types: list[str]
+    default_platforms: list[str]
+
+
+class CanonicalExecutorContract(TypedDict, total=False):
+    description: str
+    supported_workload_kinds: list[str]
+    requires_gpu: bool
+    min_memory_mb: int
+    min_cpu_cores: int
+    max_concurrency_hint: int
+    stability_tier: str
+
+
 class RuntimeContractsConfig(TypedDict, total=False):
     control_plane_event_channels: list[str]
     browser_realtime_event_channels: list[str]
     internal_coordination_channels: list[str]
     authoritative_redis_runtime_state_allowed: bool
     redis_ephemeral_runtime_state: list[RedisRuntimeStateContract]
+    runtime_authority_boundaries: list[RuntimeAuthorityBoundaryContract]
+    control_plane_personas: list[ControlPlanePersonaContract]
+    persona_to_default_executor_contract: dict[str, str]
+    canonical_executor_contracts: dict[str, CanonicalExecutorContract]
+    workload_kinds: list[str]
 
 
 # ===========================================================================

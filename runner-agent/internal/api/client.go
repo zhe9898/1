@@ -37,6 +37,7 @@ type RegisterRequest struct {
 	Address            string         `json:"address,omitempty"`
 	Profile            string         `json:"profile"`
 	Executor           string         `json:"executor"`
+	ExecutorContract   string         `json:"executor_contract,omitempty"`
 	OS                 string         `json:"os"`
 	Arch               string         `json:"arch"`
 	Zone               string         `json:"zone,omitempty"`
@@ -68,6 +69,7 @@ type HeartbeatRequest struct {
 	Address            string         `json:"address,omitempty"`
 	Profile            string         `json:"profile"`
 	Executor           string         `json:"executor"`
+	ExecutorContract   string         `json:"executor_contract,omitempty"`
 	OS                 string         `json:"os"`
 	Arch               string         `json:"arch"`
 	Zone               string         `json:"zone,omitempty"`

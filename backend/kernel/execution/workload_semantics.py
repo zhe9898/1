@@ -199,6 +199,19 @@ def get_workload_info(kind: str) -> dict[str, Any]:
 
 register_workload(
     WorkloadDescriptor(
+        kind="noop",
+        category=WorkloadCategory.BATCH,
+        qos=QoSClass.BEST_EFFORT,
+        resource_profile=ResourceProfile(cpu_cores=0.01, memory_mb=16, max_duration_s=5),
+        preemptible=True,
+        restartable=True,
+        max_retries=1,
+        description="No-op control-plane validation workload",
+    )
+)
+
+register_workload(
+    WorkloadDescriptor(
         kind="shell.exec",
         category=WorkloadCategory.BATCH,
         qos=QoSClass.BEST_EFFORT,
@@ -416,6 +429,35 @@ register_workload(
         restartable=True,
         max_retries=3,
         description="Generic connector invocation (legacy compatibility)",
+    )
+)
+
+register_workload(
+    WorkloadDescriptor(
+        kind="alert.notify",
+        category=WorkloadCategory.INTERACTIVE,
+        qos=QoSClass.BURSTABLE,
+        resource_profile=ResourceProfile(cpu_cores=0.1, memory_mb=64, network_bandwidth_mbps=5, max_duration_s=30),
+        lifecycle=LifecycleHooks(on_timeout="abort_request"),
+        preemptible=True,
+        restartable=True,
+        max_retries=5,
+        description="Send an outbound alert notification or webhook",
+    )
+)
+
+register_workload(
+    WorkloadDescriptor(
+        kind="cron.trigger",
+        category=WorkloadCategory.CRON,
+        qos=QoSClass.GUARANTEED,
+        resource_profile=ResourceProfile(cpu_cores=0.1, memory_mb=64, max_duration_s=60),
+        lifecycle=LifecycleHooks(post_complete="record_next_fire"),
+        preemptible=False,
+        restartable=True,
+        max_retries=5,
+        scheduling_profile="cron",
+        description="Trigger a scheduled webhook or automation job",
     )
 )
 

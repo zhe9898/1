@@ -133,6 +133,7 @@ func (s *Service) registerNode(ctx context.Context) error {
 		Address:            s.cfg.NodeAddress,
 		Profile:            s.cfg.Profile,
 		Executor:           s.cfg.Executor,
+		ExecutorContract:   s.cfg.ExecutorContract,
 		OS:                 s.cfg.OperatingSystem,
 		Arch:               s.cfg.Architecture,
 		Zone:               s.cfg.Zone,

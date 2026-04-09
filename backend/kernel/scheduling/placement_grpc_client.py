@@ -153,6 +153,7 @@ def _record_grpc_success() -> None:
 def _job_to_proto(job: Job) -> object:
     """Convert a Job ORM/mock object to a placement_pb2.JobSpec."""
     from backend.kernel.scheduling.gen_grpc import placement_pb2
+    from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract_from_record
 
     placement_pb2_any = cast(Any, placement_pb2)
 
@@ -167,6 +168,7 @@ def _job_to_proto(job: Job) -> object:
         return 0
 
     caps = getattr(job, "required_capabilities", None) or []
+    queue_class, worker_pool = resolve_job_queue_contract_from_record(job)
     return placement_pb2_any.JobSpec(
         job_id=_s(getattr(job, "job_id", "")),
         kind=_s(getattr(job, "kind", "")),
@@ -188,8 +190,8 @@ def _job_to_proto(job: Job) -> object:
         power_budget_watts=_i(getattr(job, "power_budget_watts", 0)),
         thermal_sensitivity=_s(getattr(job, "thermal_sensitivity", "")),
         cloud_fallback_enabled=bool(getattr(job, "cloud_fallback_enabled", False)),
-        queue_class=_s(getattr(job, "queue_class", "")),
-        worker_pool=_s(getattr(job, "worker_pool", "")),
+        queue_class=queue_class,
+        worker_pool=worker_pool,
     )
 
 
@@ -204,9 +206,11 @@ def _node_to_proto(node: SchedulerNodeSnapshot) -> object:
         os=node.os,
         arch=node.arch,
         executor=node.executor,
+        executor_contract=node.executor_contract,
         zone=node.zone or "",
         capabilities=list(node.capabilities),
         accepted_kinds=list(node.accepted_kinds),
+        supported_workload_kinds=list(node.supported_workload_kinds),
         worker_pools=list(node.worker_pools),
         max_concurrency=node.max_concurrency,
         active_lease_count=node.active_lease_count,

@@ -27,6 +27,7 @@ class NodeContractPayload(BaseModel):
     address: str | None = Field(default=None, max_length=255)
     profile: str = Field(default="go-runner", min_length=1, max_length=64)
     executor: str = Field(default="unknown", min_length=1, max_length=64)
+    executor_contract: str | None = Field(default=None, min_length=1, max_length=64)
     os: str = Field(default="unknown", min_length=1, max_length=64)
     arch: str = Field(default="unknown", min_length=1, max_length=64)
     zone: str | None = Field(default=None, max_length=128)
@@ -85,6 +86,8 @@ class NodeResponse(BaseModel):
     address: str | None
     profile: str
     executor: str
+    executor_contract: str
+    supported_workload_kinds: list[str]
     os: str
     arch: str
     zone: str | None

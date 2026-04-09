@@ -11,6 +11,7 @@ from backend.kernel.contracts.errors import zen
 from backend.kernel.execution.job_concurrency_service import build_job_concurrency_window
 from backend.kernel.extensions.job_kind_registry import assert_job_submission_authorized, validate_job_payload
 from backend.kernel.scheduling.worker_pool import resolve_job_queue_contract
+from backend.kernel.topology.runtime_contracts import UNKNOWN_PERSONA, is_control_plane_persona
 from backend.models.job import Job
 from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
 from backend.platform.db.rls import set_tenant_context
@@ -115,6 +116,16 @@ def _validated_submission_contract(
     *,
     deps: SubmitJobDependencies,
 ) -> tuple[dict[str, object], str, str]:
+    if payload.target_executor:
+        normalized_target = payload.target_executor.strip().lower()
+        if not is_control_plane_persona(normalized_target) or normalized_target == UNKNOWN_PERSONA:
+            raise zen(
+                "ZEN-JOB-4003",
+                f"target_executor '{payload.target_executor}' is not a supported control-plane persona",
+                status_code=400,
+                recovery_hint="Use a published runtime persona such as go-native, python-runner, shell, or a pack-specific persona",
+                details={"target_executor": payload.target_executor},
+            )
     try:
         validated_payload = deps.validate_job_payload(payload.kind, payload.payload)
     except ValueError as exc:

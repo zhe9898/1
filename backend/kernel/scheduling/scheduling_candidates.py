@@ -156,6 +156,8 @@ def _candidate_nodes_for_job(  # noqa: C901
     *,
     accepted_kinds: set[str] | None = None,
 ) -> list[SchedulerNodeSnapshot]:
+    from backend.kernel.topology.executor_registry import get_executor_registry
+
     required_capabilities = _required_capability_set(job)
     required_executor = _text_attr(_job_attr(job, "target_executor"))
     required_os = _text_attr(_job_attr(job, "target_os"))
@@ -175,6 +177,12 @@ def _candidate_nodes_for_job(  # noqa: C901
 
     candidate_nodes: list[SchedulerNodeSnapshot] = []
     for node in live_nodes:
+        executor_contract = (node.executor_contract or "").strip()
+        if not executor_contract or executor_contract == "unknown":
+            executor_contract = (node.executor or "").strip()
+        supported_workload_kinds = node.supported_workload_kinds or frozenset(get_executor_registry().get_or_default(executor_contract).supported_kinds)
+        if supported_workload_kinds and job.kind not in supported_workload_kinds:
+            continue
         if node.accepted_kinds:
             if job.kind not in node.accepted_kinds:
                 continue

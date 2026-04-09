@@ -99,6 +99,21 @@ EXTERNAL_RUNTIME_INVARIANTS: Final[tuple[ExternalRuntimeInvariant, ...]] = (
             "backend/sentinel/routing_operator.py",
         ),
     ),
+    ExternalRuntimeInvariant(
+        key="runtime_persona_executor_workload_chain",
+        statement=(
+            "Control-plane persona, kernel executor contract, and workload kind remain "
+            "distinct layers: persona drives selector UX, executor contract owns hard "
+            "compatibility, and workload kinds stay kernel-owned job semantics."
+        ),
+        rationale="Placement truth must stay explicit instead of leaking through helper-side translation or runtime-shell guesses.",
+        evidence_modules=(
+            "backend/kernel/topology/runtime_contracts.py",
+            "backend/api/nodes_helpers.py",
+            "backend/kernel/scheduling/job_scheduler.py",
+            "backend/kernel/scheduling/placement_grpc_client.py",
+        ),
+    ),
 )
 
 

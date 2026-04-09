@@ -27,6 +27,7 @@ from backend.kernel.scheduling.scheduling_candidates import (  # noqa: F401 閳?
     count_eligible_nodes_for_job,
 )
 from backend.kernel.scheduling.worker_pool import infer_node_worker_pools, resolve_job_queue_contract_from_record
+from backend.kernel.topology.runtime_contracts import node_executor_contract, node_supported_workload_kinds
 from backend.models.job import Job
 from backend.models.node import Node
 
@@ -61,6 +62,18 @@ def _node_stale_seconds() -> int:
     return get_policy_store().active.freshness.stale_after_seconds
 
 
+def _effective_supported_workload_kinds(node: SchedulerNodeSnapshot) -> frozenset[str]:
+    if node.supported_workload_kinds:
+        return node.supported_workload_kinds
+    from backend.kernel.topology.executor_registry import get_executor_registry
+
+    executor_contract = (node.executor_contract or "").strip()
+    if not executor_contract or executor_contract == "unknown":
+        executor_contract = (node.executor or "").strip()
+    contract = get_executor_registry().get_or_default(executor_contract)
+    return frozenset(contract.supported_kinds)
+
+
 @dataclass(slots=True)
 class SchedulerNodeSnapshot:
     node_id: str
@@ -90,6 +103,8 @@ class SchedulerNodeSnapshot:
     thermal_state: str
     cloud_connectivity: str
     metadata_json: dict[str, object]
+    executor_contract: str = "unknown"
+    supported_workload_kinds: frozenset[str] = field(default_factory=frozenset)
     worker_pools: frozenset[str] = field(default_factory=frozenset)
     tenant_id: str = "default"
 
@@ -141,6 +156,8 @@ def build_node_snapshot(node: Node, *, active_lease_count: int, reliability_scor
         thermal_state=str(getattr(node, "thermal_state", None) or "normal"),
         cloud_connectivity=str(getattr(node, "cloud_connectivity", None) or "unknown"),
         metadata_json=dict(getattr(node, "metadata_json", None) or {}),
+        executor_contract=node_executor_contract(node),
+        supported_workload_kinds=frozenset(node_supported_workload_kinds(node)),
         tenant_id=str(getattr(node, "tenant_id", "default") or "default"),
     )
 
@@ -197,6 +214,9 @@ def node_blockers_for_job(  # noqa: C901
         blockers.append("capacity=full")
 
     # Kind matching (use node contract if available, fallback to accepted_kinds)
+    supported_workload_kinds = _effective_supported_workload_kinds(node)
+    if supported_workload_kinds and job.kind not in supported_workload_kinds:
+        blockers.append(f"executor_contract={node.executor_contract}:kind={job.kind}:unsupported")
     if node.accepted_kinds:
         if job.kind not in node.accepted_kinds:
             blockers.append(f"kind={job.kind}:not-in-node-contract")
@@ -283,10 +303,13 @@ def select_jobs_for_node(  # noqa: C901
     from backend.kernel.scheduling.backfill_scheduling import BackfillEvaluator, get_reservation_manager
 
     backfill_gate = BackfillEvaluator(get_reservation_manager())
+    supported_workload_kinds = _effective_supported_workload_kinds(node)
 
     # 鈹€鈹€ Phase A: Cheap pre-filter 鈫?compatible candidates 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     compatible: list[Job] = []
     for job in jobs:
+        if supported_workload_kinds and job.kind not in supported_workload_kinds:
+            continue
         if node.accepted_kinds and job.kind not in node.accepted_kinds:
             continue
         if accepted_kinds and job.kind not in accepted_kinds:
@@ -294,12 +317,6 @@ def select_jobs_for_node(  # noqa: C901
         if job.target_os and job.target_os != node.os:
             continue
         if job.target_arch and job.target_arch != node.arch:
-            continue
-        # Executor contract kind-compatibility check
-        from backend.kernel.topology.executor_registry import get_executor_registry
-
-        compat, _compat_reason = get_executor_registry().kind_compatible(node.executor, job.kind)
-        if not compat:
             continue
         if not job_matches_node(job, node, now=now, accepted_kinds=accepted_kinds):
             continue

@@ -118,6 +118,264 @@ runtime_contracts:
       authoritative: false
       decision_gate: true
       description: Ephemeral sentinel safety overrides that temporarily suppress container intent without becoming durable authority.
+  runtime_authority_boundaries:
+    - layer: persona
+      owner: control-plane
+      authority: selector vocabulary, bootstrap UX, and operator-facing routing intent
+      non_authority_roles:
+        - does_not_define_workload_kind_compatibility
+        - does_not_define_scheduler_truth_by_itself
+    - layer: executor_contract
+      owner: kernel
+      authority: node contract compatibility envelope, workload-kind support, and scheduling hard gates
+      non_authority_roles:
+        - not_a_ui_persona
+        - not_a_browser-facing label vocabulary
+    - layer: workload_kind
+      owner: kernel
+      authority: job semantics, lifecycle hooks, and default resource/QoS model
+      non_authority_roles:
+        - not_a_node_persona
+        - not_a_runtime-shell implementation detail
+  control_plane_personas:
+    - key: go-native
+      label: Go Native
+      description: Go runner persona used by backend and runner-agent control-plane surfaces.
+      default_executor_contract: edge-native
+      allowed_executor_contracts:
+        - edge-native
+        - process
+        - docker
+        - wasm
+      default_node_types:
+        - runner
+      default_platforms:
+        - windows
+        - darwin
+        - linux
+    - key: python-runner
+      label: Python Runner
+      description: Python-side runner persona for process-oriented execution shells.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+        - docker
+      default_node_types:
+        - runner
+      default_platforms:
+        - windows
+        - darwin
+        - linux
+    - key: shell
+      label: Shell
+      description: Generic shell-facing control-plane persona.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+        - edge-native
+        - docker
+      default_node_types:
+        - runner
+        - sidecar
+      default_platforms:
+        - windows
+        - darwin
+        - linux
+    - key: swift-native
+      label: Swift Native
+      description: iOS/native-client persona used for HealthKit and mobile bridges.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+      default_node_types:
+        - native-client
+      default_platforms:
+        - ios
+    - key: kotlin-native
+      label: Kotlin Native
+      description: Android/native-client persona used for Health Connect and mobile bridges.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+      default_node_types:
+        - native-client
+      default_platforms:
+        - android
+    - key: vector-worker
+      label: Vector Worker
+      description: Background vector-processing worker persona.
+      default_executor_contract: docker
+      allowed_executor_contracts:
+        - docker
+        - process
+      default_node_types:
+        - runner
+        - sidecar
+      default_platforms:
+        - linux
+    - key: search-service
+      label: Search Service
+      description: Search/index-serving persona for vector and semantic retrieval workloads.
+      default_executor_contract: docker
+      allowed_executor_contracts:
+        - docker
+        - process
+      default_node_types:
+        - runner
+        - sidecar
+      default_platforms:
+        - linux
+    - key: unknown
+      label: Unknown
+      description: Fallback persona used when a node has not declared a control-plane runtime identity yet.
+      default_executor_contract: unknown
+      allowed_executor_contracts: []
+      default_node_types: []
+      default_platforms: []
+  persona_to_default_executor_contract:
+    go-native: edge-native
+    python-runner: process
+    shell: process
+    swift-native: process
+    kotlin-native: process
+    vector-worker: docker
+    search-service: docker
+    unknown: unknown
+  canonical_executor_contracts:
+    docker:
+      description: Container-based execution via Docker Engine
+      supported_workload_kinds:
+        - alert.notify
+        - connector.invoke
+        - container.run
+        - cron.tick
+        - cron.trigger
+        - data.sync
+        - docker.exec
+        - file.transfer
+        - healthcheck
+        - http.request
+        - noop
+        - script.run
+        - shell.exec
+      requires_gpu: false
+      min_memory_mb: 256
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    edge-native:
+      description: Lightweight on-device executor for constrained IoT/edge nodes
+      supported_workload_kinds:
+        - alert.notify
+        - connector.invoke
+        - cron.tick
+        - data.sync
+        - file.transfer
+        - healthcheck
+        - http.request
+        - iot.collect
+        - noop
+        - script.run
+        - shell.exec
+        - wasm.run
+      requires_gpu: false
+      min_memory_mb: 32
+      min_cpu_cores: 0
+      max_concurrency_hint: 4
+      stability_tier: ga
+    gpu:
+      description: GPU-accelerated workloads (CUDA/OpenCL)
+      supported_workload_kinds:
+        - media.transcode
+        - ml.inference
+        - shell.exec
+      requires_gpu: true
+      min_memory_mb: 1024
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    k8s:
+      description: Kubernetes pod-based execution via kubelet API
+      supported_workload_kinds:
+        - container.run
+        - cron.tick
+        - data.sync
+        - healthcheck
+        - http.request
+        - shell.exec
+      requires_gpu: false
+      min_memory_mb: 512
+      min_cpu_cores: 1
+      max_concurrency_hint: 32
+      stability_tier: ga
+    process:
+      description: Direct process execution on host OS
+      supported_workload_kinds:
+        - alert.notify
+        - connector.invoke
+        - cron.tick
+        - cron.trigger
+        - data.sync
+        - file.transfer
+        - healthcheck
+        - http.request
+        - noop
+        - script.run
+        - shell.exec
+        - wasm.run
+      requires_gpu: false
+      min_memory_mb: 64
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    remote-ssh:
+      description: Remote execution via SSH tunnel to edge device
+      supported_workload_kinds:
+        - data.sync
+        - healthcheck
+        - iot.collect
+        - script.run
+        - shell.exec
+      requires_gpu: false
+      min_memory_mb: 128
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    unknown:
+      description: Fallback for unregistered executors - accepts all kinds
+      supported_workload_kinds: []
+      requires_gpu: false
+      min_memory_mb: 0
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    wasm:
+      description: WebAssembly sandboxed execution
+      supported_workload_kinds:
+        - wasm.run
+      requires_gpu: false
+      min_memory_mb: 128
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: beta
+  workload_kinds:
+    - alert.notify
+    - connector.invoke
+    - container.run
+    - cron.tick
+    - cron.trigger
+    - data.sync
+    - docker.exec
+    - file.transfer
+    - healthcheck
+    - http.request
+    - iot.collect
+    - media.transcode
+    - ml.inference
+    - noop
+    - script.run
+    - shell.exec
+    - wasm.run
 services:
   caddy:
     enabled: true
@@ -368,7 +626,8 @@ services:
       # Example — Raspberry Pi 4 edge runner:
       # RUNNER_DEVICE_PROFILE: raspberry_pi_4
       # RUNNER_ARCH: arm64
-      # RUNNER_EXECUTOR: edge-native
+      # RUNNER_EXECUTOR: go-native
+      # RUNNER_EXECUTOR_CONTRACT: edge-native
       # RUNNER_ZONE: home
       # RUNNER_CAPABILITIES: iot.adapter,connector.invoke
       # RUNNER_MAX_CONCURRENCY: '4'

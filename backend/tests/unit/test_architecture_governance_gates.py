@@ -24,6 +24,7 @@ from backend.kernel.governance.architecture_rules import (
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
 from backend.kernel.scheduling.scheduling_framework import SchedulingProfile
 from backend.kernel.surfaces.registry import export_surface_registry
+from backend.kernel.topology.runtime_contracts import control_plane_persona_keys, export_runtime_contract_taxonomy
 from backend.platform.events.channels import export_event_channel_contract
 from backend.platform.redis.runtime_state import export_runtime_state_contract
 
@@ -229,6 +230,48 @@ def test_runtime_state_contract_is_ephemeral_and_non_authoritative() -> None:
     assert all(entry["authoritative"] is False for entry in runtime_state)
     assert all(str(entry["pattern"]).strip() for entry in runtime_state)
     assert all(not str(entry["pattern"]).startswith("switch_expected:") for entry in runtime_state)
+
+
+def test_runtime_contract_taxonomy_exports_persona_executor_and_workload_layers() -> None:
+    contract = export_runtime_contract_taxonomy()
+
+    personas = contract["control_plane_personas"]
+    persona_defaults = contract["persona_to_default_executor_contract"]
+    canonical_executor_contracts = contract["canonical_executor_contracts"]
+    workload_kinds = set(contract["workload_kinds"])
+    authority_boundaries = contract["runtime_authority_boundaries"]
+
+    assert personas
+    assert canonical_executor_contracts
+    assert workload_kinds
+    assert authority_boundaries
+    assert {item["key"] for item in personas} == set(control_plane_persona_keys())
+    assert set(persona_defaults) == {item["key"] for item in personas}
+    assert {item["layer"] for item in authority_boundaries} == {"persona", "executor_contract", "workload_kind"}
+    for executor_name, executor_contract in canonical_executor_contracts.items():
+        assert executor_name
+        assert set(executor_contract["supported_workload_kinds"]) <= workload_kinds
+
+
+def test_runtime_contract_gate_blocks_hidden_persona_literals_in_scheduler_paths() -> None:
+    risky_modules = (
+        BACKEND_ROOT / "api" / "nodes_helpers.py",
+        BACKEND_ROOT / "kernel" / "scheduling" / "job_scheduler.py",
+        BACKEND_ROOT / "kernel" / "scheduling" / "scheduling_candidates.py",
+        BACKEND_ROOT / "kernel" / "scheduling" / "job_scoring.py",
+    )
+    persona_literals = {value for value in control_plane_persona_keys() if value != "unknown"}
+    violations: list[str] = []
+    for path in risky_modules:
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        literals = {
+            node.value.strip()
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.strip() in persona_literals
+        }
+        if literals:
+            violations.append(f"{_rel(path)}:{sorted(literals)}")
+    assert violations == []
 
 
 def test_platform_infra_gate_blocks_legacy_core_imports() -> None:
@@ -452,7 +495,7 @@ def test_architecture_governance_registry_is_code_backed_and_exportable() -> Non
     rules = export_architecture_governance_rules()
     snapshot = export_architecture_governance_snapshot()
 
-    assert tuple(rules.keys()) == tuple(f"A{i}" for i in range(1, 13))
+    assert tuple(rules.keys()) == tuple(f"A{i}" for i in range(1, 14))
     assert rules["A1"]["maturity"] == "enforced"
     assert rules["A6"]["maturity"] == "enforced"
     assert rules["A12"]["maturity"] == "enforced"

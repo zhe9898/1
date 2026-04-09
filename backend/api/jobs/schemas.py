@@ -3,6 +3,7 @@ import os
 from backend.api.action_contracts import ControlAction
 from backend.api.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
+from backend.kernel.topology.runtime_contracts import control_plane_persona_options
 
 
 def _resource_schema() -> ResourceSchemaResponse:
@@ -35,6 +36,9 @@ def _resource_schema() -> ResourceSchemaResponse:
                 "baseline_scope": "write:jobs",
                 "privileged_scope": "admin:jobs",
                 "default_console_kind": "noop",
+            },
+            "selector_semantics": {
+                "target_executor": "control-plane-persona",
             },
         },
         submit_action=ControlAction(
@@ -107,18 +111,10 @@ def _resource_schema() -> ResourceSchemaResponse:
                     ),
                     FormFieldSchema(
                         key="target_executor",
-                        label="Target Executor",
+                        label="Target Persona",
                         input_type="select",
-                        options=[
-                            FormFieldOption(value="", label="Any"),
-                            FormFieldOption(value="go-native", label="Go Native"),
-                            FormFieldOption(value="python-runner", label="Python Runner"),
-                            FormFieldOption(value="shell", label="Shell"),
-                            FormFieldOption(value="swift-native", label="Swift Native"),
-                            FormFieldOption(value="kotlin-native", label="Kotlin Native"),
-                            FormFieldOption(value="vector-worker", label="Vector Worker"),
-                            FormFieldOption(value="search-service", label="Search Service"),
-                        ],
+                        options=[FormFieldOption(value="", label="Any")]
+                        + [FormFieldOption(value=value, label=label) for value, label in control_plane_persona_options() if value != "unknown"],
                     ),
                     FormFieldSchema(key="target_zone", label="Target Zone", placeholder="optional"),
                     FormFieldSchema(
