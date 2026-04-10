@@ -8,13 +8,13 @@ After={{ svc.after }}
 
 [Service]
 Type=simple
-ExecStart={{ svc.exec }}{% if svc.args %} {{ svc.args }}{% endif %}
-
+{% if svc.environment_file %}EnvironmentFile={{ svc.environment_file }}
+{% endif %}{% for line in svc.environment_lines %}Environment={{ line }}
+{% endfor %}ExecStart={{ svc.exec_start }}
 {% if svc.user %}User={{ svc.user }}
 {% endif %}{% if svc.group %}Group={{ svc.group }}
 {% endif %}{% if svc.working_dir %}WorkingDirectory={{ svc.working_dir }}
-{% endif %}{% for k, v in svc.environment.items() %}Environment="{{ k }}={{ v }}"
-{% endfor %}Restart={{ svc.restart }}
+{% endif %}Restart={{ svc.restart }}
 RestartSec={{ svc.restart_sec }}
 StandardOutput=journal
 StandardError=journal

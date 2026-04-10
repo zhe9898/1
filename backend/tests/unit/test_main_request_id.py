@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.api.main import app
+from backend.control_plane.app.entrypoint import app
 from backend.middleware import RequestIDMiddleware, _request_id_ctx, record_factory
 from backend.tests.unit._repo_paths import repo_path
 
@@ -23,14 +23,14 @@ def test_record_factory_backfills_request_id_from_context() -> None:
     assert getattr(record, "request_id", None) == "req-test-123"
 
 
-def test_main_source_contains_no_known_mojibake_markers() -> None:
-    text = repo_path("backend", "api", "main.py").read_text(encoding="utf-8")
+def test_entrypoint_source_contains_no_known_mojibake_markers() -> None:
+    text = repo_path("backend", "control_plane", "app", "entrypoint.py").read_text(encoding="utf-8")
     for marker in ("闂?", "濠?", "婵?", "闁?", "闁?", "闁?"):
         assert marker not in text
 
 
 def test_request_id_has_single_http_owner() -> None:
-    main_text = repo_path("backend", "api", "main.py").read_text(encoding="utf-8")
+    main_text = repo_path("backend", "control_plane", "app", "factory.py").read_text(encoding="utf-8")
     middleware_stack_text = repo_path("backend", "control_plane", "app", "middleware_stack.py").read_text(encoding="utf-8")
 
     assert "add_request_id_and_log" not in main_text

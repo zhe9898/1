@@ -1,4 +1,4 @@
-"""Canonical control-plane app entrypoint."""
+"""Canonical FastAPI app entrypoint for the backend-driven control plane."""
 
 from __future__ import annotations
 

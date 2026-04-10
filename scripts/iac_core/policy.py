@@ -137,7 +137,6 @@ def _builtin_fallback_policy() -> dict[str, Any]:
                     "service_names": [
                         "gateway",
                         "redis",
-                        "sentinel",
                         "watchdog",
                         "docker-proxy",
                     ],
@@ -452,6 +451,8 @@ def evaluate_policy(
             if not isinstance(svc, dict):
                 continue
             if svc.get("enabled") is False:
+                continue
+            if svc.get("runtime") == "host":
                 continue
 
             # 逐条 assert 评估

@@ -393,6 +393,9 @@ services:
     ports:
     - 80:80
     - 443:443
+    - 127.0.0.1:2019:2019
+    extra_hosts:
+    - host.docker.internal:host-gateway
     volumes:
     - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
     - ./frontend/dist:/var/www/html:ro
@@ -401,6 +404,7 @@ services:
     environment:
       MACHINE_API_ALLOWLIST: ${MACHINE_API_ALLOWLIST:-private_ranges}
       MACHINE_API_INTERNAL_HOST: ${MACHINE_API_INTERNAL_HOST:-caddy}
+      GATEWAY_UPSTREAM: ${GATEWAY_UPSTREAM}
     healthcheck:
       test:
       - CMD-SHELL
@@ -422,6 +426,8 @@ services:
     restart: unless-stopped
     networks:
     - backend_net
+    ports:
+    - 127.0.0.1:5432:5432
     deploy:
       resources:
         limits:
@@ -454,6 +460,8 @@ services:
     restart: unless-stopped
     networks:
     - backend_net
+    ports:
+    - 127.0.0.1:6379:6379
     deploy:
       resources:
         limits:
@@ -502,6 +510,8 @@ services:
     restart: unless-stopped
     networks:
     - backend_net
+    ports:
+    - 127.0.0.1:4222:4222
     deploy:
       resources:
         limits:
@@ -531,78 +541,39 @@ services:
         max-file: '3'
   gateway:
     enabled: true
-    container_name: zen70-gateway
-    restart: unless-stopped
-    security:
-      apply_baseline: true
-      user: ${PUID:-1000}:${PGID:-1000}
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-    networks:
-    - backend_net
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: '6379'
-      REDIS_USER: ${REDIS_USER}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      AI_BACKEND_URL: ${AI_BACKEND_URL}
-      GATEWAY_PROFILE: ${GATEWAY_PROFILE}
-      GATEWAY_PACKS: ${GATEWAY_PACKS}
-      POSTGRES_DSN: ${POSTGRES_DSN}
-      EVENT_BUS_BACKEND: nats
-      NATS_URL: nats://nats:4222
-      NATS_CONNECT_TIMEOUT: '5.0'
-    depends_on:
-    - redis
-    - nats
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    oom_score_adj: -999
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - >-
-        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)" || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    stop_grace_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: '3'
+    runtime: host
+    description: ZEN70 Gateway control-plane host process
+    working_dir: .
+    serve:
+      engine: uvicorn
+      app: backend.control_plane.app.entrypoint:app
+      host: 0.0.0.0
+      port: 8000
+      workers: 2
+      graceful_shutdown_seconds: 15
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
   runner-agent:
     enabled: true
-    container_name: zen70-runner-agent
-    restart: unless-stopped
-    security:
-      apply_baseline: true
-      user: ${PUID:-1000}:${PGID:-1000}
-    build:
-      context: .
-      dockerfile: runner-agent/Dockerfile
-    image: ${ZEN70_RUNNER_AGENT_IMAGE_REF:-zen70-runner-agent:v3.43}
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-    networks:
-    - backend_net
+    runtime: host
+    description: ZEN70 Go runner host process
+    working_dir: .
+    entrypoint:
+      type: binary
+      path: runtime/host/bin/runner-agent
+      build:
+        type: go-binary
+        source_dir: runner-agent
+        package: ./cmd/runner-agent
+        output: runtime/host/bin/runner-agent
+        env:
+          CGO_ENABLED: '0'
+        trimpath: true
+        ldflags: -s -w
     environment:
-      GATEWAY_BASE_URL: https://${MACHINE_API_INTERNAL_HOST:-caddy}
-      GATEWAY_CA_FILE: /caddy-data/caddy/pki/authorities/local/root.crt
+      GATEWAY_BASE_URL: http://127.0.0.1:8000
+      RUNNER_ALLOW_INSECURE_HTTP: 'true'
       RUNNER_NODE_NAME: zen70-go-runner
       RUNNER_PROFILE: go-runner
       RUNNER_CAPABILITIES: connector.invoke
@@ -632,96 +603,52 @@ services:
       # RUNNER_CAPABILITIES: iot.adapter,connector.invoke
       # RUNNER_MAX_CONCURRENCY: '4'
       # RUNNER_POWER_CAPACITY_WATTS: '15'
-    depends_on:
-    - gateway
-    - caddy
-    volumes:
-    - caddy_data:/caddy-data:ro
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - cat /proc/1/comm | grep -q runner-agent || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    stop_grace_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: '3'
-  sentinel:
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  topology-sentinel:
     enabled: true
-    image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
-    container_name: zen70-sentinel
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-    networks:
-    - backend_net
+    runtime: host
+    description: ZEN70 topology sentinel host process
+    working_dir: .
+    entrypoint:
+      type: python-module
+      module: backend.sentinel.topology_sentinel
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  control-worker:
+    enabled: true
+    runtime: host
+    description: ZEN70 control-plane worker host process
+    working_dir: .
+    entrypoint:
+      type: python-module
+      module: backend.workers.control_plane_worker
+      args:
+      - --worker
+      - all
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  routing-operator:
+    enabled: true
+    runtime: host
+    description: ZEN70 routing operator host process
+    working_dir: .
+    entrypoint:
+      type: python-module
+      module: backend.sentinel.routing_operator
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: '6379'
-      REDIS_USER: ${REDIS_USER}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
-      EVENT_BUS_BACKEND: nats
-      NATS_URL: nats://nats:4222
-      NATS_CONNECT_TIMEOUT: '5.0'
-      BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT: 
-        ${BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT:-50}
-      BIT_ROT_ALERT_TIMEOUT_SECONDS: ${BIT_ROT_ALERT_TIMEOUT_SECONDS:-5}
-      BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS: 
-        ${BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS:-5}
-      BIT_ROT_SQLITE_BUSY_TIMEOUT_MS: ${BIT_ROT_SQLITE_BUSY_TIMEOUT_MS:-5000}
-      BITROT_SCAN_DIRS: ${BITROT_SCAN_DIRS}
-      MOUNT_POINTS: ${MOUNT_POINTS}
-      SWITCH_CONTAINER_MAP: ${SWITCH_CONTAINER_MAP_JSON}
-      SWITCH_SERVICE_PORTS: ${SWITCH_SERVICE_PORTS}
-      ROUTING_STATE_FILE: /app/runtime/control-plane/routes.json
-      CADDY_ADMIN_URL: http://caddy:2019/load
-      DOCKER_HOST: tcp://docker-proxy:2375
-    command:
-    - python
-    - backend/sentinel/control_plane_supervisor.py
-    depends_on:
-    - redis
-    - nats
-    - docker-proxy
-    volumes:
-    - ./backend:/app/backend:ro
-    - ./scripts:/app/scripts:ro
-    - ./iac:/app/iac:ro
-    - ./system.yaml:/app/system.yaml:ro
-    - ./config:/app/config:ro
-    - ./runtime/control-plane:/app/runtime/control-plane
-    # SECURITY NOTE: /dev and /sys are mounted read-only for hardware monitoring
-    # (disk health, GPU state, UPS detection via topology_sentinel.py).
-    # In high-security deployments, replace with dedicated metrics exporters.
-    - /dev:/dev:ro
-    - /sys:/sys:ro
-    oom_score_adj: -999
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - >-
-        python -c "import pathlib; assert 'control_plane_supervisor' in pathlib.Path('/proc/1/cmdline').read_text()" || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    stop_grace_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: '3'
+      CADDY_ADMIN_URL: http://127.0.0.1:2019/load
+      ROUTING_STATE_FILE: runtime/control-plane/routes.json
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  # Optional pack and observability containers stay disabled until an explicit
+  # pack selection or service enablement requests them.
   docker-proxy:
-    enabled: true
+    enabled: false
     container_name: zen70-docker-proxy
     image: ${DOCKER_SOCKET_PROXY_IMAGE_REF:-tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476}
     restart: unless-stopped

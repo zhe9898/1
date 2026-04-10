@@ -5,7 +5,10 @@ modules:
     name: 执行主链
     included_paths:
       - backend/api/__init__.py
-      - backend/api/main.py
+      - backend/control_plane/app/entrypoint.py
+      - backend/control_plane/app/factory.py
+      - backend/control_plane/app/health.py
+      - backend/control_plane/app/lifespan.py
       - backend/api/control_events.py
       - backend/api/routes.py
       - backend/api/nodes.py

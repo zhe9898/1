@@ -3,13 +3,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts import quality_gate
-from scripts.quality_gate import IAC_DRIFT_TARGETS
+from scripts.quality_gate import IAC_DRIFT_TARGETS, OPENAPI_DRIFT_TARGETS
 
 
 def test_iac_drift_targets_cover_rendered_contracts_but_not_machine_local_env() -> None:
     assert "docker-compose.yml" in IAC_DRIFT_TARGETS
     assert "config/Caddyfile" in IAC_DRIFT_TARGETS
     assert ".env" not in IAC_DRIFT_TARGETS
+
+
+def test_openapi_drift_targets_include_locked_surface_snapshot() -> None:
+    assert "contracts/metadata.json" in OPENAPI_DRIFT_TARGETS
+    assert "docs/api/openapi_locked.json" in OPENAPI_DRIFT_TARGETS
+    assert "docs/openapi.json" in OPENAPI_DRIFT_TARGETS
+    assert "docs/openapi-iot.json" not in OPENAPI_DRIFT_TARGETS
+    assert "docs/openapi-ops.json" not in OPENAPI_DRIFT_TARGETS
+    assert "docs/openapi-full.json" not in OPENAPI_DRIFT_TARGETS
 
 
 def test_github_actions_error_annotation_is_emitted_only_in_ci(monkeypatch, capsys) -> None:

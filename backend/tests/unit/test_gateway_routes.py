@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.api.main import get_enabled_router_names, get_gateway_profile
+from backend.control_plane.app.router_admission import get_enabled_router_names, get_gateway_profile
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
 
 

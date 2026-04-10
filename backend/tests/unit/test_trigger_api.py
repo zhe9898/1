@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from backend.api.deps import get_current_admin, get_current_user, get_db, get_tenant_db
-from backend.api.main import app
 from backend.api.triggers import TriggerFireRequest, TriggerUpsertRequest, fire_trigger_endpoint, receive_trigger_webhook, upsert_trigger
+from backend.control_plane.app.entrypoint import app
 from backend.models.trigger import Trigger, TriggerDelivery
 
 

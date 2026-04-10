@@ -48,7 +48,11 @@ EXTERNAL_RUNTIME_INVARIANTS: Final[tuple[ExternalRuntimeInvariant, ...]] = (
         key="backend_driven_control_plane",
         statement="control plane is the backend-driven management and orchestration entrypoint.",
         rationale="Surface visibility and control-plane manifests remain server-owned.",
-        evidence_modules=("backend/kernel/surfaces/registry.py", "backend/control_plane/console/manifest_service.py", "backend/api/main.py"),
+        evidence_modules=(
+            "backend/kernel/surfaces/registry.py",
+            "backend/control_plane/console/manifest_service.py",
+            "backend/control_plane/app/entrypoint.py",
+        ),
     ),
     ExternalRuntimeInvariant(
         key="pack_is_contract_not_product",

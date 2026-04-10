@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.deps import get_current_user, get_db, get_tenant_db
-from backend.api.main import app
+from backend.control_plane.app.entrypoint import app
 
 
 async def override_get_current_user() -> dict[str, str]:
@@ -92,13 +92,12 @@ def _assert_success_envelope(response: Any) -> dict[str, Any]:
 
 
 def test_health_skips_envelope() -> None:
-    with patch("backend.api.main._check_postgres_async", return_value="ok"):
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert "code" not in data or data.get("code") != "ZEN-OK-0"
-        assert "status" in data
-        assert "version" in data
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert "code" not in data or data.get("code") != "ZEN-OK-0"
+    assert "status" in data
+    assert "version" in data
 
 
 def test_auth_sys_status_has_envelope() -> None:

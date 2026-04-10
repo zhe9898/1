@@ -26,6 +26,7 @@ class BuildConfig(TypedDict, total=False):
 
     context: str
     dockerfile: str
+    target: str
     args: dict[str, str]
 
 
@@ -95,6 +96,41 @@ class LoggingConfig(TypedDict, total=False):
     options: LoggingDriverOptions
 
 
+class HostBinaryBuildConfig(TypedDict, total=False):
+    """runtime=host binary materialization plan."""
+
+    type: str
+    source_dir: str
+    package: str
+    output: str
+    env: dict[str, str]
+    trimpath: bool
+    ldflags: str
+
+
+class HostEntrypointConfig(TypedDict, total=False):
+    """Declarative host-runtime process entrypoint."""
+
+    type: str
+    python: str
+    module: str
+    script: str
+    path: str
+    args: list[str]
+    build: HostBinaryBuildConfig
+
+
+class GatewayServeConfig(TypedDict, total=False):
+    """Structured gateway serve semantics compiled into a host entrypoint."""
+
+    engine: str
+    app: str
+    host: str
+    port: int
+    workers: int
+    graceful_shutdown_seconds: int
+
+
 class ServiceDef(TypedDict, total=False):
     """
     单个服务定义。
@@ -116,14 +152,20 @@ class ServiceDef(TypedDict, total=False):
     """
 
     enabled: bool
+    runtime: str
     image: str
     build: BuildConfig
+    serve: GatewayServeConfig
+    entrypoint: HostEntrypointConfig
     container_name: str
     restart: str
+    restart_sec: int
     networks: list[str]
     ports: list[str]
     volumes: list[str]
     environment: dict[str, str]
+    extra_hosts: list[str]
+    environment_file: str
     command: str | list[str]
     depends_on: list[str] | dict[str, dict[str, str]]
     healthcheck: HealthcheckConfig
@@ -136,6 +178,12 @@ class ServiceDef(TypedDict, total=False):
     tmpfs: list[str]
     logging: LoggingConfig
     user: str
+    group: str
+    working_dir: str
+    description: str
+    port: int
+    caddy_path: str
+    after: str | list[str]
     cap_drop: list[str]
     cap_add: list[str]
 

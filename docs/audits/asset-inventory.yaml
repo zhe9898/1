@@ -16,8 +16,8 @@ scopes:
 
   - scope_id: M1-http-entry
     module: M1
-    path: backend/api/main.py
-    runtime_role: FastAPI bootstrap and control-plane route registration.
+    path: backend/control_plane/app/{entrypoint.py,factory.py,health.py,lifespan.py}
+    runtime_role: Canonical FastAPI composition root, health boundary, and lifespan wiring for the control plane.
     upstream: system.yaml-derived runtime settings, dependency wiring.
     downstream: jobs/nodes/routes handlers, middleware chain, SSE surface.
     state_side_effect: Exposes the HTTP entry point and boot-time runtime guards.

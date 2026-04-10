@@ -2,7 +2,7 @@
 ZEN70 Jobs API – package init.
 
 Aggregates route sub-routers and re-exports all public symbols so that
-callers (tests, console.py, main.py) can import from `backend.api.jobs`
+callers (tests, console.py, router_admission.py) can import from `backend.api.jobs`
 directly without knowing the internal submodule layout.
 """
 
@@ -12,7 +12,7 @@ from fastapi import APIRouter
 
 from . import dispatch, dlq, lifecycle, queue_stats, routes
 
-# ── Aggregated router (used by main.py) ─────────────────────────────────────
+# ── Aggregated router (used by router_admission.py) ─────────────────────────
 router = APIRouter()
 router.include_router(routes.router, tags=["jobs"])
 router.include_router(dispatch.router, tags=["jobs"])

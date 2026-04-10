@@ -37,6 +37,40 @@ def test_runtime_secret_artifacts_are_ignored_untracked_and_absent() -> None:
     assert not leaked_files, f"runtime secret artifacts must not remain in the workspace: {leaked_files}"
 
 
+def test_backend_quality_reports_are_ignored_and_untracked() -> None:
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for required in ("backend/coverage-backend.xml", "backend/bandit-report.json"):
+        assert required in gitignore, f"{required} must be ignored in .gitignore"
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "backend/coverage-backend.xml", "backend/bandit-report.json"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
+    assert not tracked_paths, f"backend quality reports must never be tracked: {tracked_paths}"
+
+
+def test_host_runtime_generated_artifacts_are_ignored_and_untracked() -> None:
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for required in ("runtime/host/bin/", "systemd/"):
+        assert required in gitignore, f"{required} must be ignored in .gitignore"
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "runtime/host/bin", "systemd"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
+    assert not tracked_paths, f"host runtime generated artifacts must never be tracked: {tracked_paths}"
+
+
 def test_workflows_use_immutable_runner_and_action_refs() -> None:
     workflow_files = sorted(WORKFLOW_DIR.glob("*.yml"))
     assert workflow_files, "expected at least one workflow file under .github/workflows"
@@ -202,8 +236,42 @@ def test_offline_release_workflow_compiles_iac_env_before_resolving_images() -> 
 def test_repo_has_single_runtime_config_entrypoint() -> None:
     assert not (REPO_ROOT / "config" / "system.yaml").exists(), "legacy config/system.yaml must not exist in the repo root surface"
     assert (REPO_ROOT / "scripts" / "compiler.py").exists(), "scripts/compiler.py must remain the canonical compiler entrypoint"
+    assert not (REPO_ROOT / "scripts" / "compiler" / "lint.py").exists(), "scripts/compiler/lint.py must not reappear once scripts.iac_core.lint is canonical"
     assert not (REPO_ROOT / "deploy" / "config-compiler.py").exists(), "compatibility compiler wrapper must not exist in development"
     assert not (REPO_ROOT / "deploy" / "bootstrap.py").exists(), "compatibility bootstrap wrapper must not exist in development"
+
+
+def test_runtime_entrypoints_use_canonical_control_plane_app() -> None:
+    canonical_app = "backend.control_plane.app.entrypoint:app"
+    legacy_app = "backend.api.main:app"
+
+    runtime_files = (
+        REPO_ROOT / "backend" / "run.sh",
+        REPO_ROOT / "tests" / "Dockerfile.backend",
+    )
+    for path in runtime_files:
+        text = path.read_text(encoding="utf-8")
+        assert canonical_app in text, f"{path.name} must launch the canonical control-plane app entrypoint"
+        assert legacy_app not in text, f"{path.name} must not reference the deleted compatibility shim"
+
+
+def test_gateway_runtime_uses_typed_serve_contract_without_handwritten_entrypoint_args() -> None:
+    system_yaml = (REPO_ROOT / "system.yaml").read_text(encoding="utf-8")
+
+    assert "  gateway:\n" in system_yaml
+    assert "    serve:\n" in system_yaml
+    assert "      engine: uvicorn\n" in system_yaml
+    assert "      app: backend.control_plane.app.entrypoint:app\n" in system_yaml
+    assert "      workers: 2\n" in system_yaml
+    assert "      graceful_shutdown_seconds: 15\n" in system_yaml
+    assert "    entrypoint:\n" not in system_yaml.split("  gateway:\n", 1)[1].split("  runner-agent:\n", 1)[0]
+
+
+def test_openapi_freeze_tool_uses_single_canonical_refresh_flow() -> None:
+    freeze_tool = (REPO_ROOT / "scripts" / "freeze_openapi.py").read_text(encoding="utf-8")
+    assert "python scripts/generate_contracts.py" in freeze_tool
+    assert "--sync" in freeze_tool
+    assert "--init" not in freeze_tool
 
 
 def test_ci_trivy_scan_uses_pinned_setup_action_and_direct_cli() -> None:

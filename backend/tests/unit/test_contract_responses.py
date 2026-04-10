@@ -44,7 +44,7 @@ class TestErrorResponseContract:
 
 class TestSuccessEnvelopeContract:
     def test_envelope_code_constant_in_main_entry(self) -> None:
-        from backend.api.main import success_envelope
+        from backend.control_plane.app.response_envelope import success_envelope
 
         assert callable(success_envelope)
 

@@ -1215,7 +1215,7 @@ class TestAPIStabilityLabels:
 
     def test_stability_tags_defined(self):
         """Verify the main app has openapi_tags with x-stability."""
-        from backend.api.main import _API_STABILITY_TAGS
+        from backend.control_plane.app.factory import _API_STABILITY_TAGS
 
         assert len(_API_STABILITY_TAGS) > 0
         valid_tiers = {"stable", "beta", "experimental", "deprecated"}
@@ -1226,7 +1226,7 @@ class TestAPIStabilityLabels:
 
     def test_core_routers_are_stable(self):
         """Verify auth, jobs, nodes are marked stable."""
-        from backend.api.main import _API_STABILITY_TAGS
+        from backend.control_plane.app.factory import _API_STABILITY_TAGS
 
         stable_required = {"auth", "jobs", "nodes", "connectors"}
         name_to_tier = {t["name"]: t["x-stability"] for t in _API_STABILITY_TAGS}
@@ -1236,7 +1236,7 @@ class TestAPIStabilityLabels:
 
     def test_governance_router_is_beta(self):
         """Verify scheduling-governance is marked beta."""
-        from backend.api.main import _API_STABILITY_TAGS
+        from backend.control_plane.app.factory import _API_STABILITY_TAGS
 
         name_to_tier = {t["name"]: t["x-stability"] for t in _API_STABILITY_TAGS}
         assert name_to_tier.get("scheduling-governance") == "beta"

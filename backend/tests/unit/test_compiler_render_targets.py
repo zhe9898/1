@@ -174,3 +174,31 @@ def test_compiler_rejects_repo_scoped_acl_output_path(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Refusing to write Redis ACL" in (result.stdout + result.stderr)
+
+
+def test_compiler_renders_systemd_units_without_shell_wrappers(tmp_path: Path) -> None:
+    output_dir = tmp_path / "full-render"
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["ZEN70_SECRET_STATE_DIR"] = str(tmp_path / "secure-state")
+
+    result = subprocess.run(
+        [sys.executable, str(COMPILER), "system.yaml", "-o", str(output_dir)],
+        cwd=str(PROJECT_ROOT),
+        timeout=60,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+
+    assert result.returncode == 0, f"compiler failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    gateway_unit = (output_dir / "systemd" / "gateway.service").read_text(encoding="utf-8")
+    runner_unit = (output_dir / "systemd" / "runner-agent.service").read_text(encoding="utf-8")
+    assert "EnvironmentFile=" in gateway_unit
+    assert "ExecStart=/usr/bin/env python3 -m uvicorn" in gateway_unit
+    assert "bash -lc" not in gateway_unit
+    assert "source ./.env" not in gateway_unit
+    assert "go run" not in runner_unit
+    runner_unit_normalized = runner_unit.replace("\\\\", "/").replace("\\", "/")
+    assert "runtime/host/bin/runner-agent" in runner_unit_normalized

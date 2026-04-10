@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import signal as signal_module
 import uuid
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit, urlunsplit
@@ -13,6 +14,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 pytestmark = pytest.mark.integration
+
+
+def _mock_signal_module() -> MagicMock:
+    mock_signal = MagicMock()
+    mock_signal.SIGTERM = signal_module.SIGTERM
+    mock_signal.getsignal.return_value = MagicMock()
+    return mock_signal
 
 
 def _admin_dsn() -> str:
@@ -61,20 +69,26 @@ def _reload_runtime_modules(monkeypatch: pytest.MonkeyPatch, database_dsn: str):
     import backend.platform.db.rls as rls_mod
     import backend.db as db_mod
     import backend.api.deps as deps_mod
-    import backend.api.main as main_mod
+    import backend.control_plane.app.health as health_mod
+    import backend.control_plane.app.lifespan as lifespan_mod
+    import backend.control_plane.app.factory as factory_mod
+    import backend.control_plane.app.entrypoint as entrypoint_mod
 
     importlib.reload(jwt_mod)
     importlib.reload(rls_mod)
     importlib.reload(db_mod)
     importlib.reload(deps_mod)
-    importlib.reload(main_mod)
-    return db_mod, deps_mod, main_mod
+    importlib.reload(health_mod)
+    importlib.reload(lifespan_mod)
+    importlib.reload(factory_mod)
+    importlib.reload(entrypoint_mod)
+    return db_mod, deps_mod, entrypoint_mod, lifespan_mod
 
 
 @pytest.mark.asyncio
 async def test_lifespan_requires_real_rls_policies(monkeypatch: pytest.MonkeyPatch) -> None:
     async with _temporary_database() as database_dsn:
-        db_mod, _deps_mod, main_mod = _reload_runtime_modules(monkeypatch, database_dsn)
+        db_mod, _deps_mod, entrypoint_mod, lifespan_mod = _reload_runtime_modules(monkeypatch, database_dsn)
         await db_mod.init_db()
 
         asyncpg = pytest.importorskip("asyncpg")
@@ -99,20 +113,20 @@ async def test_lifespan_requires_real_rls_policies(monkeypatch: pytest.MonkeyPat
             assert int(policy_count or 0) == 1
         await conn.close()
 
-        with (
-            patch("backend.api.main.connect_redis_with_retry", new=AsyncMock(return_value=None)),
-            patch("backend.api.main.signal.signal", return_value=MagicMock()),
-            patch("backend.capabilities.clear_lru_cache"),
-        ):
-            async with main_mod.lifespan(main_mod.app):
-                assert main_mod.app.state.rls_ready is True
+        lifespan = lifespan_mod.build_lifespan(
+            redis_connector=AsyncMock(return_value=None),
+            signal_module=_mock_signal_module(),
+        )
+        with patch("backend.capabilities.clear_lru_cache"):
+            async with lifespan(entrypoint_mod.app):
+                assert entrypoint_mod.app.state.rls_ready is True
         await db_mod._engine.dispose()  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
 async def test_get_tenant_db_and_startup_reject_when_rls_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     async with _temporary_database() as database_dsn:
-        db_mod, deps_mod, main_mod = _reload_runtime_modules(monkeypatch, database_dsn)
+        db_mod, deps_mod, entrypoint_mod, lifespan_mod = _reload_runtime_modules(monkeypatch, database_dsn)
         from backend.models import Base
 
         async with db_mod._engine.begin() as conn:  # type: ignore[union-attr]
@@ -124,12 +138,12 @@ async def test_get_tenant_db_and_startup_reject_when_rls_is_missing(monkeypatch:
                 await deps_mod.get_tenant_db({"tenant_id": "tenant-a"}, session)
             assert exc_info.value.status_code == 503
 
-        with (
-            patch("backend.api.main.connect_redis_with_retry", new=AsyncMock(return_value=None)),
-            patch("backend.api.main.signal.signal", return_value=MagicMock()),
-            patch("backend.capabilities.clear_lru_cache"),
-        ):
+        lifespan = lifespan_mod.build_lifespan(
+            redis_connector=AsyncMock(return_value=None),
+            signal_module=_mock_signal_module(),
+        )
+        with patch("backend.capabilities.clear_lru_cache"):
             with pytest.raises(RuntimeError, match="RLS readiness check failed"):
-                async with main_mod.lifespan(main_mod.app):
+                async with lifespan(entrypoint_mod.app):
                     raise AssertionError("unreachable")
         await db_mod._engine.dispose()  # type: ignore[union-attr]

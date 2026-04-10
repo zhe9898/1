@@ -5,20 +5,24 @@ import ast
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 CORE_MODULES: list[Path] = [
-    ROOT / "backend" / "api" / "main.py",
+    ROOT / "backend" / "control_plane" / "app" / "entrypoint.py",
+    ROOT / "backend" / "control_plane" / "app" / "factory.py",
+    ROOT / "backend" / "control_plane" / "app" / "router_admission.py",
+    ROOT / "backend" / "control_plane" / "app" / "response_envelope.py",
     ROOT / "backend" / "api" / "auth.py",
     ROOT / "backend" / "api" / "routes.py",
     ROOT / "backend" / "api" / "settings.py",
     ROOT / "backend" / "middleware.py",
     ROOT / "backend" / "sentinel" / "topology_sentinel.py",
     ROOT / "backend" / "sentinel" / "disk_guardian.py",
-    ROOT / "backend" / "core" / "redis_client.py",
-    ROOT / "backend" / "core" / "errors.py",
+    ROOT / "backend" / "platform" / "redis" / "client.py",
+    ROOT / "backend" / "kernel" / "contracts" / "errors.py",
 ]
 
 SECRET_FILE_PATTERNS = (
@@ -44,12 +48,12 @@ def gate_syntax() -> tuple[bool, list[str]]:
     errors: list[str] = []
     for module_path in CORE_MODULES:
         if not module_path.exists():
-            errors.append(f"模块不存在: {module_path.relative_to(ROOT)}")
+            errors.append(f"Missing module: {module_path.relative_to(ROOT)}")
             continue
         try:
             ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
         except SyntaxError as exc:
-            errors.append(f"语法错误 ({module_path.relative_to(ROOT)}): L{exc.lineno}: {exc.msg}")
+            errors.append(f"Syntax error in {module_path.relative_to(ROOT)} at L{exc.lineno}: {exc.msg}")
     return len(errors) == 0, errors
 
 
@@ -70,7 +74,7 @@ def gate_pytest() -> tuple[bool, list[str]]:
 def gate_envelope_contract() -> tuple[bool, list[str]]:
     test_file = ROOT / "backend" / "tests" / "unit" / "test_runtime_contract.py"
     if not test_file.exists():
-        return False, ["test_runtime_contract.py 不存在"]
+        return False, ["test_runtime_contract.py does not exist"]
     result = subprocess.run(
         [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"],
         cwd=str(ROOT),
@@ -101,10 +105,10 @@ def gate_secret_hygiene() -> tuple[bool, list[str]]:
         if not path.exists():
             continue
         if path.is_file():
-            violations.append(f"禁止运行态明文密钥产物: {path.relative_to(ROOT)}")
+            violations.append(f"Runtime secret artifact is committed: {path.relative_to(ROOT)}")
             continue
         files = [item.relative_to(ROOT).as_posix() for item in path.rglob("*") if item.is_file()]
-        violations.extend(f"禁止运行态明文密钥目录产物: {item}" for item in files)
+        violations.extend(f"Runtime secret directory contains file: {item}" for item in files)
 
     return len(violations) == 0, violations
 
@@ -129,7 +133,7 @@ def gate_frontend_build() -> tuple[bool, list[str]]:
     if not (frontend_dir / "package.json").exists():
         return True, []
     if not (frontend_dir / "node_modules").exists():
-        return True, ["跳过: node_modules 不存在（需要先 npm install）"]
+        return True, ["Skipped frontend typecheck because node_modules is missing"]
 
     result = subprocess.run(
         ["npx", "vue-tsc", "--noEmit"],
@@ -145,14 +149,11 @@ def gate_frontend_build() -> tuple[bool, list[str]]:
 
 
 def gate_governance_consolidation() -> tuple[bool, list[str]]:
-    """G7: 验证 dispatch.py 不直接导入 scheduling_resilience / scheduling_governance 的类。
+    """Ensure dispatch.py reaches governance through GovernanceFacade only."""
 
-    GovernanceFacade 是派发链唯一治理入口；直接使用底层模块会绕过治理合约。
-    允许导入的仅为声明性常量 (SCHED_FLAG_*)。
-    """
     dispatch_path = ROOT / "backend" / "api" / "jobs" / "dispatch.py"
     if not dispatch_path.exists():
-        return False, ["dispatch.py 不存在"]
+        return False, ["dispatch.py does not exist"]
 
     violations: list[str] = []
     banned_symbols = (
@@ -169,21 +170,22 @@ def gate_governance_consolidation() -> tuple[bool, list[str]]:
         stripped = line.strip()
         if stripped.startswith("#"):
             continue
-        for sym in banned_symbols:
-            if sym in stripped:
-                violations.append(f"dispatch.py:L{lineno}: 直接引用 {sym} — 请通过 GovernanceFacade")
+        for symbol in banned_symbols:
+            if symbol in stripped:
+                violations.append(f"dispatch.py:L{lineno}: direct import of {symbol}; use GovernanceFacade instead")
 
     return len(violations) == 0, violations
 
 
-GATES: list[tuple[str, object]] = [
-    ("G1: 核心模块语法检查", gate_syntax),
-    ("G2: pytest 全量单测", gate_pytest),
-    ("G3: Runtime Contract", gate_envelope_contract),
-    ("G4: 运行态密钥治理", gate_secret_hygiene),
-    ("G5: 外部镜像 digest pin", gate_digest_pinning),
-    ("G6: 前端类型检查", gate_frontend_build),
-    ("G7: 治理层合规 (GovernanceFacade)", gate_governance_consolidation),
+GateFn = Callable[[], tuple[bool, list[str]]]
+GATES: list[tuple[str, GateFn]] = [
+    ("G1: core module syntax", gate_syntax),
+    ("G2: unit test suite", gate_pytest),
+    ("G3: runtime contract", gate_envelope_contract),
+    ("G4: secret hygiene", gate_secret_hygiene),
+    ("G5: image digest pinning", gate_digest_pinning),
+    ("G6: frontend typecheck", gate_frontend_build),
+    ("G7: governance facade consolidation", gate_governance_consolidation),
 ]
 
 
@@ -197,10 +199,10 @@ def main() -> int:
     for gate_name, gate_fn in GATES:
         print(f"[Gate] {gate_name}...")
         try:
-            passed, details = gate_fn()  # type: ignore[operator]
-        except Exception as exc:
+            passed, details = gate_fn()
+        except Exception as exc:  # pragma: no cover - guardrail script
             passed = False
-            details = [f"异常: {exc}"]
+            details = [f"Unexpected error: {exc}"]
 
         if passed:
             print("  PASS")
@@ -212,7 +214,10 @@ def main() -> int:
         print()
 
     print("=" * 56)
-    print("  PASS: 所有门禁通过，可继续发布" if all_passed else "  FAIL: 存在阻断门禁，停止发布")
+    if all_passed:
+        print("  PASS: all preflight gates succeeded")
+    else:
+        print("  FAIL: one or more preflight gates failed")
     return 0 if all_passed else 1
 
 

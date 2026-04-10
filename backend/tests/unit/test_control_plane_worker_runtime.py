@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.sentinel.control_plane_supervisor import _child_commands
 from backend.workers.control_plane_worker import _worker_factories, run
 
 
@@ -17,21 +15,6 @@ def test_worker_factories_support_all_and_named_modes() -> None:
     assert set(_worker_factories("bitrot")) == {"bitrot"}
     assert set(_worker_factories("health-probe")) == {"health-probe"}
     assert set(_worker_factories("data-retention")) == {"data-retention"}
-
-
-def test_control_plane_supervisor_child_commands() -> None:
-    commands = _child_commands(Path("E:/3.4"))
-
-    assert "topology-sentinel" in commands
-    assert "control-worker" in commands
-    assert "routing-operator" in commands
-    assert commands["topology-sentinel"][-1].endswith("backend\\sentinel\\topology_sentinel.py") or commands["topology-sentinel"][-1].endswith(
-        "backend/sentinel/topology_sentinel.py"
-    )
-    assert commands["control-worker"][-3:] == ["backend.workers.control_plane_worker", "--worker", "all"]
-    assert commands["routing-operator"][-1].endswith("backend\\sentinel\\routing_operator.py") or commands["routing-operator"][-1].endswith(
-        "backend/sentinel/routing_operator.py"
-    )
 
 
 @pytest.mark.asyncio

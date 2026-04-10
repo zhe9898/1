@@ -1,18 +1,9 @@
 #!/usr/bin/env python3
-"""
-配置编译器包入口。
-
-将原始 compiler.py 拆解为三个纯函数模块：
-- lint.py: config-lint YAML 校验
-- secrets_manager.py: 密钥幂等解析
-- services.py: 服务编排预处理（保留在原 compiler.py 中）
-
-本 __init__.py 重新导出公共 API，保持向后兼容。
-"""
+"""Compatibility exports for the canonical IaC compiler package surface."""
 
 from __future__ import annotations
 
-from scripts.compiler.lint import config_lint
 from scripts.compiler.secrets_manager import generate_secrets
+from scripts.iac_core.lint import config_lint
 
 __all__ = ["config_lint", "generate_secrets"]

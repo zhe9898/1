@@ -57,7 +57,7 @@ PACK_DEFINITIONS: Final[dict[str, PackDefinition]] = {
         category="ops",
         description="Observability and operational diagnostics stack kept outside the kernel ingress process.",
         delivery_stage="runtime-present",
-        services=("watchdog", "victoriametrics", "grafana", "categraf", "loki", "promtail", "alertmanager", "vmalert"),
+        services=("docker-proxy", "watchdog", "victoriametrics", "grafana", "categraf", "loki", "promtail", "alertmanager", "vmalert"),
         routers=("observability", "energy"),
         capability_keys=("pack.ops", "ops.observe", "ops.energy"),
         selector=PackSelectorContract(required_capabilities=("ops.observe",), target_zone="ops"),

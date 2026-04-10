@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
 from backend.api.deps import get_current_user, get_db, get_tenant_db
-from backend.api.main import app
+from backend.control_plane.app.entrypoint import app
 
 
 async def override_get_current_user() -> dict[str, str]:

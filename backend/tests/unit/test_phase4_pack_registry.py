@@ -28,7 +28,7 @@ def test_iot_pack_contract_isolated_from_kernel_default() -> None:
 
 
 def test_media_pack_contract_requires_explicit_pack_selection() -> None:
-    from backend.api.main import KERNEL_ALLOWED_OPTIONAL_ROUTERS, OPTIONAL_ROUTER_MODULES
+    from backend.control_plane.app.router_admission import KERNEL_ALLOWED_OPTIONAL_ROUTERS, OPTIONAL_ROUTER_MODULES
 
     allowlist = selected_service_allowlist(
         profile="gateway-kernel",

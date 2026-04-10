@@ -229,15 +229,26 @@ def _render_systemd_units(
     return written
 
 
-def _host_services_caddy_routes(host_services: list[dict]) -> list[dict]:
+def _host_service_upstream_host(config: dict[str, object]) -> str:
+    services = (config.get("services") or {}) if isinstance(config, dict) else {}
+    if not isinstance(services, dict):
+        return "host.docker.internal"
+    caddy_svc = services.get("caddy") or {}
+    if isinstance(caddy_svc, dict) and caddy_svc.get("runtime") == "host" and caddy_svc.get("enabled") is not False:
+        return "127.0.0.1"
+    return "host.docker.internal"
+
+
+def _host_services_caddy_routes(config: dict[str, object], host_services: list[dict]) -> list[dict]:
     """Convert runtime host services into Caddy dynamic route entries."""
 
+    upstream_host = _host_service_upstream_host(config)
     routes: list[dict] = []
     for svc in host_services:
         caddy_path = svc.get("caddy_path")
         port = svc.get("port")
         if caddy_path and port:
-            routes.append({"path": str(caddy_path), "target": f"127.0.0.1:{port}"})
+            routes.append({"path": str(caddy_path), "target": f"{upstream_host}:{port}"})
     return routes
 
 
@@ -390,6 +401,8 @@ def main() -> None:
     deployment_cfg["packs"] = list(requested_pack_keys)
     deployment_cfg["product"] = product_name
     config["deployment"] = deployment_cfg
+    config["__project_root__"] = str(root)
+    config["__output_root__"] = str(output_dir.resolve())
     gateway_image_target = resolve_gateway_image_target(normalized_profile, selected_packs=requested_pack_keys)
     logger.info(
         "[profile] resolved=%s packs=%s gateway_target=%s product=%s",
@@ -417,7 +430,7 @@ def main() -> None:
 
     # 2. 闁槒绶懕姘値 (iac_core.loader)
     services_list = prepare_services(config)
-    host_services_list = prepare_host_services(config)
+    host_services_list = prepare_host_services(config, output_root=output_dir)
     env_vars = prepare_env(config)
     env_vars["csp_connect_src_extra"] = _derive_csp_connect_src_extra()
     # Use config mtime as the render timestamp so recompiles stay deterministic.
@@ -433,8 +446,8 @@ def main() -> None:
     # 2.5 闂冭尪鍘崙顓＄槈娑擃厼绺?(iac_core.secrets)
     dynamic_routes_file = _resolve_dynamic_routes_file(root, args.dynamic_routes_file)
     dynamic_routes = _load_dynamic_routes(dynamic_routes_file) if args.render_target == "caddy" else []
-    # Merge host-service routes (127.0.0.1:port) into caddy dynamic_routes
-    dynamic_routes = list(dynamic_routes) + _host_services_caddy_routes(host_services_list)
+    # Merge host-service routes into caddy dynamic_routes.
+    dynamic_routes = list(dynamic_routes) + _host_services_caddy_routes(config, host_services_list)
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
 
@@ -456,7 +469,7 @@ def main() -> None:
     networks_list = extract_networks(config)
 
 # Build extra Caddy routes for runtime host services and caddy-only surfaces.
-    dynamic_routes = _host_services_caddy_routes(host_services_list)
+    dynamic_routes = _host_services_caddy_routes(config, host_services_list)
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
 
@@ -601,7 +614,8 @@ def main() -> None:
         gateway_image_target=gateway_image_target,
         policy_version=int(policy_version),
         policy_file=policy_source,
-        services_list=services_list + host_services_list,
+        container_services_list=services_list,
+        host_services_list=host_services_list,
         policy_violations=policy_violations,
         tier3_warnings=lint_result.warnings,
     )

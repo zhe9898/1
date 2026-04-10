@@ -41,10 +41,8 @@ IAC_DRIFT_TARGETS = [
 OPENAPI_DRIFT_TARGETS = [
     "contracts/metadata.json",
     "contracts/openapi",
+    "docs/api/openapi_locked.json",
     "docs/openapi-kernel.json",
-    "docs/openapi-iot.json",
-    "docs/openapi-ops.json",
-    "docs/openapi-full.json",
     "docs/openapi.json",
 ]
 BACKEND_PYTEST_JUNIT_PATH = BACKEND_DIR / "pytest-results.xml"
