@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.api.auth_shared import register_login_session
+from backend.control_plane.adapters.auth_shared import register_login_session
 
 
 @pytest.mark.anyio

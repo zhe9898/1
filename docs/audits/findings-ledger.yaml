@@ -1,7 +1,26 @@
 generated_at: 2026-04-07
+updated_at: 2026-04-10
 ledger_id: AUDIT-FINDINGS-2026-04-07
+status_model:
+  states:
+    - open
+    - fixed
+    - verified
+  truth_order:
+    - implementation
+    - tests
+    - audit_docs
 findings:
-  - severity: P1
+  - finding_id: F-001
+    status: fixed
+    opened_at: 2026-04-07
+    fixed_at: 2026-04-10
+    verified_by:
+      - backend/tests/unit/test_jobs_runtime.py
+      - runner-agent/internal/api/client_test.go
+      - runner-agent/internal/jobs/poller_test.go
+      - go test ./...
+    severity: P1
     category: lease_and_concurrency
     path: runner-agent/internal/jobs/poller.go
     symbol: startLeaseRenewal/reportProgress/reportFailure/reportResult
@@ -9,34 +28,59 @@ findings:
     impact: progress, success, or failure callbacks can be rejected as stale-owner callbacks, causing false lease expiry, duplicate requeue, or confusing operational state
     confidence: high
     recommended_fix: Parse JobLeaseResponse in runner-agent RenewLease, update the live lease token atomically, and add a cross-language regression that covers renew -> progress/result/fail
-    verification_hint: backend/kernel/execution/lease_service.py:104-120; backend/api/jobs/lifecycle.py:369-405; backend/tests/unit/test_jobs_runtime.py:267-294; runner-agent/internal/api/client.go:271-272; runner-agent/internal/jobs/poller.go:128-135,166-228
+    verification_hint: backend/runtime/execution/lease_service.py:104-120; backend/control_plane/adapters/jobs/lifecycle.py:369-405; backend/tests/unit/test_jobs_runtime.py:267-294; runner-agent/internal/api/client.go:271-272; runner-agent/internal/jobs/poller.go:128-135,166-228
+    resolution_note: RenewLease now returns the renewed lease payload and the poller atomically swaps the active token before subsequent progress, result, and fail callbacks.
 
-  - severity: P1
+  - finding_id: F-002
+    status: fixed
+    opened_at: 2026-04-07
+    fixed_at: 2026-04-10
+    verified_by:
+      - backend/tests/unit/test_routes_sse.py
+      - backend/tests/unit/test_control_plane_multitenant_constraints.py
+      - frontend/src/utils/sse.ts
+    severity: P1
     category: tenant_boundary
-    path: backend/api/routes.py
+    path: backend/control_plane/adapters/routes.py
     symbol: _sse_event_generator/sse_events
     failure_mode: SSE subscribers attach to global Redis channels without tenant-scoped channels or payload filtering
     impact: authenticated clients in one tenant can observe node, job, connector, reservation, or trigger events emitted by another tenant
     confidence: high
     recommended_fix: Introduce tenant-scoped event channels or strict tenant filtering in the SSE loop, and require tenant_id in the event contract before frontend fan-out
-    verification_hint: backend/core/constants.py:23-35; backend/api/routes.py:168-250; backend/api/control_events.py:18-40; backend/api/nodes_models.py:81-110; backend/api/jobs/models.py:119-160; frontend/src/utils/sse.ts:163-185; frontend/src/composables/useAppRuntime.ts:68-81
+    verification_hint: backend/platform/events/channels.py:1-140; backend/control_plane/adapters/routes.py:168-250; backend/control_plane/adapters/control_events.py:18-45; frontend/src/utils/sse.ts:163-190; frontend/src/composables/useAppRuntime.ts:68-83
+    resolution_note: Tenant-scoped channels are now part of the realtime contract, publishers must attach tenant_id for scoped subjects, and the SSE loop filters scoped events before fan-out.
 
-  - severity: P2
+  - finding_id: F-003
+    status: fixed
+    opened_at: 2026-04-07
+    fixed_at: 2026-04-10
+    verified_by:
+      - backend/tests/unit/test_attempt_expiration_service.py
+    severity: P2
     category: failure_taxonomy
-    path: backend/kernel/execution/job_lifecycle_service.py
+    path: backend/runtime/execution/job_lifecycle_service.py
     symbol: expire_lease
     failure_mode: lease timeout writes lease_timeout while retry and safe-error layers use lease_expired
     impact: retry policy, safe error projection, metrics, and frontend hints can diverge for the same lease-expiry scenario
     confidence: high
     recommended_fix: Collapse all lease-expiry paths onto one failure category constant and add a semantic consistency test from expire_lease through safe_error_projection
-    verification_hint: backend/kernel/execution/job_lifecycle_service.py:15-43; backend/kernel/execution/failure_taxonomy.py:34,188-228; backend/kernel/contracts/safe_error_projection.py:19-53; backend/tests/unit/test_attempt_expiration_service.py:113
+    verification_hint: backend/runtime/execution/job_lifecycle_service.py:15-43; backend/runtime/execution/failure_taxonomy.py:34,188-228; backend/kernel/contracts/safe_error_projection.py:19-53; backend/tests/unit/test_attempt_expiration_service.py:113
+    resolution_note: Lease expiration now writes the canonical FailureCategory.LEASE_EXPIRED value so retry policy and safe-error projection consume the same source token.
 
-  - severity: P2
+  - finding_id: F-004
+    status: verified
+    opened_at: 2026-04-07
+    verified_at: 2026-04-10
+    verified_by:
+      - backend/runtime/execution/job_lifecycle_service.py
+      - backend/tests/unit/test_jobs_dlq.py
+    severity: P2
     category: retry_budget_semantics
-    path: backend/kernel/execution/job_lifecycle_service.py
+    path: backend/runtime/execution/job_lifecycle_service.py
     symbol: requeue_from_dead_letter
     failure_mode: reset_retry_count resets retry_count only, leaving attempt_count to continue blocking future automatic retries
     impact: operators can requeue a dead-letter job back to pending but still inherit an exhausted automatic retry budget
     confidence: medium
     recommended_fix: Either reset attempt_count together with retry_count or rename and document the API to reflect that only the visible retry counter is reset
-    verification_hint: backend/api/jobs/models.py:99-102; backend/kernel/execution/job_lifecycle_service.py:150-189; backend/kernel/execution/failure_taxonomy.py:188-200; backend/tests/unit/test_jobs_dlq.py:119-129
+    verification_hint: backend/control_plane/adapters/jobs/models.py:99-102; backend/runtime/execution/job_lifecycle_service.py:150-189; backend/runtime/execution/failure_taxonomy.py:188-200; backend/tests/unit/test_jobs_dlq.py:119-129
+    resolution_note: Current implementation delegates dead-letter requeue to _reset_for_fresh_attempt(reset_retry_budget=True), which resets retry_count and attempt_count together.

@@ -12,8 +12,8 @@ The repository already treats `Nodes / Jobs / Connectors` as the default Gateway
 
 Repository evidence before this change:
 
-- `backend/api/nodes.py` exposed mostly `profile + capabilities + metadata`, which left scheduler-relevant dimensions in loose metadata.
-- `backend/api/jobs.py` used `leased_until + skip_locked`, but terminal callbacks did not verify lease ownership, attempt, or idempotency.
+- `backend/control_plane/adapters/nodes.py` exposed mostly `profile + capabilities + metadata`, which left scheduler-relevant dimensions in loose metadata.
+- `backend/control_plane/adapters/jobs.py` used `leased_until + skip_locked`, but terminal callbacks did not verify lease ownership, attempt, or idempotency.
 - `runner-agent` only reported lightweight metadata and posted results by `job_id` alone.
 - Existing databases would not pick up new columns because `Base.metadata.create_all()` does not alter already-created tables.
 

@@ -6,8 +6,8 @@ from typing import TypeAlias
 
 from fastapi import FastAPI, Request
 
-from backend.api.deps import get_settings
-from backend.api.models import HealthResponse
+from backend.control_plane.adapters.deps import get_settings
+from backend.control_plane.adapters.models import HealthResponse
 from backend.control_plane.app.lifespan import check_postgres_async
 from backend.kernel.contracts.runtime_version import get_runtime_version
 from backend.platform.redis.client import RedisClient

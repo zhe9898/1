@@ -74,6 +74,20 @@ runtime_contracts:
     - connector:events
     - reservation:events
     - trigger:events
+  browser_public_realtime_event_channels:
+    - hardware:events
+    - switch:events
+  tenant_scoped_realtime_event_channels:
+    - node:events
+    - job:events
+    - connector:events
+    - reservation:events
+    - trigger:events
+  tenant_realtime_subject_contract:
+    segment: tenant
+    tenant_id_encoding: utf8-hex
+    subject_entrypoint: backend.platform.events.channels.tenant_realtime_subject
+    subscription_entrypoint: backend.platform.events.channels.browser_realtime_subscription_subjects
   # Internal coordination stays Redis-only and must not leak into frontend realtime chains.
   internal_coordination_channels:
     - switch:commands

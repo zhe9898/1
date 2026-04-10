@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.jobs import JobCreateRequest, _get_job_by_idempotency_key, create_job
+from backend.control_plane.adapters.jobs import JobCreateRequest, _get_job_by_idempotency_key, create_job
 
 
 def _scalar_result(value: object | None) -> MagicMock:
@@ -77,7 +77,7 @@ async def test_create_job_allows_same_idempotency_key_in_other_tenant() -> None:
         return _scalar_result(existing_other_tenant)
 
     db.execute.side_effect = execute_side_effect
-    import backend.kernel.scheduling.scheduling_resilience as scheduling_resilience
+    import backend.runtime.scheduling.scheduling_resilience as scheduling_resilience
 
     original_check_admission = scheduling_resilience.AdmissionController.check_admission
     scheduling_resilience.AdmissionController.check_admission = AsyncMock(return_value=(True, "", {}))
@@ -118,11 +118,11 @@ def test_control_plane_schema_migration_uses_tenant_scoped_uniqueness() -> None:
 
 def test_machine_endpoints_use_machine_tenant_db_dependency() -> None:
     # Route handlers now live in the modular jobs/ package split across routes/dispatch/lifecycle
-    jobs_dispatch_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "dispatch.py"
-    jobs_lifecycle_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "lifecycle.py"
-    jobs_db_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "jobs" / "database.py"
-    nodes_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "nodes.py"
-    nodes_helpers_source = Path(__file__).resolve().parents[3] / "backend" / "api" / "nodes_helpers.py"
+    jobs_dispatch_source = Path(__file__).resolve().parents[3] / "backend" / "control_plane" / "adapters" / "jobs" / "dispatch.py"
+    jobs_lifecycle_source = Path(__file__).resolve().parents[3] / "backend" / "control_plane" / "adapters" / "jobs" / "lifecycle.py"
+    jobs_db_source = Path(__file__).resolve().parents[3] / "backend" / "control_plane" / "adapters" / "jobs" / "database.py"
+    nodes_source = Path(__file__).resolve().parents[3] / "backend" / "control_plane" / "adapters" / "nodes.py"
+    nodes_helpers_source = Path(__file__).resolve().parents[3] / "backend" / "control_plane" / "adapters" / "nodes_helpers.py"
 
     jobs_dispatch_text = jobs_dispatch_source.read_text(encoding="utf-8")
     jobs_lifecycle_text = jobs_lifecycle_source.read_text(encoding="utf-8")

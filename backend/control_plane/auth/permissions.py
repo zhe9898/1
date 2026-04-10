@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.control_plane.auth.role_claims import has_admin_role_value
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.role_claims import has_admin_role_value
 from backend.models.permission import Permission
 from backend.models.user import User
 

@@ -49,7 +49,7 @@
 
 **业务服务消费方式**:
 ```python
-from backend.api.deps import get_current_user
+from backend.control_plane.adapters.deps import get_current_user
 
 async def my_business_endpoint(
     current_user: dict[str, str] = Depends(get_current_user),
@@ -77,7 +77,7 @@ async def my_business_endpoint(
 
 **业务服务消费方式**:
 ```python
-from backend.api.deps import get_tenant_db
+from backend.control_plane.adapters.deps import get_tenant_db
 
 async def my_business_endpoint(
     current_user: dict[str, str] = Depends(get_current_user),
@@ -103,7 +103,7 @@ async def my_business_endpoint(
 
 **业务服务消费方式**:
 ```python
-from backend.api.deps import get_current_admin
+from backend.control_plane.adapters.deps import get_current_admin
 
 async def admin_only_endpoint(
     current_user: dict[str, str] = Depends(get_current_admin),
@@ -137,7 +137,7 @@ async def update_resource(
 ### Gateway 侧 (已实现 ✅)
 
 - ✅ JWT 签发 (`backend/core/jwt.py`)
-- ✅ JWT 验证 (`backend/api/deps.py::get_current_user`)
+- ✅ JWT 验证 (`backend/control_plane/adapters/deps.py::get_current_user`)
 - ✅ 身份声明下发 (sub, username, role, tenant_id)
 - ✅ 租户上下文绑定 (`get_tenant_db()`)
 - ✅ 角色验证 (`get_current_admin()`, `require_admin_role()`)
@@ -160,8 +160,8 @@ async def update_resource(
 
 **正确做法** ✅:
 ```python
-# backend/api/my_business.py
-from backend.api.deps import get_current_user, get_tenant_db
+# backend/control_plane/adapters/my_business.py
+from backend.control_plane.adapters.deps import get_current_user, get_tenant_db
 
 router = APIRouter(prefix="/api/v1/my-business")
 
@@ -208,7 +208,7 @@ async def list_resources(
 
 **Connector 不需要认证**，因为它们是系统内部调用：
 ```python
-# backend/api/connectors.py
+# backend/control_plane/adapters/connectors.py
 @router.post("/{id}/invoke")
 async def invoke_connector(
     id: str,
@@ -250,7 +250,7 @@ async def invoke_connector(
 
 ### 人工审查清单
 
-- [ ] 所有业务路由都在 `backend/api/` 下
+- [ ] 所有业务路由都在 `backend/control_plane/adapters/` 下
 - [ ] 所有业务路由都使用 `get_current_user` 依赖
 - [ ] 所有业务路由都使用 `get_tenant_db` 依赖
 - [ ] 没有业务服务自建 User 表

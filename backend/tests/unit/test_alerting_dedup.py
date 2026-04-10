@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.kernel.extensions.alerting import _fire_alert
+from backend.extensions.alerting import _fire_alert
 
 
 @pytest.mark.asyncio

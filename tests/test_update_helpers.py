@@ -34,9 +34,9 @@ def test_requirements_changed_from_diff_only_triggers_for_backend_requirements()
 def test_collect_dirty_files_trims_git_status_output() -> None:
     update_mod = _load_update_module()
 
-    dirty = update_mod._collect_dirty_files(" M backend/api/auth.py\n?? tests/test_update_helpers.py\n")
+    dirty = update_mod._collect_dirty_files(" M backend/control_plane/adapters/auth.py\n?? tests/test_update_helpers.py\n")
 
-    assert dirty == ["M backend/api/auth.py", "?? tests/test_update_helpers.py"]
+    assert dirty == ["M backend/control_plane/adapters/auth.py", "?? tests/test_update_helpers.py"]
 
 
 def test_needs_image_rebuild_from_hashes_only_when_image_inputs_change() -> None:

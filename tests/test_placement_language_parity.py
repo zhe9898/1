@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from backend.kernel.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
+from backend.runtime.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_PATH = REPO_ROOT / "tests" / "fixtures" / "placement_language_parity.json"

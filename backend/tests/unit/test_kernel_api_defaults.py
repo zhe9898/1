@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import inspect
 
-from backend.api.kernel import list_kernel_capabilities
+from backend.control_plane.adapters.kernel import list_kernel_capabilities
 
 
 def test_list_kernel_capabilities_defaults_to_stable_only() -> None:

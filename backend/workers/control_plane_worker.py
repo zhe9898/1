@@ -7,8 +7,8 @@ import logging
 import signal
 from collections.abc import Callable, Coroutine
 
-from backend.api.deps import get_settings
 from backend.background_tasks import bitrot_worker, data_retention_worker, health_probe_worker
+from backend.control_plane.adapters.deps import get_settings
 from backend.platform.events.runtime import connect_event_bus_with_retry, resolve_event_bus_backend, set_runtime_event_bus
 from backend.platform.redis.client import RedisClient
 from backend.platform.redis.runtime import connect_redis_with_retry

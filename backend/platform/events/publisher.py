@@ -6,7 +6,7 @@ import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from backend.platform.events.channels import is_control_plane_channel, is_redis_internal_signal
+from backend.platform.events.channels import is_redis_internal_signal, is_registered_control_plane_subject
 from backend.platform.events.runtime import connect_event_bus_with_retry, get_runtime_event_bus, resolve_event_bus_backend
 from backend.platform.events.types import ControlEventBus
 from backend.platform.redis.sync_client import SyncRedisClient
@@ -26,7 +26,7 @@ def event_bus_settings_from_env() -> dict[str, object]:
 
 
 def _is_registered_control_subject(subject: str) -> bool:
-    return is_control_plane_channel(subject)
+    return is_registered_control_plane_subject(subject)
 
 
 def _is_registered_internal_subject(subject: str) -> bool:

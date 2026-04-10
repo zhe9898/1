@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.platform.events.channels import CHANNEL_ROUTING_MELTDOWN, CHANNEL_SWITCH_COMMANDS
+from backend.platform.events.channels import CHANNEL_ROUTING_MELTDOWN, CHANNEL_SWITCH_COMMANDS, tenant_realtime_subject
 from backend.platform.events.nats_bus import NATSEventBus
 from backend.platform.events.publisher import AsyncEventPublisher, SyncEventPublisher
 from backend.platform.events.redis_bus import RedisEventBus
-from backend.platform.redis.constants import CHANNEL_SWITCH_EVENTS
+from backend.platform.redis.constants import CHANNEL_JOB_EVENTS, CHANNEL_SWITCH_EVENTS
 
 
 @pytest.mark.asyncio
@@ -79,3 +80,37 @@ async def test_nats_event_bus_rejects_internal_subjects() -> None:
 
     client.publish.assert_not_awaited()
     client.subscribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_redis_event_bus_accepts_tenant_scoped_realtime_subjects() -> None:
+    pubsub = SimpleNamespace(subscribe=AsyncMock(), unsubscribe=AsyncMock(), close=AsyncMock())
+    redis_client = MagicMock()
+    redis_client.pubsub.publish = AsyncMock()
+    redis_client.pubsub.session = AsyncMock(return_value=pubsub)
+    event_bus = RedisEventBus(redis_client)
+    subject = tenant_realtime_subject(CHANNEL_JOB_EVENTS, "tenant-a")
+
+    await event_bus.publish(subject, "{}")
+    subscription = await event_bus.subscribe((subject,))
+    await subscription.close()
+
+    redis_client.pubsub.publish.assert_awaited_once_with(subject, "{}")
+    pubsub.subscribe.assert_awaited_once_with(subject)
+    pubsub.unsubscribe.assert_awaited_once_with(subject)
+
+
+@pytest.mark.asyncio
+async def test_nats_event_bus_accepts_tenant_scoped_realtime_subjects() -> None:
+    client = MagicMock()
+    client.publish = AsyncMock()
+    client.subscribe = AsyncMock(return_value=SimpleNamespace(unsubscribe=AsyncMock()))
+    event_bus = NATSEventBus(client)
+    subject = tenant_realtime_subject(CHANNEL_JOB_EVENTS, "tenant-a")
+
+    await event_bus.publish(subject, "{}")
+    subscription = await event_bus.subscribe((subject,))
+    await subscription.close()
+
+    client.publish.assert_awaited_once_with(subject, b"{}")
+    client.subscribe.assert_awaited_once()

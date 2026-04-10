@@ -14,8 +14,8 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock, patch
 
-from backend.kernel.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
-from backend.kernel.scheduling.scheduling_constraints import GangSchedulingGate, SchedulingContext
+from backend.runtime.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
+from backend.runtime.scheduling.scheduling_constraints import GangSchedulingGate, SchedulingContext
 
 # ---------------------------------------------------------------------------
 # Helpers

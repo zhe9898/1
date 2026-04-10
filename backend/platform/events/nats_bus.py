@@ -9,7 +9,7 @@ try:
 except ImportError:
     nats = None  # type: ignore[assignment]
 
-from backend.platform.events.channels import is_control_plane_channel
+from backend.platform.events.channels import is_registered_control_plane_subject
 from backend.platform.events.types import ControlEvent, ControlEventSubscription
 
 
@@ -62,15 +62,15 @@ class NATSEventBus:
         return cls(client)
 
     async def publish(self, subject: str, payload: str) -> None:
-        if not is_control_plane_channel(subject):
-            raise ValueError(f"subject is not a registered control-plane event channel: {subject}")
+        if not is_registered_control_plane_subject(subject):
+            raise ValueError(f"subject is not a registered control-plane event subject: {subject}")
         await self._client.publish(subject, payload.encode("utf-8"))
 
     async def subscribe(self, subjects: Sequence[str]) -> NATSEventSubscription:
         subject_tuple = tuple(subjects)
-        invalid = [subject for subject in subject_tuple if not is_control_plane_channel(subject)]
+        invalid = [subject for subject in subject_tuple if not is_registered_control_plane_subject(subject)]
         if invalid:
-            raise ValueError(f"subjects are not registered control-plane event channels: {invalid}")
+            raise ValueError(f"subjects are not registered control-plane event subjects: {invalid}")
         return await NATSEventSubscription.create(self._client, subject_tuple)
 
     async def close(self) -> None:

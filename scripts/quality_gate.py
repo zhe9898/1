@@ -21,11 +21,12 @@ BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
 BACKEND_TYPED_PATHS = [
-    "backend/api",
     "backend/control_plane",
+    "backend/extensions",
     "backend/kernel",
     "backend/models",
     "backend/platform",
+    "backend/runtime",
     "backend/workers",
     "backend/capabilities.py",
     "backend/background_tasks.py",
@@ -354,6 +355,24 @@ def _backend_ci_steps() -> list[CommandStep]:
                 "--tb=short",
                 "-q",
             ),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:audit-drift",
+            (sys.executable, "tools/audit_drift_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:development-cleanroom",
+            (sys.executable, "tools/development_cleanroom_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:tenant-claim",
+            (sys.executable, "tools/tenant_claim_guard.py"),
             cwd=REPO_ROOT,
             extra_env=test_env,
         ),

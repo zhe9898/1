@@ -249,7 +249,7 @@ func normalizeFingerprint(value string) string {
 }
 
 // EffectiveAcceptedKinds returns AcceptedKinds if explicitly configured,
-// otherwise falls back to Capabilities for backward compatibility.
+// otherwise uses Capabilities as the default accepted-kind source.
 func (c Config) EffectiveAcceptedKinds() []string {
 	if len(c.AcceptedKinds) > 0 {
 		return c.AcceptedKinds

@@ -8,7 +8,7 @@ from typing import cast
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.deps import get_settings
+from backend.control_plane.adapters.deps import get_settings
 from backend.control_plane.app.exception_handlers import register_exception_handlers
 from backend.control_plane.app.health import PostgresChecker, SettingsProvider, register_health_route
 from backend.control_plane.app.lifespan import RedisConnector, SignalModule, build_lifespan, check_postgres_async

@@ -16,18 +16,18 @@ from pathlib import Path
 
 import pytest
 
-from backend.kernel.scheduling.business_scheduling import (
+from backend.models.job import Job
+from backend.runtime.scheduling.business_scheduling import (
     SchedulingContext,
     SchedulingEngine,
     apply_business_filters,
 )
-from backend.kernel.scheduling.queue_stratification import (
+from backend.runtime.scheduling.queue_stratification import (
     SERVICE_CLASS_CONFIG,
     GlobalFairScheduler,
     TenantQuota,
     get_fair_scheduler,
 )
-from backend.models.job import Job
 
 
 def _utcnow() -> datetime.datetime:
@@ -198,7 +198,7 @@ class TestGlobalFairScheduler:
         fs.__class__._cache_ts = 0.0
         fs.__class__._cache_ttl = 0.0
 
-        monkeypatch.setattr("backend.kernel.scheduling.queue_stratification._get_queue_config", lambda: QueueConfig())
+        monkeypatch.setattr("backend.runtime.scheduling.queue_stratification._get_queue_config", lambda: QueueConfig())
 
         def _raise_policy_store() -> object:
             raise RuntimeError("policy store unavailable")
@@ -214,7 +214,7 @@ class TestGlobalFairScheduler:
         from backend.kernel.policy.types import QueueConfig
 
         fs = GlobalFairScheduler()
-        monkeypatch.setattr("backend.kernel.scheduling.queue_stratification._get_queue_config", lambda: QueueConfig())
+        monkeypatch.setattr("backend.runtime.scheduling.queue_stratification._get_queue_config", lambda: QueueConfig())
 
         def _raise_policy_store() -> object:
             raise RuntimeError("policy store unavailable")

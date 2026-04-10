@@ -6,7 +6,7 @@ import datetime
 
 import pytest
 
-from backend.kernel.scheduling.scheduling_framework import (
+from backend.runtime.scheduling.scheduling_framework import (
     ConstraintFilterAdapter,
     ConstraintScoreAdapter,
     FilterPlugin,
@@ -44,7 +44,7 @@ class _FakeJob:
 
 
 def _make_ctx(available_slots: int = 10):
-    from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
+    from backend.runtime.scheduling.scheduling_constraints import SchedulingContext
 
     return SchedulingContext(
         now=datetime.datetime.now(datetime.timezone.utc),
@@ -266,7 +266,7 @@ def test_get_missing_profile():
 
 
 def test_constraint_filter_adapter():
-    from backend.kernel.scheduling.scheduling_constraints import DeadlineExpiryGate
+    from backend.runtime.scheduling.scheduling_constraints import DeadlineExpiryGate
 
     gate = DeadlineExpiryGate()
     adapter = ConstraintFilterAdapter(gate)
@@ -279,7 +279,7 @@ def test_constraint_filter_adapter():
 
 
 def test_constraint_score_adapter():
-    from backend.kernel.scheduling.scheduling_constraints import PriorityBoostModifier
+    from backend.runtime.scheduling.scheduling_constraints import PriorityBoostModifier
 
     modifier = PriorityBoostModifier()
     adapter = ConstraintScoreAdapter(modifier)

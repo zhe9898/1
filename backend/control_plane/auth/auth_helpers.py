@@ -17,8 +17,8 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 
 from backend.control_plane.auth.jwt import create_access_token, get_access_token_expire_seconds
 from backend.control_plane.auth.permissions import filter_valid_scopes
-from backend.control_plane.auth.role_claims import normalize_ai_route_preference, normalize_role_name
 from backend.kernel.contracts.errors import ZenErrorCode, zen
+from backend.kernel.contracts.role_claims import normalize_ai_route_preference, normalize_role_name
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.client import RedisClient
 
@@ -40,7 +40,7 @@ def require_db_redis(
     db: AsyncSession | None,
     redis: RedisClient | None,
 ) -> None:
-    """Sanitized legacy docstring."""
+    """Require both tenant database and Redis dependencies before continuing."""
     if db is None:
         raise zen(
             CODE_DB_UNAVAILABLE,
@@ -73,7 +73,7 @@ __all__ = [
     "consume_challenge",
     "expected_challenge_bytes",
     "extract_webauthn_transports",
-    # compat exports
+    # Export shared error helpers alongside the auth utilities.
     "zen",
     "ZenErrorCode",
 ]
@@ -88,7 +88,7 @@ def client_ip(req: Request) -> str:
 
 
 def origin_from_request(req: Request) -> str:
-    """Sanitized legacy docstring."""
+    """Return the normalized origin for the current request."""
     return str(req.base_url).rstrip("/")
 
 
@@ -103,7 +103,7 @@ def token_response(
     token_id: str | None = None,
     **kwargs: object,
 ) -> dict[str, str | int]:
-    """Sanitized legacy docstring."""
+    """Build a bearer-token response from normalized auth claims."""
     sanitized_scopes = filter_valid_scopes(scopes)
     normalized_role = normalize_role_name(role)
     normalized_ai_route_preference = normalize_ai_route_preference(ai_route_preference)
@@ -132,7 +132,7 @@ def log_auth(
     client_ip_str: str | None = None,
     detail: str | None = None,
 ) -> None:
-    """Sanitized legacy docstring."""
+    """Emit a structured auth log entry with consistent fields."""
     log_obj = {
         "event": event,
         "success": success,
@@ -156,7 +156,7 @@ def _base64url_decode(s: str) -> bytes:
 
 
 def get_challenge_from_credential(credential: dict[str, object]) -> str | None:
-    """Sanitized legacy docstring."""
+    """Extract the WebAuthn challenge from a credential payload when present."""
     if not isinstance(credential, dict):
         return None  # type: ignore[unreachable]
     try:
@@ -175,7 +175,7 @@ def get_challenge_from_credential(credential: dict[str, object]) -> str | None:
 
 
 def credential_id_to_base64url(credential: dict[str, object]) -> str | None:
-    """Sanitized legacy docstring."""
+    """Normalize a credential id to base64url text."""
     if not isinstance(credential, dict):
         return None  # type: ignore[unreachable]
     raw = credential.get("id") or credential.get("rawId")
@@ -230,12 +230,12 @@ async def consume_challenge(
 
 
 def expected_challenge_bytes(challenge_b64: str) -> bytes:
-    """Sanitized legacy docstring."""
+    """Decode a base64url WebAuthn challenge into raw bytes."""
     return base64url_to_bytes(challenge_b64)
 
 
 def is_private_ip(ip: str) -> bool:
-    """Sanitized legacy docstring."""
+    """Return True when the client IP is from a private address range."""
     try:
         return ipaddress.ip_address(ip).is_private
     except ValueError:

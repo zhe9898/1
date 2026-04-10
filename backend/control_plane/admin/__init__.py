@@ -1,4 +1,5 @@
-from .audit_logging import extract_client_info, sanitize_audit_details, write_audit_log
+from backend.platform.logging.audit import extract_client_info, sanitize_audit_details, write_audit_log
+
 from .data_retention import run_retention_cycle
 from .user_lifecycle import activate_user, delete_user, suspend_user
 

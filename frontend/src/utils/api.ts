@@ -99,6 +99,24 @@ export const CONNECTORS = {
   test: (id: string) => `/v1/connectors/${id}/test`,
 } as const;
 
+export const RESERVATIONS = {
+  list: "/v1/reservations",
+  stats: "/v1/reservations/stats",
+  detail: (jobId: string) => `/v1/reservations/${toPathSegment(jobId)}`,
+  cancel: (jobId: string) => `/v1/reservations/${toPathSegment(jobId)}/cancel`,
+  backfillWindow: (nodeId: string) => `/v1/reservations/nodes/${toPathSegment(nodeId)}/backfill-window`,
+} as const;
+
+export const TRIGGERS = {
+  list: "/v1/triggers",
+  detail: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}`,
+  activate: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/activate`,
+  pause: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/pause`,
+  fire: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/fire`,
+  deliveries: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/deliveries`,
+  kinds: "/v1/triggers/kinds",
+} as const;
+
 // ---------------------------------------------------------------------------
 // Evaluations 域
 // ---------------------------------------------------------------------------

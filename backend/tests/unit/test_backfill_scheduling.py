@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.kernel.scheduling.backfill_scheduling import (
+from backend.runtime.scheduling.backfill_scheduling import (
     BackfillConfig,
     BackfillEvaluator,
     BackfillGate,
@@ -28,7 +28,7 @@ from backend.kernel.scheduling.backfill_scheduling import (
     get_reservation_manager,
     reset_reservation_manager,
 )
-from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
+from backend.runtime.scheduling.scheduling_constraints import SchedulingContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -491,7 +491,7 @@ class TestSingleton:
         def _raise_connect(self) -> None:  # type: ignore[no-untyped-def]
             raise RuntimeError("redis unavailable")
 
-        monkeypatch.setattr("backend.kernel.scheduling.backfill_scheduling.SyncRedisClient.connect", _raise_connect)
+        monkeypatch.setattr("backend.runtime.scheduling.backfill_scheduling.SyncRedisClient.connect", _raise_connect)
 
         with pytest.raises(RuntimeError, match="ZEN-BACKFILL-STORE-UNAVAILABLE"):
             get_reservation_manager()

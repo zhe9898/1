@@ -23,8 +23,8 @@ ZEN70 now enforces a stricter development-time rule set:
 
 - `backend/kernel/profiles/public_profile.py`
 - `backend/kernel/packs/presets.py`
-- `backend/kernel/topology/profile_selection.py`
-- `backend/kernel/topology/pack_selection.py`
+- `backend/runtime/topology/profile_selection.py`
+- `backend/runtime/topology/pack_selection.py`
 - `scripts/compiler.py`
 - `scripts/bootstrap.py`
 - `tests/test_repo_hardening.py`

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.kernel.scheduling.scheduler_auto_tune import (
+from backend.runtime.scheduling.scheduler_auto_tune import (
     MAX_MULTIPLIER,
     MIN_MULTIPLIER,
     MIN_SAMPLES_BEFORE_ADJUST,
@@ -412,11 +412,11 @@ class TestSchedulerTuner:
 
 class TestGovernanceFacadeTunerProxies:
     def test_tuner_snapshot_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.snapshot.return_value = {"enabled": True}
@@ -426,11 +426,11 @@ class TestGovernanceFacadeTunerProxies:
         mock_tuner.snapshot.assert_called_once()
 
     def test_tuner_enabled_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.enabled = True
@@ -438,11 +438,11 @@ class TestGovernanceFacadeTunerProxies:
             assert facade.tuner_enabled() is True
 
     def test_set_tuner_enabled_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_get.return_value = mock_tuner
@@ -450,11 +450,11 @@ class TestGovernanceFacadeTunerProxies:
         mock_tuner.set_enabled.assert_called_once_with(False)
 
     def test_reset_tuner_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_get.return_value = mock_tuner
@@ -462,11 +462,11 @@ class TestGovernanceFacadeTunerProxies:
         mock_tuner.reset.assert_called_once()
 
     def test_get_tuner_adjustment_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.get_adjustment.return_value = 1.2
@@ -476,11 +476,11 @@ class TestGovernanceFacadeTunerProxies:
         mock_tuner.get_adjustment.assert_called_once_with("priority")
 
     def test_get_tuner_node_bias_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.get_node_bias.return_value = 12.5
@@ -489,11 +489,11 @@ class TestGovernanceFacadeTunerProxies:
         assert result == 12.5
 
     def test_get_tuner_kind_risk_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.get_kind_risk.return_value = 0.75
@@ -502,11 +502,11 @@ class TestGovernanceFacadeTunerProxies:
         assert result == 0.75
 
     def test_tuner_recommend_strategy_delegates(self) -> None:
-        from backend.kernel.scheduling.governance_facade import GovernanceFacade
+        from backend.runtime.scheduling.governance_facade import GovernanceFacade
 
         facade = GovernanceFacade()
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.recommend_strategy.return_value = "binpack"
@@ -518,7 +518,7 @@ class TestGovernanceFacadeTunerProxies:
 class TestScoringIntegration:
     def test_tuner_multiplier_applied_to_scoring(self) -> None:
         """Verify that score_job_for_node uses tuner adjustments."""
-        from backend.kernel.scheduling.job_scoring import score_job_for_node
+        from backend.runtime.scheduling.job_scoring import score_job_for_node
 
         job = MagicMock()
         job.priority = 100
@@ -539,7 +539,7 @@ class TestScoringIntegration:
         job.deadline_at = None
         job.sla_seconds = None
 
-        from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
+        from backend.runtime.scheduling.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
             node_id="n1",
@@ -572,7 +572,7 @@ class TestScoringIntegration:
 
         # Baseline (tuner returns 1.0 for all)
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.get_adjustment.return_value = 1.0
@@ -590,7 +590,7 @@ class TestScoringIntegration:
 
         # Double priority multiplier
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
 
@@ -614,7 +614,7 @@ class TestScoringIntegration:
         assert score_boosted > score_base
 
     def test_learned_node_bias_in_breakdown(self) -> None:
-        from backend.kernel.scheduling.job_scoring import score_job_for_node
+        from backend.runtime.scheduling.job_scoring import score_job_for_node
 
         job = MagicMock()
         job.priority = 50
@@ -635,7 +635,7 @@ class TestScoringIntegration:
         job.deadline_at = None
         job.sla_seconds = None
 
-        from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
+        from backend.runtime.scheduling.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
             node_id="n1",
@@ -667,7 +667,7 @@ class TestScoringIntegration:
         )
 
         with patch(
-            "backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner",
+            "backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner",
         ) as mock_get:
             mock_tuner = MagicMock()
             mock_tuner.get_adjustment.return_value = 1.0
@@ -687,8 +687,8 @@ class TestScoringIntegration:
         assert breakdown["learned_node_bias"] == 15
 
     def test_recommended_strategy_is_used_when_job_has_no_explicit_strategy(self) -> None:
-        from backend.kernel.scheduling.job_scoring import score_job_for_node
-        from backend.kernel.scheduling.scheduling_strategies import SchedulingStrategy
+        from backend.runtime.scheduling.job_scoring import score_job_for_node
+        from backend.runtime.scheduling.scheduling_strategies import SchedulingStrategy
 
         job = MagicMock()
         job.priority = 60
@@ -709,7 +709,7 @@ class TestScoringIntegration:
         job.deadline_at = None
         job.sla_seconds = None
 
-        from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
+        from backend.runtime.scheduling.job_scheduler import SchedulerNodeSnapshot
 
         node = SchedulerNodeSnapshot(
             node_id="n1",
@@ -740,8 +740,8 @@ class TestScoringIntegration:
             metadata_json={},
         )
 
-        with patch("backend.kernel.scheduling.job_scoring.calculate_strategy_score", return_value=37) as mock_strategy_score:
-            with patch("backend.kernel.scheduling.scheduler_auto_tune.get_scheduler_tuner") as mock_get:
+        with patch("backend.runtime.scheduling.job_scoring.calculate_strategy_score", return_value=37) as mock_strategy_score:
+            with patch("backend.runtime.scheduling.scheduler_auto_tune.get_scheduler_tuner") as mock_get:
                 mock_tuner = MagicMock()
                 mock_tuner.recommend_strategy.return_value = "binpack"
                 mock_tuner.get_adjustment.return_value = 1.0
@@ -764,7 +764,7 @@ class TestScoringIntegration:
 
 class TestSingleton:
     def test_get_scheduler_tuner_returns_same_instance(self) -> None:
-        from backend.kernel.scheduling.scheduler_auto_tune import get_scheduler_tuner
+        from backend.runtime.scheduling.scheduler_auto_tune import get_scheduler_tuner
 
         t1 = get_scheduler_tuner()
         t2 = get_scheduler_tuner()
@@ -775,7 +775,7 @@ class TestTunerPersistence:
     """Tests for state_to_dict / load_from_dict (in-memory round-trip)."""
 
     def _make_tuner(self) -> object:
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         return SchedulerTuner(enabled=True)
 
@@ -788,7 +788,7 @@ class TestTunerPersistence:
         assert "dimensions" in d
 
     def test_round_trip_preserves_multiplier(self) -> None:
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         src = SchedulerTuner(enabled=True)
         # Force a multiplier change bypassing cold-start threshold
@@ -803,7 +803,7 @@ class TestTunerPersistence:
         assert dst.weights._states["priority"].sample_count == 999
 
     def test_round_trip_preserves_total_signals(self) -> None:
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         src = SchedulerTuner(enabled=True)
         # Manually bump total_signals so we don't need min_samples
@@ -816,7 +816,7 @@ class TestTunerPersistence:
         assert dst._total_signals == 42
 
     def test_load_unknown_version_is_skipped(self) -> None:
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         tuner = SchedulerTuner(enabled=True)
         tuner.weights._states["priority"].multiplier = 1.9
@@ -832,7 +832,7 @@ class TestTunerPersistence:
         assert tuner.weights._states["priority"].multiplier == 1.9
 
     def test_load_unknown_dimension_is_silently_skipped(self) -> None:
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         tuner = SchedulerTuner(enabled=True)
         # This must not raise even when the dimension doesn't exist
@@ -845,7 +845,7 @@ class TestTunerPersistence:
         )
 
     def test_reset_after_load_clears_state(self) -> None:
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         tuner = SchedulerTuner(enabled=True)
         tuner.weights._states["priority"].multiplier = 2.0
@@ -860,7 +860,7 @@ class TestTunerPersistence:
         """Verify JSON serialisation/deserialisation preserves floating-point fidelity."""
         import json
 
-        from backend.kernel.scheduling.scheduler_auto_tune import SchedulerTuner
+        from backend.runtime.scheduling.scheduler_auto_tune import SchedulerTuner
 
         src = SchedulerTuner(enabled=True)
         src.weights._states["priority"].multiplier = 1.7531

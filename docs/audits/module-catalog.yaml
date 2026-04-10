@@ -1,48 +1,62 @@
 generated_at: 2026-04-08
+updated_at: 2026-04-10
 catalog_id: AUDIT-MODULE-CATALOG-2026-04-08
+official_backend_domains:
+  - kernel
+  - control_plane
+  - runtime
+  - extensions
+  - platform
+highest_priority_pending_modules:
+  - M2
+  - M8
+code_backed_truth:
+  domain_blueprint: backend/kernel/governance/domain_blueprint.py
+  import_fence: backend/kernel/governance/domain_import_fence.py
+  repo_gate: tests/test_repo_hardening.py
 modules:
   - module_id: M1
     name: 执行主链
     included_paths:
-      - backend/api/__init__.py
+      - backend/control_plane/adapters/__init__.py
       - backend/control_plane/app/entrypoint.py
       - backend/control_plane/app/factory.py
       - backend/control_plane/app/health.py
       - backend/control_plane/app/lifespan.py
-      - backend/api/control_events.py
-      - backend/api/routes.py
-      - backend/api/nodes.py
-      - backend/api/nodes_helpers.py
-      - backend/api/nodes_models.py
-      - backend/api/nodes_schema.py
-      - backend/api/quotas.py
-      - backend/api/scheduling_governance.py
-      - backend/api/jobs/**
-      - backend/kernel/execution/attempt_expiration_service.py
-      - backend/kernel/scheduling/backfill_scheduling.py
-      - backend/kernel/scheduling/business_scheduling.py
+      - backend/control_plane/adapters/control_events.py
+      - backend/control_plane/adapters/routes.py
+      - backend/control_plane/adapters/nodes.py
+      - backend/control_plane/adapters/nodes_helpers.py
+      - backend/control_plane/adapters/nodes_models.py
+      - backend/control_plane/adapters/nodes_schema.py
+      - backend/control_plane/adapters/quotas.py
+      - backend/control_plane/adapters/scheduling_governance.py
+      - backend/control_plane/adapters/jobs/**
+      - backend/runtime/execution/attempt_expiration_service.py
+      - backend/runtime/scheduling/backfill_scheduling.py
+      - backend/runtime/scheduling/business_scheduling.py
       - backend/platform/db/advisory_locks.py
-      - backend/kernel/execution/dispatch_lifecycle.py
-      - backend/kernel/scheduling/failure_control_plane.py
-      - backend/kernel/execution/failure_taxonomy.py
-      - backend/kernel/scheduling/gang_scheduler.py
-      - backend/kernel/scheduling/gen_grpc/**
-      - backend/kernel/execution/job_concurrency_service.py
-      - backend/kernel/execution/job_lifecycle_service.py
-      - backend/kernel/scheduling/job_scheduler.py
-      - backend/kernel/scheduling/job_scoring.py
-      - backend/kernel/execution/job_status.py
-      - backend/kernel/execution/job_type_separation.py
-      - backend/kernel/execution/lease_service.py
-      - backend/kernel/topology/node_auth.py
-      - backend/kernel/scheduling/placement_*.py
-      - backend/kernel/scheduling/queue_stratification.py
-      - backend/kernel/scheduling/quota*.py
+      - backend/runtime/execution/dispatch_lifecycle.py
+      - backend/runtime/scheduling/failure_control_plane.py
+      - backend/runtime/execution/failure_taxonomy.py
+      - backend/runtime/scheduling/gang_scheduler.py
+      - backend/runtime/scheduling/gen_grpc/**
+      - backend/runtime/execution/job_concurrency_service.py
+      - backend/runtime/execution/job_lifecycle_service.py
+      - backend/runtime/scheduling/job_scheduler.py
+      - backend/runtime/scheduling/job_scoring.py
+      - backend/runtime/execution/job_status.py
+      - backend/runtime/execution/job_type_separation.py
+      - backend/runtime/execution/lease_service.py
+      - backend/runtime/topology/node_auth.py
+      - backend/runtime/scheduling/placement_*.py
+      - backend/runtime/scheduling/queue_stratification.py
+      - backend/runtime/scheduling/quota*.py
       - backend/platform/redis/**
       - backend/kernel/contracts/safe_error_projection.py
-      - backend/kernel/scheduling/scheduler_auto_tune*.py
-      - backend/kernel/scheduling/scheduling_*.py
-      - backend/kernel/execution/workload_semantics.py
+      - backend/runtime/scheduling/scheduler_auto_tune*.py
+      - backend/runtime/scheduling/scheduling_*.py
+      - backend/runtime/execution/workload_semantics.py
       - backend/models/job.py
       - backend/models/job_attempt.py
       - backend/models/job_log.py
@@ -92,7 +106,6 @@ modules:
       - backend/tests/unit/test_nodes_schema_bootstrap.py
       - backend/tests/unit/test_placement_solver.py
       - backend/tests/unit/test_quota_aware_scheduling.py
-      - backend/tests/unit/test_redis_client.py
       - backend/tests/unit/test_routes_sse.py
       - backend/tests/unit/test_safe_error_projection.py
       - backend/tests/unit/test_scheduling_framework.py
@@ -118,25 +131,25 @@ modules:
   - module_id: M2
     name: 身份与权限边界
     included_paths:
-      - backend/api/auth.py
-      - backend/api/auth_bootstrap.py
-      - backend/api/auth_cookies.py
-      - backend/api/auth_invite.py
-      - backend/api/auth_password.py
-      - backend/api/auth_pin.py
-      - backend/api/auth_session_projection.py
-      - backend/api/auth_shared.py
-      - backend/api/auth_token_issue.py
-      - backend/api/auth_user.py
-      - backend/api/auth_webauthn.py
-      - backend/api/audit_logs.py
-      - backend/api/deps.py
-      - backend/api/models/**
-      - backend/api/node_approval.py
-      - backend/api/permissions.py
-      - backend/api/sessions.py
-      - backend/api/user_management.py
-      - backend/control_plane/admin/audit_logging.py
+      - backend/control_plane/adapters/auth.py
+      - backend/control_plane/adapters/auth_bootstrap.py
+      - backend/control_plane/adapters/auth_cookies.py
+      - backend/control_plane/adapters/auth_invite.py
+      - backend/control_plane/adapters/auth_password.py
+      - backend/control_plane/adapters/auth_pin.py
+      - backend/control_plane/adapters/auth_session_projection.py
+      - backend/control_plane/adapters/auth_shared.py
+      - backend/control_plane/adapters/auth_token_issue.py
+      - backend/control_plane/adapters/auth_user.py
+      - backend/control_plane/adapters/auth_webauthn.py
+      - backend/control_plane/adapters/audit_logs.py
+      - backend/control_plane/adapters/deps.py
+      - backend/control_plane/adapters/models/**
+      - backend/control_plane/adapters/node_approval.py
+      - backend/control_plane/adapters/permissions.py
+      - backend/control_plane/adapters/sessions.py
+      - backend/control_plane/adapters/user_management.py
+      - backend/platform/logging/audit.py
       - backend/control_plane/auth/auth_helpers.py
       - backend/control_plane/auth/jwt.py
       - backend/control_plane/auth/permissions.py
@@ -145,7 +158,7 @@ modules:
       - backend/platform/security/secret_envelope.py
       - backend/platform/security/normalization.py
       - backend/platform/logging/redaction.py
-      - backend/kernel/topology/node_enrollment_service.py
+      - backend/runtime/topology/node_enrollment_service.py
       - backend/control_plane/admin/user_lifecycle.py
       - backend/control_plane/auth/webauthn.py
       - backend/control_plane/auth/webauthn_challenge_store.py
@@ -195,46 +208,46 @@ modules:
   - module_id: M3
     name: 连接器与扩展编排
     included_paths:
-      - backend/api/agent.py
-      - backend/api/connectors.py
-      - backend/api/connectors_helpers.py
-      - backend/api/evaluations.py
-      - backend/api/evaluations_helpers.py
-      - backend/api/extensions.py
-      - backend/api/iot.py
-      - backend/api/push.py
-      - backend/api/reservations.py
-      - backend/api/scenes.py
-      - backend/api/triggers.py
-      - backend/api/workflows.py
-      - backend/kernel/extensions/ai_providers.py
-      - backend/kernel/extensions/connector_kind_registry.py
-      - backend/kernel/extensions/connector_secret_service.py
-      - backend/kernel/extensions/connector_service.py
+      - backend/control_plane/adapters/agent.py
+      - backend/control_plane/adapters/connectors.py
+      - backend/control_plane/adapters/connectors_helpers.py
+      - backend/control_plane/adapters/evaluations.py
+      - backend/control_plane/adapters/evaluations_helpers.py
+      - backend/control_plane/adapters/extensions.py
+      - backend/control_plane/adapters/iot.py
+      - backend/control_plane/adapters/push.py
+      - backend/control_plane/adapters/reservations.py
+      - backend/control_plane/adapters/scenes.py
+      - backend/control_plane/adapters/triggers.py
+      - backend/control_plane/adapters/workflows.py
+      - backend/extensions/ai_providers.py
+      - backend/extensions/connector_kind_registry.py
+      - backend/extensions/connector_secret_service.py
+      - backend/extensions/connector_service.py
       - backend/kernel/surfaces/contracts.py
       - backend/kernel/surfaces/registry.py
       - backend/control_plane/console/manifest_service.py
       - backend/control_plane/console/state_views.py
-      - backend/kernel/topology/device_profiles.py
+      - backend/runtime/topology/device_profiles.py
       - backend/kernel/contracts/events_schema.py
-      - backend/kernel/execution/fault_isolation.py
-      - backend/kernel/topology/executor_registry.py
-      - backend/kernel/extensions/extension_guard.py
-      - backend/kernel/extensions/extension_sdk.py
+      - backend/runtime/execution/fault_isolation.py
+      - backend/runtime/topology/executor_registry.py
+      - backend/extensions/extension_guard.py
+      - backend/extensions/extension_sdk.py
       - backend/kernel/policy/feature_flag_service.py
-      - backend/kernel/extensions/job_kind_registry.py
+      - backend/extensions/job_kind_registry.py
       - backend/kernel/packs/registry.py
       - backend/kernel/packs/presets.py
-      - backend/kernel/topology/pack_selection.py
-      - backend/kernel/scheduling/reservation_runtime.py
+      - backend/runtime/topology/pack_selection.py
+      - backend/runtime/scheduling/reservation_runtime.py
       - backend/kernel/policy/runtime_policy_resolver.py
-      - backend/kernel/extensions/trigger_command_service.py
-      - backend/kernel/extensions/trigger_kind_registry.py
-      - backend/kernel/extensions/trigger_service.py
+      - backend/extensions/trigger_command_service.py
+      - backend/extensions/trigger_kind_registry.py
+      - backend/extensions/trigger_service.py
       - backend/platform/http/webhooks.py
-      - backend/kernel/extensions/workflow_command_service.py
-      - backend/kernel/extensions/workflow_engine.py
-      - backend/kernel/extensions/workflow_template_registry.py
+      - backend/extensions/workflow_command_service.py
+      - backend/extensions/workflow_engine.py
+      - backend/extensions/workflow_template_registry.py
       - backend/models/connector.py
       - backend/models/feature_flag.py
       - backend/models/software_evaluation.py
@@ -284,20 +297,20 @@ modules:
   - module_id: M4
     name: 控制台与前端壳层
     included_paths:
-      - backend/api/action_contracts.py
-      - backend/api/assets.py
-      - backend/api/board.py
-      - backend/api/console.py
-      - backend/api/console_helpers.py
-      - backend/api/health.py
-      - backend/api/portability.py
-      - backend/api/profile.py
-      - backend/api/search.py
-      - backend/api/settings.py
-      - backend/api/ui_contracts.py
+      - backend/control_plane/adapters/action_contracts.py
+      - backend/control_plane/adapters/assets.py
+      - backend/control_plane/adapters/board.py
+      - backend/control_plane/adapters/console.py
+      - backend/control_plane/adapters/console_helpers.py
+      - backend/control_plane/adapters/health.py
+      - backend/control_plane/adapters/portability.py
+      - backend/control_plane/adapters/profile.py
+      - backend/control_plane/adapters/search.py
+      - backend/control_plane/adapters/settings.py
+      - backend/control_plane/adapters/ui_contracts.py
       - backend/kernel/governance/aggregate_owner_registry.py
       - backend/kernel/profiles/public_profile.py
-      - backend/kernel/topology/profile_selection.py
+      - backend/runtime/topology/profile_selection.py
       - backend/platform/redis/runtime.py
       - backend/kernel/contracts/status.py
       - backend/models/asset.py
@@ -418,7 +431,6 @@ modules:
       - requirements-infra.txt
       - runner-agent/Dockerfile
       - runner-agent/go.mod
-      - runner-agent/go.sum
       - scripts/**
       - start_installer.py
       - system.yaml
@@ -458,7 +470,7 @@ modules:
       - backend/platform/db/alembic_runtime.py
       - backend/kernel/governance/architecture_rules.py
       - backend/control_plane/admin/data_retention.py
-      - backend/kernel/scheduling/governance_facade.py
+      - backend/runtime/scheduling/governance_facade.py
       - backend/platform/db/migration_governance.py
       - backend/platform/db/migration_runner.py
       - backend/platform/db/schema_guard.py
@@ -520,10 +532,10 @@ modules:
       - backend/main.py
       - backend/middleware.py
       - backend/shared_state.py
-      - backend/api/alerts.py
-      - backend/api/energy.py
-      - backend/kernel/extensions/alert_actions.py
-      - backend/kernel/extensions/alerting.py
+      - backend/control_plane/adapters/alerts.py
+      - backend/control_plane/adapters/energy.py
+      - backend/extensions/alert_actions.py
+      - backend/extensions/alerting.py
       - backend/platform/redis/constants.py
       - backend/kernel/contracts/errors.py
       - backend/platform/telemetry/http_metrics.py
@@ -531,7 +543,7 @@ modules:
       - backend/platform/logging/structured.py
       - backend/platform/telemetry/tracing.py
       - backend/kernel/contracts/runtime_version.py
-      - backend/kernel/scheduling/worker_pool.py
+      - backend/runtime/scheduling/worker_pool.py
       - backend/sentinel/**
       - backend/workers/__init__.py
       - backend/workers/ai_worker.py
@@ -603,12 +615,10 @@ modules:
     included_paths:
       - clients/**
       - contracts/**
-      - backend/api/kernel.py
+      - backend/control_plane/adapters/kernel.py
       - backend/kernel/capabilities/registry.py
       - docs/api/openapi_locked.json
-      - docs/openapi-iot.json
       - docs/openapi-kernel.json
-      - docs/openapi-ops.json
       - docs/openapi.json
       - placement-solver/Makefile
       - backend/tests/unit/test_contract_capabilities.py

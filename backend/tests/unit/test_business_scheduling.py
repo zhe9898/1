@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import datetime
 
-from backend.kernel.scheduling.business_scheduling import (
+from backend.models.job import Job
+from backend.runtime.scheduling.business_scheduling import (
     apply_business_filters,
     calculate_boosted_priority,
     calculate_sla_breach_risk,
     find_preemption_candidates,
     should_preempt_for_job,
 )
-from backend.models.job import Job
 
 
 def _utcnow() -> datetime.datetime:

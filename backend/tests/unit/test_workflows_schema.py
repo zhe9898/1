@@ -6,8 +6,8 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from backend.api.workflows import WorkflowCreateRequest
-from backend.kernel.extensions.workflow_engine import create_workflow
+from backend.control_plane.adapters.workflows import WorkflowCreateRequest
+from backend.extensions.workflow_engine import create_workflow
 
 
 def test_workflow_create_request_forbids_unknown_step_fields() -> None:

@@ -196,7 +196,7 @@
 | FIX-021 | `users.acl` | Redis 7.4 `--aclfile` 去注释 | §2.5 | P0 |
 | FIX-022 | `requirements.txt` | 补齐 PyJWT / python-dotenv | — | P1 |
 | FIX-023 | `backend/core/redis_client.py` | `RedisClient` 增加代理方法 `get/set/incr/delete` 修复登录 500 | §8.2 | P0 |
-| FIX-024 | `backend/api/routes.py` | 修复 `/api/v1/capabilities` Pydantic 模型与 Redis 断联降级矩阵 | §3.2.5 | P1 |
+| FIX-024 | `backend/control_plane/adapters/routes.py` | 修复 `/api/v1/capabilities` Pydantic 模型与 Redis 断联降级矩阵 | §3.2.5 | P1 |
 
 ### Known Issues
 

@@ -7,22 +7,22 @@
 - `backend/models/node.py` - 新增 accepted_kinds、边缘算力字段
 
 ### 调度器
-- `backend/kernel/scheduling/job_scheduler.py` - 强化评分算法、支持调度策略、亲和性
+- `backend/runtime/scheduling/job_scheduler.py` - 强化评分算法、支持调度策略、亲和性
 - `backend/core/control_plane.py` - 控制面真源移到后端
 - `backend/capabilities.py` - 清理非 kernel 能力
 
 ### API
-- `backend/api/jobs/routes.py` - 并发限制、重试延迟、attempt 体系
-- `backend/api/console.py` - 新增 /surfaces 端点
-- `backend/api/settings.py` - 移除 AI/系统端点
-- `backend/api/routes.py` - 移除 switches API、清理 SSE 通道
-- `backend/api/nodes.py` - 心跳链支持边缘算力字段
+- `backend/control_plane/adapters/jobs/routes.py` - 并发限制、重试延迟、attempt 体系
+- `backend/control_plane/adapters/console.py` - 新增 /surfaces 端点
+- `backend/control_plane/adapters/settings.py` - 移除 AI/系统端点
+- `backend/control_plane/adapters/routes.py` - 移除 switches API、清理 SSE 通道
+- `backend/control_plane/adapters/nodes.py` - 心跳链支持边缘算力字段
 
 ## 新增的文件
 
 ### 调度算法
-- `backend/kernel/scheduling/scheduling_strategies.py` - 5种调度策略实现
-- `backend/kernel/scheduling/business_scheduling.py` - 业务调度算法
+- `backend/runtime/scheduling/scheduling_strategies.py` - 5种调度策略实现
+- `backend/runtime/scheduling/business_scheduling.py` - 业务调度算法
 
 ### 测试
 - `tests/test_business_scheduler_hardening.py` - 业务调度门禁测试
@@ -46,9 +46,9 @@
 # Commit 1: P0/P1 边界清理
 git add backend/core/control_plane.py
 git add backend/capabilities.py
-git add backend/api/console.py
-git add backend/api/settings.py
-git add backend/api/routes.py
+git add backend/control_plane/adapters/console.py
+git add backend/control_plane/adapters/settings.py
+git add backend/control_plane/adapters/routes.py
 git commit -m "fix(kernel): P0/P1 boundary cleanup
 
 - Control-plane source moved to backend (P0)
@@ -61,8 +61,8 @@ Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 
 # Commit 2: P1 调度治理
 git add backend/models/job.py
-git add backend/api/jobs/routes.py
-git add backend/kernel/scheduling/job_scheduler.py
+git add backend/control_plane/adapters/jobs/routes.py
+git add backend/runtime/scheduling/job_scheduler.py
 git commit -m "feat(scheduler): P1 scheduling governance
 
 - Concurrent limits enforcement
@@ -76,8 +76,8 @@ Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 # Commit 3: 边缘算力编排
 git add backend/models/job.py
 git add backend/models/node.py
-git add backend/kernel/scheduling/job_scheduler.py
-git add backend/api/nodes.py
+git add backend/runtime/scheduling/job_scheduler.py
+git add backend/control_plane/adapters/nodes.py
 git commit -m "feat(edge): edge computing orchestration
 
 - Data locality (data_locality_key, cached_data_keys)
@@ -90,10 +90,10 @@ git commit -m "feat(edge): edge computing orchestration
 Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
 
 # Commit 4: 高级调度算法
-git add backend/kernel/scheduling/scheduling_strategies.py
-git add backend/kernel/scheduling/business_scheduling.py
+git add backend/runtime/scheduling/scheduling_strategies.py
+git add backend/runtime/scheduling/business_scheduling.py
 git add backend/models/job.py
-git add backend/kernel/scheduling/job_scheduler.py
+git add backend/runtime/scheduling/job_scheduler.py
 git commit -m "feat(scheduler): advanced scheduling algorithms
 
 - 5 scheduling strategies (spread/binpack/locality/performance/balanced)

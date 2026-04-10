@@ -18,6 +18,46 @@ const (
 	reportingTimeout          = 15 * time.Second
 )
 
+var minLeaseRenewalInterval = 5 * time.Second
+
+type leasedJob struct {
+	mu  sync.RWMutex
+	job api.Job
+}
+
+func newLeasedJob(job api.Job) *leasedJob {
+	return &leasedJob{job: job}
+}
+
+func (j *leasedJob) snapshot() api.Job {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.job
+}
+
+func (j *leasedJob) applyRenewedLease(renewed api.Job) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if renewed.LeaseToken != "" {
+		j.job.LeaseToken = renewed.LeaseToken
+	}
+	if renewed.Attempt > 0 {
+		j.job.Attempt = renewed.Attempt
+	}
+	if renewed.LeasedUntil != "" {
+		j.job.LeasedUntil = renewed.LeasedUntil
+	}
+	if renewed.LeaseSeconds > 0 {
+		j.job.LeaseSeconds = renewed.LeaseSeconds
+	}
+	if renewed.NodeID != "" {
+		j.job.NodeID = renewed.NodeID
+	}
+	if renewed.Status != "" {
+		j.job.Status = renewed.Status
+	}
+}
+
 // Loop pulls and executes jobs until ctx is cancelled.
 // Jobs are executed concurrently up to cfg.MaxConcurrency using a worker pool.
 func Loop(ctx context.Context, cfg config.Config, client *api.Client, executor *runnerexec.Executor) error {
@@ -79,10 +119,11 @@ func executeAndReport(
 	executor *runnerexec.Executor,
 	job api.Job,
 ) {
+	liveJob := newLeasedJob(job)
 	jobCtx, cancelExecution := context.WithCancel(ctx)
-	renewDone := startLeaseRenewal(jobCtx, cfg, client, job)
+	renewDone := startLeaseRenewal(jobCtx, cfg, client, liveJob)
 
-	reportProgress(jobCtx, cfg, client, job, 5, "runner accepted lease", "runner execution started")
+	reportProgress(jobCtx, cfg, client, liveJob.snapshot(), 5, "runner accepted lease", "runner execution started")
 
 	result, execErr := executor.RunJob(jobCtx, job.JobID, job.Kind, job.Payload, job.LeaseSeconds)
 	cancelExecution()
@@ -92,12 +133,12 @@ func executeAndReport(
 	defer cancelReporting()
 
 	if execErr != nil {
-		reportFailure(reportCtx, cfg, client, job, execErr)
+		reportFailure(reportCtx, cfg, client, liveJob.snapshot(), execErr)
 		return
 	}
 
-	reportProgress(reportCtx, cfg, client, job, 100, "runner finished execution", "runner execution finished")
-	reportResult(reportCtx, cfg, client, job, result)
+	reportProgress(reportCtx, cfg, client, liveJob.snapshot(), 100, "runner finished execution", "runner execution finished")
+	reportResult(reportCtx, cfg, client, liveJob.snapshot(), result)
 }
 
 // startLeaseRenewal spawns a goroutine that renews the job lease periodically.
@@ -106,13 +147,14 @@ func startLeaseRenewal(
 	ctx context.Context,
 	cfg config.Config,
 	client *api.Client,
-	job api.Job,
+	job *leasedJob,
 ) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		renewEvery := time.Duration(max(5, job.LeaseSeconds/2)) * time.Second
-		maxBackoff := maxLeaseRenewalBackoff(renewEvery, job.LeaseSeconds)
+		jobSnapshot := job.snapshot()
+		renewEvery := leaseRenewalInterval(jobSnapshot.LeaseSeconds)
+		maxBackoff := maxLeaseRenewalBackoff(renewEvery, jobSnapshot.LeaseSeconds)
 		ticker := time.NewTicker(renewEvery)
 		defer ticker.Stop()
 
@@ -125,18 +167,27 @@ func startLeaseRenewal(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := client.RenewLease(ctx, job.JobID, api.JobRenewRequest{
+				jobSnapshot = job.snapshot()
+				renewedJob, err := client.RenewLease(ctx, jobSnapshot.JobID, api.JobRenewRequest{
 					TenantID:      cfg.TenantID,
 					NodeID:        cfg.NodeID,
-					LeaseToken:    job.LeaseToken,
-					Attempt:       job.Attempt,
-					ExtendSeconds: job.LeaseSeconds,
+					LeaseToken:    jobSnapshot.LeaseToken,
+					Attempt:       jobSnapshot.Attempt,
+					ExtendSeconds: jobSnapshot.LeaseSeconds,
 					Log:           "runner lease keepalive",
-				}); err != nil {
+				})
+				if err != nil {
 					consecutiveFailures++
-					log.Printf("renew lease failed (attempt %d/%d): %v", consecutiveFailures, maxConsecutiveFailures, err)
+					log.Printf(
+						"renew lease failed (attempt %d/%d) job=%s token=%s: %v",
+						consecutiveFailures,
+						maxConsecutiveFailures,
+						jobSnapshot.JobID,
+						jobSnapshot.LeaseToken,
+						err,
+					)
 					if consecutiveFailures >= maxConsecutiveFailures {
-						log.Printf("lease renewal failed %d times, abandoning job %s", maxConsecutiveFailures, job.JobID)
+						log.Printf("lease renewal failed %d times, abandoning job %s", maxConsecutiveFailures, jobSnapshot.JobID)
 						return
 					}
 					if !waitForDuration(ctx, backoffDuration) {
@@ -144,6 +195,7 @@ func startLeaseRenewal(
 					}
 					backoffDuration = minDuration(backoffDuration*2, maxBackoff)
 				} else {
+					job.applyRenewedLease(renewedJob)
 					consecutiveFailures = 0
 					backoffDuration = time.Second
 				}
@@ -247,6 +299,13 @@ func minDuration(a time.Duration, b time.Duration) time.Duration {
 	return b
 }
 
+func maxDuration(a time.Duration, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func waitForDuration(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		return true
@@ -263,6 +322,11 @@ func waitForDuration(ctx context.Context, d time.Duration) bool {
 
 func reportingContext(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(parent), reportingTimeout)
+}
+
+func leaseRenewalInterval(leaseSeconds int) time.Duration {
+	halfLease := time.Duration(max(1, leaseSeconds/2)) * time.Second
+	return maxDuration(minLeaseRenewalInterval, halfLease)
 }
 
 func maxLeaseRenewalBackoff(renewEvery time.Duration, leaseSeconds int) time.Duration {

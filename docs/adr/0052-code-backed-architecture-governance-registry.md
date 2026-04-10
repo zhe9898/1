@@ -6,7 +6,7 @@
 
 ## 1. Context
 
-ZEN70 now carries a large set of architecture constraints across the kernel, control plane, execution plane, and extension boundary.
+ZEN70 now carries a large set of architecture constraints across five backend domains: kernel, control plane, runtime, extensions, and platform.
 
 The problem was not missing prose. The problem was drift between:
 
@@ -29,7 +29,7 @@ The registry exports two repository-facing views:
 
 ### 2.1 Governance rules
 
-`export_architecture_governance_rules()` returns the active rule set, currently `A1..A11`, including:
+`export_architecture_governance_rules()` returns the active rule set, currently `A1..A18`, including:
 
 - rule id
 - title
@@ -49,13 +49,17 @@ The registry exports two repository-facing views:
 Primary entrypoints:
 
 - `backend/kernel/governance/architecture_rules.py`
+- `backend/kernel/governance/domain_import_fence.py`
+- `backend/kernel/governance/development_cleanroom.py`
+- `backend/control_plane/auth/authority_boundary.py`
+- `backend/kernel/contracts/tenant_claims.py`
 - `backend/kernel/surfaces/registry.py`
 - `backend/kernel/policy/runtime_policy_resolver.py`
-- `backend/kernel/execution/lease_service.py`
-- `backend/kernel/execution/fault_isolation.py`
+- `backend/runtime/execution/lease_service.py`
+- `backend/runtime/execution/fault_isolation.py`
 - `backend/kernel/governance/aggregate_owner_registry.py`
 - `backend/kernel/contracts/status.py`
-- `backend/kernel/extensions/extension_guard.py`
+- `backend/extensions/extension_guard.py`
 
 Primary enforcement:
 
@@ -63,6 +67,11 @@ Primary enforcement:
 - `backend/tests/unit/test_control_plane_runtime_closure.py`
 - `backend/tests/unit/test_control_plane_protocol_contracts.py`
 - `backend/tests/unit/test_control_plane_worker_runtime.py`
+- `tests/test_repo_hardening.py`
+- `tools/auth_boundary_guard.py`
+- `tools/tenant_claim_guard.py`
+- `tools/development_cleanroom_guard.py`
+- `tests/test_repo_hardening.py`
 
 ## 4. Rule of Truth
 
@@ -82,6 +91,7 @@ If a reference writeup conflicts with a code-backed export, the writeup must be 
 
 - Architecture rules are now enumerable and testable.
 - Surface, runtime policy, lease, fault isolation, compatibility, aggregate ownership, and extension budget rules all have one export path.
+- The five-domain backend topology now has a shared import-fence contract plus repo-level enforcement instead of relying on directory naming alone.
 - Future CI or diagnostics can consume a single governance snapshot instead of scraping multiple documents.
 
 ### Tradeoffs

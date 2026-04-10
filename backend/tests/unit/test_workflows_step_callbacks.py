@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from backend.api.workflows import (
+from backend.control_plane.adapters.workflows import (
     WorkflowStepCompleteRequest,
     WorkflowStepFailRequest,
     report_step_complete,
@@ -40,7 +40,7 @@ async def test_report_step_complete_rejects_job_mismatch(monkeypatch: pytest.Mon
     job = SimpleNamespace(job_id="job-actual", source="workflow-engine", node_id="node-a", lease_token="lease-aaa", attempt=1)
     db.execute.side_effect = [_scalar_result(workflow), _scalar_result(step), _scalar_result(job)]
 
-    monkeypatch.setattr("backend.api.workflows.authenticate_node_request", AsyncMock(return_value=SimpleNamespace(node_id="node-a")))
+    monkeypatch.setattr("backend.control_plane.adapters.workflows.authenticate_node_request", AsyncMock(return_value=SimpleNamespace(node_id="node-a")))
 
     with pytest.raises(HTTPException) as exc:
         await report_step_complete(
@@ -69,9 +69,9 @@ async def test_report_step_complete_accepts_valid_machine_callback(monkeypatch: 
     job = SimpleNamespace(job_id="job-1", source="workflow-engine", node_id="node-a", lease_token="lease-aaa", attempt=2)
     db.execute.side_effect = [_scalar_result(workflow), _scalar_result(step), _scalar_result(job)]
 
-    monkeypatch.setattr("backend.api.workflows.authenticate_node_request", AsyncMock(return_value=SimpleNamespace(node_id="node-a")))
+    monkeypatch.setattr("backend.control_plane.adapters.workflows.authenticate_node_request", AsyncMock(return_value=SimpleNamespace(node_id="node-a")))
     on_complete = AsyncMock(return_value=None)
-    monkeypatch.setattr("backend.api.workflows.on_step_job_completed", on_complete)
+    monkeypatch.setattr("backend.control_plane.adapters.workflows.on_step_job_completed", on_complete)
 
     response = await report_step_complete(
         "wf-1",
@@ -100,7 +100,7 @@ async def test_report_step_failed_validates_attempt(monkeypatch: pytest.MonkeyPa
     job = SimpleNamespace(job_id="job-1", source="workflow-engine", node_id="node-a", lease_token="lease-aaa", attempt=3)
     db.execute.side_effect = [_scalar_result(workflow), _scalar_result(step), _scalar_result(job)]
 
-    monkeypatch.setattr("backend.api.workflows.authenticate_node_request", AsyncMock(return_value=SimpleNamespace(node_id="node-a")))
+    monkeypatch.setattr("backend.control_plane.adapters.workflows.authenticate_node_request", AsyncMock(return_value=SimpleNamespace(node_id="node-a")))
 
     with pytest.raises(HTTPException) as exc:
         await report_step_failed(

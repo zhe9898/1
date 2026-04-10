@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from backend.kernel.topology.runtime_contracts import export_runtime_contract_taxonomy
 from backend.platform.events.channels import export_event_channel_contract
 from backend.platform.redis.runtime_state import export_runtime_state_contract
+from backend.runtime.topology.runtime_contracts import export_runtime_contract_taxonomy
 from backend.tests.unit._repo_paths import repo_path
 from scripts.iac_core.lint import config_lint
 from scripts.iac_core.policy import evaluate_policy, load_default_policy

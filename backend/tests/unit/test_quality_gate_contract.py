@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts import quality_gate
-from scripts.quality_gate import IAC_DRIFT_TARGETS, OPENAPI_DRIFT_TARGETS
+from scripts.quality_gate import BACKEND_TYPED_PATHS, IAC_DRIFT_TARGETS, OPENAPI_DRIFT_TARGETS
 
 
 def test_iac_drift_targets_cover_rendered_contracts_but_not_machine_local_env() -> None:
@@ -19,6 +19,29 @@ def test_openapi_drift_targets_include_locked_surface_snapshot() -> None:
     assert "docs/openapi-iot.json" not in OPENAPI_DRIFT_TARGETS
     assert "docs/openapi-ops.json" not in OPENAPI_DRIFT_TARGETS
     assert "docs/openapi-full.json" not in OPENAPI_DRIFT_TARGETS
+
+
+def test_backend_ci_suite_contains_explicit_audit_drift_gate() -> None:
+    step_names = [step.name for step in quality_gate._backend_ci_steps()]  # noqa: SLF001
+
+    assert "backend:architecture-governance" in step_names
+    assert "backend:audit-drift" in step_names
+    assert "backend:development-cleanroom" in step_names
+    assert "backend:tenant-claim" in step_names
+
+
+def test_backend_typed_paths_track_current_five_domain_layout() -> None:
+    expected_roots = {
+        "backend/control_plane",
+        "backend/extensions",
+        "backend/kernel",
+        "backend/platform",
+        "backend/runtime",
+    }
+
+    assert expected_roots.issubset(BACKEND_TYPED_PATHS)
+    assert "backend/api" not in BACKEND_TYPED_PATHS
+    assert all(Path(path).exists() for path in BACKEND_TYPED_PATHS)
 
 
 def test_github_actions_error_annotation_is_emitted_only_in_ci(monkeypatch, capsys) -> None:

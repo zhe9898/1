@@ -1,10 +1,11 @@
 import { onMounted, onUnmounted, ref, watch } from "vue";
 
+import type { HardwareEvent, SSEEvent, SwitchEvent } from "@/types/sse";
+import { BROWSER_REALTIME_CHANNELS } from "@/types/sse";
 import { SSE } from "@/utils/api";
 import { requestPersistentStorage } from "@/utils/persist";
 import { initWebPush } from "@/utils/push";
 import { createSSE } from "@/utils/sse";
-import type { HardwareEvent, SSEEvent, SwitchEvent } from "@/types/sse";
 
 interface AuthState {
   isAdmin: boolean;
@@ -69,10 +70,10 @@ export function useAppRuntime({
       SSE.events(),
       (event) => {
         eventsStore.push(event);
-        if (event.type === "hardware:events") capsStore.updateHardware(event.data as HardwareEvent);
-        if (event.type === "switch:events") switchStore.updateFromEvent(event.data as SwitchEvent);
+        if (event.type === "hardware:events") capsStore.updateHardware(event.data);
+        if (event.type === "switch:events") switchStore.updateFromEvent(event.data);
       },
-      ["hardware:events", "switch:events", "node:events", "job:events", "connector:events"],
+      BROWSER_REALTIME_CHANNELS,
       {
         onFallbackOffline: () => {
           capsStore.isOffline = true;
@@ -117,7 +118,7 @@ export function useAppRuntime({
     }
     void initWebPush().catch(() => {
       appNoticeLevel.value = "info";
-      appNotice.value = "Web Push 初始化失败，可在系统设置稍后重试。";
+      appNotice.value = "Web Push initialization failed. Retry from system settings later.";
       webPushIdentityBound = null;
     });
     webPushIdentityBound = auth.identityKey;

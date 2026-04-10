@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.api.auth_bootstrap import BOOTSTRAP_LOCK_TTL_SECONDS, bootstrap
-from backend.api.models.auth import BootstrapRequest
+from backend.control_plane.adapters.auth_bootstrap import BOOTSTRAP_LOCK_TTL_SECONDS, bootstrap
+from backend.control_plane.adapters.models.auth import BootstrapRequest
 
 
 @pytest.mark.asyncio
@@ -30,8 +30,8 @@ async def test_bootstrap_commits_before_releasing_lock() -> None:
     redis.locks.release = _release_lock
 
     with (
-        patch("backend.api.auth_shared.first_user_or_schema_unavailable", new=AsyncMock(return_value=None)),
-        patch("backend.api.auth_bootstrap.register_login_session", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_shared.first_user_or_schema_unavailable", new=AsyncMock(return_value=None)),
+        patch("backend.control_plane.adapters.auth_bootstrap.register_login_session", new=AsyncMock()),
     ):
         response = await bootstrap(
             BootstrapRequest(username="admin", password="secret123", display_name="Admin"),

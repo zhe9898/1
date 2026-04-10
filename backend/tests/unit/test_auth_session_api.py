@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from backend.api.deps import get_current_user_optional, get_settings
+from backend.control_plane.adapters.deps import get_current_user_optional, get_settings
 from backend.control_plane.app.entrypoint import app
 from backend.control_plane.app.factory import create_app
 

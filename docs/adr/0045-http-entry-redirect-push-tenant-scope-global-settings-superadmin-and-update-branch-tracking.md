@@ -34,7 +34,7 @@
 
 - `feature_flags`、`system_config` 继续保持全局表语义。
 - 其读写接口统一要求 `superadmin`，不再允许租户 `admin` 修改全局开关、模型默认值或 provider URL。
-- `admin` 与 `superadmin` 的判定继续只由 `backend/api/deps.py` 作为单一真源。
+- `admin` 与 `superadmin` 的判定继续只由 `backend/control_plane/adapters/deps.py` 作为单一真源。
 
 ### 4. 自动更新跟踪真实分支
 

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.api.deps import get_current_user, get_db, get_tenant_db
+from backend.control_plane.adapters.deps import get_current_user, get_db, get_tenant_db
 from backend.control_plane.app.entrypoint import app
 
 

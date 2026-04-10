@@ -6,8 +6,8 @@ import pytest
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import ProgrammingError
 
-from backend.api.auth import password_login
-from backend.api.models.auth import PasswordLoginRequest
+from backend.control_plane.adapters.auth import password_login
+from backend.control_plane.adapters.models.auth import PasswordLoginRequest
 
 
 def _mock_redis():

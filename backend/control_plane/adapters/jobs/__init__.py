@@ -1,0 +1,101 @@
+"""
+ZEN70 Jobs API – package init.
+
+Aggregates route sub-routers and re-exports all public symbols so that
+callers (tests, console.py, router_admission.py) can import from `backend.control_plane.adapters.jobs`
+directly without knowing the internal submodule layout.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from . import dispatch, dlq, lifecycle, queue_stats, routes
+
+# ── Aggregated router (used by router_admission.py) ─────────────────────────
+router = APIRouter()
+router.include_router(routes.router, tags=["jobs"])
+router.include_router(dispatch.router, tags=["jobs"])
+router.include_router(lifecycle.router, tags=["jobs"])
+router.include_router(dlq.router, prefix="/api/v1/jobs", tags=["jobs", "dead-letter-queue"])
+router.include_router(queue_stats.router, prefix="/api/v1/jobs", tags=["jobs", "queue-stats"])
+
+# ── Internal DB helpers re-exported for tests ────────────────────────────────
+from .database import _get_job_by_idempotency_key  # noqa: E402
+from .dispatch import (  # noqa: E402
+    explain_job,
+    pull_jobs,
+)
+
+# ── Public helper re-exported for console.py ─────────────────────────────────
+from .helpers import _build_job_actions  # noqa: E402
+from .lifecycle import (  # noqa: E402
+    cancel_job,
+    complete_job,
+    fail_job,
+    renew_job_lease,
+    report_job_progress,
+    retry_job_now,
+)
+
+# ── Pydantic models re-exported for tests ────────────────────────────────────
+from .models import (  # noqa: E402
+    JobActionRequest,
+    JobAttemptResponse,
+    JobCreateRequest,
+    JobExplainDecisionResponse,
+    JobExplainResponse,
+    JobFailRequest,
+    JobLeaseResponse,
+    JobProgressRequest,
+    JobPullRequest,
+    JobRenewRequest,
+    JobRequeueRequest,
+    JobResponse,
+    JobResultRequest,
+)
+
+# ── Route handlers re-exported for tests ─────────────────────────────────────
+from .routes import (  # noqa: E402
+    create_job,
+    get_job,
+    get_job_schema,
+    list_job_attempts,
+    list_jobs,
+)
+
+__all__ = [
+    "router",
+    # Route handlers
+    "cancel_job",
+    "complete_job",
+    "create_job",
+    "explain_job",
+    "fail_job",
+    "get_job",
+    "get_job_schema",
+    "list_job_attempts",
+    "list_jobs",
+    "pull_jobs",
+    "renew_job_lease",
+    "report_job_progress",
+    "retry_job_now",
+    # Models
+    "JobActionRequest",
+    "JobAttemptResponse",
+    "JobCreateRequest",
+    "JobExplainDecisionResponse",
+    "JobExplainResponse",
+    "JobFailRequest",
+    "JobLeaseResponse",
+    "JobProgressRequest",
+    "JobPullRequest",
+    "JobRenewRequest",
+    "JobResponse",
+    "JobResultRequest",
+    "JobRequeueRequest",
+    # DB helpers
+    "_get_job_by_idempotency_key",
+    # Console helper
+    "_build_job_actions",
+]

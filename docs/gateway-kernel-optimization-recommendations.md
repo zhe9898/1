@@ -135,7 +135,7 @@ class Permission(Base):
 }
 
 # 业务服务使用
-from backend.api.deps import require_scope
+from backend.control_plane.adapters.deps import require_scope
 
 @router.post("/jobs")
 async def create_job(

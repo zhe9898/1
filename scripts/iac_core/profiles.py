@@ -14,10 +14,10 @@ from backend.kernel.packs.presets import (
     requested_pack_keys,
 )
 from backend.kernel.profiles.public_profile import PUBLIC_PROFILE_SURFACE, normalize_gateway_profile
-from backend.kernel.topology.pack_selection import (
+from backend.runtime.topology.pack_selection import (
     resolve_gateway_image_target as resolve_registry_gateway_image_target,
 )
-from backend.kernel.topology.pack_selection import resolve_pack_keys, selected_service_allowlist
+from backend.runtime.topology.pack_selection import resolve_pack_keys, selected_service_allowlist
 
 HOST_FIRST_DEPLOYMENT_MODEL = "host-first"
 

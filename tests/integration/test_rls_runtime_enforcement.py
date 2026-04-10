@@ -68,7 +68,7 @@ def _reload_runtime_modules(monkeypatch: pytest.MonkeyPatch, database_dsn: str):
     import backend.control_plane.auth.jwt as jwt_mod
     import backend.platform.db.rls as rls_mod
     import backend.db as db_mod
-    import backend.api.deps as deps_mod
+    import backend.control_plane.adapters.deps as deps_mod
     import backend.control_plane.app.health as health_mod
     import backend.control_plane.app.lifespan as lifespan_mod
     import backend.control_plane.app.factory as factory_mod

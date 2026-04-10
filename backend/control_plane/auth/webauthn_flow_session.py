@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import Request, Response, status
 
-from backend.api.auth_cookies import AUTH_COOKIE_DOMAIN, AUTH_COOKIE_PATH, AUTH_COOKIE_SAMESITE, AUTH_COOKIE_SECURE
+from backend.control_plane.adapters.auth_cookies import AUTH_COOKIE_DOMAIN, AUTH_COOKIE_PATH, AUTH_COOKIE_SAMESITE, AUTH_COOKIE_SECURE
 from backend.kernel.contracts.errors import zen
 
 WEBAUTHN_FLOW_SESSION_COOKIE = os.getenv("ZEN70_WEBAUTHN_FLOW_SESSION_COOKIE", "zen70_webauthn_session").strip() or "zen70_webauthn_session"

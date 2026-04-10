@@ -29,7 +29,7 @@ scopes:
 
   - scope_id: M1-job-api
     module: M1
-    path: backend/api/jobs/**
+    path: backend/control_plane/adapters/jobs/**
     runtime_role: Submission, dispatch, lifecycle callbacks, DLQ recovery, and job response shaping.
     upstream: frontend HTTP requests, runner-agent callbacks, node auth.
     downstream: scheduler core, lease state, models, SSE publishing.
@@ -43,7 +43,7 @@ scopes:
 
   - scope_id: M1-node-sse-api
     module: M1
-    path: backend/api/{nodes.py,nodes_models.py,routes.py,control_events.py}
+    path: backend/control_plane/adapters/{nodes.py,nodes_models.py,routes.py,control_events.py}
     runtime_role: Node lifecycle API and SSE event fan-out.
     upstream: runner-agent heartbeats, authenticated UI sessions, Redis pubsub.
     downstream: frontend runtime stores, node status projections, operator dashboards.
@@ -57,7 +57,7 @@ scopes:
 
   - scope_id: M1-runtime-core
     module: M1
-    path: backend/kernel/execution/{attempt_expiration_service.py,dispatch_lifecycle.py,failure_taxonomy.py,job_*.py,lease_service.py,workload_semantics.py} + backend/kernel/scheduling/{backfill_scheduling.py,business_scheduling.py,failure_control_plane.py,gang_scheduler.py,placement_*.py,queue_stratification.py,quota*.py,scheduler_auto_tune*.py,scheduling_*.py} + backend/kernel/topology/node_auth.py + backend/kernel/contracts/safe_error_projection.py + backend/platform/{db/advisory_locks.py,redis/**}
+    path: backend/runtime/execution/{attempt_expiration_service.py,dispatch_lifecycle.py,failure_taxonomy.py,job_*.py,lease_service.py,workload_semantics.py} + backend/runtime/scheduling/{backfill_scheduling.py,business_scheduling.py,failure_control_plane.py,gang_scheduler.py,placement_*.py,queue_stratification.py,quota*.py,scheduler_auto_tune*.py,scheduling_*.py} + backend/runtime/topology/node_auth.py + backend/kernel/contracts/safe_error_projection.py + backend/platform/{db/advisory_locks.py,redis/**}
     runtime_role: Scheduling, lease ownership, retry policy, quota governance, placement, and runtime safety checks.
     upstream: API handlers, runner callbacks, placement solver, Redis, database state.
     downstream: model transitions, expiration worker, solver RPCs, frontend-safe error hints.
@@ -151,7 +151,7 @@ scopes:
 
   - scope_id: M2-identity-boundary
     module: M2
-    path: backend/api/{auth.py,auth_bootstrap.py,auth_cookies.py,auth_invite.py,auth_password.py,auth_pin.py,auth_session_projection.py,auth_shared.py,auth_token_issue.py,auth_user.py,auth_webauthn.py,audit_logs.py,permissions.py,sessions.py,user_management.py} + backend/api/models/** + backend/control_plane/{admin/{audit_logging.py,user_lifecycle.py},auth/{auth_helpers.py,jwt.py,permissions.py,sessions.py,webauthn.py,webauthn_challenge_store.py,webauthn_flow_session.py}} + backend/platform/{db/rls.py,security/secret_envelope.py,logging/redaction.py} + backend/models/{audit_log.py,permission.py,session.py,tenant.py,user.py,webauthn_challenge.py} + frontend/src/{composables/useAuthFlow.ts,services/webauthn.ts,stores/auth.ts,stores/auth/**,types/user.ts,views/InviteView.vue,views/Login.vue}
+    path: backend/control_plane/adapters/{auth.py,auth_bootstrap.py,auth_cookies.py,auth_invite.py,auth_password.py,auth_pin.py,auth_session_projection.py,auth_shared.py,auth_token_issue.py,auth_user.py,auth_webauthn.py,audit_logs.py,permissions.py,sessions.py,user_management.py} + backend/control_plane/adapters/models/** + backend/control_plane/{admin/{audit_logging.py,user_lifecycle.py},auth/{auth_helpers.py,jwt.py,permissions.py,sessions.py,webauthn.py,webauthn_challenge_store.py,webauthn_flow_session.py}} + backend/platform/{db/rls.py,security/secret_envelope.py,logging/redaction.py} + backend/models/{audit_log.py,permission.py,session.py,tenant.py,user.py,webauthn_challenge.py} + frontend/src/{composables/useAuthFlow.ts,services/webauthn.ts,stores/auth.ts,stores/auth/**,types/user.ts,views/InviteView.vue,views/Login.vue}
     runtime_role: Authentication, authorization, session projection, audit, and browser identity state.
     upstream: login flows, cookies, WebAuthn devices, RBAC policies.
     downstream: protected API access, tenant scoping, audit trails, and UI auth state.
@@ -166,7 +166,7 @@ scopes:
 
   - scope_id: M3-extension-orchestration
     module: M3
-    path: backend/api/{agent.py,connectors.py,connectors_helpers.py,evaluations.py,evaluations_helpers.py,extensions.py,iot.py,push.py,reservations.py,scenes.py,triggers.py,workflows.py} + backend/kernel/{extensions/{ai_providers.py,connector_kind_registry.py,connector_secret_service.py,connector_service.py,extension_guard.py,extension_sdk.py,job_kind_registry.py,trigger_command_service.py,trigger_kind_registry.py,trigger_service.py,workflow_command_service.py,workflow_engine.py,workflow_template_registry.py},surfaces/{contracts.py,registry.py},topology/{device_profiles.py,executor_registry.py,pack_selection.py},contracts/events_schema.py,execution/fault_isolation.py,policy/{feature_flag_service.py,runtime_policy_resolver.py},packs/{registry.py,presets.py},scheduling/reservation_runtime.py} + backend/control_plane/console/{manifest_service.py,state_views.py} + backend/platform/http/webhooks.py + backend/models/{connector.py,feature_flag.py,software_evaluation.py,trigger.py,workflow.py} + contracts/{extensions,reservations,triggers}/**
+    path: backend/control_plane/adapters/{agent.py,connectors.py,connectors_helpers.py,evaluations.py,evaluations_helpers.py,extensions.py,iot.py,push.py,reservations.py,scenes.py,triggers.py,workflows.py} + backend/kernel/{extensions/{ai_providers.py,connector_kind_registry.py,connector_secret_service.py,connector_service.py,extension_guard.py,extension_sdk.py,job_kind_registry.py,trigger_command_service.py,trigger_kind_registry.py,trigger_service.py,workflow_command_service.py,workflow_engine.py,workflow_template_registry.py},surfaces/{contracts.py,registry.py},topology/{device_profiles.py,executor_registry.py,pack_selection.py},contracts/events_schema.py,execution/fault_isolation.py,policy/{feature_flag_service.py,runtime_policy_resolver.py},packs/{registry.py,presets.py},scheduling/reservation_runtime.py} + backend/control_plane/console/{manifest_service.py,state_views.py} + backend/platform/http/webhooks.py + backend/models/{connector.py,feature_flag.py,software_evaluation.py,trigger.py,workflow.py} + contracts/{extensions,reservations,triggers}/**
     runtime_role: Connector lifecycle, extension guardrails, trigger delivery, workflow execution, and related contracts.
     upstream: operator actions, extension manifests, external device or trigger inputs.
     downstream: runtime command execution, connector state, and reservation and workflow callbacks.
@@ -195,7 +195,7 @@ scopes:
 
   - scope_id: M4-console-shell
     module: M4
-    path: backend/api/{action_contracts.py,assets.py,board.py,console.py,console_helpers.py,health.py,portability.py,profile.py,search.py,settings.py,ui_contracts.py} + backend/kernel/{governance/aggregate_owner_registry.py,profiles/public_profile.py,topology/profile_selection.py,contracts/status.py} + backend/platform/redis/runtime.py + backend/models/{asset.py,health_record.py,memory.py,registry.py,system.py}
+    path: backend/control_plane/adapters/{action_contracts.py,assets.py,board.py,console.py,console_helpers.py,health.py,portability.py,profile.py,search.py,settings.py,ui_contracts.py} + backend/kernel/{governance/aggregate_owner_registry.py,profiles/public_profile.py,topology/profile_selection.py,contracts/status.py} + backend/platform/redis/runtime.py + backend/models/{asset.py,health_record.py,memory.py,registry.py,system.py}
     runtime_role: Control dashboard, generic console APIs, health and profile presentation, and server-owned UI contracts.
     upstream: authenticated browser users and UI shell requests.
     downstream: frontend chrome, dashboards, resource views, search, and settings.

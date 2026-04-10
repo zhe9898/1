@@ -3,12 +3,12 @@ max-line-length = 160
 max-complexity = 15
 extend-ignore = E203,W503
 exclude =
-    backend/kernel/scheduling/gen_grpc,
+    backend/runtime/scheduling/gen_grpc,
     */kernel/scheduling/gen_grpc/*
 per-file-ignores =
-    backend/kernel/scheduling/gen_grpc/placement_pb2.py:E501
-    backend/kernel/scheduling/gen_grpc/placement_pb2_grpc.py:F401
-    backend/kernel/scheduling/gen_grpc/__init__.py:F401
+    backend/runtime/scheduling/gen_grpc/placement_pb2.py:E501
+    backend/runtime/scheduling/gen_grpc/placement_pb2_grpc.py:F401
+    backend/runtime/scheduling/gen_grpc/__init__.py:F401
     kernel/scheduling/gen_grpc/placement_pb2.py:E501
     kernel/scheduling/gen_grpc/placement_pb2_grpc.py:F401
     kernel/scheduling/gen_grpc/__init__.py:F401

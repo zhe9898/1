@@ -4,7 +4,7 @@ import datetime
 from typing import TypedDict
 
 from backend.kernel.contracts.status import normalize_persisted_status
-from backend.kernel.execution.job_status import normalize_job_like_status
+from backend.runtime.execution.job_status import normalize_job_like_status
 
 NODE_STALE_AFTER_SECONDS = 45
 

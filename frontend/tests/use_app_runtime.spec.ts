@@ -2,6 +2,8 @@ import { mount } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { BROWSER_REALTIME_CHANNELS } from "@/types/sse";
+
 const createSSEMock = vi.fn<() => () => void>();
 const requestPersistentStorageMock = vi.fn(async () => true);
 const initWebPushMock = vi.fn(async () => undefined);
@@ -77,6 +79,7 @@ describe("useAppRuntime realtime recovery", () => {
     await flushAsyncWork();
 
     expect(createSSEMock).toHaveBeenCalledTimes(1);
+    expect(createSSEMock.mock.calls[0]?.[2]).toEqual(BROWSER_REALTIME_CHANNELS);
     const options = createSSEMock.mock.calls[0]?.[3] as { onFallbackOffline?: () => void; onRecovered?: () => void };
     options.onFallbackOffline?.();
     expect(capsStore.isOffline).toBe(true);

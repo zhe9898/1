@@ -44,7 +44,7 @@ def _temporary_gateway_profile(profile: str):
 
 
 def _load_openapi_for_profile(profile: str) -> dict[str, object]:
-    from backend.api.deps import get_settings  # noqa: WPS433
+    from backend.control_plane.adapters.deps import get_settings  # noqa: WPS433
     from backend.control_plane.app import factory as factory_module  # noqa: WPS433
 
     with _temporary_gateway_profile(profile):
@@ -91,7 +91,7 @@ def write_metadata(profiles: list[str]) -> None:
 
 
 def main() -> None:
-    from backend.api.deps import get_settings  # noqa: WPS433
+    from backend.control_plane.adapters.deps import get_settings  # noqa: WPS433
     from scripts.freeze_openapi import sync_locked_snapshot  # noqa: WPS433
 
     profiles = ["gateway-kernel"]

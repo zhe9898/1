@@ -36,7 +36,7 @@ def test_backend_ci_lockfile_guards_windows_only_dependencies_with_markers() -> 
 
 
 def test_backend_proto_runtime_pin_matches_generated_placement_gencode() -> None:
-    placement_pb2 = repo_path("backend", "kernel", "scheduling", "gen_grpc", "placement_pb2.py").read_text(encoding="utf-8")
+    placement_pb2 = repo_path("backend", "runtime", "scheduling", "gen_grpc", "placement_pb2.py").read_text(encoding="utf-8")
     match = re.search(
         r"ValidateProtobufRuntimeVersion\([^)]*?,\s*(?P<major>\d+),\s*(?P<minor>\d+),\s*(?P<patch>\d+),",
         placement_pb2,

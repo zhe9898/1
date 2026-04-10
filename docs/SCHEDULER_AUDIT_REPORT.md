@@ -14,19 +14,19 @@
 
 1. **任意节点伪造结果回调** ✅
    - `complete_job()` 和 `fail_job()` 都调用 `_assert_valid_lease_owner()` 验证 lease owner
-   - 位置: `backend/api/jobs/routes.py:329, 386`
+   - 位置: `backend/control_plane/adapters/jobs/routes.py:329, 386`
 
 2. **不校验 lease owner 就收终态** ✅
    - 所有终态回调（complete/fail/progress/renew）都有 lease owner 检查
-   - 位置: `backend/api/jobs/routes.py:329, 386, 490, 538`
+   - 位置: `backend/control_plane/adapters/jobs/routes.py:329, 386, 490, 538`
 
 3. **心跳旁路直接激活 pending 节点** ✅
    - `pull_jobs()` 调用 `authenticate_node_request(..., require_active=True)` 验证节点
-   - 位置: `backend/api/jobs/routes.py:209-214`
+   - 位置: `backend/control_plane/adapters/jobs/routes.py:209-214`
 
 4. **pull_jobs 完全不看 selector / capability / 资源** ✅
    - `select_jobs_for_node()` 调用 `job_matches_node()` 检查所有约束
-   - 位置: `backend/kernel/scheduling/job_scheduler.py:146-153, 210`
+   - 位置: `backend/runtime/scheduling/job_scheduler.py:146-153, 210`
 
 ---
 
@@ -40,8 +40,8 @@
 - 限制值由 `get_max_concurrent_limit()` 从 `job_type_separation.py` 配置读取
 
 **位置**:
-- 检查函数: `backend/api/jobs/routes.py:_check_concurrent_limits()`
-- 调用点: `backend/api/jobs/routes.py:create_job()` — flush 前
+- 检查函数: `backend/control_plane/adapters/jobs/routes.py:_check_concurrent_limits()`
+- 调用点: `backend/control_plane/adapters/jobs/routes.py:create_job()` — flush 前
 - 配置源: `backend/core/job_type_separation.py`
 
 ---
@@ -54,9 +54,9 @@
 - 退避参数通过环境变量 `RETRY_BASE_DELAY_SECONDS`（默认10）/ `RETRY_MAX_DELAY_SECONDS`（默认600）外部化
 
 **位置**:
-- 退避计算: `backend/kernel/execution/failure_taxonomy.py:calculate_retry_delay_seconds()`
-- 执行层: `backend/api/jobs/routes.py:fail_job()` — 设置 `retry_at`
-- 查询层: `backend/api/jobs/routes.py:pull_jobs()` — `retry_at <= now` 条件
+- 退避计算: `backend/runtime/execution/failure_taxonomy.py:calculate_retry_delay_seconds()`
+- 执行层: `backend/control_plane/adapters/jobs/routes.py:fail_job()` — 设置 `retry_at`
+- 查询层: `backend/control_plane/adapters/jobs/routes.py:pull_jobs()` — `retry_at <= now` 条件
 
 ---
 
@@ -68,8 +68,8 @@
 - 这使 `eligible_nodes_count` 和 `scarcity_score` 更真实
 
 **位置**:
-- `backend/kernel/scheduling/job_scheduler.py:count_eligible_nodes_for_job()` — 参数 + 优先逻辑
-- `backend/kernel/scheduling/job_scheduler.py:select_jobs_for_node()` — 传入 `accepted_kinds`
+- `backend/runtime/scheduling/job_scheduler.py:count_eligible_nodes_for_job()` — 参数 + 优先逻辑
+- `backend/runtime/scheduling/job_scheduler.py:select_jobs_for_node()` — 传入 `accepted_kinds`
 
 ---
 
@@ -84,7 +84,7 @@
 - 用户会收到错误的恢复提示
 
 **位置**:
-- `backend/api/jobs/routes.py:162-178`
+- `backend/control_plane/adapters/jobs/routes.py:162-178`
 
 ---
 
@@ -119,7 +119,7 @@
 - "有 aging"不等于"真防饿死"
 
 **位置**:
-- `backend/api/jobs/routes.py:235-258`
+- `backend/control_plane/adapters/jobs/routes.py:235-258`
 
 ---
 
@@ -135,7 +135,7 @@
 - 控制台 explain / diagnose 语义会脏
 
 **位置**:
-- `backend/api/jobs/routes.py:280` (只在下次 lease 前才标记)
+- `backend/control_plane/adapters/jobs/routes.py:280` (只在下次 lease 前才标记)
 
 ---
 
@@ -151,7 +151,7 @@
 - 这不是 bug，但属于业务调度解释能力不完全真实
 
 **位置**:
-- `backend/api/jobs/routes.py:674-749`
+- `backend/control_plane/adapters/jobs/routes.py:674-749`
 
 ---
 
@@ -169,10 +169,10 @@
 - 人工治理语义和系统预算语义不一致
 
 **位置**:
-- `backend/api/jobs/routes.py:283` (attempt +1)
-- `backend/api/jobs/routes.py:421` (attempt_count +1)
-- `backend/api/jobs/routes.py:654` (retry_count 重置，但 attempt_count 没重置)
-- `backend/kernel/execution/failure_taxonomy.py:199-200` (should_retry_job 检查 attempt_count)
+- `backend/control_plane/adapters/jobs/routes.py:283` (attempt +1)
+- `backend/control_plane/adapters/jobs/routes.py:421` (attempt_count +1)
+- `backend/control_plane/adapters/jobs/routes.py:654` (retry_count 重置，但 attempt_count 没重置)
+- `backend/runtime/execution/failure_taxonomy.py:199-200` (should_retry_job 检查 attempt_count)
 
 ---
 

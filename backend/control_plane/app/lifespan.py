@@ -10,8 +10,8 @@ from typing import Any, Protocol, TypeAlias, cast
 
 from fastapi import FastAPI
 
-from backend.api.deps import get_settings
-from backend.kernel.extensions.extension_sdk import bootstrap_extension_runtime
+from backend.control_plane.adapters.deps import get_settings
+from backend.extensions.extension_sdk import bootstrap_extension_runtime
 from backend.platform.events.runtime import connect_event_bus_with_retry, resolve_event_bus_backend, set_runtime_event_bus
 from backend.platform.logging.structured import get_logger
 from backend.platform.redis.runtime import connect_redis_with_retry
@@ -96,7 +96,7 @@ def build_lifespan(
 
         if _async_session_factory is not None:
             try:
-                from backend.kernel.scheduling.governance_facade import get_governance_facade
+                from backend.runtime.scheduling.governance_facade import get_governance_facade
 
                 async with _async_session_factory() as session:
                     await get_governance_facade().load_tuner_state(session)
@@ -137,7 +137,7 @@ def build_lifespan(
 
             if _async_session_factory is not None:
                 try:
-                    from backend.kernel.scheduling.governance_facade import get_governance_facade
+                    from backend.runtime.scheduling.governance_facade import get_governance_facade
 
                     async with _async_session_factory() as session:
                         await get_governance_facade().save_tuner_state(session)

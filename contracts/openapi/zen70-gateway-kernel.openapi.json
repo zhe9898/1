@@ -295,7 +295,7 @@
           "auth"
         ],
         "summary": "Sys Status",
-        "description": "Sanitized legacy docstring.",
+        "description": "Report whether the system has already been bootstrapped.",
         "operationId": "sys_status_api_v1_auth_sys_status_get",
         "responses": {
           "200": {
@@ -321,7 +321,7 @@
           "auth"
         ],
         "summary": "Bootstrap",
-        "description": "Sanitized legacy docstring.",
+        "description": "Create the first admin account when the system is still empty.",
         "operationId": "bootstrap_api_v1_auth_bootstrap_post",
         "requestBody": {
           "content": {
@@ -363,7 +363,7 @@
           "auth"
         ],
         "summary": "Password Login",
-        "description": "Sanitized legacy docstring.",
+        "description": "Authenticate a user with username/password and issue a session token.",
         "operationId": "password_login_api_v1_auth_password_login_post",
         "requestBody": {
           "content": {
@@ -624,7 +624,7 @@
           "auth"
         ],
         "summary": "Pin Set",
-        "description": "Sanitized legacy docstring.",
+        "description": "Set or rotate the current user's PIN after validating ownership.",
         "operationId": "pin_set_api_v1_auth_pin_set_post",
         "requestBody": {
           "content": {

@@ -89,6 +89,20 @@ def normalize_persisted_status(domain: str, value: str | None) -> str | None:
     return get_status_contract(domain).normalize(value)
 
 
+def normalize_job_like_status(value: str | None, *, fallback: str = "pending") -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return fallback
+    for domain in ("jobs.status", "job_attempts.status"):
+        try:
+            canonical = normalize_persisted_status(domain, normalized)
+        except ValueError:
+            continue
+        if canonical:
+            return canonical
+    return normalized
+
+
 def export_status_compatibility_rules() -> dict[str, dict[str, object]]:
     return {
         domain: {
@@ -107,5 +121,6 @@ __all__ = (
     "export_status_compatibility_rules",
     "get_status_contract",
     "get_status_rule",
+    "normalize_job_like_status",
     "normalize_persisted_status",
 )

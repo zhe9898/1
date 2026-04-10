@@ -13,8 +13,8 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from backend.api.deps import get_current_admin, get_current_user, get_db, get_tenant_db
-from backend.api.triggers import TriggerFireRequest, TriggerUpsertRequest, fire_trigger_endpoint, receive_trigger_webhook, upsert_trigger
+from backend.control_plane.adapters.deps import get_current_admin, get_current_user, get_db, get_tenant_db
+from backend.control_plane.adapters.triggers import TriggerFireRequest, TriggerUpsertRequest, fire_trigger_endpoint, receive_trigger_webhook, upsert_trigger
 from backend.control_plane.app.entrypoint import app
 from backend.models.trigger import Trigger, TriggerDelivery
 
@@ -217,7 +217,7 @@ async def test_fire_trigger_dispatches_job_and_records_delivery() -> None:
     mocked_submit_response.job_id = "job-1"
     mocked_submit_response.model_dump.return_value = {"job_id": "job-1", "status": "accepted"}
 
-    with patch("backend.kernel.extensions.trigger_service.submit_job", new=AsyncMock(return_value=mocked_submit_response)):
+    with patch("backend.extensions.trigger_service.submit_job", new=AsyncMock(return_value=mocked_submit_response)):
         response = await fire_trigger_endpoint(
             "trigger-1",
             TriggerFireRequest(
@@ -299,7 +299,7 @@ async def test_receive_trigger_webhook_requires_valid_hmac_signature() -> None:
     body = b'{"hello":"world"}'
     request = _signed_webhook_request(body, secret="wrong-secret")
 
-    with patch("backend.api.triggers._bind_tenant_db", new=AsyncMock(return_value=db)):
+    with patch("backend.control_plane.adapters.triggers._bind_tenant_db", new=AsyncMock(return_value=db)):
         with pytest.raises(HTTPException) as exc:
             await receive_trigger_webhook("default", "trigger-1", request, db=db, redis=None)
 
@@ -345,8 +345,8 @@ async def test_receive_trigger_webhook_accepts_timestamped_hmac_and_fires_trigge
     )
 
     with (
-        patch("backend.api.triggers._bind_tenant_db", new=AsyncMock(return_value=db)),
-        patch("backend.api.triggers.fire_trigger", new=AsyncMock(return_value=delivery)) as fire_trigger_mock,
+        patch("backend.control_plane.adapters.triggers._bind_tenant_db", new=AsyncMock(return_value=db)),
+        patch("backend.control_plane.adapters.triggers.fire_trigger", new=AsyncMock(return_value=delivery)) as fire_trigger_mock,
     ):
         response = await receive_trigger_webhook("default", "trigger-1", request, db=db, redis=None)
 

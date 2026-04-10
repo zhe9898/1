@@ -55,7 +55,7 @@ class TestGetCurrentUser:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_valid_token_returns_payload(self) -> None:
-        from backend.api.deps import get_current_user
+        from backend.control_plane.adapters.deps import get_current_user
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token("alice", "admin")}
@@ -72,7 +72,7 @@ class TestGetCurrentUser:
 
     @pytest.mark.anyio
     async def test_missing_credentials_raises_401(self) -> None:
-        from backend.api.deps import get_current_user
+        from backend.control_plane.adapters.deps import get_current_user
 
         request = MagicMock()
         request.cookies = {}
@@ -88,7 +88,7 @@ class TestGetCurrentUser:
 
     @pytest.mark.anyio
     async def test_empty_credentials_raises_401(self) -> None:
-        from backend.api.deps import get_current_user
+        from backend.control_plane.adapters.deps import get_current_user
 
         cred = MagicMock()
         cred.credentials = ""
@@ -105,7 +105,7 @@ class TestGetCurrentUser:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_disabled_user_token_is_rejected(self) -> None:
-        from backend.api.deps import get_current_user
+        from backend.control_plane.adapters.deps import get_current_user
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token("alice", "admin")}
@@ -126,7 +126,7 @@ class TestGetCurrentUser:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_cookie_token_is_accepted(self) -> None:
-        from backend.api.deps import get_current_user
+        from backend.control_plane.adapters.deps import get_current_user
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token("cookie-user", "admin")}
@@ -144,7 +144,7 @@ class TestGetCurrentUser:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_authorization_header_is_ignored_for_cookie_only_auth(self) -> None:
-        from backend.api.deps import get_current_user
+        from backend.control_plane.adapters.deps import get_current_user
 
         cred = MagicMock()
         cred.credentials = _token("header-user", "admin")
@@ -163,7 +163,7 @@ class TestGetCurrentUser:
 class TestGetCurrentAdmin:
     @pytest.mark.anyio
     async def test_admin_passes(self) -> None:
-        from backend.api.deps import get_current_admin
+        from backend.control_plane.adapters.deps import get_current_admin
 
         user = {"sub": "admin1", "role": "admin"}
         result = await get_current_admin(user)
@@ -171,7 +171,7 @@ class TestGetCurrentAdmin:
 
     @pytest.mark.anyio
     async def test_superadmin_passes(self) -> None:
-        from backend.api.deps import get_current_admin
+        from backend.control_plane.adapters.deps import get_current_admin
 
         user = {"sub": "root1", "role": "superadmin"}
         result = await get_current_admin(user)
@@ -179,7 +179,7 @@ class TestGetCurrentAdmin:
 
     @pytest.mark.anyio
     async def test_non_admin_raises_403(self) -> None:
-        from backend.api.deps import get_current_admin
+        from backend.control_plane.adapters.deps import get_current_admin
 
         user = {"sub": "user1", "role": "viewer"}
         with pytest.raises(HTTPException) as exc_info:
@@ -192,7 +192,7 @@ class TestGetCurrentUserOptional:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_valid_token_returns_payload(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token("bob")}
@@ -208,7 +208,7 @@ class TestGetCurrentUserOptional:
 
     @pytest.mark.anyio
     async def test_no_credentials_returns_none(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         request = MagicMock()
         request.cookies = {}
@@ -220,7 +220,7 @@ class TestGetCurrentUserOptional:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_expired_token_returns_none(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token(expired=True)}
@@ -231,7 +231,7 @@ class TestGetCurrentUserOptional:
 
     @pytest.mark.anyio
     async def test_unexpected_decode_error_returns_none(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": "bad-token"}
@@ -239,7 +239,7 @@ class TestGetCurrentUserOptional:
         response = MagicMock()
         response.headers = {}
 
-        with patch("backend.api.deps.decode_token", new=AsyncMock(side_effect=RuntimeError("decoder exploded"))):
+        with patch("backend.control_plane.adapters.deps.decode_token", new=AsyncMock(side_effect=RuntimeError("decoder exploded"))):
             result = await get_current_user_optional(request, response, None, None)
 
         assert result is None
@@ -248,7 +248,7 @@ class TestGetCurrentUserOptional:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_cookie_token_is_used_for_optional_auth(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token("cookie-optional")}
@@ -266,7 +266,7 @@ class TestGetCurrentUserOptional:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_disabled_user_token_returns_none(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         request = MagicMock()
         request.cookies = {"zen70_access_token": _token("disabled-user")}
@@ -284,7 +284,7 @@ class TestGetCurrentUserOptional:
     @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
     @pytest.mark.anyio
     async def test_optional_auth_ignores_authorization_header_without_cookie(self) -> None:
-        from backend.api.deps import get_current_user_optional
+        from backend.control_plane.adapters.deps import get_current_user_optional
 
         cred = MagicMock()
         cred.credentials = _token("header-only")
@@ -300,7 +300,7 @@ class TestGetCurrentUserOptional:
 
 class TestSettingsAndTenantDb:
     def test_get_settings_contains_expected_keys(self) -> None:
-        from backend.api.deps import get_settings
+        from backend.control_plane.adapters.deps import get_settings
 
         get_settings.cache_clear()
         settings = get_settings()
@@ -308,7 +308,7 @@ class TestSettingsAndTenantDb:
         get_settings.cache_clear()
 
     def test_cors_parses_comma_separated(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from backend.api.deps import get_settings
+        from backend.control_plane.adapters.deps import get_settings
 
         get_settings.cache_clear()
         monkeypatch.setenv("CORS_ORIGINS", "http://a.com, http://b.com")
@@ -318,12 +318,12 @@ class TestSettingsAndTenantDb:
 
     @pytest.mark.anyio
     async def test_get_tenant_db_rejects_when_rls_is_not_ready(self) -> None:
-        from backend.api.deps import get_tenant_db
+        from backend.control_plane.adapters.deps import get_tenant_db
 
         db = MagicMock()
         with (
-            patch("backend.api.deps.set_tenant_context") as set_tenant_context_mock,
-            patch("backend.api.deps.assert_rls_ready", side_effect=RuntimeError("RLS missing")),
+            patch("backend.control_plane.adapters.deps.set_tenant_context") as set_tenant_context_mock,
+            patch("backend.control_plane.adapters.deps.assert_rls_ready", side_effect=RuntimeError("RLS missing")),
         ):
             set_tenant_context_mock.return_value = None
             with pytest.raises(HTTPException) as exc_info:
@@ -333,7 +333,7 @@ class TestSettingsAndTenantDb:
 
     @pytest.mark.anyio
     async def test_get_machine_tenant_db_derives_tenant_from_authenticated_node(self) -> None:
-        from backend.api.deps import get_machine_tenant_db
+        from backend.control_plane.adapters.deps import get_machine_tenant_db
 
         request = MagicMock()
         request.state = MagicMock()
@@ -345,9 +345,9 @@ class TestSettingsAndTenantDb:
         node.node_id = "node-1"
 
         with (
-            patch("backend.api.deps.authenticate_node_request", new=AsyncMock(return_value=node)) as auth_node_mock,
-            patch("backend.api.deps.set_tenant_context") as set_tenant_context_mock,
-            patch("backend.api.deps.assert_rls_ready") as assert_rls_ready_mock,
+            patch("backend.control_plane.adapters.deps.authenticate_node_request", new=AsyncMock(return_value=node)) as auth_node_mock,
+            patch("backend.control_plane.adapters.deps.set_tenant_context") as set_tenant_context_mock,
+            patch("backend.control_plane.adapters.deps.assert_rls_ready") as assert_rls_ready_mock,
         ):
             set_tenant_context_mock.return_value = None
             assert_rls_ready_mock.return_value = None
@@ -361,7 +361,7 @@ class TestSettingsAndTenantDb:
 
     @pytest.mark.anyio
     async def test_get_tenant_db_rejects_missing_tenant_id(self) -> None:
-        from backend.api.deps import get_tenant_db
+        from backend.control_plane.adapters.deps import get_tenant_db
 
         with pytest.raises(HTTPException) as exc_info:
             await get_tenant_db({"sub": "alice", "role": "admin", "tenant_id": ""}, MagicMock())
@@ -370,7 +370,7 @@ class TestSettingsAndTenantDb:
 
     @pytest.mark.anyio
     async def test_get_machine_tenant_db_times_out_when_body_stalls(self) -> None:
-        from backend.api.deps import get_machine_tenant_db
+        from backend.control_plane.adapters.deps import get_machine_tenant_db
 
         request = MagicMock()
         request.state = MagicMock()
@@ -390,7 +390,7 @@ class TestSettingsAndTenantDb:
 class TestRequireScope:
     @pytest.mark.anyio
     async def test_admin_without_scope_is_rejected(self) -> None:
-        from backend.api.deps import require_scope
+        from backend.control_plane.adapters.deps import require_scope
 
         checker = require_scope("write:jobs")
         with pytest.raises(HTTPException) as exc_info:
@@ -399,7 +399,7 @@ class TestRequireScope:
 
     @pytest.mark.anyio
     async def test_superadmin_can_bypass_scope_check(self) -> None:
-        from backend.api.deps import require_scope
+        from backend.control_plane.adapters.deps import require_scope
 
         checker = require_scope("write:jobs")
         with pytest.raises(HTTPException) as exc_info:
@@ -408,7 +408,7 @@ class TestRequireScope:
 
     @pytest.mark.anyio
     async def test_superadmin_with_scope_passes(self) -> None:
-        from backend.api.deps import require_scope
+        from backend.control_plane.adapters.deps import require_scope
 
         checker = require_scope("write:jobs")
         result = await checker({"sub": "root", "role": "superadmin", "scopes": ["write:jobs"]})

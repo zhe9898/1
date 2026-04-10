@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from backend.kernel.topology.runtime_contracts import (
+from backend.kernel.contracts.runtime_personas import (
     KOTLIN_NATIVE_PERSONA,
     SEARCH_SERVICE_PERSONA,
     SWIFT_NATIVE_PERSONA,

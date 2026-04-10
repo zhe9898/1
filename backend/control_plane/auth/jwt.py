@@ -11,10 +11,10 @@ from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.security_defaults import DEFAULT_INSECURE_SECRET
 from backend.platform.redis._shared import REDIS_OPERATION_ERRORS
 
 ALGORITHM = "HS256"
-DEFAULT_INSECURE_SECRET = "change-me-in-production-min-32-bytes"
 
 _IS_PROD = os.getenv("ZEN70_ENV", "").lower() == "production"
 _CURRENT = os.getenv("JWT_SECRET_CURRENT") or os.getenv("JWT_SECRET") or ("" if _IS_PROD else DEFAULT_INSECURE_SECRET)

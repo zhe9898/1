@@ -6,52 +6,60 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.kernel.capabilities.registry import capability_keys
-from backend.kernel.contracts.status import export_status_compatibility_rules
-from backend.kernel.execution.fault_isolation import export_fault_isolation_contract
-from backend.kernel.execution.lease_service import export_lease_service_contract
-from backend.kernel.extensions.extension_guard import (
+from backend.control_plane.auth.authority_boundary import export_auth_boundary_contract
+from backend.extensions.extension_guard import (
     assert_budgeted_payload,
     export_extension_budget_contract,
     validate_extension_manifest_contract,
     validate_scheduling_profile_budget,
 )
+from backend.kernel.capabilities.registry import capability_keys
+from backend.kernel.contracts.status import export_status_compatibility_rules
 from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry, unique_owner_service_map
 from backend.kernel.governance.architecture_rules import (
     export_architecture_governance_rules,
     export_architecture_governance_snapshot,
 )
+from backend.kernel.governance.development_cleanroom import export_development_cleanroom_contract
+from backend.kernel.governance.domain_import_fence import export_backend_domain_import_fence
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
-from backend.kernel.scheduling.scheduling_framework import SchedulingProfile
 from backend.kernel.surfaces.registry import export_surface_registry
-from backend.kernel.topology.runtime_contracts import control_plane_persona_keys, export_runtime_contract_taxonomy
-from backend.platform.events.channels import export_event_channel_contract
+from backend.platform.events.channels import export_event_channel_contract, tenant_realtime_subject, tenant_subject_token
 from backend.platform.redis.runtime_state import export_runtime_state_contract
+from backend.runtime.execution.fault_isolation import export_fault_isolation_contract
+from backend.runtime.execution.lease_service import export_lease_service_contract
+from backend.runtime.scheduling.scheduling_framework import SchedulingProfile
+from backend.runtime.topology.runtime_contracts import control_plane_persona_keys, export_runtime_contract_taxonomy
+from tools.auth_boundary_guard import auth_boundary_violations
+from tools.backend_domain_fence import backend_domain_import_fence_violations
+from tools.development_cleanroom_guard import development_cleanroom_violations
+from tools.tenant_claim_guard import tenant_claim_violations
 
 ROOT = Path(__file__).resolve().parents[3]
 BACKEND_ROOT = ROOT / "backend"
 RUNNER_ROOT = ROOT / "runner-agent"
+SCANNED_SOURCE_FOLDERS = ("control_plane", "core", "kernel", "runtime", "extensions", "workers", "sentinel")
 
 _OWNER_MODULES_BY_FIELD: dict[tuple[str, str], set[str]] = {
     ("job", "status"): {
-        "backend/kernel/execution/job_lifecycle_service.py",
-        "backend/kernel/execution/lease_service.py",
+        "backend/runtime/execution/job_lifecycle_service.py",
+        "backend/runtime/execution/lease_service.py",
     },
-    ("job", "attempt"): {"backend/kernel/execution/lease_service.py"},
-    ("job", "lease_token"): {"backend/kernel/execution/lease_service.py"},
-    ("job", "leased_until"): {"backend/kernel/execution/lease_service.py"},
-    ("attempt", "status"): {"backend/kernel/execution/lease_service.py"},
-    ("attempt", "lease_token"): {"backend/kernel/execution/lease_service.py"},
-    ("attempt", "scheduling_decision_id"): {"backend/kernel/execution/lease_service.py"},
-    ("node", "enrollment_status"): {"backend/kernel/topology/node_enrollment_service.py"},
-    ("node", "drain_status"): {"backend/kernel/topology/node_enrollment_service.py"},
-    ("node", "drain_until"): {"backend/kernel/topology/node_enrollment_service.py"},
-    ("connector", "status"): {"backend/kernel/extensions/connector_service.py"},
-    ("connector", "config"): {"backend/kernel/extensions/connector_service.py"},
-    ("trigger", "status"): {"backend/kernel/extensions/trigger_command_service.py"},
-    ("delivery", "status"): {"backend/kernel/extensions/trigger_command_service.py"},
-    ("workflow", "status"): {"backend/kernel/extensions/workflow_command_service.py"},
-    ("policy", "config_version"): {"backend/kernel/scheduling/scheduling_policy_service.py"},
+    ("job", "attempt"): {"backend/runtime/execution/lease_service.py"},
+    ("job", "lease_token"): {"backend/runtime/execution/lease_service.py"},
+    ("job", "leased_until"): {"backend/runtime/execution/lease_service.py"},
+    ("attempt", "status"): {"backend/runtime/execution/lease_service.py"},
+    ("attempt", "lease_token"): {"backend/runtime/execution/lease_service.py"},
+    ("attempt", "scheduling_decision_id"): {"backend/runtime/execution/lease_service.py"},
+    ("node", "enrollment_status"): {"backend/runtime/topology/node_enrollment_service.py"},
+    ("node", "drain_status"): {"backend/runtime/topology/node_enrollment_service.py"},
+    ("node", "drain_until"): {"backend/runtime/topology/node_enrollment_service.py"},
+    ("connector", "status"): {"backend/extensions/connector_service.py"},
+    ("connector", "config"): {"backend/extensions/connector_service.py"},
+    ("trigger", "status"): {"backend/extensions/trigger_command_service.py"},
+    ("delivery", "status"): {"backend/extensions/trigger_command_service.py"},
+    ("workflow", "status"): {"backend/extensions/workflow_command_service.py"},
+    ("policy", "config_version"): {"backend/runtime/scheduling/scheduling_policy_service.py"},
     ("flag", "enabled"): {"backend/kernel/policy/feature_flag_service.py"},
     ("flag", "updated_by"): {"backend/kernel/policy/feature_flag_service.py"},
 }
@@ -177,7 +185,7 @@ def test_runtime_policy_gate_blocks_runtime_system_yaml_reads_outside_allowlist(
         "backend/sentinel/routing_operator.py",
     }
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+    for path in _python_sources(*SCANNED_SOURCE_FOLDERS):
         rel = _rel(path)
         if rel in allowlist:
             continue
@@ -191,13 +199,21 @@ def test_event_channel_contract_separates_browser_realtime_from_internal_coordin
     contract = export_event_channel_contract()
     control_plane = set(contract["control_plane_event_channels"])
     browser_realtime = set(contract["browser_realtime_event_channels"])
+    browser_public = set(contract["browser_public_realtime_event_channels"])
+    tenant_scoped = set(contract["tenant_scoped_realtime_event_channels"])
     internal = set(contract["internal_coordination_channels"])
+    tenant_subject_contract = contract["tenant_realtime_subject_contract"]
 
     assert control_plane
     assert browser_realtime
+    assert browser_public
     assert internal
     assert browser_realtime <= control_plane
     assert control_plane.isdisjoint(internal)
+    assert browser_public == browser_realtime - tenant_scoped
+    assert tenant_subject_contract["segment"] == "tenant"
+    assert tenant_subject_contract["tenant_id_encoding"] == "utf8-hex"
+    assert tenant_realtime_subject("job:events", "tenant-a") == f"job:events.tenant.{tenant_subject_token('tenant-a')}"
 
 
 def test_event_transport_gate_blocks_direct_pubsub_usage_outside_event_interfaces() -> None:
@@ -255,10 +271,10 @@ def test_runtime_contract_taxonomy_exports_persona_executor_and_workload_layers(
 
 def test_runtime_contract_gate_blocks_hidden_persona_literals_in_scheduler_paths() -> None:
     risky_modules = (
-        BACKEND_ROOT / "api" / "nodes_helpers.py",
-        BACKEND_ROOT / "kernel" / "scheduling" / "job_scheduler.py",
-        BACKEND_ROOT / "kernel" / "scheduling" / "scheduling_candidates.py",
-        BACKEND_ROOT / "kernel" / "scheduling" / "job_scoring.py",
+        BACKEND_ROOT / "control_plane" / "adapters" / "nodes_helpers.py",
+        BACKEND_ROOT / "runtime" / "scheduling" / "job_scheduler.py",
+        BACKEND_ROOT / "runtime" / "scheduling" / "scheduling_candidates.py",
+        BACKEND_ROOT / "runtime" / "scheduling" / "job_scoring.py",
     )
     persona_literals = {value for value in control_plane_persona_keys() if value != "unknown"}
     violations: list[str] = []
@@ -331,7 +347,7 @@ def test_platform_infra_gate_blocks_legacy_core_imports() -> None:
         "backend.core.ai_providers",
     )
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+    for path in _python_sources(*SCANNED_SOURCE_FOLDERS):
         rel = _rel(path)
         source = path.read_text(encoding="utf-8")
         for module in blocked:
@@ -342,7 +358,7 @@ def test_platform_infra_gate_blocks_legacy_core_imports() -> None:
 
 def test_platform_redis_gate_blocks_sdk_imports_outside_platform() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+    for path in _python_sources(*SCANNED_SOURCE_FOLDERS):
         rel = _rel(path)
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         for node in ast.walk(tree):
@@ -356,7 +372,7 @@ def test_platform_redis_gate_blocks_sdk_imports_outside_platform() -> None:
 
 def test_platform_redis_gate_blocks_client_escape_hatch_usage() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+    for path in _python_sources(*SCANNED_SOURCE_FOLDERS):
         rel = _rel(path)
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         parents: dict[ast.AST, ast.AST] = {}
@@ -377,7 +393,7 @@ def test_platform_redis_gate_blocks_client_escape_hatch_usage() -> None:
 
 def test_platform_redis_gate_blocks_client_module_escape_imports() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "runtime", "workers", "sentinel"):
+    for path in _python_sources(*SCANNED_SOURCE_FOLDERS):
         rel = _rel(path)
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         for node in ast.walk(tree):
@@ -397,7 +413,7 @@ def test_ai_gateway_prompt_policy_stays_in_control_plane_auth_boundary() -> None
 
     ai_policy_import_seen = False
     forbidden_imports = {
-        "backend.control_plane.auth.role_claims",
+        "backend.kernel.contracts.role_claims",
     }
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -435,7 +451,7 @@ def test_ai_gateway_prompt_policy_stays_in_control_plane_auth_boundary() -> None
 
 def test_state_path_gate_only_allows_owner_services_for_core_field_writes() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "workers"):
+    for path in _python_sources("control_plane", "core", "kernel", "runtime", "extensions", "workers"):
         rel = _rel(path)
         for lineno, pair in _assignment_pairs(path):
             allowed = _OWNER_MODULES_BY_FIELD[pair]
@@ -446,12 +462,12 @@ def test_state_path_gate_only_allows_owner_services_for_core_field_writes() -> N
 
 def test_lease_gate_only_allows_lease_service_writes() -> None:
     violations: list[str] = []
-    for path in _python_sources("api", "control_plane", "core", "kernel", "workers"):
+    for path in _python_sources("control_plane", "core", "kernel", "runtime", "extensions", "workers"):
         rel = _rel(path)
         for lineno, pair in _assignment_pairs(path):
             if pair not in _LEASE_ONLY_FIELDS:
                 continue
-            if rel != "backend/kernel/execution/lease_service.py":
+            if rel != "backend/runtime/execution/lease_service.py":
                 violations.append(f"{rel}:{lineno}:{pair[0]}.{pair[1]}")
     assert violations == []
 
@@ -462,7 +478,7 @@ def test_runtime_policy_contract_exports_policy_store_entrypoint() -> None:
     assert contract["entrypoint"] == "backend.kernel.policy.runtime_policy_resolver.RuntimePolicyResolver"
     assert contract["policy_store_entrypoint"] == "backend.kernel.policy.policy_store.get_policy_store"
     assert contract["profile_normalizer"] == "backend.kernel.profiles.public_profile.normalize_gateway_profile"
-    assert contract["runtime_pack_resolver"] == "backend.kernel.topology.profile_selection.resolve_runtime_pack_keys"
+    assert contract["runtime_pack_resolver"] == "backend.runtime.topology.profile_selection.resolve_runtime_pack_keys"
     assert contract["router_gate_method"] == "router_enabled"
     assert contract["snapshot_method"] == "snapshot"
 
@@ -470,7 +486,7 @@ def test_runtime_policy_contract_exports_policy_store_entrypoint() -> None:
 def test_lease_service_contract_exports_owned_fields_and_rotation_semantics() -> None:
     contract = export_lease_service_contract()
 
-    assert contract["entrypoint"] == "backend.kernel.execution.lease_service.LeaseService"
+    assert contract["entrypoint"] == "backend.runtime.execution.lease_service.LeaseService"
     assert contract["grant_method"] == "grant_lease"
     assert contract["renew_method"] == "renew_lease"
     assert contract["rotates_lease_token_on_renew"] is True
@@ -495,20 +511,65 @@ def test_architecture_governance_registry_is_code_backed_and_exportable() -> Non
     rules = export_architecture_governance_rules()
     snapshot = export_architecture_governance_snapshot()
 
-    assert tuple(rules.keys()) == tuple(f"A{i}" for i in range(1, 14))
+    assert tuple(rules.keys()) == tuple(f"A{i}" for i in range(1, 19))
     assert rules["A1"]["maturity"] == "enforced"
     assert rules["A6"]["maturity"] == "enforced"
     assert rules["A12"]["maturity"] == "enforced"
+    assert rules["A14"]["maturity"] == "enforced"
+    assert rules["A15"]["maturity"] == "enforced"
+    assert rules["A16"]["maturity"] == "enforced"
+    assert rules["A17"]["maturity"] == "enforced"
+    assert rules["A18"]["maturity"] == "enforced"
     assert "surface_registry" in snapshot["entrypoints"]
     assert snapshot["entrypoints"]["aggregate_owner_registry"] == "backend.kernel.governance.aggregate_owner_registry.export_aggregate_owner_registry"
     assert snapshot["entrypoints"]["event_channel_contract"] == "backend.platform.events.channels.export_event_channel_contract"
     assert snapshot["entrypoints"]["runtime_state_contract"] == "backend.platform.redis.runtime_state.export_runtime_state_contract"
+    assert snapshot["entrypoints"]["domain_import_fence"] == "backend.kernel.governance.domain_import_fence.export_backend_domain_import_fence"
+    assert snapshot["entrypoints"]["auth_boundary_contract"] == "backend.control_plane.auth.authority_boundary.export_auth_boundary_contract"
+    assert snapshot["entrypoints"]["development_cleanroom_contract"] == "backend.kernel.governance.development_cleanroom.export_development_cleanroom_contract"
     assert snapshot["registries"]["surface_registry"] == export_surface_registry()
     assert snapshot["registries"]["fault_isolation_contract"] == export_fault_isolation_contract()
     assert snapshot["registries"]["aggregate_owner_registry"] == export_aggregate_owner_registry()
     assert snapshot["registries"]["status_compatibility_rules"] == export_status_compatibility_rules()
     assert snapshot["registries"]["event_channel_contract"] == export_event_channel_contract()
     assert snapshot["registries"]["runtime_state_contract"] == export_runtime_state_contract()
+    assert snapshot["registries"]["domain_import_fence"] == export_backend_domain_import_fence()
+    assert snapshot["registries"]["auth_boundary_contract"] == export_auth_boundary_contract()
+    assert snapshot["registries"]["development_cleanroom_contract"] == export_development_cleanroom_contract()
+
+
+def test_domain_import_fence_contract_is_code_backed_and_repo_governed() -> None:
+    contract = export_backend_domain_import_fence()
+
+    assert contract["governed_domains"] == ["kernel", "control_plane", "runtime", "extensions", "platform"]
+    assert contract["allowlists"]["kernel_to_control_plane"] == [
+        "backend/kernel/governance/architecture_rules.py",
+    ]
+    assert contract["allowlists"]["kernel_to_runtime"] == [
+        "backend/kernel/governance/architecture_rules.py",
+        "backend/kernel/policy/runtime_policy_resolver.py",
+    ]
+    assert contract["allowlists"]["runtime_to_control_plane"] == [
+        "backend/runtime/topology/node_enrollment_service.py",
+    ]
+    assert contract["platform_kernel_contract_prefix"] == "backend.kernel.contracts."
+
+
+def test_auth_boundary_contract_exports_authoritative_entrypoints() -> None:
+    contract = export_auth_boundary_contract()
+
+    assert contract["role_claim_contract"]["entrypoint"] == "backend.kernel.contracts.role_claims.current_user_role"
+    assert contract["role_claim_contract"]["allowlist"] == ["backend/kernel/contracts/role_claims.py"]
+    assert contract["tenant_claim_contract"]["entrypoints"] == [
+        "backend.kernel.contracts.tenant_claims.current_user_tenant_id",
+        "backend.kernel.contracts.tenant_claims.require_current_user_tenant_id",
+    ]
+    assert contract["tenant_claim_contract"]["allowlist"] == ["backend/kernel/contracts/tenant_claims.py"]
+    assert contract["admin_policy_contract"]["module"] == "backend.control_plane.auth.access_policy"
+    assert contract["permission_scope_contract"]["module"] == "backend.control_plane.auth.permissions"
+    assert contract["tenant_context_contract"]["jwt_tenant_db_entrypoint"] == "backend.control_plane.adapters.deps.get_tenant_db"
+    assert contract["tenant_context_contract"]["machine_tenant_db_entrypoint"] == "backend.control_plane.adapters.deps.get_machine_tenant_db"
+    assert contract["audit_log_entrypoint"] == "backend.platform.logging.audit.log_audit"
 
 
 def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
@@ -517,8 +578,8 @@ def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
     executor_source = _runner_text("internal", "exec", "executor.go")
     service_source = _runner_text("internal", "service", "service.go")
     api_client_source = _runner_text("internal", "api", "client.go")
-    lifecycle_route_source = (BACKEND_ROOT / "api" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
-    lifecycle_service_source = (BACKEND_ROOT / "api" / "jobs" / "lifecycle_service.py").read_text(encoding="utf-8")
+    lifecycle_route_source = (BACKEND_ROOT / "control_plane" / "adapters" / "jobs" / "lifecycle.py").read_text(encoding="utf-8")
+    lifecycle_service_source = (BACKEND_ROOT / "control_plane" / "adapters" / "jobs" / "lifecycle_service.py").read_text(encoding="utf-8")
     worker_source = (BACKEND_ROOT / "workers" / "control_plane_worker.py").read_text(encoding="utf-8")
 
     assert contract["runner_api_client_timeout_seconds"] == 30
@@ -527,7 +588,8 @@ def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
     lease_renewal = contract["lease_renewal"]
     assert lease_renewal["min_interval_seconds"] == 5
     assert lease_renewal["failure_abandon_after"] == 3
-    assert "renewEvery := time.Duration(max(5, job.LeaseSeconds/2)) * time.Second" in poller_source
+    assert "renewEvery := leaseRenewalInterval(jobSnapshot.LeaseSeconds)" in poller_source
+    assert "job.applyRenewedLease(renewedJob)" in poller_source
     assert "const maxConsecutiveFailures = 3" in poller_source
     assert 'log.Printf("lease renewal failed %d times, abandoning job %s"' in poller_source
     assert "return context.WithTimeout(context.WithoutCancel(parent), reportingTimeout)" in poller_source
@@ -585,3 +647,32 @@ def test_extension_payload_budget_guard_enforces_64kib_limit() -> None:
     oversized = {"blob": "x" * (70 * 1024)}
     with pytest.raises(ValueError):
         assert_budgeted_payload(oversized)
+
+
+def test_domain_dependency_gate_blocks_new_reverse_imports() -> None:
+    assert backend_domain_import_fence_violations(repo_root=ROOT) == []
+
+
+def test_auth_boundary_gate_blocks_direct_role_claim_reads() -> None:
+    assert auth_boundary_violations(repo_root=ROOT) == []
+
+
+def test_tenant_claim_gate_blocks_direct_tenant_claim_reads() -> None:
+    assert tenant_claim_violations(repo_root=ROOT) == []
+
+
+def test_development_cleanroom_contract_exports_forbidden_transition_markers() -> None:
+    contract = export_development_cleanroom_contract()
+
+    assert contract["development_phase"] is True
+    assert contract["policy"] == "clean-room"
+    assert "backend/runtime" in contract["governed_roots"]
+    assert "runner-agent" in contract["governed_roots"]
+    markers = contract["forbidden_transitional_markers"]
+    assert markers["sanitized_legacy_docstring"] == ["Sanitized legacy docstring"]
+    assert markers["compat_helper_prefix"] == ["compat_get_"]
+    assert "drop-in async replacement" in markers["drop_in_replacement_phrase"]
+
+
+def test_development_cleanroom_gate_has_no_transitional_markers() -> None:
+    assert development_cleanroom_violations(repo_root=ROOT) == []

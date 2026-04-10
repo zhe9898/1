@@ -1,4 +1,4 @@
-"""Unit tests for backend.api.assets."""
+"""Unit tests for backend.control_plane.adapters.assets."""
 
 from __future__ import annotations
 
@@ -12,25 +12,25 @@ from sqlalchemy.exc import SQLAlchemyError
 
 class TestAllowedExtensions:
     def test_allowed_image_extensions(self) -> None:
-        from backend.api.assets import _ALLOWED_EXTENSIONS
+        from backend.control_plane.adapters.assets import _ALLOWED_EXTENSIONS
 
         for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"]:
             assert ext in _ALLOWED_EXTENSIONS
 
     def test_allowed_video_extensions(self) -> None:
-        from backend.api.assets import _ALLOWED_EXTENSIONS
+        from backend.control_plane.adapters.assets import _ALLOWED_EXTENSIONS
 
         for ext in [".mp4", ".webm", ".mov", ".avi", ".mkv"]:
             assert ext in _ALLOWED_EXTENSIONS
 
     def test_allowed_document_extensions(self) -> None:
-        from backend.api.assets import _ALLOWED_EXTENSIONS
+        from backend.control_plane.adapters.assets import _ALLOWED_EXTENSIONS
 
         for ext in [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv", ".json"]:
             assert ext in _ALLOWED_EXTENSIONS
 
     def test_dangerous_extensions_blocked(self) -> None:
-        from backend.api.assets import _ALLOWED_EXTENSIONS
+        from backend.control_plane.adapters.assets import _ALLOWED_EXTENSIONS
 
         for ext in [".exe", ".sh", ".bat", ".cmd", ".ps1", ".py", ".js", ".php", ".jsp", ".dll", ".so"]:
             assert ext not in _ALLOWED_EXTENSIONS
@@ -38,13 +38,13 @@ class TestAllowedExtensions:
 
 class TestAllowedMime:
     def test_allowed_mime_prefixes(self) -> None:
-        from backend.api.assets import _ALLOWED_MIME_PREFIXES
+        from backend.control_plane.adapters.assets import _ALLOWED_MIME_PREFIXES
 
         for prefix in ["image/", "video/", "audio/", "application/pdf"]:
             assert prefix in _ALLOWED_MIME_PREFIXES
 
     def test_dangerous_mime_blocked(self) -> None:
-        from backend.api.assets import _ALLOWED_MIME_PREFIXES
+        from backend.control_plane.adapters.assets import _ALLOWED_MIME_PREFIXES
 
         dangerous = "application/x-executable"
         assert not any(dangerous.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES)
@@ -52,14 +52,14 @@ class TestAllowedMime:
 
 class TestUploadAsset:
     def test_router_exposes_upload_and_delete_endpoints(self) -> None:
-        from backend.api.assets import router
+        from backend.control_plane.adapters.assets import router
 
         assert any(route.path == "/api/v1/assets/upload" and "POST" in route.methods for route in router.routes)
         assert any(route.path == "/api/v1/assets/{asset_id}" and "DELETE" in route.methods for route in router.routes)
 
     @pytest.mark.anyio
     async def test_reject_exe_extension(self) -> None:
-        from backend.api.assets import upload_asset
+        from backend.control_plane.adapters.assets import upload_asset
 
         file = MagicMock()
         file.filename = "malware.exe"
@@ -76,7 +76,7 @@ class TestUploadAsset:
 
     @pytest.mark.anyio
     async def test_reject_wrong_mime(self) -> None:
-        from backend.api.assets import upload_asset
+        from backend.control_plane.adapters.assets import upload_asset
 
         file = MagicMock()
         file.filename = "trojan.jpg"
@@ -93,7 +93,7 @@ class TestUploadAsset:
 
     @pytest.mark.anyio
     async def test_no_media_path_returns_503(self) -> None:
-        from backend.api.assets import upload_asset
+        from backend.control_plane.adapters.assets import upload_asset
 
         file = MagicMock()
         file.filename = "photo.jpg"
@@ -103,14 +103,14 @@ class TestUploadAsset:
         db = AsyncMock()
         user = {"sub": "test", "tenant_id": "default"}
 
-        with patch("backend.api.assets.MEDIA_PATH", None):
+        with patch("backend.control_plane.adapters.assets.MEDIA_PATH", None):
             with pytest.raises(HTTPException) as exc_info:
                 await upload_asset(request, file, db, user)
         assert exc_info.value.status_code == 503
 
     @pytest.mark.anyio
     async def test_upload_persists_asset_record_and_returns_id(self, tmp_path: Path) -> None:
-        from backend.api.assets import upload_asset
+        from backend.control_plane.adapters.assets import upload_asset
         from backend.models.asset import Asset
 
         file = MagicMock()
@@ -130,7 +130,7 @@ class TestUploadAsset:
         db.flush = AsyncMock(side_effect=assign_asset_id)
         user = {"sub": "test", "tenant_id": "tenant-a"}
 
-        with patch("backend.api.assets.MEDIA_PATH", str(tmp_path)):
+        with patch("backend.control_plane.adapters.assets.MEDIA_PATH", str(tmp_path)):
             result = await upload_asset(request, file, db, user)
 
         stored_asset = db.add.call_args.args[0]
@@ -145,7 +145,7 @@ class TestUploadAsset:
 
     @pytest.mark.anyio
     async def test_upload_removes_file_when_db_flush_fails(self, tmp_path: Path) -> None:
-        from backend.api.assets import upload_asset
+        from backend.control_plane.adapters.assets import upload_asset
 
         file = MagicMock()
         file.filename = "photo.jpg"
@@ -159,7 +159,7 @@ class TestUploadAsset:
         db.flush = AsyncMock(side_effect=SQLAlchemyError("flush failed"))
         user = {"sub": "test", "tenant_id": "tenant-a"}
 
-        with patch("backend.api.assets.MEDIA_PATH", str(tmp_path)):
+        with patch("backend.control_plane.adapters.assets.MEDIA_PATH", str(tmp_path)):
             with pytest.raises(SQLAlchemyError):
                 await upload_asset(request, file, db, user)
 
@@ -189,7 +189,7 @@ class TestUploadAsset:
 class TestDeleteAsset:
     @pytest.mark.anyio
     async def test_invalid_asset_id_returns_400(self) -> None:
-        from backend.api.assets import delete_asset
+        from backend.control_plane.adapters.assets import delete_asset
 
         db = AsyncMock()
         with pytest.raises(HTTPException) as exc_info:
@@ -199,7 +199,7 @@ class TestDeleteAsset:
 
     @pytest.mark.anyio
     async def test_non_positive_asset_id_returns_400(self) -> None:
-        from backend.api.assets import delete_asset
+        from backend.control_plane.adapters.assets import delete_asset
 
         db = AsyncMock()
         with pytest.raises(HTTPException) as exc_info:
@@ -209,7 +209,7 @@ class TestDeleteAsset:
 
     @pytest.mark.anyio
     async def test_nonexistent_asset_returns_404(self) -> None:
-        from backend.api.assets import delete_asset
+        from backend.control_plane.adapters.assets import delete_asset
 
         db = MagicMock()
         mock_result = MagicMock()
@@ -222,7 +222,7 @@ class TestDeleteAsset:
 
     @pytest.mark.anyio
     async def test_delete_asset_marks_record_deleted(self) -> None:
-        from backend.api.assets import delete_asset
+        from backend.control_plane.adapters.assets import delete_asset
 
         db = MagicMock()
         asset = MagicMock()

@@ -11,22 +11,22 @@ This file originally described a future V4 roadmap. It no longer matches the rep
 Current repository evidence:
 
 - Explicit transaction boundaries already exist across route handlers and services. The codebase is not relying on a pure "commit only at HTTP teardown" model anymore.
-  - `backend/api/jobs/lifecycle.py`
-  - `backend/api/jobs/dispatch.py`
-  - `backend/api/triggers.py`
-  - `backend/api/auth_bootstrap.py`
+  - `backend/control_plane/adapters/jobs/lifecycle.py`
+  - `backend/control_plane/adapters/jobs/dispatch.py`
+  - `backend/control_plane/adapters/triggers.py`
+  - `backend/control_plane/adapters/auth_bootstrap.py`
 - Authentication still uses dual-track JWT compatibility and response header token rotation.
   - `backend/core/jwt.py`
-  - `backend/api/deps.py`
+  - `backend/control_plane/adapters/deps.py`
   - `frontend/src/utils/http.ts`
   - `frontend/src/utils/httpAuth.ts`
 - Cookie-based auth is now primary for browser requests, but the login flow still accepts access-token responses and derives in-memory claims from them.
-  - `backend/api/auth_cookies.py`
+  - `backend/control_plane/adapters/auth_cookies.py`
   - `frontend/src/stores/auth.ts`
   - `frontend/src/composables/useAuthFlow.ts`
   - `frontend/src/views/InviteView.vue`
 - Realtime transport is still SSE plus HTTP callbacks. There is no adopted `/ws/iot` runtime surface in the backend.
-  - `backend/api/routes.py`
+  - `backend/control_plane/adapters/routes.py`
   - `frontend/src/utils/sse.ts`
 - The actual active architecture has moved into later accepted ADRs and code-backed governance.
   - `docs/adr/0024-gateway-kernel-default-and-backend-driven-control-plane.md`

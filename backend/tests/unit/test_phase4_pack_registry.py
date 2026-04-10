@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from backend.kernel.packs.registry import available_pack_definitions
-from backend.kernel.topology.pack_selection import selected_capability_keys, selected_service_allowlist
-from backend.kernel.topology.profile_selection import get_enabled_router_names
+from backend.runtime.topology.pack_selection import selected_capability_keys, selected_service_allowlist
+from backend.runtime.topology.profile_selection import get_enabled_router_names
 from scripts.iac_core.profiles import CORE_SERVICES
 
 
@@ -44,8 +44,8 @@ def test_media_pack_contract_requires_explicit_pack_selection() -> None:
         "media.asset",
         "media.portability",
     )
-    assert OPTIONAL_ROUTER_MODULES["assets"] == "backend.api.assets"
-    assert OPTIONAL_ROUTER_MODULES["portability"] == "backend.api.portability"
+    assert OPTIONAL_ROUTER_MODULES["assets"] == "backend.control_plane.adapters.assets"
+    assert OPTIONAL_ROUTER_MODULES["portability"] == "backend.control_plane.adapters.portability"
     assert "assets" not in KERNEL_ALLOWED_OPTIONAL_ROUTERS
     assert "portability" not in KERNEL_ALLOWED_OPTIONAL_ROUTERS
 
