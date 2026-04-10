@@ -46,6 +46,7 @@ OPENAPI_DRIFT_TARGETS = [
     "docs/openapi.json",
 ]
 BACKEND_PYTEST_JUNIT_PATH = BACKEND_DIR / "pytest-results.xml"
+FRONTEND_COVERAGE_COBERTURA_PATH = FRONTEND_DIR / "coverage" / "cobertura-coverage.xml"
 
 
 def _is_github_actions() -> bool:
@@ -112,6 +113,77 @@ class CommandStep:
     retry_delay_seconds: float = 0.0
 
 
+@dataclass(frozen=True, slots=True)
+class CoverageMetric:
+    covered: int
+    total: int
+
+    @property
+    def percent(self) -> float:
+        if self.total <= 0:
+            return 0.0
+        return (self.covered / self.total) * 100.0
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageSummary:
+    lines: CoverageMetric
+    branches: CoverageMetric | None = None
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _parse_cobertura_metric(root: ET.Element, *, covered_attr: str, total_attr: str) -> CoverageMetric | None:
+    covered_raw = root.get(covered_attr)
+    total_raw = root.get(total_attr)
+    if covered_raw is None or total_raw is None:
+        return None
+    try:
+        covered = int(covered_raw)
+        total = int(total_raw)
+    except ValueError:
+        return None
+    if covered < 0 or total <= 0 or covered > total:
+        return None
+    return CoverageMetric(covered=covered, total=total)
+
+
+def _parse_cobertura_coverage_summary(report_path: Path) -> CoverageSummary | None:
+    if not report_path.exists():
+        return None
+    try:
+        root = ET.fromstring(report_path.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError):
+        return None
+
+    lines = _parse_cobertura_metric(root, covered_attr="lines-covered", total_attr="lines-valid")
+    if lines is None:
+        return None
+    branches = _parse_cobertura_metric(root, covered_attr="branches-covered", total_attr="branches-valid")
+    return CoverageSummary(lines=lines, branches=branches)
+
+
+def _emit_frontend_coverage_summary(report_path: Path = FRONTEND_COVERAGE_COBERTURA_PATH) -> None:
+    summary = _parse_cobertura_coverage_summary(report_path)
+    if summary is None:
+        print(f"[quality] frontend:coverage-summary unavailable ({_display_path(report_path)})")
+        return
+
+    parts = [
+        f"lines {summary.lines.percent:.1f}% ({summary.lines.covered}/{summary.lines.total})",
+    ]
+    if summary.branches is not None:
+        parts.append(
+            f"branches {summary.branches.percent:.1f}% ({summary.branches.covered}/{summary.branches.total})",
+        )
+    print(f"[quality] frontend:coverage-summary {' | '.join(parts)} [{_display_path(report_path)}]")
+
+
 def _python_test_env() -> dict[str, str]:
     return {
         "PYTHONPATH": str(REPO_ROOT),
@@ -138,6 +210,8 @@ def _run_step(step: CommandStep) -> int:
             check=False,
         )
         if result.returncode == 0:
+            if step.name == "frontend:test-coverage":
+                _emit_frontend_coverage_summary()
             if step.name == "backend:pytest":
                 BACKEND_PYTEST_JUNIT_PATH.unlink(missing_ok=True)
             return 0
