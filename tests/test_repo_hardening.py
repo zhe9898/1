@@ -346,6 +346,22 @@ def test_frontend_audit_artifacts_do_not_exist_in_workspace() -> None:
     assert not leftovers, f"frontend build or audit residue must not remain in the workspace: {leftovers}"
 
 
+def test_frontend_coverage_artifacts_are_ignored_and_untracked() -> None:
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "frontend/coverage/" in gitignore, "frontend/coverage/ must be ignored in .gitignore"
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "frontend/coverage"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
+    assert not tracked_paths, f"frontend coverage artifacts must never be tracked: {tracked_paths}"
+
+
 def test_health_pack_no_longer_uses_placeholder_artifacts() -> None:
     violations: list[str] = []
     for relative in (

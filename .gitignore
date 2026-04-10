@@ -16,6 +16,7 @@ runner-agent/runner-agent.exe
 # === Node / Frontend ===
 node_modules/
 frontend/dist/
+frontend/coverage/
 frontend/.vite/
 *.tsbuildinfo
 
