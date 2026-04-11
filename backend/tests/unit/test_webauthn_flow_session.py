@@ -15,21 +15,32 @@ def _request(cookie_value: str | None = None) -> MagicMock:
     return request
 
 
-def test_ensure_webauthn_flow_session_reuses_cookie_and_sets_response() -> None:
+def test_ensure_webauthn_flow_session_issues_fresh_session_and_sets_response() -> None:
     request = _request("existing-session")
     response = MagicMock()
 
     session_id = ensure_webauthn_flow_session(response, request, ttl_seconds=300)
 
-    assert session_id == "existing-session"
+    assert session_id != "existing-session"
+    assert len(session_id) == 32
     response.set_cookie.assert_called_once()
 
 
 def test_require_webauthn_flow_session_falls_back_to_request_state() -> None:
     request = _request()
-    request.state.webauthn_flow_session_id = "state-session"
+    request.state.webauthn_flow_session_id = "a" * 32
 
-    assert require_webauthn_flow_session(request) == "state-session"
+    assert require_webauthn_flow_session(request) == "a" * 32
+
+
+def test_require_webauthn_flow_session_rejects_invalid_cookie_binding() -> None:
+    request = _request("invalid-cookie")
+    request.state.webauthn_flow_session_id = None
+
+    with pytest.raises(HTTPException) as exc:
+        require_webauthn_flow_session(request)
+
+    assert exc.value.status_code == 400
 
 
 def test_require_webauthn_flow_session_rejects_missing_binding() -> None:

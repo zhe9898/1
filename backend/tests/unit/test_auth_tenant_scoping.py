@@ -22,7 +22,7 @@ from backend.models.user import User
 def _mock_request(client_ip: str = "192.168.1.10") -> MagicMock:
     request = MagicMock()
     request.state.request_id = "rid-auth-tenant"
-    request.state.webauthn_flow_session_id = "flow-session-tenant"
+    request.state.webauthn_flow_session_id = "a" * 32
     request.client.host = client_ip
     request.cookies = {}
     return request

@@ -257,12 +257,6 @@ func TestReportingContextIgnoresParentCancellation(t *testing.T) {
 func TestLeaseRenewalRotatesTokenForSubsequentReports(t *testing.T) {
 	t.Parallel()
 
-	originalMinRenew := minLeaseRenewalInterval
-	minLeaseRenewalInterval = 10 * time.Millisecond
-	defer func() {
-		minLeaseRenewalInterval = originalMinRenew
-	}()
-
 	var (
 		mu            sync.Mutex
 		renewPayloads []api.JobRenewRequest
@@ -342,7 +336,7 @@ func TestLeaseRenewalRotatesTokenForSubsequentReports(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := startLeaseRenewal(ctx, cfg, client, jobState)
+	done := startLeaseRenewalWithMinInterval(ctx, cfg, client, jobState, 10*time.Millisecond)
 
 	select {
 	case <-renewedOnce:
@@ -396,16 +390,13 @@ func TestMaxLeaseRenewalBackoffCapsShortLeases(t *testing.T) {
 func TestLeaseRenewalIntervalHonorsMinimumKeepaliveCadence(t *testing.T) {
 	t.Parallel()
 
-	originalMinRenew := minLeaseRenewalInterval
-	minLeaseRenewalInterval = 5 * time.Second
-	defer func() {
-		minLeaseRenewalInterval = originalMinRenew
-	}()
-
 	if got := leaseRenewalInterval(5); got != 5*time.Second {
 		t.Fatalf("expected minimum renewal interval of 5s, got %s", got)
 	}
 	if got := leaseRenewalInterval(20); got != 10*time.Second {
 		t.Fatalf("expected half-lease interval for longer leases, got %s", got)
+	}
+	if got := leaseRenewalIntervalWithMinInterval(5, 2*time.Second); got != 2*time.Second {
+		t.Fatalf("expected custom minimum renewal interval of 2s, got %s", got)
 	}
 }

@@ -154,12 +154,19 @@ def test_compiler_emits_external_acl_path_in_env(tmp_path: Path) -> None:
     compose_text = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
     acl_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_ACL_FILE="))
     redis_password_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_PASSWORD="))
+    gateway_acl_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_ACL_GATEWAY_CREDENTIAL="))
+    readonly_acl_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_ACL_READONLY_CREDENTIAL="))
     redis_password = redis_password_line.split("=", 1)[1].strip()
+    gateway_acl_credential = gateway_acl_line.split("=", 1)[1].strip()
+    readonly_acl_credential = readonly_acl_line.split("=", 1)[1].strip()
     acl_path = Path(acl_line.split("=", 1)[1].strip())
     acl_text = acl_path.read_text(encoding="utf-8")
     assert acl_path.is_absolute()
     assert not str(acl_path).startswith(str(PROJECT_ROOT))
     assert str(tmp_path / "secure-state").replace("\\", "/") in str(acl_path).replace("\\", "/")
+    assert gateway_acl_credential == redis_password
+    assert readonly_acl_credential
+    assert readonly_acl_credential != redis_password
     assert "user readonly on #" in acl_text
     assert "user zen70_gateway on #" in acl_text
     assert f">{redis_password}" not in acl_text

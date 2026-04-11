@@ -39,7 +39,7 @@ def _mock_redis(*, token_payload: dict[str, object] | None = None) -> SimpleName
     )
 
 
-def _mock_request(client_ip: str = "127.0.0.1", *, flow_session_id: str = "flow-session-1") -> MagicMock:
+def _mock_request(client_ip: str = "127.0.0.1", *, flow_session_id: str = "a" * 32) -> MagicMock:
     request = MagicMock()
     request.state.request_id = "rid-auth-guards"
     request.state.webauthn_flow_session_id = flow_session_id
@@ -57,7 +57,7 @@ def _scalar_result(value: object | None) -> MagicMock:
 def _stored_challenge(
     *,
     challenge_id: str = "challenge-b64",
-    session_id: str = "flow-session-1",
+    session_id: str = "a" * 32,
     user_id: str = "7",
     tenant_id: str = "tenant-a",
     flow: str = "register",
@@ -397,7 +397,7 @@ async def test_webauthn_login_complete_warns_when_authenticator_has_no_counter()
 
 @pytest.mark.asyncio
 async def test_invite_register_complete_rejects_cross_session_replay() -> None:
-    request = _mock_request(flow_session_id="flow-session-b")
+    request = _mock_request(flow_session_id="b" * 32)
     response = MagicMock()
     user = MagicMock()
     user.id = 9

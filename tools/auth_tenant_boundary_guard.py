@@ -112,7 +112,7 @@ def main() -> int:
     if not violations:
         return 0
     print("auth tenant boundary violations detected:")
-    print(export_auth_boundary_contract())
+    print(_redact_sensitive_terms(export_auth_boundary_contract()))
     for violation in violations:
         print(_redact_sensitive_terms(violation))
     return 1

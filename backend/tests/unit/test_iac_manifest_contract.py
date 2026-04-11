@@ -21,8 +21,8 @@ def test_manifest_contract_includes_product_and_warn_injections_only() -> None:
         gateway_image_target="gateway-kernel",
         policy_version=2,
         policy_file="iac/policy/core.yaml",
-        container_services_list=[{"name": "redis"}, {"name": "redis"}],
-        host_services_list=[{"name": "gateway"}, {"name": "gateway"}],
+        container_service_names=["redis", "redis"],
+        host_service_names=["gateway", "gateway"],
         policy_violations=[
             PolicyViolation(rule_id="REC-001", severity="warn", service="gateway", message="inject healthcheck"),
             PolicyViolation(rule_id="SEC-001", severity="fail", service="gateway", message="forbidden privilege"),

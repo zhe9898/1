@@ -37,7 +37,9 @@ def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
     lease_renewal = contract["lease_renewal"]
     assert lease_renewal["min_interval_seconds"] == 5
     assert lease_renewal["failure_abandon_after"] == 3
-    assert "renewEvery := leaseRenewalInterval(jobSnapshot.LeaseSeconds)" in poller_source
+    assert "return startLeaseRenewalWithMinInterval(ctx, cfg, client, job, defaultMinLeaseRenewal)" in poller_source
+    assert "renewEvery := leaseRenewalIntervalWithMinInterval(jobSnapshot.LeaseSeconds, minInterval)" in poller_source
+    assert "return leaseRenewalIntervalWithMinInterval(leaseSeconds, defaultMinLeaseRenewal)" in poller_source
     assert "job.applyRenewedLease(renewedJob)" in poller_source
     assert "const maxConsecutiveFailures = 3" in poller_source
     assert 'log.Printf("lease renewal failed %d times, abandoning job %s"' in poller_source

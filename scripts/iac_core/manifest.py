@@ -29,17 +29,13 @@ def build_render_manifest(
     gateway_image_target: str,
     policy_version: int,
     policy_file: str,
-    container_services_list: list[dict[str, Any]],
-    host_services_list: list[dict[str, Any]],
+    container_service_names: list[str],
+    host_service_names: list[str],
     policy_violations: list[Any],
     tier3_warnings: list[str],
 ) -> dict[str, Any]:
-    rendered_containers = sorted(
-        {svc.get("name") for svc in container_services_list if isinstance(svc, dict) and svc.get("name")}
-    )
-    rendered_host_processes = sorted(
-        {svc.get("name") for svc in host_services_list if isinstance(svc, dict) and svc.get("name")}
-    )
+    rendered_containers = _sorted_rendered_service_names(container_service_names)
+    rendered_host_processes = _sorted_rendered_service_names(host_service_names)
     infrastructure_containers, optional_pack_containers = classify_container_services(rendered_containers)
     runtime_services = sorted(set(rendered_containers) | set(rendered_host_processes))
     policy_injections = [
@@ -75,3 +71,11 @@ def build_render_manifest(
         "policy_injections": policy_injections,
         "tier3_warnings": tier3_warnings[:50],
     }
+
+
+def project_rendered_service_names(services: list[dict[str, Any]]) -> list[str]:
+    return _sorted_rendered_service_names([str(service.get("name")) for service in services if isinstance(service, dict) and service.get("name")])
+
+
+def _sorted_rendered_service_names(service_names: list[str]) -> list[str]:
+    return sorted({name.strip() for name in service_names if isinstance(name, str) and name.strip()})

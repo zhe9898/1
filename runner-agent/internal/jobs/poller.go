@@ -16,9 +16,8 @@ const (
 	defaultPullFailureBackoff = time.Second
 	maxPullFailureBackoff     = 30 * time.Second
 	reportingTimeout          = 15 * time.Second
+	defaultMinLeaseRenewal    = 5 * time.Second
 )
-
-var minLeaseRenewalInterval = 5 * time.Second
 
 type leasedJob struct {
 	mu  sync.RWMutex
@@ -149,11 +148,21 @@ func startLeaseRenewal(
 	client *api.Client,
 	job *leasedJob,
 ) <-chan struct{} {
+	return startLeaseRenewalWithMinInterval(ctx, cfg, client, job, defaultMinLeaseRenewal)
+}
+
+func startLeaseRenewalWithMinInterval(
+	ctx context.Context,
+	cfg config.Config,
+	client *api.Client,
+	job *leasedJob,
+	minInterval time.Duration,
+) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		jobSnapshot := job.snapshot()
-		renewEvery := leaseRenewalInterval(jobSnapshot.LeaseSeconds)
+		renewEvery := leaseRenewalIntervalWithMinInterval(jobSnapshot.LeaseSeconds, minInterval)
 		maxBackoff := maxLeaseRenewalBackoff(renewEvery, jobSnapshot.LeaseSeconds)
 		ticker := time.NewTicker(renewEvery)
 		defer ticker.Stop()
@@ -325,8 +334,12 @@ func reportingContext(parent context.Context) (context.Context, context.CancelFu
 }
 
 func leaseRenewalInterval(leaseSeconds int) time.Duration {
+	return leaseRenewalIntervalWithMinInterval(leaseSeconds, defaultMinLeaseRenewal)
+}
+
+func leaseRenewalIntervalWithMinInterval(leaseSeconds int, minInterval time.Duration) time.Duration {
 	halfLease := time.Duration(max(1, leaseSeconds/2)) * time.Second
-	return maxDuration(minLeaseRenewalInterval, halfLease)
+	return maxDuration(minInterval, halfLease)
 }
 
 func maxLeaseRenewalBackoff(renewEvery time.Duration, leaseSeconds int) time.Duration {

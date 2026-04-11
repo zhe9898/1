@@ -43,7 +43,7 @@ from scripts.iac_core.loader import (  # noqa: E402
     prepare_host_services,
     prepare_services,
 )
-from scripts.iac_core.manifest import build_render_manifest, resolve_product_name  # noqa: E402
+from scripts.iac_core.manifest import build_render_manifest, project_rendered_service_names, resolve_product_name  # noqa: E402
 from scripts.iac_core.migrator import migrate_and_persist  # noqa: E402
 from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
 from scripts.iac_core.profiles import (  # noqa: E402
@@ -64,12 +64,9 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _hash_acl_secret(secret: str) -> str:
-    return f"#{hashlib.sha256(secret.encode('utf-8')).hexdigest()}"
-
-
-def _derive_readonly_acl_secret(redis_password: str) -> str:
-    return hashlib.sha256(f"readonly:{redis_password}".encode("utf-8")).hexdigest()
+def _render_acl_sha256_digest(credential_material: str) -> str:
+    digest = hashlib.new("sha256", credential_material.encode("utf-8"), usedforsecurity=False)
+    return f"#{digest.hexdigest()}"
 
 
 def _redact_sensitive_payload(value: object) -> object:
@@ -502,12 +499,12 @@ def main() -> None:
     _render_systemd_units(env, templates_dir, host_services_list, output_dir)
 
     # 3.9 Redis 闂嗘湹淇婃禒?ACL 缂佹挾鏅?(Phase 9)
-    gateway_password = str(env_vars["redis_password"])
-    readonly_password = _derive_readonly_acl_secret(gateway_password)
+    gateway_acl_credential = str(env_vars["redis_acl_gateway_credential"])
+    readonly_acl_credential = str(env_vars["redis_acl_readonly_credential"])
     acl_lines = [
         "user default off nopass nocommands",
-        f"user readonly on {_hash_acl_secret(readonly_password)} ~zen70:* &zen70:* +@read -@write +ping +info",
-        f"user zen70_gateway on {_hash_acl_secret(gateway_password)} ~* &* +@all",
+        f"user readonly on {_render_acl_sha256_digest(readonly_acl_credential)} ~zen70:* &zen70:* +@read -@write +ping +info",
+        f"user zen70_gateway on {_render_acl_sha256_digest(gateway_acl_credential)} ~* &* +@all",
     ]
     acl_content = "\n".join(acl_lines) + "\n"
     config_dir = output_dir / "config"
@@ -596,22 +593,20 @@ def main() -> None:
         logger.info("[OK] 瀹歌尙鏁撻幋?%s", config_dir / "Caddyfile")
 
     # 5. render-manifest.json 閳?濠у瓨绨拋鏉跨秿
-    manifest = _redact_sensitive_payload(
-        build_render_manifest(
-            rendered_at=str(env_vars.get("now", "")),
-            source=str(args.config),
-            product=product_name,
-            profile=normalized_profile,
-            requested_packs=list(requested_pack_keys),
-            resolved_packs=list(resolved_pack_keys),
-            gateway_image_target=gateway_image_target,
-            policy_version=int(policy_version),
-            policy_file=policy_source,
-            container_services_list=services_list,
-            host_services_list=host_services_list,
-            policy_violations=policy_violations,
-            tier3_warnings=lint_result.warnings,
-        )
+    manifest = build_render_manifest(
+        rendered_at=str(env_vars.get("now", "")),
+        source=str(args.config),
+        product=product_name,
+        profile=normalized_profile,
+        requested_packs=list(requested_pack_keys),
+        resolved_packs=list(resolved_pack_keys),
+        gateway_image_target=gateway_image_target,
+        policy_version=int(policy_version),
+        policy_file=policy_source,
+        container_service_names=project_rendered_service_names(services_list),
+        host_service_names=project_rendered_service_names(host_services_list),
+        policy_violations=policy_violations,
+        tier3_warnings=lint_result.warnings,
     )
     manifest_path = output_dir / "render-manifest.json"
     manifest_path.write_text(

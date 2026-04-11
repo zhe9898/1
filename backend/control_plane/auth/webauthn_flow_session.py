@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 
 from fastapi import Request, Response, status
@@ -9,10 +10,11 @@ from backend.control_plane.auth.cookie_policy import clear_http_only_cookie, rea
 from backend.kernel.contracts.errors import zen
 
 WEBAUTHN_FLOW_SESSION_COOKIE = os.getenv("ZEN70_WEBAUTHN_FLOW_SESSION_COOKIE", "zen70_webauthn_session").strip() or "zen70_webauthn_session"
+_FLOW_SESSION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
 def ensure_webauthn_flow_session(response: Response, request: Request, *, ttl_seconds: int) -> str:
-    session_id = _cookie_value(request)
+    session_id = _state_value(request)
     if session_id is None:
         session_id = uuid.uuid4().hex
     setattr(request.state, "webauthn_flow_session_id", session_id)
@@ -23,9 +25,7 @@ def ensure_webauthn_flow_session(response: Response, request: Request, *, ttl_se
 def require_webauthn_flow_session(request: Request) -> str:
     session_id = _cookie_value(request)
     if session_id is None:
-        state_value = getattr(request.state, "webauthn_flow_session_id", None)
-        if isinstance(state_value, str) and state_value.strip():
-            session_id = state_value.strip()
+        session_id = _state_value(request)
     if session_id is None:
         raise zen(
             "ZEN-AUTH-4003",
@@ -41,4 +41,17 @@ def clear_webauthn_flow_session(response: Response) -> None:
 
 
 def _cookie_value(request: Request) -> str | None:
-    return read_request_cookie(request, WEBAUTHN_FLOW_SESSION_COOKIE)
+    return _normalize_flow_session_id(read_request_cookie(request, WEBAUTHN_FLOW_SESSION_COOKIE))
+
+
+def _state_value(request: Request) -> str | None:
+    return _normalize_flow_session_id(getattr(request.state, "webauthn_flow_session_id", None))
+
+
+def _normalize_flow_session_id(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if _FLOW_SESSION_ID_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
