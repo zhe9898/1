@@ -69,7 +69,8 @@ def build_render_manifest(
             "optional_pack_containers": optional_pack_containers,
         },
         "policy_injections": policy_injections,
-        "tier3_warnings": tier3_warnings[:50],
+        "tier3_warnings": [],
+        "tier3_warning_count": len(tier3_warnings),
     }
 
 

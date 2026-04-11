@@ -10,8 +10,9 @@ def test_auth_tenant_boundary_guard_redacts_sensitive_terms_in_output(monkeypatc
     assert guard.main() == 1
 
     captured = capsys.readouterr()
-    assert "boundary-contract" in captured.out
-    assert "<redacted-field>" in captured.out
+    assert "boundary-contract" not in captured.out
+    assert "violation_count=1" in captured.out
+    assert "unknown-auth-boundary: contract violation" in captured.out
     assert "password" not in captured.out.lower()
     assert "token" not in captured.out.lower()
     assert "secret" not in captured.out.lower()
