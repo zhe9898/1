@@ -31,21 +31,14 @@ def build_render_manifest(
     policy_file: str,
     container_service_names: list[str],
     host_service_names: list[str],
-    policy_violations: list[Any],
-    tier3_warnings: list[str],
+    policy_injections: list[dict[str, str]],
+    tier3_warning_count: int,
 ) -> dict[str, Any]:
     rendered_containers = _sorted_rendered_service_names(container_service_names)
     rendered_host_processes = _sorted_rendered_service_names(host_service_names)
     infrastructure_containers, optional_pack_containers = classify_container_services(rendered_containers)
     runtime_services = sorted(set(rendered_containers) | set(rendered_host_processes))
-    policy_injections = [
-        {
-            "rule": getattr(v, "rule_id", ""),
-            "service": getattr(v, "service", ""),
-        }
-        for v in policy_violations
-        if getattr(v, "severity", None) == "warn"
-    ]
+    normalized_policy_injections = _normalized_policy_injections(policy_injections)
     return {
         "rendered_at": rendered_at,
         "source": source,
@@ -67,10 +60,10 @@ def build_render_manifest(
             "infrastructure_containers": infrastructure_containers,
             "optional_pack_containers": optional_pack_containers,
         },
-        "policy_injections": policy_injections,
-        "policy_injection_count": len(policy_injections),
+        "policy_injections": normalized_policy_injections,
+        "policy_injection_count": len(normalized_policy_injections),
         "tier3_warnings": [],
-        "tier3_warning_count": len(tier3_warnings),
+        "tier3_warning_count": max(tier3_warning_count, 0),
     }
 
 
@@ -80,3 +73,16 @@ def project_rendered_service_names(services: list[dict[str, Any]]) -> list[str]:
 
 def _sorted_rendered_service_names(service_names: list[str]) -> list[str]:
     return sorted({name.strip() for name in service_names if isinstance(name, str) and name.strip()})
+
+
+def _normalized_policy_injections(policy_injections: list[dict[str, str]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for injection in policy_injections:
+        if not isinstance(injection, dict):
+            continue
+        rule = str(injection.get("rule") or "").strip()
+        service = str(injection.get("service") or "").strip()
+        if not rule and not service:
+            continue
+        normalized.append({"rule": rule, "service": service})
+    return normalized

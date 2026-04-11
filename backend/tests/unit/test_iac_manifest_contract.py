@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from scripts.iac_core.exceptions import PolicyViolation
 from scripts.iac_core.manifest import DEFAULT_PRODUCT_NAME, build_render_manifest, resolve_product_name
 from scripts.iac_core.profiles import HOST_FIRST_DEPLOYMENT_MODEL
 
@@ -23,11 +22,11 @@ def test_manifest_contract_includes_product_and_warn_injections_only() -> None:
         policy_file="iac/policy/core.yaml",
         container_service_names=["redis", "redis"],
         host_service_names=["gateway", "gateway"],
-        policy_violations=[
-            PolicyViolation(rule_id="REC-001", severity="warn", service="gateway", message="inject healthcheck"),
-            PolicyViolation(rule_id="SEC-001", severity="fail", service="gateway", message="forbidden privilege"),
+        policy_injections=[
+            {"rule": "REC-001", "service": "gateway"},
+            {"rule": "", "service": ""},
         ],
-        tier3_warnings=["w1", "w2"],
+        tier3_warning_count=2,
     )
 
     assert manifest["product"] == "ZEN70 Gateway Kernel"

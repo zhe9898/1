@@ -43,7 +43,7 @@ from scripts.iac_core.loader import (  # noqa: E402
     prepare_host_services,
     prepare_services,
 )
-from scripts.iac_core.manifest import build_render_manifest, project_rendered_service_names, resolve_product_name  # noqa: E402
+from scripts.iac_core.manifest import build_render_manifest, resolve_product_name  # noqa: E402
 from scripts.iac_core.migrator import migrate_and_persist  # noqa: E402
 from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
 from scripts.iac_core.profiles import (  # noqa: E402
@@ -593,6 +593,17 @@ def main() -> None:
         logger.info("[OK] 瀹歌尙鏁撻幋?%s", config_dir / "Caddyfile")
 
     # 5. render-manifest.json 閳?濠у瓨绨拋鏉跨秿
+    container_service_names = sorted({str(service.get("name")).strip() for service in services_list if isinstance(service, dict) and service.get("name")})
+    host_service_names = sorted({str(service.get("name")).strip() for service in host_services_list if isinstance(service, dict) and service.get("name")})
+    policy_injections = [
+        {
+            "rule": str(getattr(violation, "rule_id", "")).strip(),
+            "service": str(getattr(violation, "service", "")).strip(),
+        }
+        for violation in policy_violations
+        if getattr(violation, "severity", None) == "warn"
+    ]
+
     manifest = build_render_manifest(
         rendered_at=str(env_vars.get("now", "")),
         source=str(args.config),
@@ -603,10 +614,10 @@ def main() -> None:
         gateway_image_target=gateway_image_target,
         policy_version=int(policy_version),
         policy_file=policy_source,
-        container_service_names=project_rendered_service_names(services_list),
-        host_service_names=project_rendered_service_names(host_services_list),
-        policy_violations=policy_violations,
-        tier3_warnings=lint_result.warnings,
+        container_service_names=container_service_names,
+        host_service_names=host_service_names,
+        policy_injections=policy_injections,
+        tier3_warning_count=len(lint_result.warnings),
     )
     manifest_path = output_dir / "render-manifest.json"
     manifest_path.write_text(
