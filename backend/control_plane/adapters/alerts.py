@@ -11,6 +11,7 @@ from backend.control_plane.adapters.deps import get_current_admin, get_current_u
 from backend.extensions.alert_actions import AlertActionModel, normalize_alert_action
 from backend.extensions.alerting import run_alert_evaluation
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.alert import Alert, AlertRule
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
@@ -101,7 +102,8 @@ async def list_alert_rules(
     current_user: dict[str, str] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[AlertRuleResponse]:
-    result = await db.execute(select(AlertRule).where(AlertRule.tenant_id == current_user["tenant_id"]).order_by(AlertRule.created_at.desc()))
+    tenant_id = require_current_user_tenant_id(current_user)
+    result = await db.execute(select(AlertRule).where(AlertRule.tenant_id == tenant_id).order_by(AlertRule.created_at.desc()))
     return [_rule_to_response(r) for r in result.scalars().all()]
 
 
@@ -112,9 +114,10 @@ async def create_alert_rule(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> AlertRuleResponse:
     action = _validate_alert_rule_payload(payload)
+    tenant_id = require_current_user_tenant_id(current_user)
 
     rule = AlertRule(
-        tenant_id=current_user["tenant_id"],
+        tenant_id=tenant_id,
         name=payload.name,
         description=payload.description,
         condition=payload.condition,
@@ -135,7 +138,8 @@ async def update_alert_rule(
     current_user: dict[str, str] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> AlertRuleResponse:
-    result = await db.execute(select(AlertRule).where(AlertRule.id == rule_id, AlertRule.tenant_id == current_user["tenant_id"]))
+    tenant_id = require_current_user_tenant_id(current_user)
+    result = await db.execute(select(AlertRule).where(AlertRule.id == rule_id, AlertRule.tenant_id == tenant_id))
     rule = result.scalars().first()
     if rule is None:
         raise zen("ZEN-ALERT-4040", "Alert rule not found", status_code=404)
@@ -157,7 +161,8 @@ async def delete_alert_rule(
     current_user: dict[str, str] = Depends(get_current_admin),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> dict[str, str]:
-    result = await db.execute(select(AlertRule).where(AlertRule.id == rule_id, AlertRule.tenant_id == current_user["tenant_id"]))
+    tenant_id = require_current_user_tenant_id(current_user)
+    result = await db.execute(select(AlertRule).where(AlertRule.id == rule_id, AlertRule.tenant_id == tenant_id))
     rule = result.scalars().first()
     if rule is None:
         raise zen("ZEN-ALERT-4040", "Alert rule not found", status_code=404)
@@ -178,7 +183,8 @@ async def list_alerts(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[AlertResponse]:
     """List fired alerts (newest first)."""
-    query = select(Alert).where(Alert.tenant_id == current_user["tenant_id"])
+    tenant_id = require_current_user_tenant_id(current_user)
+    query = select(Alert).where(Alert.tenant_id == tenant_id)
     if severity:
         query = query.where(Alert.severity == severity)
     if resolved is True:
@@ -198,7 +204,8 @@ async def resolve_alert(
     """Mark an alert as resolved."""
     import datetime
 
-    result = await db.execute(select(Alert).where(Alert.id == alert_id, Alert.tenant_id == current_user["tenant_id"]))
+    tenant_id = require_current_user_tenant_id(current_user)
+    result = await db.execute(select(Alert).where(Alert.id == alert_id, Alert.tenant_id == tenant_id))
     alert = result.scalars().first()
     if alert is None:
         raise zen("ZEN-ALERT-4040", "Alert not found", status_code=404)
@@ -213,5 +220,6 @@ async def trigger_evaluation(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> dict[str, object]:
     """Manually trigger alert evaluation for this tenant (admin only)."""
-    fired = await run_alert_evaluation(db, current_user["tenant_id"])
+    tenant_id = require_current_user_tenant_id(current_user)
+    fired = await run_alert_evaluation(db, tenant_id)
     return {"status": "ok", "fired": len(fired), "alerts": [_alert_to_response(a) for a in fired]}

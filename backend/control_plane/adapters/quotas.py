@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.adapters.deps import get_current_admin, get_current_user, get_tenant_db
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.quota import DEFAULT_QUOTAS
 from backend.runtime.scheduling.quota_service import get_quota_status, set_quota
 
@@ -31,7 +32,8 @@ async def get_quota_status_endpoint(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[QuotaStatusItem]:
     """Get current quota usage for this tenant."""
-    status = await get_quota_status(db, current_user["tenant_id"])
+    tenant_id = require_current_user_tenant_id(current_user)
+    status = await get_quota_status(db, tenant_id)
     items = []
     for resource_type, data in status.items():
         used, limit = data["used"], data["limit"]
@@ -47,6 +49,7 @@ async def set_quota_endpoint(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> QuotaStatusItem:
     """Set quota for tenant resource (admin only)."""
+    tenant_id = require_current_user_tenant_id(current_user)
     valid_types = set(DEFAULT_QUOTAS.keys())
     if payload.resource_type not in valid_types:
         from backend.kernel.contracts.errors import zen
@@ -55,12 +58,12 @@ async def set_quota_endpoint(
 
     quota = await set_quota(
         db,
-        tenant_id=current_user["tenant_id"],
+        tenant_id=tenant_id,
         resource_type=payload.resource_type,
         limit=payload.limit,
         updated_by=current_user["username"],
     )
-    status = await get_quota_status(db, current_user["tenant_id"])
+    status = await get_quota_status(db, tenant_id)
     data = status.get(payload.resource_type, {"used": 0, "limit": quota.limit})
     used, limit = data["used"], data["limit"]
     pct = round(used / limit * 100, 1) if limit > 0 else 0.0

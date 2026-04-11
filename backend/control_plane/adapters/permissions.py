@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.control_plane.adapters.deps import get_current_admin, get_tenant_db
 from backend.control_plane.auth.permissions import ALLOWED_SCOPES, grant_permission, is_valid_scope, list_user_permissions, normalize_scope, revoke_permission
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.permission import Permission
 
 router = APIRouter(prefix="/api/v1/permissions", tags=["permissions"])
@@ -91,7 +92,7 @@ async def grant_permission_endpoint(
     - Type-level: resource_type set, no resource_id
     - Resource-level: Both resource_type and resource_id set
     """
-    tenant_id = current_user["tenant_id"]
+    tenant_id = require_current_user_tenant_id(current_user)
     granted_by = current_user["username"]
 
     expires_at = None
@@ -122,7 +123,8 @@ async def revoke_permission_endpoint(
 
     Requires admin privileges.
     """
-    await revoke_permission(db, permission_id, tenant_id=current_user["tenant_id"])
+    tenant_id = require_current_user_tenant_id(current_user)
+    await revoke_permission(db, permission_id, tenant_id=tenant_id)
     return {"status": "ok", "message": "Permission revoked"}
 
 
@@ -136,6 +138,6 @@ async def list_user_permissions_endpoint(
 
     Requires admin privileges.
     """
-    tenant_id = current_user["tenant_id"]
+    tenant_id = require_current_user_tenant_id(current_user)
     permissions = await list_user_permissions(db, tenant_id=tenant_id, user_id=user_id)
     return [_to_response(p) for p in permissions]

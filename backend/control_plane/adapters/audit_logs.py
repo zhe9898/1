@@ -10,6 +10,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.adapters.deps import get_current_admin, get_tenant_db
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.audit_log import AuditLog
 
 router = APIRouter(prefix="/api/v1/audit-logs", tags=["audit"])
@@ -78,7 +79,7 @@ async def list_audit_logs(
 
     Returns logs in reverse chronological order (newest first).
     """
-    tenant_id = current_user["tenant_id"]
+    tenant_id = require_current_user_tenant_id(current_user)
 
     # Build query
     query = select(AuditLog).where(AuditLog.tenant_id == tenant_id)

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.control_plane.adapters.control_events import publish_control_event
 from backend.control_plane.adapters.deps import get_current_admin, get_redis, get_tenant_db
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.node import Node
 from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
 from backend.runtime.topology.node_enrollment_service import NodeEnrollmentService
@@ -63,7 +64,7 @@ async def list_pending_nodes(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[NodeApprovalResponse]:
     """List nodes awaiting approval (admin only)."""
-    tenant_id = current_user["tenant_id"]
+    tenant_id = require_current_user_tenant_id(current_user)
     result = await db.execute(
         select(Node)
         .where(
@@ -91,7 +92,7 @@ async def approve_node(
     Transitions: pending 鈫?approved
     Once approved the node can receive and execute jobs.
     """
-    tenant_id = current_user["tenant_id"]
+    tenant_id = require_current_user_tenant_id(current_user)
     node = await _get_node(db, tenant_id, node_id)
 
     if node.enrollment_status == "approved":
@@ -132,7 +133,7 @@ async def reject_node(
     Transitions: pending 鈫?rejected
     Rejected nodes cannot register again with the same node_id.
     """
-    tenant_id = current_user["tenant_id"]
+    tenant_id = require_current_user_tenant_id(current_user)
     node = await _get_node(db, tenant_id, node_id)
 
     if node.enrollment_status == "rejected":

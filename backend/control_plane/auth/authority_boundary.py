@@ -27,6 +27,8 @@ FORBIDDEN_DIRECT_ROLE_PATTERNS: Final[tuple[str, ...]] = (
 FORBIDDEN_DIRECT_TENANT_PATTERNS: Final[tuple[str, ...]] = (
     'current_user.get("tenant_id")',
     "current_user.get('tenant_id')",
+    'current_user["tenant_id"]',
+    "current_user['tenant_id']",
 )
 FORBIDDEN_DIRECT_AUDIT_HELPERS: Final[tuple[str, ...]] = (
     "extract_client_info",

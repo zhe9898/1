@@ -565,6 +565,12 @@ def test_auth_boundary_contract_exports_authoritative_entrypoints() -> None:
         "backend.kernel.contracts.tenant_claims.require_current_user_tenant_id",
     ]
     assert contract["tenant_claim_contract"]["allowlist"] == ["backend/kernel/contracts/tenant_claims.py"]
+    assert contract["tenant_claim_contract"]["forbidden_direct_patterns"] == [
+        'current_user.get("tenant_id")',
+        "current_user.get('tenant_id')",
+        'current_user["tenant_id"]',
+        "current_user['tenant_id']",
+    ]
     assert contract["admin_policy_contract"]["module"] == "backend.control_plane.auth.access_policy"
     assert contract["permission_scope_contract"]["module"] == "backend.control_plane.auth.permissions"
     assert contract["tenant_context_contract"]["jwt_tenant_db_entrypoint"] == "backend.control_plane.adapters.deps.get_tenant_db"

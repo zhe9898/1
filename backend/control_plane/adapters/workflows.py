@@ -12,6 +12,7 @@ from backend.extensions.job_kind_registry import validate_job_payload
 from backend.extensions.workflow_engine import create_workflow, on_step_job_completed, on_step_job_failed
 from backend.kernel.contracts.errors import zen
 from backend.kernel.contracts.status import canonicalize_status, normalize_persisted_status
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.job import Job
 from backend.models.workflow import Workflow, WorkflowStep
 from backend.runtime.topology.node_auth import authenticate_node_request
@@ -208,9 +209,10 @@ async def start_workflow(
 ) -> WorkflowDetailResponse:
     """Start a new workflow. Dispatches Jobs for ready steps immediately."""
     normalized_steps = [step.model_dump(mode="python") for step in payload.steps]
+    tenant_id = require_current_user_tenant_id(current_user)
     workflow = await create_workflow(
         db,
-        tenant_id=current_user["tenant_id"],
+        tenant_id=tenant_id,
         name=payload.name,
         description=payload.description,
         steps=normalized_steps,
@@ -247,7 +249,8 @@ async def list_workflows(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> list[WorkflowResponse]:
     """List workflows for this tenant (newest first)."""
-    query = select(Workflow).where(Workflow.tenant_id == current_user["tenant_id"])
+    tenant_id = require_current_user_tenant_id(current_user)
+    query = select(Workflow).where(Workflow.tenant_id == tenant_id)
     if status:
         query = query.where(Workflow.status == canonicalize_status("workflows.status", status))
     result = await db.execute(query.order_by(desc(Workflow.created_at)).limit(limit))
@@ -261,10 +264,11 @@ async def get_workflow(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> WorkflowDetailResponse:
     """Get workflow detail including step statuses."""
+    tenant_id = require_current_user_tenant_id(current_user)
     result = await db.execute(
         select(Workflow).where(
             Workflow.workflow_id == workflow_id,
-            Workflow.tenant_id == current_user["tenant_id"],
+            Workflow.tenant_id == tenant_id,
         )
     )
     workflow = result.scalars().first()

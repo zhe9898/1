@@ -31,6 +31,13 @@ def _is_current_user_tenant_get(node: ast.Call) -> bool:
     return isinstance(first_arg, ast.Constant) and first_arg.value == "tenant_id"
 
 
+def _is_current_user_tenant_subscript(node: ast.Subscript) -> bool:
+    if not isinstance(node.value, ast.Name) or node.value.id != "current_user":
+        return False
+    slice_node = node.slice
+    return isinstance(slice_node, ast.Constant) and slice_node.value == "tenant_id"
+
+
 def tenant_claim_violations(*, repo_root: Path | None = None) -> list[str]:
     resolved_root = (repo_root or REPO_ROOT).resolve()
     backend_root = resolved_root / "backend"
@@ -46,6 +53,8 @@ def tenant_claim_violations(*, repo_root: Path | None = None) -> list[str]:
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and _is_current_user_tenant_get(node):
+                violations.append(f"{rel}:{getattr(node, 'lineno', 0)}:direct current_user tenant claim access")
+            elif isinstance(node, ast.Subscript) and _is_current_user_tenant_subscript(node):
                 violations.append(f"{rel}:{getattr(node, 'lineno', 0)}:direct current_user tenant claim access")
     return violations
 

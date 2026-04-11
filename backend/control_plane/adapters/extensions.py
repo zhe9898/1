@@ -25,6 +25,7 @@ from backend.extensions.extension_sdk import (
 from backend.extensions.workflow_engine import create_workflow
 from backend.extensions.workflow_template_registry import render_workflow_template
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.workflow import WorkflowStep
 
 router = APIRouter(prefix="/api/v1/extensions", tags=["extensions"])
@@ -203,6 +204,7 @@ async def start_registered_workflow_template(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> WorkflowDetailResponse:
     bootstrap_extension_runtime()
+    tenant_id = require_current_user_tenant_id(current_user)
     try:
         rendered = render_workflow_template(template_id, payload.parameters)
     except ValueError as exc:
@@ -210,7 +212,7 @@ async def start_registered_workflow_template(
 
     workflow = await create_workflow(
         db,
-        tenant_id=current_user["tenant_id"],
+        tenant_id=tenant_id,
         name=payload.name or rendered["display_name"],
         description=payload.description or rendered["description"],
         steps=rendered["steps"],

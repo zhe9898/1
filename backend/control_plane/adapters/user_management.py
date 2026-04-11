@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.adapters.deps import get_current_admin, get_redis, get_tenant_db
 from backend.control_plane.admin.user_lifecycle import activate_user, delete_user, suspend_user
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.user import User
 from backend.platform.redis.client import RedisClient
 
@@ -64,10 +65,11 @@ async def suspend_user_endpoint(
     Requires admin privileges. Suspended users cannot log in.
     All active tokens will be revoked.
     """
+    tenant_id = require_current_user_tenant_id(current_user)
     user = await suspend_user(
         db,
         redis,
-        tenant_id=current_user["tenant_id"],
+        tenant_id=tenant_id,
         user_id=user_id,
         suspended_by=current_user["username"],
         reason=payload.reason,
@@ -85,7 +87,8 @@ async def activate_user_endpoint(
 
     Requires admin privileges. User will be able to log in again.
     """
-    user = await activate_user(db, tenant_id=current_user["tenant_id"], user_id=user_id)
+    tenant_id = require_current_user_tenant_id(current_user)
+    user = await activate_user(db, tenant_id=tenant_id, user_id=user_id)
     return _to_response(user)
 
 
@@ -101,5 +104,6 @@ async def delete_user_endpoint(
     Requires admin privileges. Deleted users cannot be reactivated.
     All active tokens will be revoked.
     """
-    user = await delete_user(db, redis, tenant_id=current_user["tenant_id"], user_id=user_id)
+    tenant_id = require_current_user_tenant_id(current_user)
+    user = await delete_user(db, redis, tenant_id=tenant_id, user_id=user_id)
     return _to_response(user)
