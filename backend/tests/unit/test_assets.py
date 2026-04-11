@@ -9,6 +9,8 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
+from backend.kernel.contracts.tenant_claims import MISSING_TENANT_CLAIM_CODE
+
 
 class TestAllowedExtensions:
     def test_allowed_image_extensions(self) -> None:
@@ -167,6 +169,26 @@ class TestUploadAsset:
         file.close.assert_awaited()
 
     @pytest.mark.anyio
+    async def test_upload_rejects_missing_tenant_claim(self, tmp_path: Path) -> None:
+        from backend.control_plane.adapters.assets import upload_asset
+
+        file = MagicMock()
+        file.filename = "photo.jpg"
+        file.content_type = "image/jpeg"
+        file.close = AsyncMock()
+
+        request = MagicMock()
+        db = MagicMock()
+
+        with patch("backend.control_plane.adapters.assets.MEDIA_PATH", str(tmp_path)):
+            with pytest.raises(HTTPException) as exc_info:
+                await upload_asset(request, file, db, {"sub": "test"})
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == MISSING_TENANT_CLAIM_CODE
+        file.close.assert_awaited()
+
+    @pytest.mark.anyio
     async def test_uuid_filename_prevents_path_traversal(self) -> None:
         import uuid
 
@@ -238,3 +260,15 @@ class TestDeleteAsset:
         assert asset.is_deleted is True
         assert result == {"deleted": 42}
         db.flush.assert_awaited()
+
+    @pytest.mark.anyio
+    async def test_delete_asset_rejects_missing_tenant_claim(self) -> None:
+        from backend.control_plane.adapters.assets import delete_asset
+
+        db = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_asset(42, db, {"sub": "test"})
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == MISSING_TENANT_CLAIM_CODE

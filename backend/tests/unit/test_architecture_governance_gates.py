@@ -572,6 +572,10 @@ def test_auth_boundary_contract_exports_authoritative_entrypoints() -> None:
         "current_user.get('tenant_id')",
         'current_user["tenant_id"]',
         "current_user['tenant_id']",
+        '(current_user or {}).get("tenant_id")',
+        "(current_user or {}).get('tenant_id')",
+        '(current_user or {})["tenant_id"]',
+        "(current_user or {})['tenant_id']",
     ]
     assert contract["admin_policy_contract"]["module"] == "backend.control_plane.auth.access_policy"
     assert contract["permission_scope_contract"]["module"] == "backend.control_plane.auth.permissions"

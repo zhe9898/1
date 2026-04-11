@@ -52,6 +52,25 @@ def handler(current_user: dict[str, str]) -> str:
     assert violations == ["backend/control_plane/adapters/demo.py:5:direct current_user tenant claim access"]
 
 
+def test_tenant_claim_guard_rejects_fallback_wrapped_claim_access(tmp_path) -> None:
+    source_path = tmp_path / "backend" / "control_plane" / "adapters" / "demo.py"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        """
+from __future__ import annotations
+
+
+def handler(current_user: dict[str, str] | None) -> str | None:
+    return (current_user or {}).get("tenant_id")
+""".strip(),
+        encoding="utf-8",
+    )
+
+    violations = tenant_claim_violations(repo_root=tmp_path)
+
+    assert violations == ["backend/control_plane/adapters/demo.py:5:direct current_user tenant claim access"]
+
+
 def test_tenant_claim_guard_allows_contract_helper_usage(tmp_path) -> None:
     source_path = tmp_path / "backend" / "control_plane" / "adapters" / "demo.py"
     source_path.parent.mkdir(parents=True)

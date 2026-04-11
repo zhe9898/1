@@ -23,7 +23,7 @@ def _is_current_user_tenant_get(node: ast.Call) -> bool:
         return False
     if node.func.attr != "get":
         return False
-    if not isinstance(node.func.value, ast.Name) or node.func.value.id != "current_user":
+    if not _is_current_user_expr(node.func.value):
         return False
     if not node.args:
         return False
@@ -32,10 +32,19 @@ def _is_current_user_tenant_get(node: ast.Call) -> bool:
 
 
 def _is_current_user_tenant_subscript(node: ast.Subscript) -> bool:
-    if not isinstance(node.value, ast.Name) or node.value.id != "current_user":
+    if not _is_current_user_expr(node.value):
         return False
     slice_node = node.slice
     return isinstance(slice_node, ast.Constant) and slice_node.value == "tenant_id"
+
+
+def _is_current_user_expr(node: ast.expr) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "current_user"
+    if not isinstance(node, ast.BoolOp) or not isinstance(node.op, ast.Or) or len(node.values) != 2:
+        return False
+    left, right = node.values
+    return isinstance(left, ast.Name) and left.id == "current_user" and isinstance(right, ast.Dict) and not right.keys and not right.values
 
 
 def tenant_claim_violations(*, repo_root: Path | None = None) -> list[str]:
