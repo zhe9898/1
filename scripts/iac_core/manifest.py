@@ -42,7 +42,6 @@ def build_render_manifest(
         {
             "rule": getattr(v, "rule_id", ""),
             "service": getattr(v, "service", ""),
-            "action": getattr(v, "message", ""),
         }
         for v in policy_violations
         if getattr(v, "severity", None) == "warn"
@@ -69,6 +68,7 @@ def build_render_manifest(
             "optional_pack_containers": optional_pack_containers,
         },
         "policy_injections": policy_injections,
+        "policy_injection_count": len(policy_injections),
         "tier3_warnings": [],
         "tier3_warning_count": len(tier3_warnings),
     }

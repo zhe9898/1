@@ -46,6 +46,7 @@ def test_manifest_contract_includes_product_and_warn_injections_only() -> None:
         "infrastructure_containers": ["redis"],
         "optional_pack_containers": [],
     }
-    assert manifest["policy_injections"] == [{"rule": "REC-001", "service": "gateway", "action": "inject healthcheck"}]
+    assert manifest["policy_injections"] == [{"rule": "REC-001", "service": "gateway"}]
+    assert manifest["policy_injection_count"] == 1
     assert manifest["tier3_warnings"] == []
     assert manifest["tier3_warning_count"] == 2

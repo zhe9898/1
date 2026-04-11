@@ -38,14 +38,6 @@ def _redact_sensitive_terms(text: str) -> str:
     return _SENSITIVE_TERM_PATTERN.sub("<redacted-field>", text)
 
 
-def _violation_owner(violation: str) -> str:
-    owner, _, _ = violation.partition(":")
-    normalized = owner.strip()
-    if not normalized or any(ch.isspace() for ch in normalized):
-        return "unknown-auth-boundary"
-    return normalized
-
-
 def _detail_code(exc: HTTPException) -> str | None:
     detail = getattr(exc, "detail", None)
     if isinstance(detail, dict):
@@ -122,8 +114,8 @@ def main() -> int:
     print("auth tenant boundary violations detected:")
     print("inspect backend.control_plane.auth.authority_boundary.export_auth_boundary_contract() for governed entrypoints")
     print(f"violation_count={len(violations)}")
-    for violation in violations:
-        print(f"{_violation_owner(violation)}: contract violation")
+    for index, _ in enumerate(violations, start=1):
+        print(f"violation[{index}]: contract violation")
     return 1
 
 
