@@ -26,9 +26,17 @@ def test_backend_ci_suite_contains_explicit_audit_drift_gate() -> None:
 
     assert "backend:architecture-governance" in step_names
     assert "backend:audit-drift" in step_names
+    assert "backend:auth-tenant-boundary" in step_names
     assert "backend:cookie-boundary" in step_names
     assert "backend:development-cleanroom" in step_names
     assert "backend:tenant-claim" in step_names
+
+
+def test_backend_ci_suite_contains_explicit_auth_tenant_boundary_guard() -> None:
+    auth_tenant_step = next(step for step in quality_gate._backend_ci_steps() if step.name == "backend:auth-tenant-boundary")  # noqa: SLF001
+
+    assert auth_tenant_step.command == (quality_gate.sys.executable, "tools/auth_tenant_boundary_guard.py")  # noqa: SLF001
+    assert auth_tenant_step.cwd == quality_gate.REPO_ROOT  # noqa: SLF001
 
 
 def test_backend_ci_suite_contains_explicit_cookie_boundary_guard() -> None:

@@ -11,6 +11,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.tenant_claims import current_user_tenant_id
 from backend.models.session import Session
 
 _logger = logging.getLogger(__name__)
@@ -162,11 +163,13 @@ async def validate_session_claims(
     """Validate sid/jti claims against the authoritative sessions table."""
     session_id = str(payload.get("sid") or "").strip()
     jti = str(payload.get("jti") or "").strip()
-    tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
+    tenant_id = current_user_tenant_id(payload)
     user_id = str(payload.get("sub") or "").strip()
     if not session_id:
         raise zen("ZEN-AUTH-401", "Session token is missing sid", status_code=401)
     if not jti or not user_id:
+        raise zen("ZEN-AUTH-401", "Invalid session token", status_code=401)
+    if tenant_id is None:
         raise zen("ZEN-AUTH-401", "Invalid session token", status_code=401)
 
     result = await db.execute(

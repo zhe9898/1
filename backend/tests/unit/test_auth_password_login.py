@@ -44,7 +44,7 @@ async def test_password_login_success():
     user.ai_route_preference = "auto"
     user.is_active = True
 
-    req = PasswordLoginRequest(username="admin", password="Password123!")
+    req = PasswordLoginRequest(username="admin", password="Password123!", tenant_id="default")
     request = MagicMock(spec=Request)
     request.state.request_id = "test-123"
     request.client.host = "127.0.0.1"
@@ -71,7 +71,7 @@ async def test_password_login_accepts_bytes_hash():
     user.ai_route_preference = "auto"
     user.is_active = True
 
-    req = PasswordLoginRequest(username="admin", password="Password123!")
+    req = PasswordLoginRequest(username="admin", password="Password123!", tenant_id="default")
     request = MagicMock(spec=Request)
     request.state.request_id = "test-123"
     request.client.host = "127.0.0.1"
@@ -94,7 +94,7 @@ async def test_password_login_wrong_pwd():
     user.password_hash = hashed
     user.is_active = True
 
-    req = PasswordLoginRequest(username="admin", password="WrongPassword!")
+    req = PasswordLoginRequest(username="admin", password="WrongPassword!", tenant_id="default")
     request = MagicMock(spec=Request)
     request.state.request_id = "test-123"
     request.client.host = "127.0.0.1"
@@ -110,7 +110,7 @@ async def test_password_login_wrong_pwd():
 
 @pytest.mark.asyncio
 async def test_password_login_returns_503_when_schema_missing():
-    req = PasswordLoginRequest(username="admin", password="Password123!")
+    req = PasswordLoginRequest(username="admin", password="Password123!", tenant_id="default")
     request = MagicMock(spec=Request)
     request.state.request_id = "test-123"
     request.client.host = "127.0.0.1"
@@ -137,7 +137,7 @@ async def test_password_login_rejects_disabled_user():
     user.ai_route_preference = "auto"
     user.is_active = False
 
-    req = PasswordLoginRequest(username="admin", password="Password123!")
+    req = PasswordLoginRequest(username="admin", password="Password123!", tenant_id="default")
     request = MagicMock(spec=Request)
     request.state.request_id = "test-123"
     request.client.host = "127.0.0.1"

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.control_plane.auth.access_policy import is_superadmin_role
 from backend.control_plane.auth.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, log_auth, zen
 from backend.control_plane.auth.jwt import get_access_token_expire_seconds
+from backend.kernel.contracts.tenant_claims import normalize_tenant_claim, require_current_user_tenant_id
 from backend.models.user import User
 from backend.platform.db.rls import set_tenant_context as _set_tenant_context_impl
 
@@ -41,8 +42,15 @@ def hash_pin(pin: str) -> str:
 
 
 def request_tenant_id(value: str | None) -> str:
-    tenant_id = (value or "default").strip()
-    return tenant_id or "default"
+    tenant_id = normalize_tenant_claim(value)
+    if tenant_id is not None:
+        return tenant_id
+    raise zen(
+        "ZEN-TENANT-4001",
+        "tenant_id is required for tenant-scoped authentication flows",
+        status.HTTP_400_BAD_REQUEST,
+        recovery_hint="Pass the target tenant_id explicitly when starting password, PIN, or WebAuthn authentication",
+    )
 
 
 def assert_user_active(
@@ -83,13 +91,13 @@ async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
 async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> str | None:
     if is_superadmin_role(current_admin):
         return None
-    tenant_id = str(current_admin.get("tenant_id") or "default")
+    tenant_id = require_current_user_tenant_id(current_admin)
     await _auth_mod().set_tenant_context(db, tenant_id)  # type: ignore[attr-defined]
     return tenant_id
 
 
 def enforce_admin_scope(current_admin: dict[str, str], tenant_id: str, *, action: str) -> None:
-    scoped_tenant = None if is_superadmin_role(current_admin) else str(current_admin.get("tenant_id") or "default")
+    scoped_tenant = None if is_superadmin_role(current_admin) else require_current_user_tenant_id(current_admin)
     if scoped_tenant is not None and tenant_id != scoped_tenant:
         raise zen(
             "ZEN-AUTH-403",

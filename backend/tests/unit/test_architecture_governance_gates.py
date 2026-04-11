@@ -31,6 +31,7 @@ from backend.runtime.execution.lease_service import export_lease_service_contrac
 from backend.runtime.scheduling.scheduling_framework import SchedulingProfile
 from backend.runtime.topology.runtime_contracts import control_plane_persona_keys, export_runtime_contract_taxonomy
 from tools.auth_boundary_guard import auth_boundary_violations
+from tools.auth_tenant_boundary_guard import auth_tenant_boundary_violations
 from tools.backend_domain_fence import backend_domain_import_fence_violations
 from tools.cookie_boundary_guard import cookie_boundary_violations
 from tools.development_cleanroom_guard import development_cleanroom_violations
@@ -597,6 +598,23 @@ def test_auth_boundary_contract_exports_authoritative_entrypoints() -> None:
         "response.set_cookie(",
         "response.delete_cookie(",
     ]
+    assert contract["auth_request_tenant_contract"]["entrypoint"] == "backend.control_plane.adapters.auth_shared.request_tenant_id"
+    assert contract["auth_request_tenant_contract"]["request_models"] == [
+        "backend.control_plane.adapters.models.auth.PasswordLoginRequest",
+        "backend.control_plane.adapters.models.auth.PinLoginRequest",
+        "backend.control_plane.adapters.models.auth.WebAuthnRegisterBeginRequest",
+        "backend.control_plane.adapters.models.auth.WebAuthnLoginBeginRequest",
+        "backend.control_plane.adapters.models.auth.WebAuthnLoginCompleteRequest",
+    ]
+    assert contract["auth_request_tenant_contract"]["tenant_scoped_admin_entrypoints"] == [
+        "backend.control_plane.adapters.auth_shared.bind_admin_scope",
+        "backend.control_plane.adapters.auth_shared.enforce_admin_scope",
+    ]
+    assert contract["auth_request_tenant_contract"]["token_validation_entrypoints"] == [
+        "backend.control_plane.auth.subject_authority.assert_token_subject_active",
+        "backend.control_plane.auth.sessions.validate_session_claims",
+    ]
+    assert contract["auth_request_tenant_contract"]["default_tenant_fallback_allowed"] is False
 
 
 def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
@@ -694,6 +712,10 @@ def test_tenant_claim_gate_blocks_direct_tenant_claim_reads() -> None:
 
 def test_cookie_boundary_gate_blocks_raw_cookie_access() -> None:
     assert cookie_boundary_violations(repo_root=ROOT) == []
+
+
+def test_auth_tenant_boundary_gate_blocks_default_tenant_fallbacks() -> None:
+    assert auth_tenant_boundary_violations() == []
 
 
 def test_development_cleanroom_contract_exports_forbidden_transition_markers() -> None:

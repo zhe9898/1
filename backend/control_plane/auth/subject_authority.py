@@ -6,15 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.tenant_claims import current_user_tenant_id
 from backend.models.user import User
 from backend.platform.db.rls import set_tenant_context
 
 
 async def assert_token_subject_active(db: AsyncSession, payload: Mapping[str, object]) -> None:
     subject = str(payload.get("sub") or "").strip()
-    tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
+    tenant_id = current_user_tenant_id(payload)
     if not subject:
         raise zen("ZEN-AUTH-401", "Invalid token subject", status_code=401)
+    if tenant_id is None:
+        raise zen("ZEN-AUTH-401", "Invalid token tenant claim", status_code=401)
 
     await set_tenant_context(db, tenant_id)
     query = select(User).where(User.tenant_id == tenant_id)

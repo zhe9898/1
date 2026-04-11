@@ -52,6 +52,7 @@ def _pin_request(username: str = "alice", pin: str = "12345678") -> MagicMock:
     req = MagicMock()
     req.username = username
     req.pin = pin
+    req.tenant_id = "default"
     return req
 
 

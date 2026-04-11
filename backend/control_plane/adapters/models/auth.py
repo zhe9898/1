@@ -11,7 +11,7 @@ PIN_LENGTH = 8
 
 
 class WebAuthnRegisterBeginRequest(BaseModel):
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
+    tenant_id: str = Field(..., min_length=1, max_length=64)
     username: str = Field(..., min_length=1, max_length=64)
     display_name: str = Field(default="", max_length=128)
 
@@ -25,7 +25,7 @@ class WebAuthnRegisterCompleteRequest(BaseModel):
 
 
 class WebAuthnLoginBeginRequest(BaseModel):
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
+    tenant_id: str = Field(..., min_length=1, max_length=64)
     username: str = Field(..., min_length=1, max_length=64)
 
 
@@ -34,7 +34,7 @@ class WebAuthnLoginBeginResponse(BaseModel):
 
 
 class WebAuthnLoginCompleteRequest(BaseModel):
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
+    tenant_id: str = Field(..., min_length=1, max_length=64)
     username: str = Field(..., min_length=1, max_length=64)
     credential: dict[str, object] = Field(..., description="Credential object from navigator.credentials.get()")
 
@@ -52,7 +52,7 @@ class AuthSessionResponse(BaseModel):
 
 class PinLoginRequest(BaseModel):
     pin: str = Field(..., min_length=PIN_LENGTH, max_length=PIN_LENGTH, pattern=r"^\d+$", description="8-digit PIN")
-    tenant_id: str = Field(default="default", min_length=1, max_length=64, description="Tenant ID")
+    tenant_id: str = Field(..., min_length=1, max_length=64, description="Tenant ID")
     username: str | None = Field(default="family", description="Username, default family")
 
 
@@ -74,7 +74,7 @@ class BootstrapRequest(BaseModel):
 
 
 class PasswordLoginRequest(BaseModel):
-    tenant_id: str = Field(default="default", min_length=1, max_length=64, description="Tenant ID")
+    tenant_id: str = Field(..., min_length=1, max_length=64, description="Tenant ID")
     username: str = Field(..., min_length=1, max_length=64, description="Username")
     password: str = Field(..., min_length=1, description="Password")
 

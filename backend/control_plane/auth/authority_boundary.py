@@ -22,6 +22,13 @@ DIRECT_COOKIE_POLICY_ALLOWLIST: Final[frozenset[str]] = frozenset(
         "backend/control_plane/auth/cookie_policy.py",
     }
 )
+AUTH_REQUEST_TENANT_MODELS: Final[tuple[str, ...]] = (
+    "backend.control_plane.adapters.models.auth.PasswordLoginRequest",
+    "backend.control_plane.adapters.models.auth.PinLoginRequest",
+    "backend.control_plane.adapters.models.auth.WebAuthnRegisterBeginRequest",
+    "backend.control_plane.adapters.models.auth.WebAuthnLoginBeginRequest",
+    "backend.control_plane.adapters.models.auth.WebAuthnLoginCompleteRequest",
+)
 
 FORBIDDEN_DIRECT_ROLE_PATTERNS: Final[tuple[str, ...]] = (
     'current_user.get("role")',
@@ -104,10 +111,24 @@ def export_auth_boundary_contract() -> dict[str, object]:
             "raw_cookie_allowlist": sorted(DIRECT_COOKIE_POLICY_ALLOWLIST),
             "forbidden_direct_patterns": list(FORBIDDEN_RAW_COOKIE_PATTERNS),
         },
+        "auth_request_tenant_contract": {
+            "entrypoint": "backend.control_plane.adapters.auth_shared.request_tenant_id",
+            "request_models": list(AUTH_REQUEST_TENANT_MODELS),
+            "tenant_scoped_admin_entrypoints": [
+                "backend.control_plane.adapters.auth_shared.bind_admin_scope",
+                "backend.control_plane.adapters.auth_shared.enforce_admin_scope",
+            ],
+            "token_validation_entrypoints": [
+                "backend.control_plane.auth.subject_authority.assert_token_subject_active",
+                "backend.control_plane.auth.sessions.validate_session_claims",
+            ],
+            "default_tenant_fallback_allowed": False,
+        },
     }
 
 
 __all__ = (
+    "AUTH_REQUEST_TENANT_MODELS",
     "DIRECT_AUDIT_HELPER_ALLOWLIST",
     "DIRECT_COOKIE_POLICY_ALLOWLIST",
     "DIRECT_ROLE_CLAIM_ALLOWLIST",

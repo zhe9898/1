@@ -13976,8 +13976,7 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "Tenant ID",
-            "default": "default"
+            "description": "Tenant ID"
           },
           "username": {
             "type": "string",
@@ -13995,6 +13994,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username",
           "password"
         ],
@@ -14147,8 +14147,7 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "Tenant ID",
-            "default": "default"
+            "description": "Tenant ID"
           },
           "username": {
             "anyOf": [
@@ -14166,7 +14165,8 @@
         },
         "type": "object",
         "required": [
-          "pin"
+          "pin",
+          "tenant_id"
         ],
         "title": "PinLoginRequest"
       },
@@ -15996,8 +15996,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Tenant Id",
-            "default": "default"
+            "title": "Tenant Id"
           },
           "username": {
             "type": "string",
@@ -16008,6 +16007,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username"
         ],
         "title": "WebAuthnLoginBeginRequest"
@@ -16033,8 +16033,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Tenant Id",
-            "default": "default"
+            "title": "Tenant Id"
           },
           "username": {
             "type": "string",
@@ -16051,6 +16050,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username",
           "credential"
         ],
@@ -16062,8 +16062,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Tenant Id",
-            "default": "default"
+            "title": "Tenant Id"
           },
           "username": {
             "type": "string",
@@ -16080,6 +16079,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username"
         ],
         "title": "WebAuthnRegisterBeginRequest"
