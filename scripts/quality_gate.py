@@ -386,6 +386,12 @@ def _backend_ci_steps() -> list[CommandStep]:
             extra_env=test_env,
         ),
         CommandStep(
+            "backend:worker-tenant-boundary",
+            (sys.executable, "tools/worker_tenant_boundary_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
             "backend:auth-tenant-boundary",
             (sys.executable, "tools/auth_tenant_boundary_guard.py"),
             cwd=REPO_ROOT,

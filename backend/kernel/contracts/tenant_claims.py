@@ -16,6 +16,14 @@ def normalize_tenant_claim(value: object | None) -> str | None:
     return normalized or None
 
 
+def coalesce_tenant_claim(*values: object | None) -> str | None:
+    for value in values:
+        tenant_id = normalize_tenant_claim(value)
+        if tenant_id is not None:
+            return tenant_id
+    return None
+
+
 def current_user_tenant_id(current_user: Mapping[str, object] | None) -> str | None:
     return normalize_tenant_claim((current_user or {}).get("tenant_id"))
 
@@ -36,6 +44,7 @@ __all__ = (
     "MISSING_TENANT_CLAIM_CODE",
     "MISSING_TENANT_CLAIM_HINT",
     "MISSING_TENANT_CLAIM_MESSAGE",
+    "coalesce_tenant_claim",
     "current_user_tenant_id",
     "normalize_tenant_claim",
     "require_current_user_tenant_id",

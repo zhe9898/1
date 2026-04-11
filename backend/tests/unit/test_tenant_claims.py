@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from backend.kernel.contracts.tenant_claims import (
     MISSING_TENANT_CLAIM_CODE,
+    coalesce_tenant_claim,
     current_user_tenant_id,
     normalize_tenant_claim,
     require_current_user_tenant_id,
@@ -23,6 +24,12 @@ def test_current_user_tenant_id_returns_normalized_claim() -> None:
     assert current_user_tenant_id({"tenant_id": " tenant-a "}) == "tenant-a"
     assert current_user_tenant_id({"tenant_id": ""}) is None
     assert current_user_tenant_id({}) is None
+
+
+def test_coalesce_tenant_claim_prefers_first_non_empty_value() -> None:
+    assert coalesce_tenant_claim(" tenant-a ", "tenant-b") == "tenant-a"
+    assert coalesce_tenant_claim("", " tenant-b ") == "tenant-b"
+    assert coalesce_tenant_claim(None, "   ", None) is None
 
 
 def test_require_current_user_tenant_id_rejects_missing_claim() -> None:
