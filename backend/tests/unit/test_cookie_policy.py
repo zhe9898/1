@@ -41,6 +41,19 @@ def test_set_http_only_cookie_enforces_shared_policy() -> None:
     )
 
 
+def test_set_http_only_cookie_rejects_invalid_cookie_octets() -> None:
+    response = MagicMock()
+
+    try:
+        set_http_only_cookie(response, key="demo key", value="bad;value", max_age_seconds=60)
+    except ValueError as exc:
+        assert "cookie" in str(exc)
+    else:
+        raise AssertionError("invalid cookie key/value must be rejected")
+
+    response.set_cookie.assert_not_called()
+
+
 def test_clear_http_only_cookie_enforces_shared_policy() -> None:
     response = MagicMock()
 

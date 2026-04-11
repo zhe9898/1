@@ -4,7 +4,8 @@ ZEN70 Auth WebAuthn - WebAuthn 濞夈劌鍞芥稉搴ｆ瑜?"""
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any
 
 try:
     from webauthn.helpers import bytes_to_base64url
@@ -80,7 +81,7 @@ logger = logging.getLogger(__name__)
 _CODE_NOT_IMPLEMENTED = "ZEN-AUTH-5010"
 
 
-def _require_webauthn(fn: object, name: str) -> object:
+def _require_webauthn(fn: Callable[..., Any] | None, name: str) -> Callable[..., Any]:
     """Raise HTTP 501 when the webauthn library is unavailable instead of crashing with TypeError."""
     if fn is None:
         raise zen(
@@ -193,7 +194,7 @@ async def register_begin(
         tenant_id=tenant_id,
         flow="register",
         ttl_seconds=CHALLENGE_TTL,
-        options_builder=lambda challenge: _require_webauthn(generate_registration_challenge, "generate_registration_challenge")(  # type: ignore[operator]
+        options_builder=lambda challenge: _require_webauthn(generate_registration_challenge, "generate_registration_challenge")(
             username=req.username,
             display_name=user.display_name or user.username,
             user_id=user_id_bytes,
@@ -241,7 +242,7 @@ async def register_complete(
 
     origin = origin_from_request(request)
     try:
-        verification = _require_webauthn(verify_registration, "verify_registration")(  # type: ignore[operator]
+        verification = _require_webauthn(verify_registration, "verify_registration")(
             credential=req.credential,
             expected_challenge=expected_challenge_bytes(challenge.challenge_id),
             origin=origin,
@@ -318,7 +319,7 @@ async def login_begin(
         tenant_id=tenant_id,
         flow="login",
         ttl_seconds=CHALLENGE_TTL,
-        options_builder=lambda challenge: build_authentication_challenge(  # type: ignore[operator]
+        options_builder=lambda challenge: build_authentication_challenge(
             allow_credentials=allow_credentials,
             challenge=challenge,
         ),

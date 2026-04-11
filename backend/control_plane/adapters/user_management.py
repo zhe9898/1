@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.control_plane.adapters.auth_shared import build_auth_actor_payload, resolve_auth_actor
+from backend.control_plane.adapters.auth_shared import build_auth_actor_payload, require_auth_username, resolve_auth_actor
 from backend.control_plane.adapters.control_events import publish_control_event
 from backend.control_plane.adapters.deps import get_current_admin, get_redis, get_tenant_db
 from backend.control_plane.admin.user_lifecycle import activate_user, delete_user, suspend_user
@@ -124,7 +124,7 @@ async def suspend_user_endpoint(
         redis,
         tenant_id=tenant_id,
         user_id=user_id,
-        suspended_by=current_user["username"],
+        suspended_by=require_auth_username(current_user),
         reason=payload.reason,
     )
     response = _to_response(user)

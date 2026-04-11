@@ -14,6 +14,7 @@ from backend.control_plane.adapters.auth_shared import (
     bind_admin_scope,
     build_auth_actor_payload,
     enforce_admin_scope,
+    require_auth_username,
     resolve_auth_actor,
     should_clear_auth_cookie_for_self_target,
 )
@@ -165,7 +166,7 @@ async def update_ai_preference(
     if normalized_preference != raw_preference:
         raise zen(CODE_BAD_REQUEST, "Invalid preference value", status.HTTP_400_BAD_REQUEST)
 
-    username = current_user.get("username")
+    username = require_auth_username(current_user)
     tenant_id = require_current_user_tenant_id(current_user)
     result = await db.execute(select(User).where(User.tenant_id == tenant_id, User.username == username))
     user = result.scalar_one_or_none()
@@ -175,7 +176,7 @@ async def update_ai_preference(
     user.ai_route_preference = normalized_preference
     await db.flush()
     await db.commit()
-    log_auth("ai_preference_update", True, request_id(request), username=username, detail=f"changed_to_{normalized_preference}")
+    log_auth("ai_preference_update", True, request_id(request), username=user.username, detail=f"changed_to_{normalized_preference}")
 
     from backend.control_plane.auth.permissions import get_user_scopes, hydrate_scopes_for_role
 

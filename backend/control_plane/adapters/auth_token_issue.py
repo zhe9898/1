@@ -28,19 +28,15 @@ def issue_auth_token(
 ) -> IssuedAuthToken:
     resolved_session_id = session_id or uuid.uuid4().hex
     resolved_token_id = token_id or uuid.uuid4().hex
-    token_kwargs: dict[str, object] = {
-        "tenant_id": tenant_id,
-        "ai_route_preference": ai_route_preference,
-        "session_id": resolved_session_id,
-        "token_id": resolved_token_id,
-    }
-    if scopes is not None:
-        token_kwargs["scopes"] = scopes
     body = token_response(
         sub,
         username,
         role,
-        **token_kwargs,
+        tenant_id=tenant_id,
+        ai_route_preference=ai_route_preference,
+        scopes=scopes,
+        session_id=resolved_session_id,
+        token_id=resolved_token_id,
     )
     expires_in = int(body.get("expires_in", get_access_token_expire_seconds()))
     return IssuedAuthToken(

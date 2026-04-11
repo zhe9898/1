@@ -701,7 +701,7 @@ async def test_rotate_node_token_increments_version(monkeypatch: pytest.MonkeyPa
     assert response.node.status == "offline"
     assert response.node.status_view.key == "offline"
     assert response.node_token == "<paste-one-time-node-token-here>"
-    assert "https://gateway.example.invalid" in response.bootstrap_commands["powershell"]
+    assert '$env:GATEWAY_BASE_URL="https://gateway.example.invalid"' in response.bootstrap_commands["powershell"].splitlines()
 
 
 @pytest.mark.asyncio

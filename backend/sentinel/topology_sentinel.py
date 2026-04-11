@@ -48,12 +48,12 @@ from backend.sentinel.switch_command_runtime import (
     parse_switch_runtime_command,
     plan_switch_runtime_effects,
 )
-from backend.sentinel.topology_runtime_io import TopologyRuntimeIO
 from backend.sentinel.topology_runtime import (
     compute_desired_containers,
     compute_reconcile_actions,
     load_runtime_settings,
 )
+from backend.sentinel.topology_runtime_io import TopologyRuntimeIO
 
 logger: logging.LoggerAdapter | None = None
 

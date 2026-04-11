@@ -15,7 +15,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.auth.access_policy import is_superadmin_role
-from backend.control_plane.auth.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, log_auth, zen
+from backend.control_plane.auth.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FORBIDDEN, CODE_UNAUTHORIZED, log_auth, zen
 from backend.control_plane.auth.jwt import get_access_token_expire_seconds
 from backend.kernel.contracts.tenant_claims import normalize_tenant_claim, require_current_user_tenant_id
 from backend.models.user import User
@@ -47,6 +47,20 @@ def resolve_auth_actor(current_user: Mapping[str, object]) -> AuthActor:
         username=_normalize_claim(current_user.get("username")),
         session_id=_normalize_claim(current_user.get("sid")),
     )
+
+
+def require_auth_user_id(current_user: Mapping[str, object]) -> str:
+    actor = resolve_auth_actor(current_user)
+    if actor.user_id is not None:
+        return actor.user_id
+    raise zen(CODE_UNAUTHORIZED, "Invalid token payload", status.HTTP_401_UNAUTHORIZED)
+
+
+def require_auth_username(current_user: Mapping[str, object]) -> str:
+    actor = resolve_auth_actor(current_user)
+    if actor.username is not None:
+        return actor.username
+    raise zen(CODE_UNAUTHORIZED, "Invalid token payload", status.HTTP_401_UNAUTHORIZED)
 
 
 def build_auth_actor_payload(current_user: Mapping[str, object]) -> dict[str, str | None]:
@@ -124,7 +138,7 @@ async def first_user_or_schema_unavailable(db: AsyncSession) -> User | None:
         ) from exc
 
 
-async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> str | None:
+async def bind_admin_scope(db: AsyncSession, current_admin: Mapping[str, object]) -> str | None:
     if is_superadmin_role(current_admin):
         return None
     tenant_id = require_current_user_tenant_id(current_admin)
@@ -132,7 +146,7 @@ async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> s
     return tenant_id
 
 
-def enforce_admin_scope(current_admin: dict[str, str], tenant_id: str, *, action: str) -> None:
+def enforce_admin_scope(current_admin: Mapping[str, object], tenant_id: str, *, action: str) -> None:
     scoped_tenant = None if is_superadmin_role(current_admin) else require_current_user_tenant_id(current_admin)
     if scoped_tenant is not None and tenant_id != scoped_tenant:
         raise zen(

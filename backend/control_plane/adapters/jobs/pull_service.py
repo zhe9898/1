@@ -31,6 +31,7 @@ from backend.runtime.scheduling.scheduling_governance import (
 from backend.runtime.scheduling.scheduling_policy_service import SchedulingPolicyService
 from backend.runtime.topology.node_auth import authenticate_node_request
 
+from . import pull_candidates as _pull_candidates
 from .database import (
     _append_log,
     _build_snapshots,
@@ -43,9 +44,7 @@ from .helpers import _to_lease_response, _to_response, _utcnow
 from .models import JobLeaseResponse, JobPullRequest
 from .pull_candidates import (
     _build_candidate_context,
-    _build_quota_context,  # re-exported for tests
     _get_dispatch_config,
-    _get_starvation_rescue_limit,  # re-exported for tests
 )
 from .pull_contracts import (
     PullFeatureFlags,
@@ -56,6 +55,10 @@ from .pull_contracts import (
 
 if TYPE_CHECKING:
     from backend.kernel.policy.types import DispatchConfig
+
+
+_build_quota_context = _pull_candidates._build_quota_context
+_get_starvation_rescue_limit = _pull_candidates._get_starvation_rescue_limit
 
 
 def build_default_pull_jobs_dependencies() -> PullJobsDependencies:

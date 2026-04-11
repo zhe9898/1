@@ -106,6 +106,10 @@ def _to_workflow_template_response(payload: dict[str, Any]) -> WorkflowTemplateR
     return WorkflowTemplateResponse(**payload)
 
 
+def _to_published_kind_response(payload: dict[str, Any]) -> PublishedKindResponse:
+    return PublishedKindResponse(**payload)
+
+
 def _raise_template_error(exc: ValueError) -> None:
     code = "ZEN-EXT-4041" if "is not registered" in str(exc) else "ZEN-EXT-4001"
     status_code = 404 if code == "ZEN-EXT-4041" else 400
@@ -126,7 +130,7 @@ async def list_registered_job_kinds(
     current_user: dict[str, object] = Depends(get_current_user),
 ) -> list[PublishedKindResponse]:
     del current_user
-    return [PublishedKindResponse(**item) for item in list_published_job_kinds()]
+    return [_to_published_kind_response(item) for item in list_published_job_kinds()]
 
 
 @router.get("/job-kinds/{kind:path}", response_model=PublishedKindResponse)
@@ -136,7 +140,7 @@ async def get_registered_job_kind(
 ) -> PublishedKindResponse:
     del current_user
     try:
-        return PublishedKindResponse(**get_published_job_kind(kind))
+        return _to_published_kind_response(get_published_job_kind(kind))
     except ValueError as exc:
         raise zen("ZEN-EXT-4042", str(exc), status_code=404) from exc
 
@@ -146,7 +150,7 @@ async def list_registered_connector_kinds(
     current_user: dict[str, object] = Depends(get_current_user),
 ) -> list[PublishedKindResponse]:
     del current_user
-    return [PublishedKindResponse(**item) for item in list_published_connector_kinds()]
+    return [_to_published_kind_response(item) for item in list_published_connector_kinds()]
 
 
 @router.get("/connector-kinds/{kind:path}", response_model=PublishedKindResponse)
@@ -156,7 +160,7 @@ async def get_registered_connector_kind(
 ) -> PublishedKindResponse:
     del current_user
     try:
-        return PublishedKindResponse(**get_published_connector_kind(kind))
+        return _to_published_kind_response(get_published_connector_kind(kind))
     except ValueError as exc:
         raise zen("ZEN-EXT-4043", str(exc), status_code=404) from exc
 

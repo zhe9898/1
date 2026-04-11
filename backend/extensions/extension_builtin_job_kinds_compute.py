@@ -5,10 +5,10 @@ from __future__ import annotations
 from backend.extensions.job_kind_registry import (
     ContainerRunPayload,
     ContainerRunResult,
-    MLInferencePayload,
-    MLInferenceResult,
     MediaTranscodePayload,
     MediaTranscodeResult,
+    MLInferencePayload,
+    MLInferenceResult,
     ScriptRunPayload,
     ScriptRunResult,
     ShellExecPayload,

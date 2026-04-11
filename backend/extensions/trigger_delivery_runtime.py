@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -44,8 +45,8 @@ async def mark_delivery_failed_and_publish(
     publish_event: Callable[..., Awaitable[None]],
     event_channel: str,
     message: str,
-    fired_at,
-    failed_at,
+    fired_at: datetime.datetime,
+    failed_at: datetime.datetime,
 ) -> None:
     TriggerCommandService.mark_delivery_failed(
         trigger,
@@ -75,8 +76,8 @@ async def mark_delivery_delivered_and_publish(
     target_id: str,
     target_snapshot: dict[str, Any],
     message: str,
-    fired_at,
-    delivered_at,
+    fired_at: datetime.datetime,
+    delivered_at: datetime.datetime,
 ) -> None:
     TriggerCommandService.mark_delivery_delivered(
         trigger,

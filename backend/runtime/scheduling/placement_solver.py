@@ -8,6 +8,7 @@ cycles during module initialization.
 
 from __future__ import annotations
 
+import datetime
 import heapq
 import logging
 import time
@@ -241,7 +242,7 @@ class PlacementSolver:
     def _score_candidates(
         candidates: list[PlacementCandidate],
         *,
-        now: object,
+        now: datetime.datetime,
         total_active: int,
         eligible_cache: dict[str, int],
         failed_ids: set[str],
@@ -270,15 +271,12 @@ class PlacementSolver:
         jobs: list[Job],
         live_nodes: list[SchedulerNodeSnapshot],
         *,
-        now: object,
+        now: datetime.datetime,
         accepted_kinds: set[str],
         active_jobs_by_node: dict[str, list[Job]] | None = None,
         metrics: dict[str, object] | None = None,
     ) -> dict[str, str] | None:
         """O(J log N) fast-path assignment for large homogeneous routing groups."""
-        import datetime as _dt
-
-        _now: _dt.datetime = now  # type: ignore[assignment]
         candidate_pairs = len(jobs) * len(live_nodes)
         if not self._can_use_large_simple_batch(
             jobs,
@@ -301,7 +299,7 @@ class PlacementSolver:
             group_plan, feasible_pairs = self._solve_large_simple_group(
                 group_jobs,
                 live_nodes,
-                now=_now,
+                now=now,
                 accepted_kinds=accepted_kinds,
                 global_remaining_cap=global_remaining_cap,
                 node_index=node_index,
@@ -349,7 +347,7 @@ class PlacementSolver:
         group_jobs: list[Job],
         live_nodes: list[SchedulerNodeSnapshot],
         *,
-        now: object,
+        now: datetime.datetime,
         accepted_kinds: set[str],
         global_remaining_cap: dict[str, int],
         node_index: dict[str, SchedulerNodeSnapshot],
@@ -435,7 +433,7 @@ class PlacementSolver:
     def _prioritize_fast_path_job_units(
         job_units: list[tuple[str | None, list[Job]]],
         *,
-        now: object,
+        now: datetime.datetime,
         remaining_capacity: int,
         total_jobs: int,
     ) -> None:
@@ -746,11 +744,19 @@ def build_time_budgeted_placement_plan(
         job_count=len(jobs),
         node_count=len(nodes),
     )
+    effective_budget_ms = _effective_solver_dispatch_budget_ms(
+        solver_cfg,
+        candidate_pairs=len(jobs) * len(nodes),
+    )
+    if decision_context is not None and effective_budget_ms is not None:
+        decision_context["dispatch_time_budget_ms"] = effective_budget_ms
     skip_reason = _solver_dispatch_skip_reason(solver_cfg, jobs=jobs, nodes=nodes)
     if skip_reason is not None:
         if decision_context is not None:
             decision_context["reason"] = skip_reason
         return {}
+
+    _warm_solver_dependencies()
 
     if decision_context is not None:
         decision_context["attempted"] = True
@@ -764,7 +770,7 @@ def build_time_budgeted_placement_plan(
         recent_failed_job_ids=recent_failed_job_ids,
         active_jobs_by_node=active_jobs_by_node,
         metrics=decision_context,
-        deadline_monotonic=_solver_dispatch_deadline(solver_cfg),
+        deadline_monotonic=_solver_dispatch_deadline(effective_budget_ms),
     )
     if decision_context is not None:
         decision_context["assignments"] = len(plan)
@@ -815,7 +821,31 @@ def _solver_dispatch_skip_reason(
     return None
 
 
-def _solver_dispatch_deadline(solver_cfg: SolverConfig) -> float | None:
-    if solver_cfg.dispatch_time_budget_ms <= 0:
+def _warm_solver_dependencies() -> None:
+    """Load cached scoring/policy helpers before starting the dispatch deadline."""
+    from backend.runtime.scheduling.job_scoring import _get_freshness_policy, _get_scoring_weights
+    from backend.runtime.scheduling.placement_policy import get_placement_policy
+
+    _get_scoring_weights()
+    _get_freshness_policy()
+    get_placement_policy()
+
+
+def _effective_solver_dispatch_budget_ms(
+    solver_cfg: SolverConfig,
+    *,
+    candidate_pairs: int,
+) -> float | None:
+    budget_ms = float(solver_cfg.dispatch_time_budget_ms)
+    if budget_ms <= 0:
         return None
-    return time.monotonic() + (solver_cfg.dispatch_time_budget_ms / 1000.0)
+    if candidate_pairs <= 32:
+        # Small windows are latency-safe but still pay one-time module warmup costs.
+        budget_ms = max(budget_ms, 25.0)
+    return budget_ms
+
+
+def _solver_dispatch_deadline(dispatch_budget_ms: float | None) -> float | None:
+    if dispatch_budget_ms is None:
+        return None
+    return time.monotonic() + (dispatch_budget_ms / 1000.0)

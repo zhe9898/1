@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -30,6 +31,11 @@ _TENANT_REQUIRED_MODELS = {
     "backend.control_plane.adapters.models.auth.WebAuthnLoginBeginRequest": WebAuthnLoginBeginRequest,
     "backend.control_plane.adapters.models.auth.WebAuthnLoginCompleteRequest": WebAuthnLoginCompleteRequest,
 }
+_SENSITIVE_TERM_PATTERN = re.compile(r"\b(password|secret|token)\b", re.IGNORECASE)
+
+
+def _redact_sensitive_terms(text: str) -> str:
+    return _SENSITIVE_TERM_PATTERN.sub("<redacted-field>", text)
 
 
 def _detail_code(exc: HTTPException) -> str | None:
@@ -108,7 +114,7 @@ def main() -> int:
     print("auth tenant boundary violations detected:")
     print(export_auth_boundary_contract())
     for violation in violations:
-        print(violation)
+        print(_redact_sensitive_terms(violation))
     return 1
 
 

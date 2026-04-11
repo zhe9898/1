@@ -12,9 +12,11 @@ from backend.control_plane.adapters.connectors import (
     ConnectorUpsertRequest,
     invoke_connector,
     list_connectors,
-    upsert_connector,
 )
 from backend.control_plane.adapters.connectors import test_connector as connector_test_endpoint
+from backend.control_plane.adapters.connectors import (
+    upsert_connector,
+)
 from backend.extensions.connector_secret_service import ConnectorSecretService
 from backend.tests.unit.connectors_test_support import build_connector, first_scalar_result
 

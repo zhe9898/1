@@ -390,10 +390,10 @@ _BACKEND_TEST_MAX_LINES = 800
 
 _BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
     "sentinel/topology_sentinel.py": "The topology sentinel remains a large state machine until it is decomposed safely.",
-    "control_plane/adapters/jobs/pull_service.py": "pull_service still centralizes dispatch orchestration and must be decomposed along domain boundaries, not line count alone.",
+    "control_plane/adapters/jobs/pull_service.py": (
+        "pull_service still centralizes dispatch orchestration and must be decomposed along domain boundaries, " "not line count alone."
+    ),
     "runtime/scheduling/placement_solver.py": "Global placement solver remains intentionally centralized until further decomposition",
-    "runtime/scheduling/backfill_scheduling.py": "Backfill scheduling still centralizes reservation time-window coordination.",
-    "extensions/extension_sdk.py": "extension SDK still shares bootstrap, registration, and manifest parsing context.",
 }
 
 _BACKEND_TEST_ALLOWLIST: dict[str, str] = {

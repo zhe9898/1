@@ -237,6 +237,8 @@ async def pin_set(
             raise zen(CODE_BAD_REQUEST, "pin_old required when changing PIN", status.HTTP_400_BAD_REQUEST)
         pin_old_bytes = req.pin_old.encode("utf-8")
         hash_bytes = user.pin_hash.encode("utf-8") if isinstance(user.pin_hash, str) else user.pin_hash
+        if hash_bytes is None:
+            raise zen(CODE_FORBIDDEN, "PIN verification is unavailable", status.HTTP_403_FORBIDDEN)
         if not bcrypt.checkpw(pin_old_bytes, hash_bytes):
             log_auth("pin_set", False, rid, username=username, client_ip_str=cip, detail="wrong_pin_old")
             raise zen(CODE_UNAUTHORIZED, "Invalid pin_old", status.HTTP_401_UNAUTHORIZED)

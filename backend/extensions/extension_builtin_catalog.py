@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .extension_builtin_kinds import build_core_connector_kinds, build_core_job_kinds
 from .extension_builtin_templates import build_core_workflow_templates
-from .extension_contracts import CompatibilityPolicy, ExtensionManifest, SDK_VERSION
+from .extension_contracts import SDK_VERSION, CompatibilityPolicy, ExtensionManifest
 
 
 def build_core_extension_manifest(runtime_version: str) -> ExtensionManifest:

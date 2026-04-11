@@ -10,6 +10,8 @@ from .extension_manifest_source import DEFAULT_EXTENSION_MANIFESTS_DIR, Extensio
 
 
 class ExtensionManifestLoader:
+    DEFAULT_MANIFESTS_DIR = DEFAULT_EXTENSION_MANIFESTS_DIR
+
     def __init__(self, source: ExtensionManifestSource | None = None) -> None:
         self._source = source or ExtensionManifestSource()
 

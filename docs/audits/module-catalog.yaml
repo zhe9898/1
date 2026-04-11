@@ -89,7 +89,8 @@ modules:
       - frontend/src/views/JobsView.vue
       - frontend/src/views/NodesView.vue
       - backend/tests/unit/test_attempt_expiration_service.py
-      - backend/tests/unit/test_backfill_scheduling.py
+      - backend/tests/unit/test_backfill_scheduling_core.py
+      - backend/tests/unit/test_backfill_scheduling_stores.py
       - backend/tests/unit/test_business_scheduling.py
       - backend/tests/unit/test_control_plane_protocol_contracts.py
       - backend/tests/unit/test_dispatch_lifecycle.py
@@ -497,7 +498,10 @@ modules:
       - tests/test_profile_surface_compaction.py
       - tests/test_repo_hardening.py
       - tools/**
-      - backend/tests/unit/test_architecture_governance_gates.py
+      - backend/tests/unit/test_architecture_governance_authority_and_guards.py
+      - backend/tests/unit/test_architecture_governance_orchestration_and_platform.py
+      - backend/tests/unit/test_architecture_governance_registry_and_extensions.py
+      - backend/tests/unit/test_architecture_governance_runtime_and_guards.py
       - backend/tests/unit/test_data_integrity.py
       - backend/tests/unit/test_data_retention.py
       - backend/tests/unit/test_db.py

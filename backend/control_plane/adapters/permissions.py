@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.control_plane.adapters.auth_cookies import clear_auth_cookie
 from backend.control_plane.adapters.auth_shared import (
     build_auth_actor_payload,
+    require_auth_username,
     resolve_auth_actor,
     should_clear_auth_cookie_for_self_target,
 )
@@ -165,7 +166,7 @@ async def grant_permission_endpoint(
     - Resource-level: Both resource_type and resource_id set
     """
     tenant_id = require_current_user_tenant_id(current_user)
-    granted_by = current_user["username"]
+    granted_by = require_auth_username(current_user)
 
     expires_at = None
     if payload.expires_at:

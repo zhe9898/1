@@ -1,20 +1,15 @@
 ﻿#!/usr/bin/env python3
 """Compile system.yaml into deterministic runtime artifacts."""
 
-
-
-
-
-
-
 from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import logging
 import os
-import secrets
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +20,7 @@ from urllib.parse import urlparse
 import jinja2
 
 logger = logging.getLogger(__name__)
+_SENSITIVE_MANIFEST_KEY_PATTERN = re.compile(r"(password|secret|token|dsn|credential)", re.IGNORECASE)
 
 # Ensure `scripts.iac_core` imports resolve when running compiler.py directly.
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -47,17 +43,17 @@ from scripts.iac_core.loader import (  # noqa: E402
     prepare_host_services,
     prepare_services,
 )
-from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
-from scripts.iac_core.renderer import create_jinja2_env  # noqa: E402
-from scripts.iac_core.migrator import migrate_and_persist  # noqa: E402
 from scripts.iac_core.manifest import build_render_manifest, resolve_product_name  # noqa: E402
+from scripts.iac_core.migrator import migrate_and_persist  # noqa: E402
+from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
 from scripts.iac_core.profiles import (  # noqa: E402
     is_profile_known,
-    resolve_effective_pack_keys,
     normalize_profile,
-    resolve_requested_pack_keys,
+    resolve_effective_pack_keys,
     resolve_gateway_image_target,
+    resolve_requested_pack_keys,
 )
+from scripts.iac_core.renderer import create_jinja2_env  # noqa: E402
 from scripts.iac_core.secrets import (  # noqa: E402
     generate_secrets,
 )
@@ -68,26 +64,27 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _load_existing_acl_password(users_acl_path: Path, username: str) -> str | None:
-    """Load existing ACL password for a user so compiler output stays idempotent."""
-    if not users_acl_path.exists():
-        return None
-    try:
-        for raw_line in users_acl_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            if parts[0] != "user" or parts[1] != username:
-                continue
-            for token in parts:
-                if token.startswith(">") and len(token) > 1:
-                    return token[1:]
-    except OSError:
-        return None
-    return None
+def _hash_acl_secret(secret: str) -> str:
+    return f"#{hashlib.sha256(secret.encode('utf-8')).hexdigest()}"
+
+
+def _derive_readonly_acl_secret(redis_password: str) -> str:
+    return hashlib.sha256(f"readonly:{redis_password}".encode("utf-8")).hexdigest()
+
+
+def _redact_sensitive_payload(value: object) -> object:
+    if isinstance(value, dict):
+        redacted: dict[str, object] = {}
+        for key, nested_value in value.items():
+            key_text = str(key)
+            if _SENSITIVE_MANIFEST_KEY_PATTERN.search(key_text):
+                redacted[key_text] = "<redacted>"
+            else:
+                redacted[key_text] = _redact_sensitive_payload(nested_value)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive_payload(item) for item in value]
+    return value
 
 
 def _resolve_acl_output_path(config: dict, output_dir: Path) -> Path:
@@ -127,10 +124,7 @@ def _compose_env_path(path: Path) -> str:
 
 def _validate_acl_output_path(path: Path, repo_root: Path) -> None:
     if _is_repo_scoped_secret_path(path, repo_root):
-        raise RuntimeError(
-            f"Refusing to write Redis ACL into repository-managed path: {path}. "
-            "Use an external secure state directory instead."
-        )
+        raise RuntimeError(f"Refusing to write Redis ACL into repository-managed path: {path}. " "Use an external secure state directory instead.")
 
 
 def _resolve_dynamic_routes_file(root: Path, raw_path: str | None) -> Path | None:
@@ -250,7 +244,6 @@ def _host_services_caddy_routes(config: dict[str, object], host_services: list[d
         if caddy_path and port:
             routes.append({"path": str(caddy_path), "target": f"{upstream_host}:{port}"})
     return routes
-
 
 
 def _replace_text_artifact(tmp_path: Path, target_path: Path) -> None:
@@ -468,7 +461,7 @@ def main() -> None:
     volumes_list = extract_named_volumes(config)
     networks_list = extract_networks(config)
 
-# Build extra Caddy routes for runtime host services and caddy-only surfaces.
+    # Build extra Caddy routes for runtime host services and caddy-only surfaces.
     dynamic_routes = _host_services_caddy_routes(config, host_services_list)
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
@@ -509,13 +502,12 @@ def main() -> None:
     _render_systemd_units(env, templates_dir, host_services_list, output_dir)
 
     # 3.9 Redis 闂嗘湹淇婃禒?ACL 缂佹挾鏅?(Phase 9)
-    readonly_password = _load_existing_acl_password(users_acl_path, "readonly")
-    readonly_password = readonly_password or secrets.token_urlsafe(16)
-    gateway_password = _load_existing_acl_password(users_acl_path, "zen70_gateway") or env_vars["redis_password"]
+    gateway_password = str(env_vars["redis_password"])
+    readonly_password = _derive_readonly_acl_secret(gateway_password)
     acl_lines = [
         "user default off nopass nocommands",
-        f"user readonly on >{readonly_password} ~zen70:* &zen70:* +@read -@write +ping +info",
-        f"user zen70_gateway on >{gateway_password} ~* &* +@all",
+        f"user readonly on {_hash_acl_secret(readonly_password)} ~zen70:* &zen70:* +@read -@write +ping +info",
+        f"user zen70_gateway on {_hash_acl_secret(gateway_password)} ~* &* +@all",
     ]
     acl_content = "\n".join(acl_lines) + "\n"
     config_dir = output_dir / "config"
@@ -592,9 +584,9 @@ def main() -> None:
         os.chmod(env_path, 0o600)
     except OSError as chmod_exc:
         logger.warning(
-            "[IaC-Security] Failed to set 0o600 on %s: %s 閳?"
-            ".env may be world-readable; verify file permissions manually",
-            env_path, chmod_exc,
+            "[IaC-Security] Failed to set 0o600 on %s: %s 閳?" ".env may be world-readable; verify file permissions manually",
+            env_path,
+            chmod_exc,
         )
 
     logger.info("[OK] IaC 妫板嫭顥呴柅姘崇箖閿涘苯鍑￠崢鐔剁秴閸楀洨娣獮鍓佹晸閹?%s", output_dir / "docker-compose.yml")
@@ -604,20 +596,22 @@ def main() -> None:
         logger.info("[OK] 瀹歌尙鏁撻幋?%s", config_dir / "Caddyfile")
 
     # 5. render-manifest.json 閳?濠у瓨绨拋鏉跨秿
-    manifest = build_render_manifest(
-        rendered_at=str(env_vars.get("now", "")),
-        source=str(args.config),
-        product=product_name,
-        profile=normalized_profile,
-        requested_packs=list(requested_pack_keys),
-        resolved_packs=list(resolved_pack_keys),
-        gateway_image_target=gateway_image_target,
-        policy_version=int(policy_version),
-        policy_file=policy_source,
-        container_services_list=services_list,
-        host_services_list=host_services_list,
-        policy_violations=policy_violations,
-        tier3_warnings=lint_result.warnings,
+    manifest = _redact_sensitive_payload(
+        build_render_manifest(
+            rendered_at=str(env_vars.get("now", "")),
+            source=str(args.config),
+            product=product_name,
+            profile=normalized_profile,
+            requested_packs=list(requested_pack_keys),
+            resolved_packs=list(resolved_pack_keys),
+            gateway_image_target=gateway_image_target,
+            policy_version=int(policy_version),
+            policy_file=policy_source,
+            container_services_list=services_list,
+            host_services_list=host_services_list,
+            policy_violations=policy_violations,
+            tier3_warnings=lint_result.warnings,
+        )
     )
     manifest_path = output_dir / "render-manifest.json"
     manifest_path.write_text(

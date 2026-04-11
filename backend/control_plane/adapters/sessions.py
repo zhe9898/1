@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.control_plane.adapters.auth_cookies import clear_auth_cookie
 from backend.control_plane.adapters.auth_shared import (
     build_auth_actor_payload,
+    require_auth_user_id,
+    require_auth_username,
     resolve_auth_actor,
     should_clear_auth_cookie_for_self_target,
 )
@@ -147,7 +149,7 @@ async def list_my_sessions(
     sessions = await list_user_sessions(
         db,
         tenant_id=tenant_id,
-        user_id=current_user["sub"],
+        user_id=require_auth_user_id(current_user),
     )
     return [_to_response(s) for s in sessions]
 
@@ -167,8 +169,8 @@ async def revoke_my_session(
         db,
         session_id,
         tenant_id=tenant_id,
-        user_id=current_user["sub"],
-        revoked_by=current_user["username"],
+        user_id=require_auth_user_id(current_user),
+        revoked_by=require_auth_username(current_user),
         redis=redis,
     )
     current_session_affected = actor.session_id == str(session_id).strip()
@@ -215,8 +217,8 @@ async def revoke_all_my_sessions(
     count = await revoke_all_user_sessions(
         db,
         tenant_id=tenant_id,
-        user_id=current_user["sub"],
-        revoked_by=current_user["username"],
+        user_id=require_auth_user_id(current_user),
+        revoked_by=require_auth_username(current_user),
         redis=redis,
     )
     await _record_session_mutation_audit(
@@ -279,7 +281,7 @@ async def revoke_all_user_sessions_admin(
         db,
         tenant_id=tenant_id,
         user_id=user_id,
-        revoked_by=current_user["username"],
+        revoked_by=require_auth_username(current_user),
         redis=redis,
     )
     current_session_affected = str(user_id).strip() == (actor.user_id or "")
