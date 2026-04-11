@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import Request, Response, status
 
-from backend.control_plane.adapters.auth_cookies import AUTH_COOKIE_DOMAIN, AUTH_COOKIE_PATH, AUTH_COOKIE_SAMESITE, AUTH_COOKIE_SECURE
+from backend.control_plane.auth.cookie_policy import clear_http_only_cookie, read_request_cookie, set_http_only_cookie
 from backend.kernel.contracts.errors import zen
 
 WEBAUTHN_FLOW_SESSION_COOKIE = os.getenv("ZEN70_WEBAUTHN_FLOW_SESSION_COOKIE", "zen70_webauthn_session").strip() or "zen70_webauthn_session"
@@ -16,16 +16,7 @@ def ensure_webauthn_flow_session(response: Response, request: Request, *, ttl_se
     if session_id is None:
         session_id = uuid.uuid4().hex
     setattr(request.state, "webauthn_flow_session_id", session_id)
-    response.set_cookie(
-        key=WEBAUTHN_FLOW_SESSION_COOKIE,
-        value=session_id,
-        max_age=max(ttl_seconds, 1),
-        httponly=True,
-        secure=AUTH_COOKIE_SECURE,
-        samesite=AUTH_COOKIE_SAMESITE,
-        path=AUTH_COOKIE_PATH,
-        domain=AUTH_COOKIE_DOMAIN,
-    )
+    set_http_only_cookie(response, key=WEBAUTHN_FLOW_SESSION_COOKIE, value=session_id, max_age_seconds=ttl_seconds)
     return session_id
 
 
@@ -46,20 +37,8 @@ def require_webauthn_flow_session(request: Request) -> str:
 
 
 def clear_webauthn_flow_session(response: Response) -> None:
-    response.delete_cookie(
-        key=WEBAUTHN_FLOW_SESSION_COOKIE,
-        path=AUTH_COOKIE_PATH,
-        domain=AUTH_COOKIE_DOMAIN,
-        httponly=True,
-        secure=AUTH_COOKIE_SECURE,
-        samesite=AUTH_COOKIE_SAMESITE,
-    )
+    clear_http_only_cookie(response, key=WEBAUTHN_FLOW_SESSION_COOKIE)
 
 
 def _cookie_value(request: Request) -> str | None:
-    cookies = getattr(request, "cookies", None)
-    raw_value = cookies.get(WEBAUTHN_FLOW_SESSION_COOKIE) if isinstance(cookies, dict) else None
-    if not isinstance(raw_value, str):
-        return None
-    normalized = raw_value.strip()
-    return normalized or None
+    return read_request_cookie(request, WEBAUTHN_FLOW_SESSION_COOKIE)

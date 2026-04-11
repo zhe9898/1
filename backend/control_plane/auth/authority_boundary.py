@@ -17,6 +17,11 @@ DIRECT_AUDIT_HELPER_ALLOWLIST: Final[frozenset[str]] = frozenset(
         "backend/platform/logging/audit.py",
     }
 )
+DIRECT_COOKIE_POLICY_ALLOWLIST: Final[frozenset[str]] = frozenset(
+    {
+        "backend/control_plane/auth/cookie_policy.py",
+    }
+)
 
 FORBIDDEN_DIRECT_ROLE_PATTERNS: Final[tuple[str, ...]] = (
     'current_user.get("role")',
@@ -34,6 +39,11 @@ FORBIDDEN_DIRECT_AUDIT_HELPERS: Final[tuple[str, ...]] = (
     "extract_client_info",
     "sanitize_audit_details",
     "write_audit_log",
+)
+FORBIDDEN_RAW_COOKIE_PATTERNS: Final[tuple[str, ...]] = (
+    "request.cookies",
+    "response.set_cookie(",
+    "response.delete_cookie(",
 )
 
 
@@ -82,14 +92,28 @@ def export_auth_boundary_contract() -> dict[str, object]:
             "helper_allowlist": sorted(DIRECT_AUDIT_HELPER_ALLOWLIST),
             "forbidden_direct_helpers": list(FORBIDDEN_DIRECT_AUDIT_HELPERS),
         },
+        "cookie_policy_contract": {
+            "entrypoints": [
+                "backend.control_plane.adapters.auth_cookies.get_auth_cookie_token",
+                "backend.control_plane.adapters.auth_cookies.set_auth_cookie",
+                "backend.control_plane.adapters.auth_cookies.clear_auth_cookie",
+                "backend.control_plane.auth.webauthn_flow_session.ensure_webauthn_flow_session",
+                "backend.control_plane.auth.webauthn_flow_session.require_webauthn_flow_session",
+                "backend.control_plane.auth.webauthn_flow_session.clear_webauthn_flow_session",
+            ],
+            "raw_cookie_allowlist": sorted(DIRECT_COOKIE_POLICY_ALLOWLIST),
+            "forbidden_direct_patterns": list(FORBIDDEN_RAW_COOKIE_PATTERNS),
+        },
     }
 
 
 __all__ = (
     "DIRECT_AUDIT_HELPER_ALLOWLIST",
+    "DIRECT_COOKIE_POLICY_ALLOWLIST",
     "DIRECT_ROLE_CLAIM_ALLOWLIST",
     "DIRECT_TENANT_CLAIM_ALLOWLIST",
     "FORBIDDEN_DIRECT_AUDIT_HELPERS",
+    "FORBIDDEN_RAW_COOKIE_PATTERNS",
     "FORBIDDEN_DIRECT_ROLE_PATTERNS",
     "FORBIDDEN_DIRECT_TENANT_PATTERNS",
     "export_auth_boundary_contract",

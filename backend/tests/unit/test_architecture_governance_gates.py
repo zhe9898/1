@@ -32,6 +32,7 @@ from backend.runtime.scheduling.scheduling_framework import SchedulingProfile
 from backend.runtime.topology.runtime_contracts import control_plane_persona_keys, export_runtime_contract_taxonomy
 from tools.auth_boundary_guard import auth_boundary_violations
 from tools.backend_domain_fence import backend_domain_import_fence_violations
+from tools.cookie_boundary_guard import cookie_boundary_violations
 from tools.development_cleanroom_guard import development_cleanroom_violations
 from tools.tenant_claim_guard import tenant_claim_violations
 
@@ -582,6 +583,20 @@ def test_auth_boundary_contract_exports_authoritative_entrypoints() -> None:
         "sanitize_audit_details",
         "write_audit_log",
     ]
+    assert contract["cookie_policy_contract"]["entrypoints"] == [
+        "backend.control_plane.adapters.auth_cookies.get_auth_cookie_token",
+        "backend.control_plane.adapters.auth_cookies.set_auth_cookie",
+        "backend.control_plane.adapters.auth_cookies.clear_auth_cookie",
+        "backend.control_plane.auth.webauthn_flow_session.ensure_webauthn_flow_session",
+        "backend.control_plane.auth.webauthn_flow_session.require_webauthn_flow_session",
+        "backend.control_plane.auth.webauthn_flow_session.clear_webauthn_flow_session",
+    ]
+    assert contract["cookie_policy_contract"]["raw_cookie_allowlist"] == ["backend/control_plane/auth/cookie_policy.py"]
+    assert contract["cookie_policy_contract"]["forbidden_direct_patterns"] == [
+        "request.cookies",
+        "response.set_cookie(",
+        "response.delete_cookie(",
+    ]
 
 
 def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
@@ -675,6 +690,10 @@ def test_auth_boundary_gate_blocks_direct_audit_helper_imports() -> None:
 
 def test_tenant_claim_gate_blocks_direct_tenant_claim_reads() -> None:
     assert tenant_claim_violations(repo_root=ROOT) == []
+
+
+def test_cookie_boundary_gate_blocks_raw_cookie_access() -> None:
+    assert cookie_boundary_violations(repo_root=ROOT) == []
 
 
 def test_development_cleanroom_contract_exports_forbidden_transition_markers() -> None:

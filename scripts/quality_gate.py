@@ -386,6 +386,12 @@ def _backend_ci_steps() -> list[CommandStep]:
             extra_env=test_env,
         ),
         CommandStep(
+            "backend:cookie-boundary",
+            (sys.executable, "tools/cookie_boundary_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
             "backend:generate-contracts",
             (sys.executable, "scripts/generate_contracts.py"),
             cwd=REPO_ROOT,
