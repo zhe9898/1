@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.platform.logging.audit import write_audit_log
+from backend.platform.logging.audit import log_audit
 from backend.runtime.scheduling.scheduler_auto_tune_state import AutoTuneAuditRecord
 
 AUTO_TUNE_AUDIT_ACTION = "scheduler_auto_tune.ema_adjusted"
@@ -97,7 +97,7 @@ async def write_auto_tune_audit_log(
     persisted_state: bool,
     extra_details: Mapping[str, object] | None = None,
 ) -> None:
-    await write_audit_log(
+    await log_audit(
         db,
         tenant_id=record.signal.tenant_id,
         action=AUTO_TUNE_AUDIT_ACTION,

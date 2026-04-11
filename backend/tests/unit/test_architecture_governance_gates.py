@@ -569,7 +569,13 @@ def test_auth_boundary_contract_exports_authoritative_entrypoints() -> None:
     assert contract["permission_scope_contract"]["module"] == "backend.control_plane.auth.permissions"
     assert contract["tenant_context_contract"]["jwt_tenant_db_entrypoint"] == "backend.control_plane.adapters.deps.get_tenant_db"
     assert contract["tenant_context_contract"]["machine_tenant_db_entrypoint"] == "backend.control_plane.adapters.deps.get_machine_tenant_db"
-    assert contract["audit_log_entrypoint"] == "backend.platform.logging.audit.log_audit"
+    assert contract["audit_log_contract"]["entrypoint"] == "backend.platform.logging.audit.log_audit"
+    assert contract["audit_log_contract"]["helper_allowlist"] == ["backend/platform/logging/audit.py"]
+    assert contract["audit_log_contract"]["forbidden_direct_helpers"] == [
+        "extract_client_info",
+        "sanitize_audit_details",
+        "write_audit_log",
+    ]
 
 
 def test_fault_isolation_contract_matches_runner_and_api_sources() -> None:
@@ -654,6 +660,10 @@ def test_domain_dependency_gate_blocks_new_reverse_imports() -> None:
 
 
 def test_auth_boundary_gate_blocks_direct_role_claim_reads() -> None:
+    assert auth_boundary_violations(repo_root=ROOT) == []
+
+
+def test_auth_boundary_gate_blocks_direct_audit_helper_imports() -> None:
     assert auth_boundary_violations(repo_root=ROOT) == []
 
 

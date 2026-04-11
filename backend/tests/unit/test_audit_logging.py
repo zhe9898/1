@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import Request
 
-from backend.platform.logging.audit import extract_client_info, sanitize_audit_details, write_audit_log
+from backend.platform.logging.audit import extract_client_info, log_audit, sanitize_audit_details, write_audit_log
 
 
 def _request(*, xff: str | None, client_host: str) -> Request:
@@ -96,4 +96,25 @@ async def test_write_audit_log_sanitizes_details_before_flush() -> None:
         "headers": {"x-api-key": "********"},
         "password": "********",
     }
+    db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_log_audit_delegates_to_write_path_and_preserves_redaction() -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    await log_audit(
+        db,
+        tenant_id="tenant-a",
+        action="scheduler.auto_tune",
+        result="success",
+        details={"token": "secret-token"},
+    )
+
+    logged = db.add.call_args.args[0]
+    assert logged.tenant_id == "tenant-a"
+    assert logged.action == "scheduler.auto_tune"
+    assert logged.details == {"token": "********"}
     db.flush.assert_awaited_once()

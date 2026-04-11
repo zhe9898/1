@@ -44,6 +44,22 @@ def test_backend_typed_paths_track_current_five_domain_layout() -> None:
     assert all(Path(path).exists() for path in BACKEND_TYPED_PATHS)
 
 
+def test_backend_pip_audit_runs_without_bootstrapping_temp_pip_environment() -> None:
+    pip_audit_step = next(step for step in quality_gate._backend_ci_steps() if step.name == "backend:pip-audit")  # noqa: SLF001
+
+    assert pip_audit_step.cwd == quality_gate.BACKEND_DIR  # noqa: SLF001
+    assert pip_audit_step.command == (
+        "pip-audit",
+        "-r",
+        "requirements-core.txt",
+        "--strict",
+        "--desc",
+        "on",
+        "--no-deps",
+        "--disable-pip",
+    )
+
+
 def test_github_actions_error_annotation_is_emitted_only_in_ci(monkeypatch, capsys) -> None:
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
 

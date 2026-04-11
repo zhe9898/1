@@ -259,7 +259,16 @@ def _backend_ci_steps() -> list[CommandStep]:
         _git_diff_step("backend:iac-drift", IAC_DRIFT_TARGETS),
         CommandStep(
             "backend:pip-audit",
-            ("pip-audit", "-r", "requirements-core.txt", "--strict", "--desc", "on"),
+            (
+                "pip-audit",
+                "-r",
+                "requirements-core.txt",
+                "--strict",
+                "--desc",
+                "on",
+                "--no-deps",
+                "--disable-pip",
+            ),
             cwd=BACKEND_DIR,
         ),
         CommandStep(
