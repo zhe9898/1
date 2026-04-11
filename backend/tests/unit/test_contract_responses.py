@@ -5,7 +5,7 @@ import json
 
 class TestErrorResponseContract:
     def test_required_fields_exist(self) -> None:
-        from backend.api.models import ErrorResponse
+        from backend.control_plane.adapters.models import ErrorResponse
 
         schema = ErrorResponse.model_json_schema()
         props = schema["properties"]
@@ -15,19 +15,19 @@ class TestErrorResponseContract:
         assert "details" in props
 
     def test_code_is_string(self) -> None:
-        from backend.api.models import ErrorResponse
+        from backend.control_plane.adapters.models import ErrorResponse
 
         schema = ErrorResponse.model_json_schema()
         assert schema["properties"]["code"]["type"] == "string"
 
     def test_details_is_object(self) -> None:
-        from backend.api.models import ErrorResponse
+        from backend.control_plane.adapters.models import ErrorResponse
 
         schema = ErrorResponse.model_json_schema()
         assert schema["properties"]["details"]["type"] == "object"
 
     def test_serialization_roundtrip(self) -> None:
-        from backend.api.models import ErrorResponse
+        from backend.control_plane.adapters.models import ErrorResponse
 
         original = ErrorResponse(
             code="ZEN-TEST-001",
@@ -44,7 +44,7 @@ class TestErrorResponseContract:
 
 class TestSuccessEnvelopeContract:
     def test_envelope_code_constant_in_main_entry(self) -> None:
-        from backend.api.main import success_envelope
+        from backend.control_plane.app.response_envelope import success_envelope
 
         assert callable(success_envelope)
 
@@ -121,15 +121,55 @@ class TestSwitchEventContract:
         assert restored.effective_switch_name() == original.effective_switch_name()
 
 
+class TestSwitchStateEventContract:
+    def test_valid_state_values(self) -> None:
+        from backend.kernel.contracts.events_schema import SwitchStateEventPayload
+
+        for state in ("ON", "OFF", "PENDING"):
+            payload = SwitchStateEventPayload(state=state)
+            assert payload.state == state
+
+    def test_serialization_roundtrip(self) -> None:
+        from backend.kernel.contracts.events_schema import SwitchStateEventPayload
+
+        original = SwitchStateEventPayload(
+            state="PENDING",
+            switch="media",
+            reason="syncing",
+            updated_by="sentinel",
+        )
+        restored = SwitchStateEventPayload.model_validate_json(original.model_dump_json())
+        assert restored.state == "PENDING"
+        assert restored.effective_switch_name() == "media"
+
+
+class TestHardwareStateEventContract:
+    def test_required_fields(self) -> None:
+        from backend.kernel.contracts.events_schema import HardwareStateEventPayload
+
+        schema = HardwareStateEventPayload.model_json_schema()
+        assert "path" in schema.get("required", [])
+        assert "state" in schema.get("required", [])
+
+    def test_serialization_roundtrip(self) -> None:
+        from backend.kernel.contracts.events_schema import HardwareStateEventPayload
+
+        original = HardwareStateEventPayload(path="/mnt/media", state="online", reason="mounted", uuid="disk-1", timestamp=123.0)
+        restored = HardwareStateEventPayload.model_validate_json(original.model_dump_json())
+        assert restored.path == "/mnt/media"
+        assert restored.state == "online"
+        assert restored.uuid == "disk-1"
+
+
 class TestHealthResponseContract:
     def test_required_fields(self) -> None:
-        from backend.api.models import HealthResponse
+        from backend.control_plane.adapters.models import HealthResponse
 
         schema = HealthResponse.model_json_schema()
         assert "status" in schema.get("required", [])
 
     def test_version_has_default(self) -> None:
-        from backend.api.models import HealthResponse
+        from backend.control_plane.adapters.models import HealthResponse
 
         health = HealthResponse(status="healthy")
         assert health.version is not None
@@ -138,13 +178,13 @@ class TestHealthResponseContract:
 
 class TestCapabilityResponseContract:
     def test_required_status_field(self) -> None:
-        from backend.api.models import CapabilityResponse
+        from backend.control_plane.adapters.models import CapabilityResponse
 
         schema = CapabilityResponse.model_json_schema()
         assert "status" in schema.get("required", [])
 
     def test_optional_fields(self) -> None:
-        from backend.api.models import CapabilityResponse
+        from backend.control_plane.adapters.models import CapabilityResponse
 
         capability = CapabilityResponse(status="online", enabled=True)
         assert capability.endpoint is None
@@ -154,13 +194,13 @@ class TestCapabilityResponseContract:
 
 class TestSwitchStateResponseContract:
     def test_required_state_field(self) -> None:
-        from backend.api.models import SwitchStateResponse
+        from backend.control_plane.adapters.models import SwitchStateResponse
 
         schema = SwitchStateResponse.model_json_schema()
         assert "state" in schema.get("required", [])
 
     def test_valid_states(self) -> None:
-        from backend.api.models import SwitchStateResponse
+        from backend.control_plane.adapters.models import SwitchStateResponse
 
         for state in ("ON", "OFF", "PENDING"):
             response = SwitchStateResponse(state=state)

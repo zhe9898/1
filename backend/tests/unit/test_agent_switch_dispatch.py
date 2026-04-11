@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.api.agent import AgentActionItem, AgentActRequest, agent_act
+from backend.control_plane.adapters.agent import AgentActionItem, AgentActRequest, agent_act
 
 
 @pytest.mark.asyncio
@@ -16,9 +16,9 @@ async def test_agent_act_relies_on_set_switch_single_publish_path() -> None:
     )
 
     with (
-        patch("backend.api.agent._agent_enabled", return_value=True),
-        patch("backend.api.agent._is_feature_flag_enabled", new=AsyncMock(return_value=True)),
-        patch("backend.api.agent._get_allowed_switches", return_value=["media"]),
+        patch("backend.control_plane.adapters.agent._agent_enabled", return_value=True),
+        patch("backend.control_plane.adapters.agent._is_feature_flag_enabled", new=AsyncMock(return_value=True)),
+        patch("backend.control_plane.adapters.agent._get_allowed_switches", return_value=["media"]),
     ):
         response = await agent_act(
             request=AsyncMock(),

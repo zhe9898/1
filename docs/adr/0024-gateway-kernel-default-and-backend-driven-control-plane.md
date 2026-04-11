@@ -21,7 +21,10 @@ ZEN70 is defined first as a Gateway Kernel.
 
 - Default runtime profile: `gateway-kernel`
 - Default runtime goal: light control plane, not heavy business workloads
-- Default runtime service set: `caddy`, `gateway`, `redis`, `postgres`, `sentinel`, `docker-proxy`, `runner-agent`
+- Default runtime service set:
+  - host processes: `gateway`, `topology-sentinel`, `control-worker`, `routing-operator`, `runner-agent`
+  - infrastructure containers: `caddy`, `redis`, `postgres`, `nats`
+  - host processes are declared through structured host entrypoints and rendered as systemd units; `runner-agent` is materialized as a native binary rather than `go run`
 - Optional business domains must re-enter through explicit pack selection, not by growing the kernel default
 
 ### 2. Default control-plane contract
@@ -54,6 +57,16 @@ Development mode keeps no compatibility wrappers.
 - `scripts/compiler.py` is the only compiler entrypoint
 - `scripts/bootstrap.py` is the only bootstrap entrypoint
 
+### 5. Multi-node migration rule
+
+Host-first migration must keep copy classes explicit.
+
+- host processes are copied as host runtime artifacts and systemd units
+- infrastructure containers are copied as the kernel container baseline
+- optional pack containers are copied only when the selected pack requires them
+
+The detailed migration matrix lives in `docs/host-first-multinode-migration.md`.
+
 ## Consequences
 
 ### Positive
@@ -61,6 +74,7 @@ Development mode keeps no compatibility wrappers.
 - Product identity, runtime behavior, and documentation all converge on one kernel-first story.
 - The control plane has a clear backend-owned contract spine.
 - Pack and runtime evolution can continue without growing a second product surface.
+- Multi-node migration is described in host-first terms instead of legacy sidecar bundles.
 
 ### Tradeoffs
 

@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",
-    "axios": "^1.6.0",
+    "axios": "^1.15.0",
     "dexie": "^3.2.7",
     "pinia": "^2.1.0",
     "vue": "^3.4.0",

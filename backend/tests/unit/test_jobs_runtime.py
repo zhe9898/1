@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.jobs import (
+from backend.control_plane.adapters.jobs import (
     JobActionRequest,
     JobAttemptResponse,
     JobExplainResponse,
@@ -20,10 +20,10 @@ from backend.api.jobs import (
     report_job_progress,
     retry_job_now,
 )
-from backend.kernel.topology.node_auth import hash_node_token
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.node import Node
+from backend.runtime.topology.node_auth import hash_node_token
 
 
 def _utcnow() -> datetime.datetime:
@@ -221,7 +221,7 @@ async def test_list_job_attempts_returns_newest_first() -> None:
         ]
     )
 
-    response = await list_job_attempts("job-a", current_user={"sub": "admin"}, db=db)
+    response = await list_job_attempts("job-a", current_user={"sub": "admin", "tenant_id": "default"}, db=db)
 
     assert [item.attempt_no for item in response] == [2, 1]
     assert all(isinstance(item, JobAttemptResponse) for item in response)
@@ -306,7 +306,7 @@ async def test_cancel_job_marks_job_cancelled() -> None:
     response = await cancel_job(
         "job-a",
         JobActionRequest(reason="operator canceled"),
-        current_user={"role": "admin"},
+        current_user={"role": "admin", "tenant_id": "default"},
         db=db,
         redis=None,
     )
@@ -328,7 +328,7 @@ async def test_retry_job_now_requeues_terminal_job() -> None:
     response = await retry_job_now(
         "job-a",
         JobActionRequest(reason="manual retry"),
-        current_user={"role": "admin"},
+        current_user={"role": "admin", "tenant_id": "default"},
         db=db,
         redis=None,
     )
@@ -364,7 +364,7 @@ async def test_explain_job_reports_node_blockers() -> None:
         _result_all([]),  # get_all_scheduling_flags (governance context)
     ]
 
-    response = await explain_job("job-a", current_user={"sub": "admin"}, db=db)
+    response = await explain_job("job-a", current_user={"sub": "admin", "tenant_id": "default"}, db=db)
 
     assert isinstance(response, JobExplainResponse)
     assert response.total_nodes == 2

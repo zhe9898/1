@@ -30,7 +30,7 @@ https://{$MACHINE_API_INTERNAL_HOST:caddy} {
 
     handle @sse {
         header X-Accel-Buffering no
-        reverse_proxy gateway:8000
+        reverse_proxy {$GATEWAY_UPSTREAM:gateway:8000}
     }
 
     handle @machine_api_denied {
@@ -38,11 +38,11 @@ https://{$MACHINE_API_INTERNAL_HOST:caddy} {
     }
 
     handle @machine_api {
-        reverse_proxy gateway:8000
+        reverse_proxy {$GATEWAY_UPSTREAM:gateway:8000}
     }
 
     handle /health {
-        reverse_proxy gateway:8000
+        reverse_proxy {$GATEWAY_UPSTREAM:gateway:8000}
     }
 
     handle {

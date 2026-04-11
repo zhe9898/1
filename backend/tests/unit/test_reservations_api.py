@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.api.reservations import (
+from backend.control_plane.adapters.reservations import (
     BackfillWindowResponse,
     ReservationCancelRequest,
     ReservationCreateRequest,
@@ -17,9 +17,9 @@ from backend.api.reservations import (
     get_reservation_stats,
     list_reservations,
 )
-from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager, reset_reservation_manager
 from backend.models.job import Job
 from backend.models.node import Node
+from backend.runtime.scheduling.backfill_scheduling import get_reservation_manager, reset_reservation_manager
 
 
 def _utcnow() -> datetime.datetime:
@@ -199,7 +199,7 @@ async def test_list_and_stats_are_tenant_scoped() -> None:
 
 @pytest.mark.asyncio
 async def test_backfill_window_uses_current_active_leases(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("backend.api.reservations._utcnow", _utcnow)
+    monkeypatch.setattr("backend.control_plane.adapters.reservations._utcnow", _utcnow)
     mgr = get_reservation_manager()
     node = _node(node_id="node-hot")
     leased_job = _job(
@@ -252,7 +252,7 @@ async def test_cancel_rejects_cross_tenant_access() -> None:
 
 @pytest.mark.asyncio
 async def test_create_reservation_uses_current_active_leases(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.api import reservations as reservations_api
+    from backend.control_plane.adapters import reservations as reservations_api
 
     captured: dict[str, int] = {}
     original_builder = reservations_api.build_node_snapshot

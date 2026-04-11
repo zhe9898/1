@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import signal
 from collections.abc import Callable, Coroutine
 
-from backend.api.deps import get_settings
 from backend.background_tasks import bitrot_worker, data_retention_worker, health_probe_worker
+from backend.control_plane.adapters.deps import get_settings
+from backend.platform.events.runtime import connect_event_bus_with_retry, resolve_event_bus_backend, set_runtime_event_bus
 from backend.platform.redis.client import RedisClient
 from backend.platform.redis.runtime import connect_redis_with_retry
 from backend.workers.attempt_expiration_worker import attempt_expiration_worker
@@ -36,11 +38,17 @@ def _worker_factories(worker: str) -> dict[str, WorkerFactory]:
 async def run(worker: str) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [CONTROL-WORKER] %(message)s")
     factories = _worker_factories(worker)
+    settings = get_settings()
     redis_client = None
+    event_bus = None
     if "health-probe" in factories:
-        redis_client = await connect_redis_with_retry(get_settings(), logger=logger)
+        redis_client = await connect_redis_with_retry(settings, logger=logger)
         if redis_client is None:
             logger.warning("Redis unavailable; health-probe worker will run without event publication")
+        event_bus = await connect_event_bus_with_retry(settings, redis=redis_client, logger=logger)
+        set_runtime_event_bus(event_bus)
+        if event_bus is None and resolve_event_bus_backend(settings) == "nats":
+            raise RuntimeError("control-plane worker requires NATS event bus but it is unavailable")
 
     shutdown_event = asyncio.Event()
     original_sigterm = signal.getsignal(signal.SIGTERM)
@@ -75,12 +83,13 @@ async def run(worker: str) -> None:
         for task in tasks.values():
             task.cancel()
         for task in tasks.values():
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
         signal.signal(signal.SIGTERM, original_sigterm)
         signal.signal(signal.SIGINT, original_sigint)
+        if event_bus is not None:
+            await event_bus.close()
+        set_runtime_event_bus(None)
         if redis_client is not None:
             await redis_client.close()
 

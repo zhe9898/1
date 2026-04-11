@@ -1,51 +1,32 @@
 """
-ZEN70 OpenAPI Surface Freeze Tool (ADR-0047 WP-P2a).
+ZEN70 OpenAPI surface snapshot tool (ADR-0047 WP-P2a).
 
 Freeze scope
 ------------
-Path presence AND HTTP methods are frozen for all ``/api/`` routes.
-Out of scope (not checked here): request/response schemas, path parameter
-types, response codes, and auth semantics.  Those are covered by Pydantic
-model tests and mypy.
+Path presence and HTTP methods are frozen for all public ``/api/`` routes.
+Out of scope: schemas, response bodies, status codes, and auth semantics.
 
 Surface collection
 ------------------
-All routes whose path starts with ``/api/`` are automatically collected —
-no manual prefix allowlist is required.  Adding a new router under
-``/api/`` is sufficient; the next ``--init`` run will capture it.
+All routes whose path starts with ``/api/`` are discovered automatically. No
+manual router allowlist is required for collection.
 
-Backward compatibility
-----------------------
-Snapshots produced by earlier versions contain only a ``"paths"`` list.
-When loading such a snapshot the tool skips HTTP-method checking (path
-presence is still enforced) so existing CI gates continue to pass until
-``--init`` is re-run to upgrade the snapshot to the new format.
-
-Update protocol
----------------
-After any deliberate surface change (add/remove route or change methods):
-  1. Run:    python scripts/freeze_openapi.py --init
+Canonical workflow
+------------------
+After a deliberate API surface change:
+  1. Run:    python scripts/generate_contracts.py
   2. Commit: docs/api/openapi_locked.json together with the router change
 
 Usage
 -----
-  # Generate / refresh baseline snapshot (commit the result):
-  python scripts/freeze_openapi.py --init
+  # Generate / refresh the committed snapshot directly:
+  python scripts/freeze_openapi.py --sync
 
-  # Also write dist/openapi_v3.43.json for CI / docs pipeline:
-  python scripts/freeze_openapi.py --init --export-dist
+  # Also write dist/openapi_v3.43.json for tooling pipelines:
+  python scripts/freeze_openapi.py --sync --export-dist
 
-  # Verify surface matches snapshot (used by release gate):
+  # Verify surface matches the committed snapshot:
   python scripts/freeze_openapi.py --check
-
-  # Silent mode for CI:
-  python scripts/freeze_openapi.py --check --quiet
-
-Exit codes
-----------
-  0 -- surface matches snapshot, or --init succeeded
-  1 -- surface has drifted from locked contract
-  2 -- backend deps unavailable (check could not run; treat as failure)
 """
 
 from __future__ import annotations
@@ -58,80 +39,33 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCKED_SNAPSHOT = PROJECT_ROOT / "docs" / "api" / "openapi_locked.json"
 DIST_SNAPSHOT = PROJECT_ROOT / "dist" / "openapi_v3.43.json"
+_API_PATH_PREFIX = "/api/"
 
-# ── API path prefix for automatic surface collection ──────────────────────────
-#
-# All routes whose path starts with this prefix are collected automatically.
-# No manual per-router registration is needed — adding a new router under
-# /api/ is sufficient; the next --init run will capture it.
-#
-# Freeze boundary: path presence AND HTTP methods.
-# Schemas, responses, and auth semantics are out of scope.
-_API_PATH_PREFIX: str = "/api/"
-
-# Legacy reference list (no longer used for filtering; kept as documentation).
-# Previously this had to be manually updated for each new router — that
-# requirement is now removed.
-CONTROL_PLANE_PREFIX_ALLOWLIST: tuple[str, ...] = (
-    "/api/v1/capabilities",  # capability matrix
-    "/api/v1/switches",  # soft switches
-    "/api/v1/events",  # SSE event stream
-    "/api/v1/nodes",  # node management
-    "/api/v1/jobs",  # job scheduling
-    "/api/v1/connectors",  # connectors
-    "/api/v1/console",  # console
-    "/api/v1/workflows",  # workflows
-    "/api/v1/alerts",  # alerts
-    "/api/v1/audit-logs",  # audit logs
-    "/api/v1/cluster",  # cluster management
-)
-
-# Exact-match exclusions (internal / debug routes, never part of contract)
 _EXCLUDE_EXACT: frozenset[str] = frozenset(
     {
         "/",
         "/health",
         "/docs",
         "/redoc",
+        "/api/docs",
+        "/api/redoc",
         "/openapi.json",
     }
 )
 
-
-# Surface type: maps each path to its sorted list of HTTP methods.
 _SurfaceMap = dict[str, list[str]]
-
-# Locked snapshot type: same as _SurfaceMap except legacy entries (loaded from
-# old snapshots that had no method info) are mapped to ``None`` as an explicit
-# sentinel meaning "method check not available for this path".  Callers must
-# test ``is None`` before accessing the method list.
-_LockedMap = dict[str, "list[str] | None"]
+_LockedMap = dict[str, list[str]]
 
 
 def _collect_surface() -> _SurfaceMap:
-    """Import the FastAPI app and collect the API path+method surface.
-
-    All routes whose path starts with ``_API_PATH_PREFIX`` (``/api/``) are
-    collected — no allowlist filtering is applied, so newly added routers
-    are captured automatically without any manual registration step.
-
-    Frozen dimensions: path presence AND HTTP methods.
-    """
     sys.path.insert(0, str(PROJECT_ROOT))
     try:
-        from backend.api.main import app  # type: ignore[import]
+        from backend.control_plane.app.entrypoint import app  # type: ignore[import]
     except ImportError as exc:
-        # Dependencies not installed (e.g. bare CI env without venv).
-        # Raise so the caller can decide whether to hard-fail or skip gracefully.
         raise ImportError(
             f"[freeze_openapi] Cannot import FastAPI app: {exc}. "
-            "Install backend deps (pip install -r backend/requirements.txt) "
-            "or run with ZEN70_SKIP_RELEASE_GATE=1 for local debugging only."
+            "Install backend deps (pip install -r backend/requirements.txt)."
         ) from exc
-    except Exception as exc:
-        # Non-import runtime error — always hard fail.
-        print(f"[freeze_openapi] ERROR: App import raised unexpected error: {exc}", file=sys.stderr)
-        sys.exit(1)
 
     surface: _SurfaceMap = {}
     for route in app.routes:
@@ -143,7 +77,6 @@ def _collect_surface() -> _SurfaceMap:
         if not path.startswith(_API_PATH_PREFIX):
             continue
         methods = sorted(getattr(route, "methods", None) or [])
-        # Merge methods if the same path is registered multiple times.
         existing = surface.get(path)
         if existing is None:
             surface[path] = methods
@@ -153,80 +86,81 @@ def _collect_surface() -> _SurfaceMap:
 
 
 def _load_locked() -> _LockedMap | None:
-    """Load the committed path+method surface snapshot.
-
-    Returns ``None`` if the snapshot file is missing.
-
-    Backward compatibility: snapshots produced by earlier versions contain
-    only a ``"paths"`` list without method information.  In that case each
-    path is mapped to ``None`` as an explicit sentinel meaning "method check
-    not available for this path" — callers must test ``is None`` before
-    comparing method lists, and must skip method comparison for those entries.
-    """
     if not LOCKED_SNAPSHOT.exists():
         return None
     data = json.loads(LOCKED_SNAPSHOT.read_text(encoding="utf-8"))
-    if "path_methods" in data:
-        # New format: full method checking.
-        return {path: sorted(methods) for path, methods in data["path_methods"].items()}
-    # Old format (paths list only): use None sentinel so callers unambiguously
-    # distinguish "no method info" from "empty method list".
-    return {path: None for path in data.get("paths", [])}
+    path_methods = data.get("path_methods")
+    if not isinstance(path_methods, dict):
+        raise ValueError(
+            "Locked snapshot is missing the required 'path_methods' mapping. "
+            "Re-run: python scripts/generate_contracts.py"
+        )
+
+    locked: _LockedMap = {}
+    for path, methods in path_methods.items():
+        if not isinstance(path, str) or not isinstance(methods, list) or not all(isinstance(method, str) for method in methods):
+            raise ValueError(
+                "Locked snapshot contains invalid path_methods entries. "
+                "Re-run: python scripts/generate_contracts.py"
+            )
+        locked[path] = sorted(method.upper() for method in methods)
+    return locked
 
 
-def _build_snapshot_dict(surface: _SurfaceMap) -> dict:
+def _build_snapshot_dict(surface: _SurfaceMap) -> dict[str, object]:
+    sorted_surface = {path: methods for path, methods in sorted(surface.items())}
     return {
         "version": "v3.43",
         "freeze_scope": "path-and-method-surface",
-        "freeze_boundary": ("Path presence and HTTP methods are frozen. " "Schemas, responses, and auth semantics are out of scope."),
-        "description": ("ZEN70 v3.43 API path+method surface locked by ADR-0047. " "Do not edit manually. Re-run --init after deliberate surface changes."),
-        # path_methods is the authoritative field for the new format.
-        "path_methods": {path: methods for path, methods in sorted(surface.items())},
-        # paths is kept for tooling that reads the legacy format.
-        "paths": sorted(surface.keys()),
+        "freeze_boundary": "Path presence and HTTP methods are frozen. Schemas, responses, and auth semantics are out of scope.",
+        "description": "ZEN70 v3.43 API path+method surface locked by ADR-0047. Do not edit manually. Re-run generate_contracts.py after deliberate surface changes.",
+        "path_methods": sorted_surface,
+        "paths": sorted(sorted_surface.keys()),
     }
 
 
 def _save_snapshot(surface: _SurfaceMap, *, export_dist: bool = False) -> None:
-    """Write path+method surface snapshot to docs/api/openapi_locked.json.
-    When export_dist=True, also overwrite dist/openapi_v3.43.json (idempotent).
-    """
     payload = _build_snapshot_dict(surface)
     text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-
     LOCKED_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
     LOCKED_SNAPSHOT.write_text(text, encoding="utf-8")
-
     if export_dist:
-        # Always overwrite — dist output is a build artifact, never source of truth
         DIST_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
         DIST_SNAPSHOT.write_text(text, encoding="utf-8")
 
 
-def cmd_init(*, quiet: bool = False, export_dist: bool = False) -> int:
-    """--init: Capture current path+method surface and save as baseline snapshot."""
-    try:
-        surface = _collect_surface()
-    except ImportError as exc:
-        print(f"[freeze_openapi] SKIP --init: {exc}", file=sys.stderr)
-        print("  Surface snapshot NOT updated.", file=sys.stderr)
-        return 2  # Distinct exit code: deps unavailable (not a drift error)
+def sync_locked_snapshot(*, quiet: bool = False, export_dist: bool = False) -> _SurfaceMap:
+    surface = _collect_surface()
     _save_snapshot(surface, export_dist=export_dist)
     if not quiet:
-        print(f"[freeze_openapi] Initialized snapshot: {LOCKED_SNAPSHOT}")
+        print(f"[freeze_openapi] Synchronized snapshot: {LOCKED_SNAPSHOT}")
         print(f"  Captured {len(surface)} paths with HTTP methods.")
         if export_dist:
             print(f"  Exported (overwritten): {DIST_SNAPSHOT}")
-        print("  Next: git add docs/api/openapi_locked.json && git commit")
+    return surface
+
+
+def cmd_sync(*, quiet: bool = False, export_dist: bool = False) -> int:
+    try:
+        sync_locked_snapshot(quiet=quiet, export_dist=export_dist)
+    except ImportError as exc:
+        print(f"[freeze_openapi] SKIP --sync: {exc}", file=sys.stderr)
+        print("  Surface snapshot NOT updated.", file=sys.stderr)
+        return 2
     return 0
 
 
 def cmd_check(*, quiet: bool = False, export_dist: bool = False) -> int:
-    """--check: Compare current path+method surface against locked snapshot."""
-    locked = _load_locked()
+    try:
+        locked = _load_locked()
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"[freeze_openapi] ERROR: Locked snapshot is invalid: {exc}", file=sys.stderr)
+        return 1
     if locked is None:
         print(
-            "[freeze_openapi] ERROR: No locked snapshot found at:\n" f"  {LOCKED_SNAPSHOT}\n" "  Run: python scripts/freeze_openapi.py --init",
+            "[freeze_openapi] ERROR: No locked snapshot found at:\n"
+            f"  {LOCKED_SNAPSHOT}\n"
+            "  Run: python scripts/generate_contracts.py",
             file=sys.stderr,
         )
         return 1
@@ -234,20 +168,9 @@ def cmd_check(*, quiet: bool = False, export_dist: bool = False) -> int:
     try:
         actual = _collect_surface()
     except ImportError as exc:
-        # FIX: was return 0 — silently skipping verification defeats the gate.
-        # Return exit code 2 so CI fails when deps are not installed.
-        print(
-            f"[freeze_openapi] ERROR: --check cannot run — deps unavailable: {exc}",
-            file=sys.stderr,
-        )
-        print(
-            "  Install backend deps (pip install -r backend/requirements.txt) to enable Gate 4.\n"
-            "  Exit code 2 signals a verification failure distinct from surface drift (exit 1).",
-            file=sys.stderr,
-        )
-        return 2  # Deps unavailable → treat as gate failure, not silent success
+        print(f"[freeze_openapi] ERROR: --check cannot run because deps are unavailable: {exc}", file=sys.stderr)
+        return 2
 
-    # Optional export — always overwrite, independent of check result
     if export_dist:
         _save_snapshot(actual, export_dist=True)
         if not quiet:
@@ -258,42 +181,34 @@ def cmd_check(*, quiet: bool = False, export_dist: bool = False) -> int:
     added_paths = actual_paths - locked_paths
     removed_paths = locked_paths - actual_paths
 
-    # ── Method drift (only for paths present in both snapshots) ──────────────
-    # Paths where the locked snapshot has None were stored by an older version
-    # of the tool that did not capture methods — skip method check there.
     method_drift: dict[str, tuple[list[str], list[str]]] = {}
     for path in locked_paths & actual_paths:
         locked_methods = locked[path]
-        if locked_methods is None:
-            # Old snapshot format (no method info) → skip to preserve CI stability
-            # until --init is re-run to upgrade the snapshot.
-            continue
         actual_methods = actual.get(path, [])
         if sorted(locked_methods) != sorted(actual_methods):
             method_drift[path] = (sorted(locked_methods), sorted(actual_methods))
 
     if not added_paths and not removed_paths and not method_drift:
         if not quiet:
-            method_note = "path+method" if any(v is not None for v in locked.values()) else "path-only (re-run --init to enable method checking)"
-            print(f"[freeze_openapi] Surface unchanged " f"({len(actual)} paths match locked contract; frozen: {method_note})")
+            print(f"[freeze_openapi] Surface unchanged ({len(actual)} paths match locked contract)")
         return 0
 
-    print("[freeze_openapi] API surface has drifted from locked contract!", file=sys.stderr)
+    print("[freeze_openapi] API surface has drifted from the locked contract!", file=sys.stderr)
     if added_paths:
-        print(f"  Added paths ({len(added_paths)} — run --init if intentional):", file=sys.stderr)
-        for p in sorted(added_paths):
-            print(f"    + {p}", file=sys.stderr)
+        print(f"  Added paths ({len(added_paths)}):", file=sys.stderr)
+        for path in sorted(added_paths):
+            print(f"    + {path}", file=sys.stderr)
     if removed_paths:
-        print(f"  Removed paths ({len(removed_paths)} — breaking change or update contract):", file=sys.stderr)
-        for p in sorted(removed_paths):
-            print(f"    - {p}", file=sys.stderr)
+        print(f"  Removed paths ({len(removed_paths)}):", file=sys.stderr)
+        for path in sorted(removed_paths):
+            print(f"    - {path}", file=sys.stderr)
     if method_drift:
-        print(f"  Method changes ({len(method_drift)} paths — potentially breaking):", file=sys.stderr)
-        for p, (locked_m, actual_m) in sorted(method_drift.items()):
-            print(f"    {p}: locked={locked_m} actual={actual_m}", file=sys.stderr)
+        print(f"  Method changes ({len(method_drift)} paths):", file=sys.stderr)
+        for path, (locked_methods, actual_methods) in sorted(method_drift.items()):
+            print(f"    {path}: locked={locked_methods} actual={actual_methods}", file=sys.stderr)
     print(
         "\n  To update after a deliberate surface change:\n"
-        "    python scripts/freeze_openapi.py --init\n"
+        "    python scripts/generate_contracts.py\n"
         "    git add docs/api/openapi_locked.json && git commit",
         file=sys.stderr,
     )
@@ -302,23 +217,22 @@ def cmd_check(*, quiet: bool = False, export_dist: bool = False) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=("ZEN70 OpenAPI path+method surface freeze tool (ADR-0047). " "Frozen dimensions: path presence and HTTP methods."),
+        description="ZEN70 OpenAPI path+method surface snapshot tool (ADR-0047).",
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--init", action="store_true", help="Capture and save baseline path-surface snapshot")
-    group.add_argument("--check", action="store_true", help="Verify current path surface matches snapshot")
+    group.add_argument("--sync", action="store_true", help="Capture and save the current path-surface snapshot")
+    group.add_argument("--check", action="store_true", help="Verify current path surface matches the snapshot")
     parser.add_argument("--quiet", action="store_true", help="Suppress informational output")
     parser.add_argument(
         "--export-dist",
         action="store_true",
-        help="Overwrite dist/openapi_v3.43.json with current surface (idempotent)",
+        help="Overwrite dist/openapi_v3.43.json with the current surface",
     )
     args = parser.parse_args()
 
-    if args.init:
-        sys.exit(cmd_init(quiet=args.quiet, export_dist=args.export_dist))
-    else:
-        sys.exit(cmd_check(quiet=args.quiet, export_dist=args.export_dist))
+    if args.sync:
+        raise SystemExit(cmd_sync(quiet=args.quiet, export_dist=args.export_dist))
+    raise SystemExit(cmd_check(quiet=args.quiet, export_dist=args.export_dist))
 
 
 if __name__ == "__main__":

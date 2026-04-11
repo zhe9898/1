@@ -44,7 +44,7 @@ def _utcnow() -> datetime.datetime:
 
 
 def _make_node_snapshot(**overrides):
-    from backend.kernel.scheduling.job_scheduler import SchedulerNodeSnapshot
+    from backend.runtime.scheduling.job_scheduler import SchedulerNodeSnapshot
 
     defaults = dict(
         node_id="node-1",
@@ -565,7 +565,7 @@ class TestScoringIntegration:
         mod._store = PolicyStore()
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.kernel.scheduling.job_scoring import score_job_for_node
+        from backend.runtime.scheduling.job_scoring import score_job_for_node
 
         job = _make_job(**job_overrides)
         node = _make_node_snapshot()
@@ -599,7 +599,7 @@ class TestScoringIntegration:
         policy = SchedulingPolicy(scoring=ScoringWeights(zone_match_bonus=25))
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.kernel.scheduling.job_scoring import score_job_for_node
+        from backend.runtime.scheduling.job_scoring import score_job_for_node
 
         job = _make_job(target_zone="zone-a")
         node = _make_node_snapshot(zone="zone-a")
@@ -627,7 +627,7 @@ class TestFreshnessIntegration:
         )
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.kernel.scheduling.job_scoring import _freshness_penalty
+        from backend.runtime.scheduling.job_scoring import _freshness_penalty
 
         now = _utcnow()
         node = _make_node_snapshot(last_seen_at=now - datetime.timedelta(seconds=50))
@@ -647,7 +647,7 @@ class TestRetryIntegration:
         )
         mod._store.apply(policy, operator="test", reason="test")
 
-        from backend.kernel.execution.failure_taxonomy import (
+        from backend.runtime.execution.failure_taxonomy import (
             FailureCategory,
             calculate_retry_delay_seconds,
         )
@@ -657,7 +657,7 @@ class TestRetryIntegration:
 
     def test_retry_delay_explicit_override_wins(self):
         """Explicit base_delay= kwarg overrides policy store."""
-        from backend.kernel.execution.failure_taxonomy import (
+        from backend.runtime.execution.failure_taxonomy import (
             FailureCategory,
             calculate_retry_delay_seconds,
         )
@@ -675,7 +675,7 @@ class TestResilienceIntegration:
     def test_admission_reads_policy(self):
         """AdmissionController._resolve_max_pending reads from policy store."""
         import backend.kernel.policy.policy_store as mod
-        from backend.kernel.scheduling.scheduling_resilience import AdmissionController
+        from backend.runtime.scheduling.scheduling_resilience import AdmissionController
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
@@ -691,7 +691,7 @@ class TestResilienceIntegration:
     def test_backoff_reads_policy(self):
         """SchedulingBackoff._resolve reads from policy store."""
         import backend.kernel.policy.policy_store as mod
-        from backend.kernel.scheduling.scheduling_resilience import SchedulingBackoff
+        from backend.runtime.scheduling.scheduling_resilience import SchedulingBackoff
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
@@ -711,7 +711,7 @@ class TestResilienceIntegration:
     def test_preemption_reads_policy(self):
         """PreemptionBudgetPolicy._resolve_limits reads from policy store."""
         import backend.kernel.policy.policy_store as mod
-        from backend.kernel.scheduling.scheduling_resilience import PreemptionBudgetPolicy
+        from backend.runtime.scheduling.scheduling_resilience import PreemptionBudgetPolicy
 
         mod._store = PolicyStore()
         policy = SchedulingPolicy(
@@ -734,7 +734,7 @@ class TestResilienceIntegration:
 
 class TestGovernanceFacadeProxy:
     def test_policy_snapshot(self):
-        from backend.kernel.scheduling.governance_facade import get_governance_facade
+        from backend.runtime.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         snap = facade.policy_snapshot()
@@ -742,7 +742,7 @@ class TestGovernanceFacadeProxy:
         assert "active_policy" in snap
 
     def test_apply_and_rollback(self):
-        from backend.kernel.scheduling.governance_facade import get_governance_facade
+        from backend.runtime.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         policy = SchedulingPolicy(default_strategy="binpack")
@@ -753,7 +753,7 @@ class TestGovernanceFacadeProxy:
         assert facade.active_policy.default_strategy == "spread"
 
     def test_freeze_unfreeze(self):
-        from backend.kernel.scheduling.governance_facade import get_governance_facade
+        from backend.runtime.scheduling.governance_facade import get_governance_facade
 
         facade = get_governance_facade()
         facade.freeze_policy(reason="deploy")

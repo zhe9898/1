@@ -76,6 +76,7 @@ jobs:
           from pathlib import Path
           import re
           import yaml
+          from scripts.iac_core.profiles import HOST_FIRST_DEPLOYMENT_MODEL
 
           system_yaml = Path("system.yaml").read_text(encoding="utf-8")
           floating_suffix = ":lat" "est"
@@ -119,14 +120,34 @@ jobs:
               raise SystemExit("FATAL: render-manifest profile drifted from system.yaml deployment.profile")
           if manifest.get("requested_packs") != deployment.get("packs", []):
               raise SystemExit("FATAL: render-manifest requested_packs drifted from system.yaml deployment.packs")
+          if manifest.get("deployment_model") != HOST_FIRST_DEPLOYMENT_MODEL:
+              raise SystemExit(
+                  f"FATAL: render-manifest deployment_model must be {HOST_FIRST_DEPLOYMENT_MODEL} "
+                  f"({manifest.get('deployment_model')})"
+              )
 
           compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
           compose_services = sorted((compose.get("services") or {}).keys())
-          manifest_services = sorted(manifest.get("services_rendered") or [])
+          manifest_services = sorted(manifest.get("container_services_rendered") or [])
+          infrastructure_containers = sorted(manifest.get("infrastructure_containers_rendered") or [])
+          optional_pack_containers = sorted(manifest.get("optional_pack_containers_rendered") or [])
+          host_processes = sorted(manifest.get("host_processes_rendered") or [])
+          runtime_services = sorted(manifest.get("runtime_services_rendered") or [])
+          migration_copy_plan = manifest.get("migration_copy_plan") or {}
           if compose_services != manifest_services:
               raise SystemExit(
                   f"FATAL: docker-compose services drifted from render-manifest ({compose_services} != {manifest_services})"
               )
+          if sorted(infrastructure_containers + optional_pack_containers) != manifest_services:
+              raise SystemExit("FATAL: render-manifest container copy classes drifted from container_services_rendered")
+          if sorted(set(manifest_services) | set(host_processes)) != runtime_services:
+              raise SystemExit("FATAL: render-manifest runtime_services_rendered drifted from host/container union")
+          if sorted(migration_copy_plan.get("host_processes") or []) != host_processes:
+              raise SystemExit("FATAL: render-manifest migration_copy_plan.host_processes drifted")
+          if sorted(migration_copy_plan.get("infrastructure_containers") or []) != infrastructure_containers:
+              raise SystemExit("FATAL: render-manifest migration_copy_plan.infrastructure_containers drifted")
+          if sorted(migration_copy_plan.get("optional_pack_containers") or []) != optional_pack_containers:
+              raise SystemExit("FATAL: render-manifest migration_copy_plan.optional_pack_containers drifted")
 
           docs_openapi = json.loads(Path("docs/openapi-kernel.json").read_text(encoding="utf-8"))
           contract_openapi = json.loads(Path("contracts/openapi/zen70-gateway-kernel.openapi.json").read_text(encoding="utf-8"))

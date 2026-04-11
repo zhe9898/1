@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from backend.control_plane.auth.role_claims import (
+from backend.kernel.contracts.role_claims import (
     current_user_role,
     is_child_role_value,
     is_elder_role_value,

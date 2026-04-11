@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from backend.kernel.policy.policy_store import PolicyStore, get_policy_store
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
-from backend.kernel.topology.profile_selection import get_enabled_router_names, resolve_runtime_pack_keys
+from backend.runtime.topology.profile_selection import get_enabled_router_names, resolve_runtime_pack_keys
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +68,7 @@ def export_runtime_policy_contract() -> dict[str, object]:
         "entrypoint": "backend.kernel.policy.runtime_policy_resolver.RuntimePolicyResolver",
         "policy_store_entrypoint": "backend.kernel.policy.policy_store.get_policy_store",
         "profile_normalizer": "backend.kernel.profiles.public_profile.normalize_gateway_profile",
-        "runtime_pack_resolver": "backend.kernel.topology.profile_selection.resolve_runtime_pack_keys",
+        "runtime_pack_resolver": "backend.runtime.topology.profile_selection.resolve_runtime_pack_keys",
         "router_gate_method": "router_enabled",
         "snapshot_method": "snapshot",
     }

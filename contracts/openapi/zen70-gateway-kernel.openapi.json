@@ -295,7 +295,7 @@
           "auth"
         ],
         "summary": "Sys Status",
-        "description": "Sanitized legacy docstring.",
+        "description": "Report whether the system has already been bootstrapped.",
         "operationId": "sys_status_api_v1_auth_sys_status_get",
         "responses": {
           "200": {
@@ -321,7 +321,7 @@
           "auth"
         ],
         "summary": "Bootstrap",
-        "description": "Sanitized legacy docstring.",
+        "description": "Create the first admin account when the system is still empty.",
         "operationId": "bootstrap_api_v1_auth_bootstrap_post",
         "requestBody": {
           "content": {
@@ -363,7 +363,7 @@
           "auth"
         ],
         "summary": "Password Login",
-        "description": "Sanitized legacy docstring.",
+        "description": "Authenticate a user with username/password and issue a session token.",
         "operationId": "password_login_api_v1_auth_password_login_post",
         "requestBody": {
           "content": {
@@ -624,7 +624,7 @@
           "auth"
         ],
         "summary": "Pin Set",
-        "description": "Sanitized legacy docstring.",
+        "description": "Set or rotate the current user's PIN after validating ownership.",
         "operationId": "pin_set_api_v1_auth_pin_set_post",
         "requestBody": {
           "content": {
@@ -10075,6 +10075,13 @@
             },
             "type": "array",
             "title": "Target Executors"
+          },
+          "target_executor_contracts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Executor Contracts"
           }
         },
         "type": "object",
@@ -12757,6 +12764,19 @@
             "title": "Executor",
             "default": "unknown"
           },
+          "executor_contract": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Contract"
+          },
           "os": {
             "type": "string",
             "maxLength": 64,
@@ -13033,6 +13053,19 @@
             "minLength": 1,
             "title": "Executor",
             "default": "unknown"
+          },
+          "executor_contract": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Contract"
           },
           "os": {
             "type": "string",
@@ -13335,6 +13368,19 @@
             "title": "Executor",
             "default": "unknown"
           },
+          "executor_contract": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Contract"
+          },
           "os": {
             "type": "string",
             "maxLength": 64,
@@ -13572,6 +13618,17 @@
             "type": "string",
             "title": "Executor"
           },
+          "executor_contract": {
+            "type": "string",
+            "title": "Executor Contract"
+          },
+          "supported_workload_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Workload Kinds"
+          },
           "os": {
             "type": "string",
             "title": "Os"
@@ -13736,6 +13793,8 @@
           "address",
           "profile",
           "executor",
+          "executor_contract",
+          "supported_workload_kinds",
           "os",
           "arch",
           "zone",
@@ -13917,8 +13976,7 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "Tenant ID",
-            "default": "default"
+            "description": "Tenant ID"
           },
           "username": {
             "type": "string",
@@ -13936,6 +13994,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username",
           "password"
         ],
@@ -14088,8 +14147,7 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Tenant Id",
-            "description": "Tenant ID",
-            "default": "default"
+            "description": "Tenant ID"
           },
           "username": {
             "anyOf": [
@@ -14107,7 +14165,8 @@
         },
         "type": "object",
         "required": [
-          "pin"
+          "pin",
+          "tenant_id"
         ],
         "title": "PinLoginRequest"
       },
@@ -15937,8 +15996,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Tenant Id",
-            "default": "default"
+            "title": "Tenant Id"
           },
           "username": {
             "type": "string",
@@ -15949,6 +16007,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username"
         ],
         "title": "WebAuthnLoginBeginRequest"
@@ -15974,8 +16033,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Tenant Id",
-            "default": "default"
+            "title": "Tenant Id"
           },
           "username": {
             "type": "string",
@@ -15992,6 +16050,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username",
           "credential"
         ],
@@ -16003,8 +16062,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Tenant Id",
-            "default": "default"
+            "title": "Tenant Id"
           },
           "username": {
             "type": "string",
@@ -16021,6 +16079,7 @@
         },
         "type": "object",
         "required": [
+          "tenant_id",
           "username"
         ],
         "title": "WebAuthnRegisterBeginRequest"

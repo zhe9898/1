@@ -3,10 +3,10 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock
 
-from backend.kernel.scheduling.backfill_scheduling import get_reservation_manager, reset_reservation_manager
-from backend.kernel.scheduling.job_scheduler import PlacementSolver, build_node_snapshot, build_time_budgeted_placement_plan, select_jobs_for_node
 from backend.models.job import Job
 from backend.models.node import Node
+from backend.runtime.scheduling.backfill_scheduling import get_reservation_manager, reset_reservation_manager
+from backend.runtime.scheduling.job_scheduler import PlacementSolver, build_node_snapshot, build_time_budgeted_placement_plan, select_jobs_for_node
 
 
 def _utcnow() -> datetime.datetime:
@@ -389,9 +389,9 @@ def test_build_time_budgeted_placement_plan_skips_oversized_windows(monkeypatch)
         def solve(self, *args, **kwargs):
             raise AssertionError("solver should not run when the candidate window exceeds the budget")
 
-    monkeypatch.setattr("backend.kernel.scheduling.job_scheduler.get_placement_solver", lambda: _GuardSolver())
+    monkeypatch.setattr("backend.runtime.scheduling.placement_solver.get_placement_solver", lambda: _GuardSolver())
     monkeypatch.setattr(
-        "backend.kernel.scheduling.job_scheduler._get_solver_config",
+        "backend.runtime.scheduling.placement_solver._get_solver_config",
         lambda: SolverConfig(max_jobs_per_dispatch=1),
     )
 
@@ -440,7 +440,7 @@ def test_build_time_budgeted_placement_plan_exposes_solver_timeout(monkeypatch) 
             metrics["result"] = "time_budget_exceeded"
             return {}
 
-    monkeypatch.setattr("backend.kernel.scheduling.job_scheduler.get_placement_solver", lambda: _TimeoutSolver())
+    monkeypatch.setattr("backend.runtime.scheduling.placement_solver.get_placement_solver", lambda: _TimeoutSolver())
 
     context: dict[str, object] = {}
     plan = build_time_budgeted_placement_plan(

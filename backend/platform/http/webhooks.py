@@ -69,9 +69,10 @@ def post_public_webhook(
         logger.error("%s_invalid_webhook_url: %s", context, exc)
         return False
     try:
-        httpx.post(normalized_url, json=dict(payload), timeout=timeout)
+        response = httpx.post(normalized_url, json=dict(payload), timeout=timeout)
+        response.raise_for_status()
         return True
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+    except (httpx.HTTPError, OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         logger.error("%s_webhook_delivery_failed: %s", context, exc)
         return False
 
@@ -92,8 +93,9 @@ async def post_public_webhook_async(
         return False
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            await client.post(normalized_url, json=dict(payload), headers=dict(headers or {}))
+            response = await client.post(normalized_url, json=dict(payload), headers=dict(headers or {}))
+            response.raise_for_status()
         return True
-    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+    except (httpx.HTTPError, OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         logger.error("%s_webhook_delivery_failed: %s", context, exc)
         return False

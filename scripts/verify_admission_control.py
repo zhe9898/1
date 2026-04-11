@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.kernel.packs.registry import PACK_DEFINITIONS
-from backend.kernel.topology.profile_selection import CORE_ROUTER_NAMES, OPTIONAL_ROUTER_NAMES
+from backend.runtime.topology.profile_selection import CORE_ROUTER_NAMES, OPTIONAL_ROUTER_NAMES
 
 
 def verify_admission_control() -> bool:
@@ -55,12 +55,12 @@ def verify_admission_control() -> bool:
     print(f"[OK] Optional routers correct: {len(actual_optional)} routers")
     print()
 
-    print("3. Kernel Admission Whitelist (main.py)")
+    print("3. Kernel Admission Whitelist (router_admission.py)")
     print("-" * 80)
     try:
-        from backend.api.main import KERNEL_ALLOWED_OPTIONAL_ROUTERS, OPTIONAL_ROUTER_MODULES
+        from backend.control_plane.app.router_admission import KERNEL_ALLOWED_OPTIONAL_ROUTERS, OPTIONAL_ROUTER_MODULES
     except ImportError as exc:
-        print(f"[FAIL] Failed to import from main.py: {exc}")
+        print(f"[FAIL] Failed to import from router_admission.py: {exc}")
         return False
 
     if KERNEL_ALLOWED_OPTIONAL_ROUTERS != expected_optional:

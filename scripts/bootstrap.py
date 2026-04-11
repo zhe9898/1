@@ -26,6 +26,7 @@ from deploy_utils import project_root as _root
 from deploy_utils import resolve_name_conflict as _resolve_name_conflict
 from deploy_utils import scripts_dir as _scripts_dir
 from deploy_utils import start_host_services
+from host_runtime_assets import prepare_host_runtime_assets
 
 # Docker SDK：用于 daemon 检查、版本检查与更精确的异常类型（文档 1.1 建议）
 try:
@@ -1414,6 +1415,7 @@ def main() -> None:
     # 4. 执行编译
     _phase_log(PHASE_COMPILE, "starting")
     run_compiler(root, config_path, output_dir)
+    prepare_host_runtime_assets(config_path, output_dir, project_root=root)
     _phase_log(PHASE_COMPILE, "done")
 
     # 4.5 前端构建（法典 §1.2 协议驱动 UI — IaC 唯一事实来源）

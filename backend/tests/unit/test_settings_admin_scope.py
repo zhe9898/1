@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from backend.api.settings import list_config, list_flags, system_info
+from backend.control_plane.adapters.settings import list_config, list_flags, system_info
 from backend.models.feature_flag import FeatureFlag
 
 
@@ -16,7 +16,7 @@ async def test_settings_list_config_allows_superadmin() -> None:
     scalar_result.all.return_value = []
     session.execute.return_value = MagicMock(scalars=MagicMock(return_value=scalar_result))
 
-    with patch("backend.api.settings._ensure_defaults", new=AsyncMock(return_value=session)):
+    with patch("backend.control_plane.adapters.settings._ensure_defaults", new=AsyncMock(return_value=session)):
         response = await list_config(
             db=AsyncMock(),
             current_user={"sub": "1", "role": "superadmin", "tenant_id": "default"},
@@ -44,7 +44,7 @@ async def test_settings_list_flags_shows_disabled_flags_to_superadmin() -> None:
     scalar_result.all.return_value = [disabled_flag]
     session.execute.return_value = MagicMock(scalars=MagicMock(return_value=scalar_result))
 
-    with patch("backend.api.settings._ensure_defaults", new=AsyncMock(return_value=session)):
+    with patch("backend.control_plane.adapters.settings._ensure_defaults", new=AsyncMock(return_value=session)):
         response = await list_flags(
             db=AsyncMock(),
             current_user={"sub": "1", "role": "superadmin", "tenant_id": "default"},
@@ -66,9 +66,9 @@ async def test_system_info_uses_shared_runtime_version_source() -> None:
     provider_registry.health_all = AsyncMock(return_value={})
 
     with (
-        patch("backend.api.settings._ensure_defaults", new=AsyncMock(return_value=session)),
-        patch("backend.api.settings.get_model_registry", return_value=provider_registry),
-        patch("backend.api.settings.get_runtime_version", return_value="3.41.0"),
+        patch("backend.control_plane.adapters.settings._ensure_defaults", new=AsyncMock(return_value=session)),
+        patch("backend.control_plane.adapters.settings.get_model_registry", return_value=provider_registry),
+        patch("backend.control_plane.adapters.settings.get_runtime_version", return_value="3.41.0"),
     ):
         response = await system_info(
             db=AsyncMock(),

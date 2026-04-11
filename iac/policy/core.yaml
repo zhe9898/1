@@ -61,7 +61,7 @@ rules:
     tier: 2
     description: "核心服务 oom_score_adj == -999（法典 §3.3, 编译器兜底注入）"
     selector:
-      service_names: [gateway, redis, sentinel, watchdog, docker-proxy]
+      service_names: [gateway, redis, watchdog, docker-proxy]
     assert:
       oom_score_adj: -999
     severity: warn

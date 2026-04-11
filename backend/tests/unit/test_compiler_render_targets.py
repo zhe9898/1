@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -7,6 +8,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 COMPILER = PROJECT_ROOT / "scripts" / "compiler.py"
+COMPILER_SPEC = importlib.util.spec_from_file_location("compiler_cli_under_test", COMPILER)
+assert COMPILER_SPEC is not None and COMPILER_SPEC.loader is not None
+compiler_module = importlib.util.module_from_spec(COMPILER_SPEC)
+COMPILER_SPEC.loader.exec_module(compiler_module)
 
 
 def test_compiler_caddy_render_target_only_writes_caddyfile(tmp_path: Path) -> None:
@@ -148,12 +153,48 @@ def test_compiler_emits_external_acl_path_in_env(tmp_path: Path) -> None:
     env_text = (output_dir / ".env").read_text(encoding="utf-8")
     compose_text = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
     acl_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_ACL_FILE="))
+    redis_password_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_PASSWORD="))
+    gateway_acl_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_ACL_GATEWAY_CREDENTIAL="))
+    readonly_acl_line = next(line for line in env_text.splitlines() if line.startswith("REDIS_ACL_READONLY_CREDENTIAL="))
+    redis_password = redis_password_line.split("=", 1)[1].strip()
+    gateway_acl_credential = gateway_acl_line.split("=", 1)[1].strip()
+    readonly_acl_credential = readonly_acl_line.split("=", 1)[1].strip()
     acl_path = Path(acl_line.split("=", 1)[1].strip())
+    acl_text = acl_path.read_text(encoding="utf-8")
     assert acl_path.is_absolute()
     assert not str(acl_path).startswith(str(PROJECT_ROOT))
     assert str(tmp_path / "secure-state").replace("\\", "/") in str(acl_path).replace("\\", "/")
+    assert gateway_acl_credential == redis_password
+    assert readonly_acl_credential
+    assert readonly_acl_credential != redis_password
+    assert "user readonly on #" in acl_text
+    assert "user zen70_gateway on #" in acl_text
+    assert f">{redis_password}" not in acl_text
+    assert redis_password not in acl_text
     assert "${REDIS_ACL_FILE}: {}" not in compose_text
     assert not (output_dir / "runtime" / "secrets" / "users.acl").exists()
+
+
+def test_compiler_redacts_sensitive_manifest_payload_fields() -> None:
+    payload = {
+        "profile": "gateway-kernel",
+        "redis_password": "super-secret",
+        "nested": {
+            "jwt_secret_current": "jwt-secret",
+            "runtime_services_rendered": ["gateway"],
+        },
+    }
+
+    redacted = compiler_module._redact_sensitive_payload(payload)  # noqa: SLF001
+
+    assert redacted == {
+        "profile": "gateway-kernel",
+        "redis_password": "<redacted>",
+        "nested": {
+            "jwt_secret_current": "<redacted>",
+            "runtime_services_rendered": ["gateway"],
+        },
+    }
 
 
 def test_compiler_rejects_repo_scoped_acl_output_path(tmp_path: Path) -> None:
@@ -174,3 +215,31 @@ def test_compiler_rejects_repo_scoped_acl_output_path(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Refusing to write Redis ACL" in (result.stdout + result.stderr)
+
+
+def test_compiler_renders_systemd_units_without_shell_wrappers(tmp_path: Path) -> None:
+    output_dir = tmp_path / "full-render"
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["ZEN70_SECRET_STATE_DIR"] = str(tmp_path / "secure-state")
+
+    result = subprocess.run(
+        [sys.executable, str(COMPILER), "system.yaml", "-o", str(output_dir)],
+        cwd=str(PROJECT_ROOT),
+        timeout=60,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+
+    assert result.returncode == 0, f"compiler failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    gateway_unit = (output_dir / "systemd" / "gateway.service").read_text(encoding="utf-8")
+    runner_unit = (output_dir / "systemd" / "runner-agent.service").read_text(encoding="utf-8")
+    assert "EnvironmentFile=" in gateway_unit
+    assert "ExecStart=/usr/bin/env python3 -m uvicorn" in gateway_unit
+    assert "bash -lc" not in gateway_unit
+    assert "source ./.env" not in gateway_unit
+    assert "go run" not in runner_unit
+    runner_unit_normalized = runner_unit.replace("\\\\", "/").replace("\\", "/")
+    assert "runtime/host/bin/runner-agent" in runner_unit_normalized

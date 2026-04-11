@@ -50,7 +50,6 @@ These ADRs are the most relevant entrypoints for the current codebase shape:
 - [0009](0009-contracts-generated-types.md) contracts-generated-types
 - [0010](0010-unified-success-envelope.md) unified-success-envelope
 - [0011](0011-unified-iac-core-library.md) unified-iac-core-library
-- [0012](0012-service-tiering-multinode-topology.md) service-tiering-multinode-topology
 - [0013](0013-redis-spof-mitigation-and-state-decoupling.md) redis-spof-mitigation-and-state-decoupling
 - [0014](0014-unified-transaction-and-tenant-isolation-enforcements.md) unified-transaction-and-tenant-isolation-enforcements
 - [0015](0015-unified-http-client-interceptor-enforcement.md) unified-http-client-interceptor-enforcement
@@ -64,7 +63,6 @@ These ADRs are the most relevant entrypoints for the current codebase shape:
 - [0023](0023-v4-architecture-evolution-roadmap.md) v4-architecture-evolution-roadmap
 - [0024](0024-gateway-kernel-default-and-backend-driven-control-plane.md) gateway-kernel-default-and-backend-driven-control-plane
 - [0025](0025-control-plane-node-job-contract-hardening.md) control-plane-node-job-contract-hardening
-- [0026](0026-control-plane-worker-process-isolation.md) control-plane-worker-process-isolation
 - [0027](0027-node-machine-token-authentication.md) node-machine-token-authentication
 - [0028](0028-scheduler-attempt-history-and-operational-overview.md) scheduler-attempt-history-and-operational-overview
 - [0029](0029-scheduler-capacity-drain-and-lease-governance.md) scheduler-capacity-drain-and-lease-governance

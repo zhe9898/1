@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.console import get_console_diagnostics, get_console_overview
+from backend.control_plane.adapters.console import get_console_diagnostics, get_console_overview
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.node import Node

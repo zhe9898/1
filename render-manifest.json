@@ -1,5 +1,5 @@
 {
-  "rendered_at": "2026-04-08 01:41:02",
+  "rendered_at": "2026-04-11 02:52:53",
   "source": "system.yaml",
   "product": "ZEN70 Gateway Kernel",
   "profile": "gateway-kernel",
@@ -8,15 +8,54 @@
   "gateway_image_target": "gateway-kernel",
   "policy_version": 2,
   "policy_file": "iac/policy/core.yaml",
-  "services_rendered": [
+  "deployment_model": "host-first",
+  "container_services_rendered": [
     "caddy",
-    "docker-proxy",
+    "nats",
+    "postgres",
+    "redis"
+  ],
+  "infrastructure_containers_rendered": [
+    "caddy",
+    "nats",
+    "postgres",
+    "redis"
+  ],
+  "optional_pack_containers_rendered": [],
+  "host_processes_rendered": [
+    "control-worker",
     "gateway",
+    "routing-operator",
+    "runner-agent",
+    "topology-sentinel"
+  ],
+  "runtime_services_rendered": [
+    "caddy",
+    "control-worker",
+    "gateway",
+    "nats",
     "postgres",
     "redis",
+    "routing-operator",
     "runner-agent",
-    "sentinel"
+    "topology-sentinel"
   ],
+  "migration_copy_plan": {
+    "host_processes": [
+      "control-worker",
+      "gateway",
+      "routing-operator",
+      "runner-agent",
+      "topology-sentinel"
+    ],
+    "infrastructure_containers": [
+      "caddy",
+      "nats",
+      "postgres",
+      "redis"
+    ],
+    "optional_pack_containers": []
+  },
   "policy_injections": [],
   "tier3_warnings": []
 }

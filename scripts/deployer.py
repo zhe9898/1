@@ -22,6 +22,7 @@ from deploy_utils import project_root as _root
 from deploy_utils import resolve_name_conflict as _resolve_name_conflict
 from deploy_utils import scripts_dir as _scripts_dir
 from deploy_utils import start_host_services as _start_host_services
+from host_runtime_assets import prepare_host_runtime_assets as _prepare_host_runtime_assets
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ def _rollback(root: Path, output_dir: Path, backup_path: Path) -> None:
         dst = root / DEFAULT_CONFIG if name == "system.yaml" else output_dir / name
         shutil.copy2(src, dst)
         logger.info("已恢复 %s", name)
+    _prepare_host_runtime_assets(root / DEFAULT_CONFIG, output_dir, project_root=root)
     compose_file = output_dir / "docker-compose.yml"
     env = os.environ.copy()
     # 法典 §1.2: IaC 唯一事实来源 —— 强制 project name，严禁 setdefault
@@ -220,6 +222,7 @@ def main() -> None:
             sys.exit(1)
         logger.info("回滚到: %s", backups[0].name)
         _rollback(root, output_dir, backups[0])
+        _start_host_services(root / DEFAULT_CONFIG, output_dir)
         return
 
     if not config_path.exists():
@@ -243,6 +246,7 @@ def main() -> None:
         out_arg,
     ]
     subprocess.run(cmd_compiler, cwd=str(root), check=True, timeout=120)
+    _prepare_host_runtime_assets(config_path, output_dir, project_root=root)
     compose_file = output_dir / "docker-compose.yml"
     env = os.environ.copy()
     # 法典 §1.2: IaC 唯一事实来源 —— 强制 project name，严禁 setdefault

@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 
-from backend.kernel.execution.attempt_expiration_service import expire_stale_attempts
+from backend.runtime.execution.attempt_expiration_service import expire_stale_attempts
 
 logger = logging.getLogger(__name__)
 

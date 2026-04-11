@@ -1,20 +1,15 @@
 ﻿#!/usr/bin/env python3
 """Compile system.yaml into deterministic runtime artifacts."""
 
-
-
-
-
-
-
 from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import logging
 import os
-import secrets
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +20,7 @@ from urllib.parse import urlparse
 import jinja2
 
 logger = logging.getLogger(__name__)
+_SENSITIVE_MANIFEST_KEY_PATTERN = re.compile(r"(password|secret|token|dsn|credential)", re.IGNORECASE)
 
 # Ensure `scripts.iac_core` imports resolve when running compiler.py directly.
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -47,17 +43,17 @@ from scripts.iac_core.loader import (  # noqa: E402
     prepare_host_services,
     prepare_services,
 )
-from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
-from scripts.iac_core.renderer import create_jinja2_env  # noqa: E402
-from scripts.iac_core.migrator import migrate_and_persist  # noqa: E402
 from scripts.iac_core.manifest import build_render_manifest, resolve_product_name  # noqa: E402
+from scripts.iac_core.migrator import migrate_and_persist  # noqa: E402
+from scripts.iac_core.policy import evaluate_and_enforce, load_default_policy  # noqa: E402
 from scripts.iac_core.profiles import (  # noqa: E402
     is_profile_known,
-    resolve_effective_pack_keys,
     normalize_profile,
-    resolve_requested_pack_keys,
+    resolve_effective_pack_keys,
     resolve_gateway_image_target,
+    resolve_requested_pack_keys,
 )
+from scripts.iac_core.renderer import create_jinja2_env  # noqa: E402
 from scripts.iac_core.secrets import (  # noqa: E402
     generate_secrets,
 )
@@ -68,26 +64,24 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _load_existing_acl_password(users_acl_path: Path, username: str) -> str | None:
-    """Load existing ACL password for a user so compiler output stays idempotent."""
-    if not users_acl_path.exists():
-        return None
-    try:
-        for raw_line in users_acl_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            if parts[0] != "user" or parts[1] != username:
-                continue
-            for token in parts:
-                if token.startswith(">") and len(token) > 1:
-                    return token[1:]
-    except OSError:
-        return None
-    return None
+def _render_acl_sha256_digest(credential_material: str) -> str:
+    digest = hashlib.new("sha256", credential_material.encode("utf-8"), usedforsecurity=False)
+    return f"#{digest.hexdigest()}"
+
+
+def _redact_sensitive_payload(value: object) -> object:
+    if isinstance(value, dict):
+        redacted: dict[str, object] = {}
+        for key, nested_value in value.items():
+            key_text = str(key)
+            if _SENSITIVE_MANIFEST_KEY_PATTERN.search(key_text):
+                redacted[key_text] = "<redacted>"
+            else:
+                redacted[key_text] = _redact_sensitive_payload(nested_value)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive_payload(item) for item in value]
+    return value
 
 
 def _resolve_acl_output_path(config: dict, output_dir: Path) -> Path:
@@ -127,10 +121,7 @@ def _compose_env_path(path: Path) -> str:
 
 def _validate_acl_output_path(path: Path, repo_root: Path) -> None:
     if _is_repo_scoped_secret_path(path, repo_root):
-        raise RuntimeError(
-            f"Refusing to write Redis ACL into repository-managed path: {path}. "
-            "Use an external secure state directory instead."
-        )
+        raise RuntimeError(f"Refusing to write Redis ACL into repository-managed path: {path}. " "Use an external secure state directory instead.")
 
 
 def _resolve_dynamic_routes_file(root: Path, raw_path: str | None) -> Path | None:
@@ -229,17 +220,27 @@ def _render_systemd_units(
     return written
 
 
-def _host_services_caddy_routes(host_services: list[dict]) -> list[dict]:
+def _host_service_upstream_host(config: dict[str, object]) -> str:
+    services = (config.get("services") or {}) if isinstance(config, dict) else {}
+    if not isinstance(services, dict):
+        return "host.docker.internal"
+    caddy_svc = services.get("caddy") or {}
+    if isinstance(caddy_svc, dict) and caddy_svc.get("runtime") == "host" and caddy_svc.get("enabled") is not False:
+        return "127.0.0.1"
+    return "host.docker.internal"
+
+
+def _host_services_caddy_routes(config: dict[str, object], host_services: list[dict]) -> list[dict]:
     """Convert runtime host services into Caddy dynamic route entries."""
 
+    upstream_host = _host_service_upstream_host(config)
     routes: list[dict] = []
     for svc in host_services:
         caddy_path = svc.get("caddy_path")
         port = svc.get("port")
         if caddy_path and port:
-            routes.append({"path": str(caddy_path), "target": f"127.0.0.1:{port}"})
+            routes.append({"path": str(caddy_path), "target": f"{upstream_host}:{port}"})
     return routes
-
 
 
 def _replace_text_artifact(tmp_path: Path, target_path: Path) -> None:
@@ -390,6 +391,8 @@ def main() -> None:
     deployment_cfg["packs"] = list(requested_pack_keys)
     deployment_cfg["product"] = product_name
     config["deployment"] = deployment_cfg
+    config["__project_root__"] = str(root)
+    config["__output_root__"] = str(output_dir.resolve())
     gateway_image_target = resolve_gateway_image_target(normalized_profile, selected_packs=requested_pack_keys)
     logger.info(
         "[profile] resolved=%s packs=%s gateway_target=%s product=%s",
@@ -417,7 +420,7 @@ def main() -> None:
 
     # 2. 闁槒绶懕姘値 (iac_core.loader)
     services_list = prepare_services(config)
-    host_services_list = prepare_host_services(config)
+    host_services_list = prepare_host_services(config, output_root=output_dir)
     env_vars = prepare_env(config)
     env_vars["csp_connect_src_extra"] = _derive_csp_connect_src_extra()
     # Use config mtime as the render timestamp so recompiles stay deterministic.
@@ -433,8 +436,8 @@ def main() -> None:
     # 2.5 闂冭尪鍘崙顓＄槈娑擃厼绺?(iac_core.secrets)
     dynamic_routes_file = _resolve_dynamic_routes_file(root, args.dynamic_routes_file)
     dynamic_routes = _load_dynamic_routes(dynamic_routes_file) if args.render_target == "caddy" else []
-    # Merge host-service routes (127.0.0.1:port) into caddy dynamic_routes
-    dynamic_routes = list(dynamic_routes) + _host_services_caddy_routes(host_services_list)
+    # Merge host-service routes into caddy dynamic_routes.
+    dynamic_routes = list(dynamic_routes) + _host_services_caddy_routes(config, host_services_list)
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
 
@@ -455,8 +458,8 @@ def main() -> None:
     volumes_list = extract_named_volumes(config)
     networks_list = extract_networks(config)
 
-# Build extra Caddy routes for runtime host services and caddy-only surfaces.
-    dynamic_routes = _host_services_caddy_routes(host_services_list)
+    # Build extra Caddy routes for runtime host services and caddy-only surfaces.
+    dynamic_routes = _host_services_caddy_routes(config, host_services_list)
     env = create_jinja2_env(templates_dir)
     env.globals["now"] = env_vars["now"]
 
@@ -496,13 +499,12 @@ def main() -> None:
     _render_systemd_units(env, templates_dir, host_services_list, output_dir)
 
     # 3.9 Redis 闂嗘湹淇婃禒?ACL 缂佹挾鏅?(Phase 9)
-    readonly_password = _load_existing_acl_password(users_acl_path, "readonly")
-    readonly_password = readonly_password or secrets.token_urlsafe(16)
-    gateway_password = _load_existing_acl_password(users_acl_path, "zen70_gateway") or env_vars["redis_password"]
+    gateway_acl_credential = str(env_vars["redis_acl_gateway_credential"])
+    readonly_acl_credential = str(env_vars["redis_acl_readonly_credential"])
     acl_lines = [
         "user default off nopass nocommands",
-        f"user readonly on >{readonly_password} ~zen70:* &zen70:* +@read -@write +ping +info",
-        f"user zen70_gateway on >{gateway_password} ~* &* +@all",
+        f"user readonly on {_render_acl_sha256_digest(readonly_acl_credential)} ~zen70:* &zen70:* +@read -@write +ping +info",
+        f"user zen70_gateway on {_render_acl_sha256_digest(gateway_acl_credential)} ~* &* +@all",
     ]
     acl_content = "\n".join(acl_lines) + "\n"
     config_dir = output_dir / "config"
@@ -579,9 +581,9 @@ def main() -> None:
         os.chmod(env_path, 0o600)
     except OSError as chmod_exc:
         logger.warning(
-            "[IaC-Security] Failed to set 0o600 on %s: %s 閳?"
-            ".env may be world-readable; verify file permissions manually",
-            env_path, chmod_exc,
+            "[IaC-Security] Failed to set 0o600 on %s: %s 閳?" ".env may be world-readable; verify file permissions manually",
+            env_path,
+            chmod_exc,
         )
 
     logger.info("[OK] IaC 妫板嫭顥呴柅姘崇箖閿涘苯鍑￠崢鐔剁秴閸楀洨娣獮鍓佹晸閹?%s", output_dir / "docker-compose.yml")
@@ -591,6 +593,17 @@ def main() -> None:
         logger.info("[OK] 瀹歌尙鏁撻幋?%s", config_dir / "Caddyfile")
 
     # 5. render-manifest.json 閳?濠у瓨绨拋鏉跨秿
+    container_service_names = sorted({str(service.get("name")).strip() for service in services_list if isinstance(service, dict) and service.get("name")})
+    host_service_names = sorted({str(service.get("name")).strip() for service in host_services_list if isinstance(service, dict) and service.get("name")})
+    policy_injections = [
+        {
+            "rule": str(getattr(violation, "rule_id", "")).strip(),
+            "service": str(getattr(violation, "service", "")).strip(),
+        }
+        for violation in policy_violations
+        if getattr(violation, "severity", None) == "warn"
+    ]
+
     manifest = build_render_manifest(
         rendered_at=str(env_vars.get("now", "")),
         source=str(args.config),
@@ -601,9 +614,10 @@ def main() -> None:
         gateway_image_target=gateway_image_target,
         policy_version=int(policy_version),
         policy_file=policy_source,
-        services_list=services_list + host_services_list,
-        policy_violations=policy_violations,
-        tier3_warnings=lint_result.warnings,
+        container_service_names=container_service_names,
+        host_service_names=host_service_names,
+        policy_injections=policy_injections,
+        tier3_warning_count=len(lint_result.warnings),
     )
     manifest_path = output_dir / "render-manifest.json"
     manifest_path.write_text(

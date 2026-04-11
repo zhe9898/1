@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.control_plane.auth.role_claims import has_admin_role_value
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.role_claims import has_admin_role_value
 from backend.models.permission import Permission
 from backend.models.user import User
 
@@ -195,7 +195,7 @@ async def revoke_permission(
     permission_id: int,
     *,
     tenant_id: str,
-) -> None:
+) -> Permission:
     """Revoke a permission.
 
     Args:
@@ -215,6 +215,7 @@ async def revoke_permission(
 
     await db.delete(permission)
     await db.flush()
+    return permission
 
 
 async def check_permission(

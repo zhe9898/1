@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.iac_core.profiles import HOST_FIRST_DEPLOYMENT_MODEL
+
 
 REQUIRED_KERNEL_PATHS = (
     "/api/v1/profile",
@@ -41,10 +43,30 @@ def _write_minimal_bundle(root: Path) -> None:
         "profile": "gateway-kernel",
         "requested_packs": [],
         "resolved_packs": [],
-        "services_rendered": ["caddy", "gateway", "postgres", "redis", "runner-agent", "sentinel", "docker-proxy"],
+        "deployment_model": HOST_FIRST_DEPLOYMENT_MODEL,
+        "container_services_rendered": ["caddy", "postgres", "redis", "nats"],
+        "infrastructure_containers_rendered": ["caddy", "postgres", "redis", "nats"],
+        "optional_pack_containers_rendered": [],
+        "host_processes_rendered": ["gateway", "topology-sentinel", "control-worker", "routing-operator", "runner-agent"],
+        "runtime_services_rendered": [
+            "caddy",
+            "postgres",
+            "redis",
+            "nats",
+            "gateway",
+            "topology-sentinel",
+            "control-worker",
+            "routing-operator",
+            "runner-agent",
+        ],
+        "migration_copy_plan": {
+            "host_processes": ["gateway", "topology-sentinel", "control-worker", "routing-operator", "runner-agent"],
+            "infrastructure_containers": ["caddy", "postgres", "redis", "nats"],
+            "optional_pack_containers": [],
+        },
     }
     compose = {
-        "services": {name: {} for name in manifest["services_rendered"]},
+        "services": {name: {} for name in manifest["container_services_rendered"]},
     }
     openapi = {
         "openapi": "3.1.0",
@@ -119,7 +141,7 @@ def test_validate_offline_bundle_rejects_compose_manifest_service_drift(tmp_path
 
     result = _run_validator(tmp_path)
     assert result.returncode != 0
-    assert "services do not match render-manifest.json services_rendered" in (result.stdout + result.stderr)
+    assert "services do not match render-manifest.json container_services_rendered" in (result.stdout + result.stderr)
 
 
 def test_validate_offline_bundle_rejects_openapi_contract_drift(tmp_path: Path) -> None:

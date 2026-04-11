@@ -1,0 +1,435 @@
+"""
+ZEN70 Nodes API 閳?Route handlers only.
+
+Models live in nodes_models.py; helpers live in nodes_helpers.py.
+This module wires them together behind FastAPI route definitions and
+re-exports all public names so existing ``from backend.control_plane.adapters.nodes import 閳ヮ泦`
+statements keep working.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import secrets
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.control_plane.adapters.control_events import publish_control_event
+from backend.control_plane.adapters.deps import (
+    get_current_admin,
+    get_current_user,
+    get_machine_tenant_db,
+    get_node_machine_token,
+    get_redis,
+    get_tenant_db,
+)
+from backend.control_plane.adapters.nodes_helpers import (  # noqa: F401 閳?re-exported for consumers
+    _apply_contract,
+    _build_node_actions,
+    _get_active_lease_counts,
+    _get_node_by_id,
+    _matches_node_list_filters,
+    _provision_token,
+    _to_response,
+)
+
+# Re-exported for consumers that still import from backend.control_plane.adapters.nodes.
+from backend.control_plane.adapters.nodes_models import (  # noqa: F401
+    BootstrapReceipt,
+    NodeContractPayload,
+    NodeDrainRequest,
+    NodeHeartbeatRequest,
+    NodeProvisionRequest,
+    NodeProvisionResponse,
+    NodeRegisterRequest,
+    NodeResponse,
+    NodeSelfDrainRequest,
+    _utcnow,
+)
+from backend.control_plane.adapters.nodes_schema import (  # noqa: F401
+    _bootstrap_notes,
+    _bootstrap_token_value,
+    _build_bootstrap_commands,
+    _build_bootstrap_receipts,
+    _resource_schema,
+)
+from backend.control_plane.adapters.ui_contracts import ResourceSchemaResponse
+from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.status import canonicalize_status
+from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
+from backend.models.node import Node
+from backend.platform.db.advisory_locks import acquire_transaction_advisory_locks
+from backend.platform.redis.client import CHANNEL_NODE_EVENTS, RedisClient
+from backend.runtime.scheduling.quota_service import check_node_quota
+from backend.runtime.topology.node_auth import authenticate_node_request
+from backend.runtime.topology.node_enrollment_service import NodeEnrollmentService
+from backend.runtime.topology.runtime_contracts import node_executor_contract
+
+router = APIRouter(prefix="/api/v1/nodes", tags=["nodes"])
+
+
+def _cloud_auto_approve_token() -> str:
+    return os.environ.get("CLOUD_AUTO_APPROVE_TOKEN", "").strip()
+
+
+def _log_executor_contract_warnings(node: Node) -> None:
+    from backend.runtime.topology.executor_registry import get_executor_registry
+
+    executor_contract = node_executor_contract(node)
+    warnings = get_executor_registry().validate_node_executor(
+        executor_contract,
+        memory_mb=node.memory_mb,
+        cpu_cores=node.cpu_cores,
+        gpu_vram_mb=node.gpu_vram_mb,
+    )
+    if warnings:
+        import logging as _log
+
+        _log.getLogger("api.nodes").warning(
+            "Executor contract warnings for node %s (%s): %s",
+            node.node_id,
+            executor_contract,
+            "; ".join(warnings),
+        )
+
+
+@router.get("/schema", response_model=ResourceSchemaResponse)
+async def get_node_schema(
+    current_user: dict[str, object] = Depends(get_current_admin),
+) -> ResourceSchemaResponse:
+    del current_user
+    return _resource_schema()
+
+
+@router.post("", response_model=NodeProvisionResponse)
+async def provision_node(
+    payload: NodeProvisionRequest,
+    current_user: dict[str, object] = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> NodeProvisionResponse:
+    tenant_id = require_current_user_tenant_id(current_user)
+    await acquire_transaction_advisory_locks(
+        db,
+        [
+            ("nodes.provision.tenant", (tenant_id,)),
+            ("nodes.provision.node", (tenant_id, payload.node_id)),
+        ],
+    )
+    await check_node_quota(db, tenant_id)
+    existing = await db.execute(select(Node).where(Node.tenant_id == tenant_id, Node.node_id == payload.node_id))
+    if existing.scalars().first() is not None:
+        raise zen(
+            "ZEN-NODE-4090",
+            "node already exists",
+            status_code=409,
+            recovery_hint="Use token rotation for an existing node instead of provisioning again",
+            details={"node_id": payload.node_id},
+        )
+
+    now = _utcnow()
+    node = Node(
+        tenant_id=tenant_id,
+        node_id=payload.node_id,
+        registered_at=now,
+        last_seen_at=now,
+        enrollment_status="pending",
+        status="offline",
+        max_concurrency=payload.max_concurrency,
+        drain_status="active",
+    )
+    _apply_contract(node, payload.model_copy(update={"tenant_id": tenant_id}), "offline", now)
+    token, version = NodeEnrollmentService.rotate_token(node, now=now)
+    db.add(node)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        raise zen(
+            "ZEN-NODE-4090",
+            "node already exists",
+            status_code=409,
+            recovery_hint="Use token rotation for an existing node instead of provisioning again",
+            details={"node_id": payload.node_id},
+        ) from exc
+    return NodeProvisionResponse(
+        node=_to_response(node, now=now),
+        node_token=_bootstrap_token_value(token),
+        auth_token_version=version,
+        bootstrap_commands=_build_bootstrap_commands(node, token),
+        bootstrap_notes=_bootstrap_notes(),
+        bootstrap_receipts=_build_bootstrap_receipts(node, token),
+    )
+
+
+@router.post("/{id}/token", response_model=NodeProvisionResponse)
+async def rotate_node_token(
+    id: str,
+    current_user: dict[str, object] = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> NodeProvisionResponse:
+    tenant_id = require_current_user_tenant_id(current_user)
+    node = await _get_node_by_id(db, tenant_id, id)
+    now = _utcnow()
+    token, version = NodeEnrollmentService.rotate_token(node, now=now)
+    await db.flush()
+    return NodeProvisionResponse(
+        node=_to_response(node, now=now),
+        node_token=_bootstrap_token_value(token),
+        auth_token_version=version,
+        bootstrap_commands=_build_bootstrap_commands(node, token),
+        bootstrap_notes=_bootstrap_notes(),
+        bootstrap_receipts=_build_bootstrap_receipts(node, token),
+    )
+
+
+@router.post("/{id}/revoke", response_model=NodeResponse)
+async def revoke_node(
+    id: str,
+    current_user: dict[str, object] = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> NodeResponse:
+    tenant_id = require_current_user_tenant_id(current_user)
+    node = await _get_node_by_id(db, tenant_id, id)
+    now = _utcnow()
+    NodeEnrollmentService.revoke(node, now=now)
+    await db.flush()
+    return _to_response(node, now=now)
+
+
+@router.post("/{id}/drain", response_model=NodeResponse)
+async def drain_node(
+    id: str,
+    payload: NodeDrainRequest,
+    current_user: dict[str, object] = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+) -> NodeResponse:
+    tenant_id = require_current_user_tenant_id(current_user)
+    node = await _get_node_by_id(db, tenant_id, id)
+    now = _utcnow()
+    NodeEnrollmentService.set_drain(node, drain_status="draining", now=now, reason=payload.reason)
+    await db.flush()
+    response = _to_response(node, now=now)
+    await publish_control_event(
+        CHANNEL_NODE_EVENTS,
+        "drain",
+        {"node": response.model_dump(mode="json")},
+        tenant_id=tenant_id,
+    )
+    return response
+
+
+@router.post("/{id}/undrain", response_model=NodeResponse)
+async def undrain_node(
+    id: str,
+    payload: NodeDrainRequest,
+    current_user: dict[str, object] = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+) -> NodeResponse:
+    tenant_id = require_current_user_tenant_id(current_user)
+    node = await _get_node_by_id(db, tenant_id, id)
+    now = _utcnow()
+    NodeEnrollmentService.set_drain(node, drain_status="active", now=now, reason=payload.reason)
+    await db.flush()
+    response = _to_response(node, now=now)
+    await publish_control_event(
+        CHANNEL_NODE_EVENTS,
+        "undrain",
+        {"node": response.model_dump(mode="json")},
+        tenant_id=tenant_id,
+    )
+    return response
+
+
+@router.post("/self/drain", response_model=NodeResponse)
+async def self_drain_node(
+    payload: NodeSelfDrainRequest,
+    db: AsyncSession = Depends(get_machine_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+    node_token: str = Depends(get_node_machine_token),
+) -> NodeResponse:
+    """Allow a runner-agent to mark itself as draining using its own node token.
+
+    Called by the agent on SIGTERM so the scheduler stops dispatching new jobs
+    to this node while in-flight jobs complete.
+    """
+    node = await authenticate_node_request(db, payload.node_id, node_token, require_active=False, tenant_id=payload.tenant_id)
+    now = _utcnow()
+    NodeEnrollmentService.set_drain(node, drain_status="draining", now=now, reason=payload.reason)
+    await db.flush()
+    response = _to_response(node, now=now)
+    await publish_control_event(
+        CHANNEL_NODE_EVENTS,
+        "drain",
+        {"node": response.model_dump(mode="json")},
+        tenant_id=payload.tenant_id,
+    )
+    return response
+
+
+@router.post("/register", response_model=NodeResponse)
+async def register_node(
+    payload: NodeRegisterRequest,
+    db: AsyncSession = Depends(get_machine_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+    node_token: str = Depends(get_node_machine_token),
+) -> NodeResponse:
+    node = await authenticate_node_request(
+        db,
+        payload.node_id,
+        node_token,
+        require_active=False,
+        tenant_id=payload.tenant_id,
+    )
+    now = _utcnow()
+    configured_cloud_token = _cloud_auto_approve_token()
+    node_cloud_token = str(payload.metadata.get("cloud_token", "")).strip()
+    expected_hash = hashlib.sha256(configured_cloud_token.encode()).hexdigest()
+    actual_hash = hashlib.sha256(node_cloud_token.encode()).hexdigest()
+    cloud_auto_approved = bool(configured_cloud_token and node_cloud_token and secrets.compare_digest(expected_hash, actual_hash))
+    if cloud_auto_approved:
+        node.metadata_json = {**(node.metadata_json or {}), "cloud": True}
+    event_action = NodeEnrollmentService.register_or_refresh(
+        node,
+        payload,
+        now=now,
+        cloud_auto_approved=cloud_auto_approved,
+    )
+    _log_executor_contract_warnings(node)
+
+    await db.flush()
+    response = _to_response(node, now=now)
+    await publish_control_event(
+        CHANNEL_NODE_EVENTS,
+        event_action,
+        {"node": response.model_dump(mode="json")},
+        tenant_id=payload.tenant_id,
+    )
+    return response
+
+
+@router.post("/heartbeat", response_model=NodeResponse)
+async def heartbeat_node(
+    payload: NodeHeartbeatRequest,
+    db: AsyncSession = Depends(get_machine_tenant_db),
+    redis: RedisClient | None = Depends(get_redis),
+    node_token: str = Depends(get_node_machine_token),
+) -> NodeResponse:
+    node = await authenticate_node_request(
+        db,
+        payload.node_id,
+        node_token,
+        require_active=False,
+        tenant_id=payload.tenant_id,
+    )
+
+    # ADR-0047 WP-P0: heartbeat must not bypass enrollment approval.
+    # pending -> approved must only happen through admin approval endpoint.
+    # rejected nodes must be reprovisioned and registered with a new token.
+    if node.enrollment_status == "pending":
+        raise zen(
+            "ZEN-NODE-4031",
+            "Node is pending enrollment approval and cannot send heartbeats yet",
+            status_code=403,
+            recovery_hint="Wait for an admin to approve this node via POST /api/v1/nodes/{node_id}/approve",
+            details={"node_id": node.node_id, "enrollment_status": node.enrollment_status},
+        )
+    if node.enrollment_status == "rejected":
+        raise zen(
+            "ZEN-NODE-4032",
+            "Rejected node cannot send heartbeats; provision and re-register with a new token",
+            status_code=403,
+            recovery_hint="Provision a new node token and re-register before sending heartbeats",
+            details={"node_id": node.node_id, "enrollment_status": node.enrollment_status},
+        )
+    # Approved nodes may continue heartbeating without mutating enrollment state.
+
+    now = _utcnow()
+    _apply_contract(node, payload, payload.status, now)
+    _log_executor_contract_warnings(node)
+    node.health_reason = payload.health_reason
+
+    await db.flush()
+    active_counts = await _get_active_lease_counts(db, tenant_id=payload.tenant_id, node_ids=[node.node_id], now=now)
+    response = _to_response(node, active_lease_count=active_counts.get(node.node_id, 0), now=now)
+    await publish_control_event(
+        CHANNEL_NODE_EVENTS,
+        "heartbeat",
+        {"node": response.model_dump(mode="json")},
+        tenant_id=payload.tenant_id,
+    )
+    return response
+
+
+@router.get("", response_model=list[NodeResponse])
+async def list_nodes(
+    node_id: str | None = None,
+    node_type: str | None = None,
+    executor: str | None = None,
+    os: str | None = None,
+    zone: str | None = None,
+    enrollment_status: str | None = None,
+    drain_status: str | None = None,
+    heartbeat_state: str | None = None,
+    capacity_state: str | None = None,
+    attention: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    current_user: dict[str, object] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> list[NodeResponse]:
+    tenant_id = require_current_user_tenant_id(current_user)
+    query = select(Node).where(Node.tenant_id == tenant_id)
+    if node_id:
+        query = query.where(Node.node_id == node_id)
+    if node_type:
+        query = query.where(Node.node_type == node_type)
+    if executor:
+        query = query.where(Node.executor == executor)
+    if os:
+        query = query.where(Node.os == os)
+    if zone:
+        query = query.where(Node.zone == zone)
+    if enrollment_status:
+        query = query.where(Node.enrollment_status == canonicalize_status("nodes.enrollment_status", enrollment_status))
+    result = await db.execute(query.order_by(Node.last_seen_at.desc()).limit(limit).offset(offset))
+    nodes = list(result.scalars().all())
+    now = _utcnow()
+    counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id for node in nodes], now=now)
+    filtered = [
+        node
+        for node in nodes
+        if _matches_node_list_filters(
+            node,
+            active_lease_count=counts.get(node.node_id, 0),
+            now=now,
+            node_type=node_type,
+            executor=executor,
+            os_name=os,
+            zone=zone,
+            enrollment_status=enrollment_status,
+            drain_status=drain_status,
+            heartbeat_state=heartbeat_state,
+            capacity_state=capacity_state,
+            attention=attention,
+        )
+    ]
+    return [_to_response(node, active_lease_count=counts.get(node.node_id, 0), now=now) for node in filtered]
+
+
+@router.get("/{id}", response_model=NodeResponse)
+async def get_node(
+    id: str,
+    current_user: dict[str, object] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> NodeResponse:
+    tenant_id = require_current_user_tenant_id(current_user)
+    node = await _get_node_by_id(db, tenant_id, id)
+    now = _utcnow()
+    counts = await _get_active_lease_counts(db, tenant_id=tenant_id, node_ids=[node.node_id], now=now)
+    return _to_response(node, active_lease_count=counts.get(node.node_id, 0), now=now)

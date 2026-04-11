@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.kernel.extensions.alert_actions import normalize_alert_action
+from backend.extensions.alert_actions import normalize_alert_action
 
 
 def test_normalize_alert_action_accepts_public_webhook() -> None:

@@ -7,31 +7,22 @@ import logging
 import os
 import socket
 import sys
-import threading
 import time
-from dataclasses import dataclass
 from logging.config import fileConfig
 from pathlib import Path
 from typing import Any
 
 from alembic import context
 from dotenv import load_dotenv
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from backend.platform.redis import KEY_DB_MIGRATION_LOCK, SyncRedisClient
+from backend.platform.db.advisory_locks import advisory_lock_id
 
 _MIGRATION_LOGGER = logging.getLogger("alembic.runtime")
 _LOCK_IDENTITY = f"pid={os.getpid()}@{socket.gethostname()}"
-_LOCK_TIMEOUT_SECONDS = 120
 _LOCK_BLOCKING_TIMEOUT_SECONDS = 60
-
-
-@dataclass(frozen=True, slots=True)
-class MigrationLockLease:
-    key: str
-    owner: str
 
 
 def _project_root(env_file: Path) -> Path:
@@ -87,6 +78,12 @@ def _alembic_context_options(config: Any) -> dict[str, Any]:
     return options
 
 
+def _migration_lock_id(config: Any) -> int:
+    version_table = (config.get_main_option("version_table") or "alembic_version").strip() or "alembic_version"
+    script_location = (config.get_main_option("script_location") or "alembic").strip() or "alembic"
+    return advisory_lock_id("zen70.db.migration", script_location, version_table)
+
+
 def run_migrations_offline(config: Any, target_metadata: Any) -> None:
     """Run migrations in offline mode."""
     url = config.get_main_option("sqlalchemy.url")
@@ -109,6 +106,38 @@ def _do_run_migrations(connection: Connection, target_metadata: Any, config: Any
         context.run_migrations()
 
 
+async def _try_acquire_migration_lock(connection: Any, lock_id: int) -> bool:
+    result = await connection.execute(text("SELECT pg_try_advisory_lock(:lock_id)"), {"lock_id": lock_id})
+    return bool(result.scalar())
+
+
+async def _acquire_migration_lock(connection: Any, lock_id: int) -> None:
+    _MIGRATION_LOGGER.info(
+        "acquiring migration advisory lock [%s] lock_id=%s blocking_timeout=%ss",
+        _LOCK_IDENTITY,
+        lock_id,
+        _LOCK_BLOCKING_TIMEOUT_SECONDS,
+    )
+    deadline = time.monotonic() + _LOCK_BLOCKING_TIMEOUT_SECONDS
+    while True:
+        if await _try_acquire_migration_lock(connection, lock_id):
+            _MIGRATION_LOGGER.info("migration advisory lock acquired [%s] lock_id=%s", _LOCK_IDENTITY, lock_id)
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"ZEN-DB-MIGRATION-LOCKED: could not acquire advisory lock {lock_id} within " f"{_LOCK_BLOCKING_TIMEOUT_SECONDS}s [{_LOCK_IDENTITY}]"
+            )
+        await asyncio.sleep(1.0)
+
+
+async def _release_migration_lock(connection: Any, lock_id: int) -> None:
+    result = await connection.execute(text("SELECT pg_advisory_unlock(:lock_id)"), {"lock_id": lock_id})
+    released = result.scalar()
+    if released is not True:
+        raise RuntimeError(f"advisory lock {lock_id} was not held by this migration session")
+    _MIGRATION_LOGGER.info("migration advisory lock released [%s] lock_id=%s", _LOCK_IDENTITY, lock_id)
+
+
 async def _run_async_migrations(config: Any, target_metadata: Any) -> None:
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
@@ -116,120 +145,43 @@ async def _run_async_migrations(config: Any, target_metadata: Any) -> None:
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(_do_run_migrations, target_metadata, config)
-
-    await connectable.dispose()
-
-
-def _watchdog_thread(redis_client: SyncRedisClient, lease: MigrationLockLease, stop_event: threading.Event) -> None:
-    """Keep the migration lock alive while long-running DDL is in progress."""
-    while not stop_event.is_set():
-        try:
-            redis_client.kv.expire(lease.key, _LOCK_TIMEOUT_SECONDS)
-        except (OSError, ValueError, RuntimeError, TypeError) as exc:
-            _MIGRATION_LOGGER.debug("migration lock renew failed [%s]: %s", _LOCK_IDENTITY, exc)
-        stop_event.wait(10)
-
-
-def start_migration_lock_watchdog(
-    redis_client: SyncRedisClient,
-    lease: MigrationLockLease,
-    stop_event: threading.Event,
-) -> threading.Thread:
-    """Start the migration-lock watchdog thread and return the live thread."""
-    watchdog = threading.Thread(target=_watchdog_thread, args=(redis_client, lease, stop_event), daemon=True)
-    watchdog.start()
-    return watchdog
-
-
-def _build_sync_redis_client() -> SyncRedisClient:
-    client = SyncRedisClient()
-    client.connect()
-    return client
-
-
-def _try_claim_migration_lock(redis_client: SyncRedisClient) -> MigrationLockLease | None:
-    lease = MigrationLockLease(key=KEY_DB_MIGRATION_LOCK, owner=_LOCK_IDENTITY)
-    claimed = redis_client.kv.set(lease.key, lease.owner, nx=True, ex=_LOCK_TIMEOUT_SECONDS)
-    if claimed is True:
-        return lease
-    return None
-
-
-def _acquire_migration_lock() -> tuple[SyncRedisClient, MigrationLockLease, threading.Event, threading.Thread] | None:
+    lock_id = _migration_lock_id(config)
     try:
-        redis_client = _build_sync_redis_client()
-    except (OSError, ValueError, RuntimeError, TypeError) as exc:
-        if os.getenv("SKIP_DB_MIGRATION_LOCK"):
-            _MIGRATION_LOGGER.warning(
-                "SKIP_DB_MIGRATION_LOCK=1, skipping migration lock acquisition [%s]: %s",
-                _LOCK_IDENTITY,
-                exc,
-            )
-            return None
-        raise
+        async with connectable.connect() as connection:
+            await _acquire_migration_lock(connection, lock_id)
 
-    try:
-        _MIGRATION_LOGGER.info(
-            "acquiring migration lock [%s] key=%s blocking_timeout=%ss",
-            _LOCK_IDENTITY,
-            KEY_DB_MIGRATION_LOCK,
-            _LOCK_BLOCKING_TIMEOUT_SECONDS,
-        )
-        deadline = time.monotonic() + _LOCK_BLOCKING_TIMEOUT_SECONDS
-        while True:
-            lease = _try_claim_migration_lock(redis_client)
-            if lease is not None:
-                stop_event = threading.Event()
-                watchdog = start_migration_lock_watchdog(redis_client, lease, stop_event)
-                _MIGRATION_LOGGER.info(
-                    "migration lock acquired [%s] key=%s ttl=%ds",
-                    _LOCK_IDENTITY,
-                    KEY_DB_MIGRATION_LOCK,
-                    _LOCK_TIMEOUT_SECONDS,
-                )
-                return redis_client, lease, stop_event, watchdog
-            if time.monotonic() >= deadline:
-                raise RuntimeError(
-                    f"ZEN-DB-MIGRATION-LOCKED: could not acquire {KEY_DB_MIGRATION_LOCK} within {_LOCK_BLOCKING_TIMEOUT_SECONDS}s [{_LOCK_IDENTITY}]"
-                )
-            threading.Event().wait(1)
-    except Exception:
-        redis_client.close()
-        raise
+            migration_error: BaseException | None = None
+            cleanup_error: BaseException | None = None
+            try:
+                await connection.run_sync(_do_run_migrations, target_metadata, config)
+            except BaseException as exc:
+                migration_error = exc
+            finally:
+                try:
+                    await _release_migration_lock(connection, lock_id)
+                except Exception as exc:
+                    cleanup_error = RuntimeError(f"ZEN-DB-MIGRATION-CLEANUP-FAILED: failed to release advisory lock {lock_id} [{_LOCK_IDENTITY}]")
+                    cleanup_error.__cause__ = exc
+                    _MIGRATION_LOGGER.error(
+                        "migration advisory lock release failed [%s]: %s",
+                        _LOCK_IDENTITY,
+                        exc,
+                        exc_info=True,
+                    )
 
-
-def _release_migration_lock(redis_client: SyncRedisClient, lease: MigrationLockLease) -> None:
-    current_owner = redis_client.kv.get(lease.key)
-    if current_owner == lease.owner:
-        redis_client.kv.delete(lease.key)
+            if migration_error is not None:
+                if cleanup_error is not None:
+                    migration_error.add_note(str(cleanup_error))
+                raise migration_error.with_traceback(migration_error.__traceback__)
+            if cleanup_error is not None:
+                raise cleanup_error
+    finally:
+        await connectable.dispose()
 
 
 def run_migrations_online(config: Any, target_metadata: Any) -> None:
-    """Run migrations in online mode with the shared Redis lock."""
-    lock_bundle = _acquire_migration_lock()
-    try:
-        asyncio.run(_run_async_migrations(config, target_metadata))
-    finally:
-        if lock_bundle is None:
-            return
-        redis_client, lease, stop_event, watchdog = lock_bundle
-        try:
-            stop_event.set()
-            watchdog.join(timeout=2.0)
-            _release_migration_lock(redis_client, lease)
-            _MIGRATION_LOGGER.info("migration lock released [%s] key=%s", _LOCK_IDENTITY, KEY_DB_MIGRATION_LOCK)
-        except Exception as exc:
-            _MIGRATION_LOGGER.warning(
-                "migration lock release failed [%s]: %s; TTL expiry will clean it up",
-                _LOCK_IDENTITY,
-                exc,
-            )
-        try:
-            redis_client.close()
-        except Exception as exc:
-            _MIGRATION_LOGGER.debug("redis close failed during migration cleanup: %s", exc)
+    """Run migrations in online mode with a Postgres advisory lock."""
+    asyncio.run(_run_async_migrations(config, target_metadata))
 
 
 def run_alembic_env(env_file: str | Path) -> None:

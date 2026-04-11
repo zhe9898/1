@@ -18,9 +18,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.api.nodes import NodeHeartbeatRequest, heartbeat_node
-from backend.kernel.topology.node_auth import hash_node_token
+from backend.control_plane.adapters.nodes import NodeHeartbeatRequest, heartbeat_node
 from backend.models.node import Node
+from backend.runtime.topology.node_auth import hash_node_token
 
 
 def _utcnow() -> datetime.datetime:
@@ -133,7 +133,7 @@ def test_heartbeat_rejected_node_returns_403() -> None:
     """
     import inspect
 
-    from backend.api.nodes import heartbeat_node
+    from backend.control_plane.adapters.nodes import heartbeat_node
 
     source = inspect.getsource(heartbeat_node)
     # Verify the defense-in-depth rejected gate exists

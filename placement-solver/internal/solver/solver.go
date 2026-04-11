@@ -71,7 +71,9 @@ func jobRoutingKey(j *pb.JobSpec) routingKey {
 // isNodeEligible returns true when the node is live and accepts the
 // given job kind.
 func isNodeEligible(n *pb.NodeSpec) bool {
-	if n.EnrollmentStatus != "active" {
+	switch strings.ToLower(n.EnrollmentStatus) {
+	case "active", "approved":
+	default:
 		return false
 	}
 	if n.Status != "online" {
@@ -86,6 +88,22 @@ func isNodeEligible(n *pb.NodeSpec) bool {
 // nodeAcceptsJob checks whether a live node satisfies all hard constraints
 // expressed by the job's routing key.
 func nodeAcceptsJob(j *pb.JobSpec, n *pb.NodeSpec, acceptedKinds map[string]bool) bool {
+	// Canonical executor contract gate projected by the backend. This keeps the
+	// fast path aligned with the Python scheduler without copying registry logic
+	// into Go.
+	if len(n.SupportedWorkloadKinds) > 0 {
+		kindOK := false
+		for _, supported := range n.SupportedWorkloadKinds {
+			if supported == j.Kind {
+				kindOK = true
+				break
+			}
+		}
+		if !kindOK {
+			return false
+		}
+	}
+
 	// Kind gate
 	if len(n.AcceptedKinds) > 0 {
 		found := false
@@ -263,9 +281,9 @@ func nodeScoreForJob(n *pb.NodeSpec, j *pb.JobSpec, remaining int32, binpack boo
 
 // Result holds one Solve output.
 type Result struct {
-	Assignments  map[string]string
+	Assignments   map[string]string
 	FeasiblePairs int32
-	Result       string
+	Result        string
 }
 
 // Solve partitions jobs by routing key, assigns each group to eligible nodes
@@ -451,8 +469,8 @@ func Solve(req *pb.SolveRequest) Result {
 		resultLabel = "fast_path_no_assignments"
 	}
 	return Result{
-		Assignments:  plan,
+		Assignments:   plan,
 		FeasiblePairs: totalFeasible,
-		Result:       resultLabel,
+		Result:        resultLabel,
 	}
 }

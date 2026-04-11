@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import importlib
 import os
@@ -6,45 +6,45 @@ from typing import Final
 
 from fastapi import APIRouter, FastAPI
 
-from backend.api import alerts as alerts_router
-from backend.api import audit_logs as audit_logs_router
-from backend.api import auth as auth_router
-from backend.api import connectors as connectors_router
-from backend.api import console as console_router
-from backend.api import evaluations as evaluations_router
-from backend.api import extensions as extensions_router
-from backend.api import jobs as jobs_router
-from backend.api import kernel as kernel_router
-from backend.api import node_approval as node_approval_router
-from backend.api import nodes as nodes_router
-from backend.api import permissions as permissions_router
-from backend.api import profile as profile_router
-from backend.api import quotas as quotas_router
-from backend.api import reservations as reservations_router
-from backend.api import routes
-from backend.api import scheduling_governance as scheduling_governance_router
-from backend.api import sessions as sessions_router
-from backend.api import settings as settings_router
-from backend.api import triggers as triggers_router
-from backend.api import user_management as user_management_router
-from backend.api import workflows as workflows_router
+from backend.control_plane.adapters import alerts as alerts_router
+from backend.control_plane.adapters import audit_logs as audit_logs_router
+from backend.control_plane.adapters import auth as auth_router
+from backend.control_plane.adapters import connectors as connectors_router
+from backend.control_plane.adapters import console as console_router
+from backend.control_plane.adapters import evaluations as evaluations_router
+from backend.control_plane.adapters import extensions as extensions_router
+from backend.control_plane.adapters import jobs as jobs_router
+from backend.control_plane.adapters import kernel as kernel_router
+from backend.control_plane.adapters import node_approval as node_approval_router
+from backend.control_plane.adapters import nodes as nodes_router
+from backend.control_plane.adapters import permissions as permissions_router
+from backend.control_plane.adapters import profile as profile_router
+from backend.control_plane.adapters import quotas as quotas_router
+from backend.control_plane.adapters import reservations as reservations_router
+from backend.control_plane.adapters import routes
+from backend.control_plane.adapters import scheduling_governance as scheduling_governance_router
+from backend.control_plane.adapters import sessions as sessions_router
+from backend.control_plane.adapters import settings as settings_router
+from backend.control_plane.adapters import triggers as triggers_router
+from backend.control_plane.adapters import user_management as user_management_router
+from backend.control_plane.adapters import workflows as workflows_router
 from backend.kernel.packs.registry import get_pack_definition
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
-from backend.kernel.topology.profile_selection import get_enabled_router_names as resolve_enabled_router_names
-from backend.kernel.topology.profile_selection import (
+from backend.platform.logging.structured import get_logger
+from backend.runtime.topology.profile_selection import get_enabled_router_names as resolve_enabled_router_names
+from backend.runtime.topology.profile_selection import (
     normalize_gateway_pack_keys,
 )
-from backend.platform.logging.structured import get_logger
 
 logger = get_logger("api")
 
 KERNEL_ALLOWED_OPTIONAL_ROUTERS: Final[frozenset[str]] = frozenset()
 
 OPTIONAL_ROUTER_MODULES: Final[dict[str, str]] = {
-    "assets": "backend.api.assets",
-    "health": "backend.api.health",
-    "portability": "backend.api.portability",
-    "search": "backend.api.search",
+    "assets": "backend.control_plane.adapters.assets",
+    "health": "backend.control_plane.adapters.health",
+    "portability": "backend.control_plane.adapters.portability",
+    "search": "backend.control_plane.adapters.search",
 }
 
 CORE_ROUTER_REGISTRY: Final[dict[str, APIRouter]] = {

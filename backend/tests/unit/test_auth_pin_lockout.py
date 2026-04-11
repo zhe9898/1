@@ -43,6 +43,8 @@ def _mock_db(user: Any = None) -> AsyncMock:
     result = MagicMock()
     result.scalar_one_or_none.return_value = user
     db.execute = AsyncMock(return_value=result)
+    db.add = MagicMock()
+    db.flush = AsyncMock()
     return db
 
 
@@ -50,13 +52,14 @@ def _pin_request(username: str = "alice", pin: str = "12345678") -> MagicMock:
     req = MagicMock()
     req.username = username
     req.pin = pin
+    req.tenant_id = "default"
     return req
 
 
 class TestPinLockout:
     @pytest.mark.asyncio
     async def test_lockout_rejects_when_frozen(self) -> None:
-        from backend.api.auth import PIN_RATE_LIMIT_WINDOW, pin_login
+        from backend.control_plane.adapters.auth import PIN_RATE_LIMIT_WINDOW, pin_login
 
         redis = _mock_redis(get_return="1")
         db = _mock_db()
@@ -76,7 +79,7 @@ class TestPinLockout:
     async def test_wrong_pin_increments_counter(self) -> None:
         import bcrypt
 
-        from backend.api.auth import pin_login
+        from backend.control_plane.adapters.auth import pin_login
 
         correct_hash = bcrypt.hashpw(b"99999999", bcrypt.gensalt(rounds=4)).decode("utf-8")
         user = _mock_user(pin_hash=correct_hash)
@@ -97,7 +100,7 @@ class TestPinLockout:
     async def test_fifth_failure_triggers_freeze(self) -> None:
         import bcrypt
 
-        from backend.api.auth import PIN_RATE_LIMIT_MAX, PIN_RATE_LIMIT_WINDOW, pin_login
+        from backend.control_plane.adapters.auth import PIN_RATE_LIMIT_MAX, PIN_RATE_LIMIT_WINDOW, pin_login
 
         correct_hash = bcrypt.hashpw(b"99999999", bcrypt.gensalt(rounds=4)).decode("utf-8")
         user = _mock_user(pin_hash=correct_hash)
@@ -118,7 +121,7 @@ class TestPinLockout:
     async def test_successful_pin_clears_counter(self) -> None:
         import bcrypt
 
-        from backend.api.auth import pin_login
+        from backend.control_plane.adapters.auth import pin_login
 
         pin = "12345678"
         pin_hash = bcrypt.hashpw(pin.encode("utf-8"), bcrypt.gensalt(rounds=4)).decode("utf-8")
@@ -130,7 +133,7 @@ class TestPinLockout:
         response = MagicMock()
 
         with patch(
-            "backend.api.auth.token_response",
+            "backend.control_plane.adapters.auth_token_issue.token_response",
             return_value={"access_token": "test-tok", "token_type": "bearer", "expires_in": 900},
         ):
             await pin_login(req, request, response, db=db, redis=redis)
@@ -139,7 +142,7 @@ class TestPinLockout:
 
     @pytest.mark.asyncio
     async def test_public_ip_rejected(self) -> None:
-        from backend.api.auth import pin_login
+        from backend.control_plane.adapters.auth import pin_login
 
         redis = _mock_redis(get_return=None)
         db = _mock_db()
@@ -156,7 +159,7 @@ class TestPinLockout:
     async def test_disabled_user_rejected_before_token_issue(self) -> None:
         import bcrypt
 
-        from backend.api.auth import pin_login
+        from backend.control_plane.adapters.auth import pin_login
 
         pin_hash = bcrypt.hashpw(b"12345678", bcrypt.gensalt(rounds=4)).decode("utf-8")
         user = _mock_user(pin_hash=pin_hash)

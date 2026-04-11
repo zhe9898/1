@@ -86,7 +86,7 @@ def run_stress_test() -> None:
             # 如果没崩溃说明守护线程逻辑正常 (pexpire被调用或静默异常)
 
             # === 测试3: O(1) 性能管道压测 (模拟 MGET) ===
-            from backend.api.iot import redis
+            from backend.control_plane.adapters.iot import redis
 
             # 实际上这段是对 FastAPI endpoints 的压力验证，我们可以抽象确认模块
 

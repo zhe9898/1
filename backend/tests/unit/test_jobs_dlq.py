@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.api.jobs.dlq import list_dead_letter_queue, requeue_job_from_dead_letter
-from backend.api.jobs.models import JobRequeueRequest
-from backend.kernel.execution.failure_taxonomy import FailureCategory, should_retry_job
+from backend.control_plane.adapters.jobs.dlq import list_dead_letter_queue, requeue_job_from_dead_letter
+from backend.control_plane.adapters.jobs.models import JobRequeueRequest
+from backend.runtime.execution.failure_taxonomy import FailureCategory, should_retry_job
 
 
 def _result_for_scalars(value: object) -> MagicMock:
@@ -112,11 +112,14 @@ async def test_requeue_job_commits_before_removing_redis_index() -> None:
         return True
 
     with (
-        patch("backend.api.jobs.dlq._get_job_by_id_for_update", new=AsyncMock(return_value=job)),
-        patch("backend.api.jobs.dlq._append_log", new=AsyncMock()),
-        patch("backend.api.jobs.dlq.remove_from_dead_letter_queue", new=AsyncMock(side_effect=_remove)),
-        patch("backend.api.jobs.dlq.publish_control_event", new=AsyncMock()),
-        patch("backend.api.jobs.dlq._to_response", return_value=SimpleNamespace(status="pending", model_dump=lambda **_kwargs: {"job_id": "job-1"})),
+        patch("backend.control_plane.adapters.jobs.dlq._get_job_by_id_for_update", new=AsyncMock(return_value=job)),
+        patch("backend.control_plane.adapters.jobs.dlq._append_log", new=AsyncMock()),
+        patch("backend.control_plane.adapters.jobs.dlq.remove_from_dead_letter_queue", new=AsyncMock(side_effect=_remove)),
+        patch("backend.control_plane.adapters.jobs.dlq.publish_control_event", new=AsyncMock()),
+        patch(
+            "backend.control_plane.adapters.jobs.dlq._to_response",
+            return_value=SimpleNamespace(status="pending", model_dump=lambda **_kwargs: {"job_id": "job-1"}),
+        ),
     ):
         response = await requeue_job_from_dead_letter(
             "job-1",
@@ -144,10 +147,10 @@ async def test_requeue_job_from_dead_letter_resets_attempt_and_retry_budget_when
     )
 
     with (
-        patch("backend.api.jobs.dlq._get_job_by_id_for_update", new=AsyncMock(return_value=job)),
-        patch("backend.api.jobs.dlq._append_log", new=AsyncMock()),
-        patch("backend.api.jobs.dlq.remove_from_dead_letter_queue", new=AsyncMock(return_value=True)),
-        patch("backend.api.jobs.dlq.publish_control_event", new=AsyncMock()),
+        patch("backend.control_plane.adapters.jobs.dlq._get_job_by_id_for_update", new=AsyncMock(return_value=job)),
+        patch("backend.control_plane.adapters.jobs.dlq._append_log", new=AsyncMock()),
+        patch("backend.control_plane.adapters.jobs.dlq.remove_from_dead_letter_queue", new=AsyncMock(return_value=True)),
+        patch("backend.control_plane.adapters.jobs.dlq.publish_control_event", new=AsyncMock()),
     ):
         response = await requeue_job_from_dead_letter(
             "job-1",
@@ -177,10 +180,10 @@ async def test_requeue_job_from_dead_letter_can_preserve_existing_budget() -> No
     )
 
     with (
-        patch("backend.api.jobs.dlq._get_job_by_id_for_update", new=AsyncMock(return_value=job)),
-        patch("backend.api.jobs.dlq._append_log", new=AsyncMock()),
-        patch("backend.api.jobs.dlq.remove_from_dead_letter_queue", new=AsyncMock(return_value=True)),
-        patch("backend.api.jobs.dlq.publish_control_event", new=AsyncMock()),
+        patch("backend.control_plane.adapters.jobs.dlq._get_job_by_id_for_update", new=AsyncMock(return_value=job)),
+        patch("backend.control_plane.adapters.jobs.dlq._append_log", new=AsyncMock()),
+        patch("backend.control_plane.adapters.jobs.dlq.remove_from_dead_letter_queue", new=AsyncMock(return_value=True)),
+        patch("backend.control_plane.adapters.jobs.dlq.publish_control_event", new=AsyncMock()),
     ):
         response = await requeue_job_from_dead_letter(
             "job-1",

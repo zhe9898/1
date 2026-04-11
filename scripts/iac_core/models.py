@@ -26,6 +26,7 @@ class BuildConfig(TypedDict, total=False):
 
     context: str
     dockerfile: str
+    target: str
     args: dict[str, str]
 
 
@@ -95,6 +96,41 @@ class LoggingConfig(TypedDict, total=False):
     options: LoggingDriverOptions
 
 
+class HostBinaryBuildConfig(TypedDict, total=False):
+    """runtime=host binary materialization plan."""
+
+    type: str
+    source_dir: str
+    package: str
+    output: str
+    env: dict[str, str]
+    trimpath: bool
+    ldflags: str
+
+
+class HostEntrypointConfig(TypedDict, total=False):
+    """Declarative host-runtime process entrypoint."""
+
+    type: str
+    python: str
+    module: str
+    script: str
+    path: str
+    args: list[str]
+    build: HostBinaryBuildConfig
+
+
+class GatewayServeConfig(TypedDict, total=False):
+    """Structured gateway serve semantics compiled into a host entrypoint."""
+
+    engine: str
+    app: str
+    host: str
+    port: int
+    workers: int
+    graceful_shutdown_seconds: int
+
+
 class ServiceDef(TypedDict, total=False):
     """
     单个服务定义。
@@ -116,14 +152,20 @@ class ServiceDef(TypedDict, total=False):
     """
 
     enabled: bool
+    runtime: str
     image: str
     build: BuildConfig
+    serve: GatewayServeConfig
+    entrypoint: HostEntrypointConfig
     container_name: str
     restart: str
+    restart_sec: int
     networks: list[str]
     ports: list[str]
     volumes: list[str]
     environment: dict[str, str]
+    extra_hosts: list[str]
+    environment_file: str
     command: str | list[str]
     depends_on: list[str] | dict[str, dict[str, str]]
     healthcheck: HealthcheckConfig
@@ -136,6 +178,12 @@ class ServiceDef(TypedDict, total=False):
     tmpfs: list[str]
     logging: LoggingConfig
     user: str
+    group: str
+    working_dir: str
+    description: str
+    port: int
+    caddy_path: str
+    after: str | list[str]
     cap_drop: list[str]
     cap_add: list[str]
 
@@ -272,6 +320,55 @@ class RegistryConfig(TypedDict, total=False):
     url: str
 
 
+class RedisRuntimeStateContract(TypedDict, total=False):
+    pattern: str
+    match: str
+    role: str
+    authoritative: bool
+    decision_gate: bool
+    description: str
+
+
+class RuntimeAuthorityBoundaryContract(TypedDict, total=False):
+    layer: str
+    owner: str
+    authority: str
+    non_authority_roles: list[str]
+
+
+class ControlPlanePersonaContract(TypedDict, total=False):
+    key: str
+    label: str
+    description: str
+    default_executor_contract: str
+    allowed_executor_contracts: list[str]
+    default_node_types: list[str]
+    default_platforms: list[str]
+
+
+class CanonicalExecutorContract(TypedDict, total=False):
+    description: str
+    supported_workload_kinds: list[str]
+    requires_gpu: bool
+    min_memory_mb: int
+    min_cpu_cores: int
+    max_concurrency_hint: int
+    stability_tier: str
+
+
+class RuntimeContractsConfig(TypedDict, total=False):
+    control_plane_event_channels: list[str]
+    browser_realtime_event_channels: list[str]
+    internal_coordination_channels: list[str]
+    authoritative_redis_runtime_state_allowed: bool
+    redis_ephemeral_runtime_state: list[RedisRuntimeStateContract]
+    runtime_authority_boundaries: list[RuntimeAuthorityBoundaryContract]
+    control_plane_personas: list[ControlPlanePersonaContract]
+    persona_to_default_executor_contract: dict[str, str]
+    canonical_executor_contracts: dict[str, CanonicalExecutorContract]
+    workload_kinds: list[str]
+
+
 # ===========================================================================
 # 根配置
 # ===========================================================================
@@ -297,3 +394,4 @@ class SystemConfig(TypedDict, total=False):
     backup: BackupConfig
     secrets: SecretsConfig
     registry: RegistryConfig
+    runtime_contracts: RuntimeContractsConfig

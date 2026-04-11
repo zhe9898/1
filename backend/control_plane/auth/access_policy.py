@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from backend.control_plane.auth.role_claims import ADMIN_ROLES, SUPERADMIN_ROLE, current_user_role
 from backend.kernel.contracts.errors import zen
+from backend.kernel.contracts.role_claims import ADMIN_ROLES, SUPERADMIN_ROLE, current_user_role
 
 
 def has_admin_role(current_user: Mapping[str, object] | None) -> bool:

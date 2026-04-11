@@ -1,21 +1,416 @@
 {
   "version": "v3.43",
-  "freeze_scope": "path-surface-only",
-  "freeze_boundary": "Only path presence is frozen. Methods, schemas, responses, and auth semantics are out of scope.",
-  "allowlist_prefixes": [
-    "/api/v1/capabilities",
-    "/api/v1/switches",
-    "/api/v1/events",
-    "/api/v1/nodes",
-    "/api/v1/jobs",
-    "/api/v1/connectors",
-    "/api/v1/console",
-    "/api/v1/workflows",
-    "/api/v1/alerts",
-    "/api/v1/audit-logs",
-    "/api/v1/cluster"
-  ],
-  "description": "ZEN70 v3.43 control-plane path surface locked by ADR-0047. Do not edit manually. Re-run --init after deliberate surface changes.",
+  "freeze_scope": "path-and-method-surface",
+  "freeze_boundary": "Path presence and HTTP methods are frozen. Schemas, responses, and auth semantics are out of scope.",
+  "description": "ZEN70 v3.43 API path+method surface locked by ADR-0047. Do not edit manually. Re-run generate_contracts.py after deliberate surface changes.",
+  "path_methods": {
+    "/api/v1/alerts": [
+      "GET"
+    ],
+    "/api/v1/alerts/evaluate": [
+      "POST"
+    ],
+    "/api/v1/alerts/rules": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/alerts/rules/{rule_id}": [
+      "DELETE",
+      "PATCH"
+    ],
+    "/api/v1/alerts/{alert_id}/resolve": [
+      "POST"
+    ],
+    "/api/v1/audit-logs": [
+      "GET"
+    ],
+    "/api/v1/auth/bootstrap": [
+      "POST"
+    ],
+    "/api/v1/auth/credentials/{credential_id}": [
+      "DELETE"
+    ],
+    "/api/v1/auth/invites": [
+      "POST"
+    ],
+    "/api/v1/auth/invites/{token}/fallback/login": [
+      "POST"
+    ],
+    "/api/v1/auth/invites/{token}/webauthn/register/begin": [
+      "POST"
+    ],
+    "/api/v1/auth/invites/{token}/webauthn/register/complete": [
+      "POST"
+    ],
+    "/api/v1/auth/me/ai-preference": [
+      "PATCH"
+    ],
+    "/api/v1/auth/password/login": [
+      "POST"
+    ],
+    "/api/v1/auth/pin/login": [
+      "POST"
+    ],
+    "/api/v1/auth/pin/set": [
+      "POST"
+    ],
+    "/api/v1/auth/push/subscribe": [
+      "POST"
+    ],
+    "/api/v1/auth/push/test-trigger": [
+      "POST"
+    ],
+    "/api/v1/auth/push/vapid-public-key": [
+      "GET"
+    ],
+    "/api/v1/auth/session": [
+      "GET"
+    ],
+    "/api/v1/auth/sys/status": [
+      "GET"
+    ],
+    "/api/v1/auth/users": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/auth/webauthn/login/begin": [
+      "POST"
+    ],
+    "/api/v1/auth/webauthn/login/complete": [
+      "POST"
+    ],
+    "/api/v1/auth/webauthn/register/begin": [
+      "POST"
+    ],
+    "/api/v1/auth/webauthn/register/complete": [
+      "POST"
+    ],
+    "/api/v1/capabilities": [
+      "GET"
+    ],
+    "/api/v1/connectors": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/connectors/schema": [
+      "GET"
+    ],
+    "/api/v1/connectors/{id}/invoke": [
+      "POST"
+    ],
+    "/api/v1/connectors/{id}/test": [
+      "POST"
+    ],
+    "/api/v1/console/diagnostics": [
+      "GET"
+    ],
+    "/api/v1/console/menu": [
+      "GET"
+    ],
+    "/api/v1/console/overview": [
+      "GET"
+    ],
+    "/api/v1/console/surfaces": [
+      "GET"
+    ],
+    "/api/v1/evaluations": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/evaluations/schema": [
+      "GET"
+    ],
+    "/api/v1/evaluations/{evaluation_id}": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/v1/events": [
+      "GET"
+    ],
+    "/api/v1/events/ping": [
+      "POST"
+    ],
+    "/api/v1/extensions": [
+      "GET"
+    ],
+    "/api/v1/extensions/connector-kinds": [
+      "GET"
+    ],
+    "/api/v1/extensions/connector-kinds/{kind:path}": [
+      "GET"
+    ],
+    "/api/v1/extensions/job-kinds": [
+      "GET"
+    ],
+    "/api/v1/extensions/job-kinds/{kind:path}": [
+      "GET"
+    ],
+    "/api/v1/extensions/workflow-templates": [
+      "GET"
+    ],
+    "/api/v1/extensions/workflow-templates/{template_id}": [
+      "GET"
+    ],
+    "/api/v1/extensions/workflow-templates/{template_id}/render": [
+      "POST"
+    ],
+    "/api/v1/extensions/workflow-templates/{template_id}/start": [
+      "POST"
+    ],
+    "/api/v1/extensions/{extension_id}": [
+      "GET"
+    ],
+    "/api/v1/jobs": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/jobs/control-plane/fair-share/config": [
+      "GET"
+    ],
+    "/api/v1/jobs/control-plane/governance/stats": [
+      "GET"
+    ],
+    "/api/v1/jobs/control-plane/governance/timeline": [
+      "GET"
+    ],
+    "/api/v1/jobs/control-plane/release-quarantine/{node_id}": [
+      "POST"
+    ],
+    "/api/v1/jobs/control-plane/snapshot": [
+      "GET"
+    ],
+    "/api/v1/jobs/dead-letter": [
+      "GET"
+    ],
+    "/api/v1/jobs/pull": [
+      "POST"
+    ],
+    "/api/v1/jobs/queue/stats": [
+      "GET"
+    ],
+    "/api/v1/jobs/schema": [
+      "GET"
+    ],
+    "/api/v1/jobs/stats/by-type": [
+      "GET"
+    ],
+    "/api/v1/jobs/{id}": [
+      "GET"
+    ],
+    "/api/v1/jobs/{id}/attempts": [
+      "GET"
+    ],
+    "/api/v1/jobs/{id}/cancel": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/dead-letter": [
+      "DELETE"
+    ],
+    "/api/v1/jobs/{id}/explain": [
+      "GET"
+    ],
+    "/api/v1/jobs/{id}/fail": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/priority": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/progress": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/renew": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/requeue": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/result": [
+      "POST"
+    ],
+    "/api/v1/jobs/{id}/retry": [
+      "POST"
+    ],
+    "/api/v1/kernel/capabilities": [
+      "GET"
+    ],
+    "/api/v1/kernel/capabilities/{key:path}": [
+      "GET"
+    ],
+    "/api/v1/nodes": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/nodes/heartbeat": [
+      "POST"
+    ],
+    "/api/v1/nodes/pending": [
+      "GET"
+    ],
+    "/api/v1/nodes/register": [
+      "POST"
+    ],
+    "/api/v1/nodes/schema": [
+      "GET"
+    ],
+    "/api/v1/nodes/self/drain": [
+      "POST"
+    ],
+    "/api/v1/nodes/{id}": [
+      "GET"
+    ],
+    "/api/v1/nodes/{id}/drain": [
+      "POST"
+    ],
+    "/api/v1/nodes/{id}/revoke": [
+      "POST"
+    ],
+    "/api/v1/nodes/{id}/token": [
+      "POST"
+    ],
+    "/api/v1/nodes/{id}/undrain": [
+      "POST"
+    ],
+    "/api/v1/nodes/{node_id}/approve": [
+      "POST"
+    ],
+    "/api/v1/nodes/{node_id}/reject": [
+      "POST"
+    ],
+    "/api/v1/permissions": [
+      "POST"
+    ],
+    "/api/v1/permissions/users/{user_id}": [
+      "GET"
+    ],
+    "/api/v1/permissions/{permission_id}": [
+      "DELETE"
+    ],
+    "/api/v1/profile": [
+      "GET"
+    ],
+    "/api/v1/quotas": [
+      "GET",
+      "PUT"
+    ],
+    "/api/v1/reservations": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/reservations/nodes/{node_id}/backfill-window": [
+      "GET"
+    ],
+    "/api/v1/reservations/stats": [
+      "GET"
+    ],
+    "/api/v1/reservations/{job_id}": [
+      "GET"
+    ],
+    "/api/v1/reservations/{job_id}/cancel": [
+      "POST"
+    ],
+    "/api/v1/scheduling/decisions": [
+      "GET"
+    ],
+    "/api/v1/scheduling/executors": [
+      "GET"
+    ],
+    "/api/v1/scheduling/flags": [
+      "GET",
+      "PUT"
+    ],
+    "/api/v1/scheduling/overview": [
+      "GET"
+    ],
+    "/api/v1/scheduling/placement-policies": [
+      "GET"
+    ],
+    "/api/v1/scheduling/policies": [
+      "GET",
+      "PUT"
+    ],
+    "/api/v1/scheduling/policies/{tenant_id}": [
+      "DELETE"
+    ],
+    "/api/v1/sessions/me": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/v1/sessions/me/{session_id}": [
+      "DELETE"
+    ],
+    "/api/v1/sessions/users/{user_id}": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/v1/settings/config": [
+      "GET"
+    ],
+    "/api/v1/settings/config/{key}": [
+      "PUT"
+    ],
+    "/api/v1/settings/flags": [
+      "GET"
+    ],
+    "/api/v1/settings/flags/{key}": [
+      "PUT"
+    ],
+    "/api/v1/settings/schema": [
+      "GET"
+    ],
+    "/api/v1/settings/system-info": [
+      "GET"
+    ],
+    "/api/v1/triggers": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/triggers/kinds": [
+      "GET"
+    ],
+    "/api/v1/triggers/kinds/{kind:path}": [
+      "GET"
+    ],
+    "/api/v1/triggers/webhooks/{tenant_id}/{trigger_id}": [
+      "POST"
+    ],
+    "/api/v1/triggers/{trigger_id}": [
+      "GET"
+    ],
+    "/api/v1/triggers/{trigger_id}/activate": [
+      "POST"
+    ],
+    "/api/v1/triggers/{trigger_id}/deliveries": [
+      "GET"
+    ],
+    "/api/v1/triggers/{trigger_id}/fire": [
+      "POST"
+    ],
+    "/api/v1/triggers/{trigger_id}/pause": [
+      "POST"
+    ],
+    "/api/v1/users/{user_id}": [
+      "DELETE"
+    ],
+    "/api/v1/users/{user_id}/activate": [
+      "POST"
+    ],
+    "/api/v1/users/{user_id}/suspend": [
+      "POST"
+    ],
+    "/api/v1/workflows": [
+      "GET",
+      "POST"
+    ],
+    "/api/v1/workflows/{workflow_id}": [
+      "GET"
+    ],
+    "/api/v1/workflows/{workflow_id}/steps/{step_id}/complete": [
+      "POST"
+    ],
+    "/api/v1/workflows/{workflow_id}/steps/{step_id}/fail": [
+      "POST"
+    ]
+  },
   "paths": [
     "/api/v1/alerts",
     "/api/v1/alerts/evaluate",
@@ -23,6 +418,26 @@
     "/api/v1/alerts/rules/{rule_id}",
     "/api/v1/alerts/{alert_id}/resolve",
     "/api/v1/audit-logs",
+    "/api/v1/auth/bootstrap",
+    "/api/v1/auth/credentials/{credential_id}",
+    "/api/v1/auth/invites",
+    "/api/v1/auth/invites/{token}/fallback/login",
+    "/api/v1/auth/invites/{token}/webauthn/register/begin",
+    "/api/v1/auth/invites/{token}/webauthn/register/complete",
+    "/api/v1/auth/me/ai-preference",
+    "/api/v1/auth/password/login",
+    "/api/v1/auth/pin/login",
+    "/api/v1/auth/pin/set",
+    "/api/v1/auth/push/subscribe",
+    "/api/v1/auth/push/test-trigger",
+    "/api/v1/auth/push/vapid-public-key",
+    "/api/v1/auth/session",
+    "/api/v1/auth/sys/status",
+    "/api/v1/auth/users",
+    "/api/v1/auth/webauthn/login/begin",
+    "/api/v1/auth/webauthn/login/complete",
+    "/api/v1/auth/webauthn/register/begin",
+    "/api/v1/auth/webauthn/register/complete",
     "/api/v1/capabilities",
     "/api/v1/connectors",
     "/api/v1/connectors/schema",
@@ -31,9 +446,28 @@
     "/api/v1/console/diagnostics",
     "/api/v1/console/menu",
     "/api/v1/console/overview",
+    "/api/v1/console/surfaces",
+    "/api/v1/evaluations",
+    "/api/v1/evaluations/schema",
+    "/api/v1/evaluations/{evaluation_id}",
     "/api/v1/events",
     "/api/v1/events/ping",
+    "/api/v1/extensions",
+    "/api/v1/extensions/connector-kinds",
+    "/api/v1/extensions/connector-kinds/{kind:path}",
+    "/api/v1/extensions/job-kinds",
+    "/api/v1/extensions/job-kinds/{kind:path}",
+    "/api/v1/extensions/workflow-templates",
+    "/api/v1/extensions/workflow-templates/{template_id}",
+    "/api/v1/extensions/workflow-templates/{template_id}/render",
+    "/api/v1/extensions/workflow-templates/{template_id}/start",
+    "/api/v1/extensions/{extension_id}",
     "/api/v1/jobs",
+    "/api/v1/jobs/control-plane/fair-share/config",
+    "/api/v1/jobs/control-plane/governance/stats",
+    "/api/v1/jobs/control-plane/governance/timeline",
+    "/api/v1/jobs/control-plane/release-quarantine/{node_id}",
+    "/api/v1/jobs/control-plane/snapshot",
     "/api/v1/jobs/dead-letter",
     "/api/v1/jobs/pull",
     "/api/v1/jobs/queue/stats",
@@ -51,11 +485,14 @@
     "/api/v1/jobs/{id}/requeue",
     "/api/v1/jobs/{id}/result",
     "/api/v1/jobs/{id}/retry",
+    "/api/v1/kernel/capabilities",
+    "/api/v1/kernel/capabilities/{key:path}",
     "/api/v1/nodes",
     "/api/v1/nodes/heartbeat",
     "/api/v1/nodes/pending",
     "/api/v1/nodes/register",
     "/api/v1/nodes/schema",
+    "/api/v1/nodes/self/drain",
     "/api/v1/nodes/{id}",
     "/api/v1/nodes/{id}/drain",
     "/api/v1/nodes/{id}/revoke",
@@ -63,8 +500,44 @@
     "/api/v1/nodes/{id}/undrain",
     "/api/v1/nodes/{node_id}/approve",
     "/api/v1/nodes/{node_id}/reject",
-    "/api/v1/switches",
-    "/api/v1/switches/{name}",
+    "/api/v1/permissions",
+    "/api/v1/permissions/users/{user_id}",
+    "/api/v1/permissions/{permission_id}",
+    "/api/v1/profile",
+    "/api/v1/quotas",
+    "/api/v1/reservations",
+    "/api/v1/reservations/nodes/{node_id}/backfill-window",
+    "/api/v1/reservations/stats",
+    "/api/v1/reservations/{job_id}",
+    "/api/v1/reservations/{job_id}/cancel",
+    "/api/v1/scheduling/decisions",
+    "/api/v1/scheduling/executors",
+    "/api/v1/scheduling/flags",
+    "/api/v1/scheduling/overview",
+    "/api/v1/scheduling/placement-policies",
+    "/api/v1/scheduling/policies",
+    "/api/v1/scheduling/policies/{tenant_id}",
+    "/api/v1/sessions/me",
+    "/api/v1/sessions/me/{session_id}",
+    "/api/v1/sessions/users/{user_id}",
+    "/api/v1/settings/config",
+    "/api/v1/settings/config/{key}",
+    "/api/v1/settings/flags",
+    "/api/v1/settings/flags/{key}",
+    "/api/v1/settings/schema",
+    "/api/v1/settings/system-info",
+    "/api/v1/triggers",
+    "/api/v1/triggers/kinds",
+    "/api/v1/triggers/kinds/{kind:path}",
+    "/api/v1/triggers/webhooks/{tenant_id}/{trigger_id}",
+    "/api/v1/triggers/{trigger_id}",
+    "/api/v1/triggers/{trigger_id}/activate",
+    "/api/v1/triggers/{trigger_id}/deliveries",
+    "/api/v1/triggers/{trigger_id}/fire",
+    "/api/v1/triggers/{trigger_id}/pause",
+    "/api/v1/users/{user_id}",
+    "/api/v1/users/{user_id}/activate",
+    "/api/v1/users/{user_id}/suspend",
     "/api/v1/workflows",
     "/api/v1/workflows/{workflow_id}",
     "/api/v1/workflows/{workflow_id}/steps/{step_id}/complete",

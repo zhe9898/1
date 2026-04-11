@@ -7,7 +7,9 @@ import ControlDashboard from "../src/views/ControlDashboard.vue";
 import ConnectorsView from "../src/views/ConnectorsView.vue";
 import JobsView from "../src/views/JobsView.vue";
 import NodesView from "../src/views/NodesView.vue";
-import { CONNECTORS, JOBS, NODES } from "../src/utils/api";
+import ReservationsView from "../src/views/ReservationsView.vue";
+import TriggersView from "../src/views/TriggersView.vue";
+import { CONNECTORS, JOBS, NODES, RESERVATIONS, TRIGGERS } from "../src/utils/api";
 
 const mockState = vi.hoisted(() => ({
   route: { path: "/", fullPath: "/", query: {} as Record<string, string> },
@@ -17,6 +19,8 @@ const mockState = vi.hoisted(() => ({
   nodesStore: {} as Record<string, unknown>,
   jobsStore: {} as Record<string, unknown>,
   connectorsStore: {} as Record<string, unknown>,
+  reservationsStore: {} as Record<string, unknown>,
+  triggersStore: {} as Record<string, unknown>,
   eventsStore: {} as Record<string, unknown>,
 }));
 
@@ -48,6 +52,14 @@ vi.mock("@/stores/jobs", () => ({
 
 vi.mock("@/stores/connectors", () => ({
   useConnectorsStore: () => mockState.connectorsStore,
+}));
+
+vi.mock("@/stores/reservations", () => ({
+  useReservationsStore: () => mockState.reservationsStore,
+}));
+
+vi.mock("@/stores/triggers", () => ({
+  useTriggersStore: () => mockState.triggersStore,
 }));
 
 vi.mock("@/stores/events", () => ({
@@ -286,6 +298,37 @@ beforeEach(() => {
     applyConnectorEvent: vi.fn(),
   };
 
+  mockState.reservationsStore = {
+    items: [],
+    stats: {
+      tenant_id: "tenant-a",
+      active_reservations: 0,
+      store_backend: "memory",
+      node_counts: {},
+      config: {},
+    },
+    loading: false,
+    statsLoading: false,
+    error: null,
+    nodeCountEntries: [],
+    fetchReservations: vi.fn().mockResolvedValue(undefined),
+    fetchStats: vi.fn().mockResolvedValue(undefined),
+    applyReservationEvent: vi.fn(),
+  };
+
+  mockState.triggersStore = {
+    items: [],
+    deliveriesByTrigger: {},
+    loading: false,
+    deliveriesLoading: {},
+    actionLoading: {},
+    error: null,
+    fetchTriggers: vi.fn().mockResolvedValue(undefined),
+    fetchTriggerDeliveries: vi.fn().mockResolvedValue([]),
+    runStatusAction: vi.fn().mockResolvedValue(undefined),
+    applyTriggerEvent: vi.fn(),
+  };
+
   mockState.eventsStore = {
     revision: 0,
     items: [],
@@ -500,5 +543,117 @@ describe("control-plane views", () => {
     expect(wrapper.text()).toContain("MQTT Main");
     expect(wrapper.text()).toContain("status error");
     expect(wrapper.text()).toContain("connector auth broken");
+  });
+
+  it("renders reservations from backend contracts and stats", async () => {
+    mockState.route = reactive({
+      path: "/reservations",
+      fullPath: "/reservations?node_id=node-1",
+      query: { node_id: "node-1" },
+    });
+    mockState.capabilitiesStore.caps = {
+      reservations: { endpoint: RESERVATIONS.list, enabled: true, status: "online" },
+    };
+    mockState.reservationsStore.items = [
+      {
+        job_id: "job-1",
+        node_id: "node-1",
+        start_at: "2026-03-28T11:00:00Z",
+        end_at: "2026-03-28T11:30:00Z",
+        priority: 90,
+        cpu_cores: 2,
+        memory_mb: 1024,
+        gpu_vram_mb: 0,
+        slots: 1,
+      },
+    ];
+    mockState.reservationsStore.stats = {
+      tenant_id: "tenant-a",
+      active_reservations: 1,
+      store_backend: "memory",
+      node_counts: { "node-1": 1 },
+      config: { max_reservations: 64 },
+    };
+    mockState.reservationsStore.nodeCountEntries = [["node-1", 1]];
+
+    const wrapper = mount(ReservationsView);
+    await flushPromises();
+
+    expect(mockState.reservationsStore.fetchReservations).toHaveBeenCalledWith({ node_id: "node-1" });
+    expect(mockState.reservationsStore.fetchStats).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("Reservations");
+    expect(wrapper.text()).toContain("Active Reservations");
+    expect(wrapper.text()).toContain("node node-1");
+    expect(wrapper.text()).toContain("Job job-1");
+  });
+
+  it("renders triggers with delivery history controls", async () => {
+    mockState.route = reactive({
+      path: "/triggers",
+      fullPath: "/triggers?status=active",
+      query: { status: "active" },
+    });
+    mockState.capabilitiesStore.caps = {
+      triggers: { endpoint: TRIGGERS.list, enabled: true, status: "online" },
+    };
+    mockState.triggersStore.items = [
+      {
+        trigger_id: "manual-alert",
+        name: "Manual Alert",
+        description: "Dispatches an alert workflow",
+        kind: "manual",
+        status: "active",
+        config: {},
+        input_defaults: {},
+        target: { target_kind: "workflow_template", template_id: "alert-template" },
+        last_fired_at: "2026-03-28T11:20:00Z",
+        last_delivery_status: "delivered",
+        last_delivery_message: "workflow accepted",
+        last_delivery_id: "delivery-1",
+        last_delivery_target_kind: "workflow",
+        last_delivery_target_id: "wf-1",
+        next_run_at: null,
+        created_by: "admin",
+        updated_by: "admin",
+        created_at: "2026-03-28T10:00:00Z",
+        updated_at: "2026-03-28T11:20:00Z",
+      },
+    ];
+    mockState.triggersStore.deliveriesByTrigger = {
+      "manual-alert": [
+        {
+          delivery_id: "delivery-1",
+          trigger_id: "manual-alert",
+          trigger_kind: "manual",
+          source_kind: "manual",
+          status: "delivered",
+          idempotency_key: null,
+          actor: "admin",
+          reason: null,
+          input_payload: {},
+          context: {},
+          target_kind: "workflow",
+          target_id: "wf-1",
+          target_snapshot: {},
+          error_message: null,
+          fired_at: "2026-03-28T11:20:00Z",
+          delivered_at: "2026-03-28T11:20:01Z",
+          created_at: "2026-03-28T11:20:00Z",
+          updated_at: "2026-03-28T11:20:01Z",
+        },
+      ],
+    };
+
+    const wrapper = mount(TriggersView);
+    await flushPromises();
+
+    expect(mockState.triggersStore.fetchTriggers).toHaveBeenCalledWith({ status: "active" });
+    expect(wrapper.text()).toContain("Manual Alert");
+    expect(wrapper.text()).toContain("status active");
+
+    const showDeliveriesButton = wrapper.findAll("button").find((button) => button.text() === "Show Deliveries");
+    expect(showDeliveriesButton).toBeTruthy();
+    await showDeliveriesButton!.trigger("click");
+    expect(mockState.triggersStore.fetchTriggerDeliveries).toHaveBeenCalledWith("manual-alert", 50, true);
   });
 });

@@ -16,7 +16,7 @@ Pack truth is owned by the kernel pack registry:
 
 - `backend/kernel/packs/registry.py`
 - `backend/kernel/packs/presets.py`
-- `backend/kernel/topology/pack_selection.py`
+- `backend/runtime/topology/pack_selection.py`
 
 ### 2. Runtime inputs
 

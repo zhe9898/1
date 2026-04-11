@@ -15,7 +15,7 @@
 
 本报告只以当前仓库实现为事实源，按固定链路做纵深重审：
 
-`system.yaml / scripts` 配置入口 -> `backend/api/main.py` 与 jobs/nodes/control 入口 -> `backend/core` 中调度、租约、重试、并发、配额、placement、状态流转 -> `backend/models` 与 migration -> `runner-agent` 轮询、执行、心跳、结果回传 -> `placement-solver` -> `frontend` jobs/nodes/events/console 消费与展示。
+`system.yaml / scripts` 配置入口 -> `backend/control_plane/adapters/main.py` 与 jobs/nodes/control 入口 -> `backend/core` 中调度、租约、重试、并发、配额、placement、状态流转 -> `backend/models` 与 migration -> `runner-agent` 轮询、执行、心跳、结果回传 -> `placement-solver` -> `frontend` jobs/nodes/events/console 消费与展示。
 
 本次首报目标不是覆盖整仓，而是先证明执行主链每一跳都被点名审过，且所有发现都能落到具体文件、函数和状态转移。身份权限、连接器编排、部署/IaC、可观测性、兼容面等剩余范围已经在本批次模块化归类，见 [`module-catalog.yaml`](./module-catalog.yaml)。
 
@@ -23,9 +23,9 @@
 
 ```mermaid
 flowchart LR
-    A["system.yaml / scripts/compiler.py"] --> B["backend/api/main.py"]
-    B --> C["backend/api/jobs/* + backend/api/nodes.py + backend/api/routes.py"]
-    C --> D["backend/kernel/scheduling/job_scheduler.py / dispatch_lifecycle.py / lease_service.py / job_lifecycle_service.py"]
+    A["system.yaml / scripts/compiler.py"] --> B["backend/control_plane/adapters/main.py"]
+    B --> C["backend/control_plane/adapters/jobs/* + backend/control_plane/adapters/nodes.py + backend/control_plane/adapters/routes.py"]
+    C --> D["backend/runtime/scheduling/job_scheduler.py / dispatch_lifecycle.py / lease_service.py / job_lifecycle_service.py"]
     D --> E["backend/models/job.py / job_attempt.py / node.py + migrations/003_advanced_scheduling.sql"]
     D --> F["runner-agent/internal/jobs/poller.go + api/client.go + exec/heartbeat/service"]
     D --> G["placement-solver/internal/solver/solver.go"]
@@ -38,10 +38,10 @@ flowchart LR
 ## 审查过的路径清单
 
 - 配置入口：`system.yaml`、`scripts/compiler.py`
-- HTTP 与事件入口：`backend/api/main.py`、`backend/api/routes.py`、`backend/api/control_events.py`
-- 执行 API：`backend/api/jobs/__init__.py`、`backend/api/jobs/submission.py`、`backend/api/jobs/routes.py`、`backend/api/jobs/dispatch.py`、`backend/api/jobs/lifecycle.py`、`backend/api/jobs/helpers.py`、`backend/api/jobs/database.py`、`backend/api/jobs/dlq.py`、`backend/api/jobs/models.py`
-- 节点 API：`backend/api/nodes.py`、`backend/api/nodes_models.py`
-- 核心状态机：`backend/kernel/scheduling/job_scheduler.py`、`backend/kernel/execution/dispatch_lifecycle.py`、`backend/kernel/execution/lease_service.py`、`backend/kernel/execution/job_lifecycle_service.py`、`backend/kernel/execution/failure_taxonomy.py`、`backend/kernel/topology/node_auth.py`、`backend/kernel/contracts/safe_error_projection.py`、`backend/kernel/execution/attempt_expiration_service.py`、`backend/platform/redis/**`、`backend/kernel/scheduling/placement_solver.py`、`backend/kernel/scheduling/placement_grpc_client.py`、`backend/kernel/scheduling/quota_aware_scheduling.py`
+- HTTP 与事件入口：`backend/control_plane/adapters/main.py`、`backend/control_plane/adapters/routes.py`、`backend/control_plane/adapters/control_events.py`
+- 执行 API：`backend/control_plane/adapters/jobs/__init__.py`、`backend/control_plane/adapters/jobs/submission.py`、`backend/control_plane/adapters/jobs/routes.py`、`backend/control_plane/adapters/jobs/dispatch.py`、`backend/control_plane/adapters/jobs/lifecycle.py`、`backend/control_plane/adapters/jobs/helpers.py`、`backend/control_plane/adapters/jobs/database.py`、`backend/control_plane/adapters/jobs/dlq.py`、`backend/control_plane/adapters/jobs/models.py`
+- 节点 API：`backend/control_plane/adapters/nodes.py`、`backend/control_plane/adapters/nodes_models.py`
+- 核心状态机：`backend/runtime/scheduling/job_scheduler.py`、`backend/runtime/execution/dispatch_lifecycle.py`、`backend/runtime/execution/lease_service.py`、`backend/runtime/execution/job_lifecycle_service.py`、`backend/runtime/execution/failure_taxonomy.py`、`backend/runtime/topology/node_auth.py`、`backend/kernel/contracts/safe_error_projection.py`、`backend/runtime/execution/attempt_expiration_service.py`、`backend/platform/redis/**`、`backend/runtime/scheduling/placement_solver.py`、`backend/runtime/scheduling/placement_grpc_client.py`、`backend/runtime/scheduling/quota_aware_scheduling.py`
 - 数据层：`backend/models/job.py`、`backend/models/job_attempt.py`、`backend/models/node.py`、`migrations/003_advanced_scheduling.sql`
 - 后台 worker：`backend/workers/attempt_expiration_worker.py`
 - runner-agent：`runner-agent/internal/api/client.go`、`runner-agent/internal/jobs/poller.go`、`runner-agent/internal/exec/executor.go`、`runner-agent/internal/heartbeat/heartbeat.go`、`runner-agent/internal/service/service.go`
@@ -64,8 +64,8 @@ flowchart LR
 
 ### F-001 租约续约 token 旋转后未同步回 runner-agent
 
-- `backend/kernel/execution/lease_service.py:104-120` 中 `LeaseService.renew_lease()` 生成 `new_token`，同时写回 `attempt.lease_token` 与 `job.lease_token`，并将新 token 作为返回值。
-- `backend/api/jobs/lifecycle.py:369-405` 的 `renew_job_lease()` 通过 `JobLeaseResponse` 把续约后的 `lease_token` 回传给调用方。
+- `backend/runtime/execution/lease_service.py:104-120` 中 `LeaseService.renew_lease()` 生成 `new_token`，同时写回 `attempt.lease_token` 与 `job.lease_token`，并将新 token 作为返回值。
+- `backend/control_plane/adapters/jobs/lifecycle.py:369-405` 的 `renew_job_lease()` 通过 `JobLeaseResponse` 把续约后的 `lease_token` 回传给调用方。
 - `backend/tests/unit/test_jobs_runtime.py:267-294` 明确断言续约后 `response.lease_token != "lease-a"`，且 `job.lease_token`、`attempt.lease_token` 都被更新。
 - `runner-agent/internal/api/client.go:271-272` 的 `Client.RenewLease()` 直接 `post(..., nil)`，没有解析续约响应体。
 - `runner-agent/internal/jobs/poller.go:128-135` 续约请求始终携带旧的 `job.LeaseToken`；同文件 `166-176`、`197-206`、`219-228` 的进度、失败、成功回传也继续使用旧 token。
@@ -74,25 +74,25 @@ flowchart LR
 ### F-002 SSE 事件总线未见租户过滤
 
 - `backend/core/constants.py:23-35` 将事件 channel 固定为 `node:events`、`job:events`、`connector:events`、`trigger:events`、`reservation:events`，没有租户维度。
-- `backend/api/routes.py:168-175` 的 `_sse_event_generator()` 直接订阅上述全局 channel。
-- `backend/api/routes.py:226-250` 的 `sse_events()` 虽然要求 `current_user = Depends(get_current_user)`，但没有派生 `tenant_id`，也没有在事件循环中做 payload 级过滤。
-- `backend/api/control_events.py:18-40` 的 `publish_control_event()` 仅按传入 channel 发布，不对租户做二次分流。
-- `backend/api/nodes_models.py:81-110` 的 `NodeResponse` 不包含 `tenant_id`；`backend/api/jobs/models.py:119-160` 的 `JobResponse` 也不包含 `tenant_id`，导致前端侧无法在消费端补做可靠过滤。
+- `backend/control_plane/adapters/routes.py:168-175` 的 `_sse_event_generator()` 直接订阅上述全局 channel。
+- `backend/control_plane/adapters/routes.py:226-250` 的 `sse_events()` 虽然要求 `current_user = Depends(get_current_user)`，但没有派生 `tenant_id`，也没有在事件循环中做 payload 级过滤。
+- `backend/control_plane/adapters/control_events.py:18-40` 的 `publish_control_event()` 仅按传入 channel 发布，不对租户做二次分流。
+- `backend/control_plane/adapters/nodes_models.py:81-110` 的 `NodeResponse` 不包含 `tenant_id`；`backend/control_plane/adapters/jobs/models.py:119-160` 的 `JobResponse` 也不包含 `tenant_id`，导致前端侧无法在消费端补做可靠过滤。
 - `frontend/src/utils/sse.ts:163-185` 与 `frontend/src/composables/useAppRuntime.ts:68-81` 会直接接收并分发 `job:events`、`node:events` 等帧，不做租户隔离校验。
 
 ### F-003 `lease_timeout` 与 `lease_expired` 词汇分裂
 
-- `backend/kernel/execution/job_lifecycle_service.py:15-43` 的 `expire_lease()` 将 `job.failure_category` 写成 `"lease_timeout"`。
-- `backend/kernel/execution/failure_taxonomy.py:34` 定义的是 `FailureCategory.LEASE_EXPIRED = "lease_expired"`，后续 `should_retry_job()` 与 `calculate_retry_delay_seconds()` 都围绕这个枚举工作。
+- `backend/runtime/execution/job_lifecycle_service.py:15-43` 的 `expire_lease()` 将 `job.failure_category` 写成 `"lease_timeout"`。
+- `backend/runtime/execution/failure_taxonomy.py:34` 定义的是 `FailureCategory.LEASE_EXPIRED = "lease_expired"`，后续 `should_retry_job()` 与 `calculate_retry_delay_seconds()` 都围绕这个枚举工作。
 - `backend/kernel/contracts/safe_error_projection.py:19` 只对 `"lease_expired"` 提供用户可读 hint，未覆盖 `"lease_timeout"`。
 - `backend/tests/unit/test_attempt_expiration_service.py:113` 反过来把 `"lease_timeout"` 固化进了测试，说明当前漂移已经进入稳定行为。
 
 ### F-004 DLQ 重新入队重置语义不完整
 
-- `backend/api/jobs/models.py:99-102` 对外暴露 `reset_retry_count: bool = True`，接口语义容易被理解为“把重试预算归零后重新开始”。
-- `backend/kernel/execution/job_lifecycle_service.py:169-189` 的 `requeue_from_dead_letter()` 在 `reset_retry_count` 为真时只做 `job.retry_count = 0`，没有同步处理 `job.attempt_count`。
+- `backend/control_plane/adapters/jobs/models.py:99-102` 对外暴露 `reset_retry_count: bool = True`，接口语义容易被理解为“把重试预算归零后重新开始”。
+- `backend/runtime/execution/job_lifecycle_service.py:169-189` 的 `requeue_from_dead_letter()` 在 `reset_retry_count` 为真时只做 `job.retry_count = 0`，没有同步处理 `job.attempt_count`。
 - 同一文件 `150-166` 的另一条重置路径会同时清 `retry_count` 与 `attempt_count`，说明系统内部已有“完整重置”的对照实现。
-- `backend/kernel/execution/failure_taxonomy.py:188-200` 的 `should_retry_job()` 同时检查 `retry_count` 和 `attempt_count >= max_retries + 1`，所以旧的 `attempt_count` 仍会阻断后续自动重试。
+- `backend/runtime/execution/failure_taxonomy.py:188-200` 的 `should_retry_job()` 同时检查 `retry_count` 和 `attempt_count >= max_retries + 1`，所以旧的 `attempt_count` 仍会阻断后续自动重试。
 - `backend/tests/unit/test_jobs_dlq.py:119-129` 只验证了 DLQ 重新入队的调用顺序和最终状态，没有断言重试预算与 attempt 预算的一致性。
 
 ## 影响面
@@ -134,7 +134,7 @@ flowchart LR
 推荐顺序按“先边界、再合同、再基础设施、最后壳层”的原则推进：
 
 1. `M2 身份与权限边界`
-   - `backend/api/auth*.py`、`backend/core/jwt.py`、`backend/core/webauthn*.py`、`frontend/src/stores/auth.ts`
+   - `backend/control_plane/adapters/auth*.py`、`backend/core/jwt.py`、`backend/core/webauthn*.py`、`frontend/src/stores/auth.ts`
 2. `M8 兼容面与外部契约`
    - `contracts/**`、`clients/**`、`docs/openapi*.json`、`docs/api/openapi_locked.json`
 3. `M5 配置/IaC/部署安装链`
@@ -142,7 +142,7 @@ flowchart LR
 4. `M7 可观测性与韧性`
    - `backend/sentinel/**`、`backend/core/metrics.py`、`backend/core/telemetry.py`、`tests/chaos/**`、`tests/performance/**`
 5. `M3 连接器与扩展编排`
-   - `backend/api/connectors.py`、`backend/api/extensions.py`、`backend/api/triggers.py`、`backend/api/workflows.py`
+   - `backend/control_plane/adapters/connectors.py`、`backend/control_plane/adapters/extensions.py`、`backend/control_plane/adapters/triggers.py`、`backend/control_plane/adapters/workflows.py`
 6. `M6 数据与治理`
    - `backend/alembic/**`、`backend/migrations/**`、`backend/core/migration_*.py`、`backend/models` 其余模型
 7. `M4 控制台与前端壳层`

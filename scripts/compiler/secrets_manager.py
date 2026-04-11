@@ -33,6 +33,8 @@ SECRET_KEYS = (
     "JWT_SECRET_CURRENT",
     "JWT_SECRET_PREVIOUS",
     "REDIS_PASSWORD",
+    "REDIS_ACL_GATEWAY_CREDENTIAL",
+    "REDIS_ACL_READONLY_CREDENTIAL",
     "GF_ADMIN_PASSWORD",
     "CLOUDFLARED_TUNNEL_TOKEN",
     "TUNNEL_TOKEN",
@@ -42,7 +44,13 @@ SECRET_KEYS = (
 """必须解析的敏感键名；缺失时按需生成或留空。"""
 
 # 缺失时自动生成（32 位高强随机）；其余仅保留已有值
-GENERATE_IF_MISSING = ("POSTGRES_PASSWORD", "JWT_SECRET_CURRENT", "REDIS_PASSWORD", "GF_ADMIN_PASSWORD")
+GENERATE_IF_MISSING = (
+    "POSTGRES_PASSWORD",
+    "JWT_SECRET_CURRENT",
+    "REDIS_ACL_GATEWAY_CREDENTIAL",
+    "REDIS_ACL_READONLY_CREDENTIAL",
+    "GF_ADMIN_PASSWORD",
+)
 
 # 特殊默认值映射（Gateway Kernel 默认不假设本机 AI 服务）
 DEFAULT_VALUES = {"AI_BACKEND_URL": ""}
@@ -130,10 +138,10 @@ def generate_secrets(project_root: Path, base_env: dict) -> dict:
     # database was already initialized with the old password. Generating a new
     # one will break connectivity. Warn loudly so the operator can restore .env.
     env_path = project_root / ".env"
-    pg_data_exists = (project_root / "volumes" / "postgres").exists() or \
-                     (project_root / "postgres_data").exists()
+    pg_data_exists = (project_root / "volumes" / "postgres").exists() or (project_root / "postgres_data").exists()
     if not env_path.exists() and pg_data_exists and not existing.get("POSTGRES_PASSWORD"):
         import logging as _logging
+
         _logging.getLogger("iac_core.secrets").warning(
             "[IAC-SECRETS] WARNING: .env not found but PostgreSQL data directory exists. "
             "Generating a NEW POSTGRES_PASSWORD will break database connectivity. "
@@ -154,7 +162,13 @@ def generate_secrets(project_root: Path, base_env: dict) -> dict:
     else:
         # 正常模式：PREVIOUS 冷启动时 = CURRENT（保证旧 token 不会立即失效）
         out["jwt_secret_previous"] = existing.get("JWT_SECRET_PREVIOUS") or out["jwt_secret_current"]
-    out["redis_password"] = existing.get("REDIS_PASSWORD") or (_generate_url_safe_password(32) if "REDIS_PASSWORD" in GENERATE_IF_MISSING else "")
+    out["redis_acl_gateway_credential"] = existing.get("REDIS_ACL_GATEWAY_CREDENTIAL") or (
+        _generate_url_safe_password(32) if "REDIS_ACL_GATEWAY_CREDENTIAL" in GENERATE_IF_MISSING else ""
+    )
+    out["redis_acl_readonly_credential"] = existing.get("REDIS_ACL_READONLY_CREDENTIAL") or (
+        _generate_url_safe_password(32) if "REDIS_ACL_READONLY_CREDENTIAL" in GENERATE_IF_MISSING else ""
+    )
+    out["redis_password"] = out["redis_acl_gateway_credential"]
 
     # TUNNEL_TOKEN：IaC 唯一事实来源 — system.yaml 优先，.env 作为幂等回退
     # base_env["tunnel_token"] 来自 system.yaml→prepare_env()

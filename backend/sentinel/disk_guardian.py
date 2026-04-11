@@ -10,8 +10,10 @@ import sys
 import time
 from typing import Any
 
+from backend.platform.events.channels import CHANNEL_SENTINEL_SIGNALS
+from backend.platform.events.publisher import SyncEventPublisher, event_bus_settings_from_env
 from backend.platform.redis import SyncRedisClient
-from backend.platform.redis.constants import CHANNEL_SWITCH_EVENTS, KEY_SYSTEM_READONLY_DISK
+from backend.platform.redis.constants import KEY_SYSTEM_READONLY_DISK
 
 logger = logging.getLogger("disk-guardian")
 
@@ -20,7 +22,7 @@ DISK_CRITICAL_THRESHOLD = 95.0
 DISK_WARNING_THRESHOLD = 90.0
 
 REDIS_KEY_DISK_READONLY = KEY_SYSTEM_READONLY_DISK
-REDIS_CHANNEL_DISK = CHANNEL_SWITCH_EVENTS
+REDIS_CHANNEL_DISK = CHANNEL_SENTINEL_SIGNALS
 
 
 def get_system_disk_usage(path: str = "/") -> tuple[float, float, float]:
@@ -78,20 +80,22 @@ def check_and_act(
 def _publish_disk_event(redis_client: Any, level: str, usage_pct: float) -> None:
     payload = json.dumps(
         {
-            "state": "OFF" if level == "critical" else "ON",
-            "switch": "disk_guardian",
-            "name": "disk_guardian",
-            "event": "disk_guardian",
+            "source": "disk_guardian",
+            "kind": "disk_pressure",
             "level": level,
             "reason": f"disk usage {usage_pct:.1f}% -> {level}",
             "usage_percent": float(round(usage_pct, 1)),
             "action": "readonly_lockdown" if level == "critical" else "warning_alert",
-            "updated_at": str(time.time()),
-            "updated_by": "disk_guardian",
+            "timestamp": time.time(),
         }
     )
     try:
-        receiver_count = redis_client.pubsub.publish(REDIS_CHANNEL_DISK, payload)
+        publisher = SyncEventPublisher(
+            settings=event_bus_settings_from_env(),
+            redis=redis_client,
+            logger=logger,
+        )
+        receiver_count = publisher.publish_signal(REDIS_CHANNEL_DISK, payload)
         if receiver_count == 0:
             logger.warning("Published disk:%s event to %s without subscribers", level, REDIS_CHANNEL_DISK)
         else:

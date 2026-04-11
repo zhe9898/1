@@ -72,7 +72,7 @@
 - 业务/运维配置回流到默认 kernel
 
 **修复方案**:
-1. 审计 `backend/api/settings/` 所有路由
+1. 审计 `backend/control_plane/adapters/settings/` 所有路由
 2. 移除 AI provider、模型扫描、GPU/磁盘系统信息相关 API
 3. Settings 只保留 kernel 运行时配置：节点舰队、任务队列、连接器注册、系统基线
 

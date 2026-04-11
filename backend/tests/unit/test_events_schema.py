@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 
 from backend.kernel.contracts.events_schema import (
+    HardwareStateEventPayload,
     ReservationEventPayload,
     SwitchEventPayload,
+    SwitchStateEventPayload,
     TriggerEventPayload,
+    build_hardware_state_event,
     build_switch_event,
+    build_switch_state_event,
 )
 
 
@@ -18,6 +22,23 @@ def test_build_switch_event_shape() -> None:
     assert payload["reason"] == "test"
     assert "updated_at" in payload
     assert payload["updated_by"] == "unit"
+
+
+def test_build_switch_state_event_shape() -> None:
+    payload = build_switch_state_event("media_engine", "PENDING", reason="syncing", updated_by="sentinel")
+    assert payload["switch"] == "media_engine"
+    assert payload["state"] == "PENDING"
+    assert payload["reason"] == "syncing"
+    assert payload["updated_by"] == "sentinel"
+
+
+def test_build_hardware_state_event_shape() -> None:
+    payload = build_hardware_state_event("/mnt/media", "online", reason="mounted", uuid_val="disk-1", timestamp=123.0)
+    assert payload["path"] == "/mnt/media"
+    assert payload["state"] == "online"
+    assert payload["reason"] == "mounted"
+    assert payload["uuid"] == "disk-1"
+    assert payload["timestamp"] == 123.0
 
 
 def test_switch_event_payload_prefers_switch_field() -> None:
@@ -41,6 +62,20 @@ def test_switch_event_payload_rejects_invalid_messages() -> None:
     assert SwitchEventPayload.from_redis_message("not json") is None
     assert SwitchEventPayload.from_redis_message({}) is None
     assert SwitchEventPayload.from_redis_message({"no": "state"}) is None
+
+
+def test_switch_state_event_payload_parses_json_string() -> None:
+    payload = SwitchStateEventPayload.from_redis_message(json.dumps({"switch": "media", "state": "PENDING"}))
+    assert payload is not None
+    assert payload.effective_switch_name() == "media"
+    assert payload.state == "PENDING"
+
+
+def test_hardware_state_event_payload_parses_json_string() -> None:
+    payload = HardwareStateEventPayload.from_redis_message(json.dumps({"path": "/mnt/media", "state": "online", "reason": "mounted"}))
+    assert payload is not None
+    assert payload.path == "/mnt/media"
+    assert payload.state == "online"
 
 
 def test_trigger_event_payload_parses_delivery_snapshot() -> None:

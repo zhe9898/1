@@ -1,3 +1,4 @@
 -r requirements-dev.txt
 -r ../scripts/requirements.txt
 pip-audit
+pywin32==311 ; sys_platform == "win32"

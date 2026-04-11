@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.sentinel.control_plane_supervisor import _child_commands
 from backend.workers.control_plane_worker import _worker_factories, run
 
 
@@ -17,21 +15,6 @@ def test_worker_factories_support_all_and_named_modes() -> None:
     assert set(_worker_factories("bitrot")) == {"bitrot"}
     assert set(_worker_factories("health-probe")) == {"health-probe"}
     assert set(_worker_factories("data-retention")) == {"data-retention"}
-
-
-def test_control_plane_supervisor_child_commands() -> None:
-    commands = _child_commands(Path("E:/3.4"))
-
-    assert "topology-sentinel" in commands
-    assert "control-worker" in commands
-    assert "routing-operator" in commands
-    assert commands["topology-sentinel"][-1].endswith("backend\\sentinel\\topology_sentinel.py") or commands["topology-sentinel"][-1].endswith(
-        "backend/sentinel/topology_sentinel.py"
-    )
-    assert commands["control-worker"][-3:] == ["backend.workers.control_plane_worker", "--worker", "all"]
-    assert commands["routing-operator"][-1].endswith("backend\\sentinel\\routing_operator.py") or commands["routing-operator"][-1].endswith(
-        "backend/sentinel/routing_operator.py"
-    )
 
 
 @pytest.mark.asyncio
@@ -92,9 +75,11 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
         return previous
 
     redis_client = AsyncMock()
+    event_bus = AsyncMock()
 
     with (
         patch("backend.workers.control_plane_worker.connect_redis_with_retry", new=AsyncMock(return_value=redis_client)),
+        patch("backend.workers.control_plane_worker.connect_event_bus_with_retry", new=AsyncMock(return_value=event_bus)),
         patch("backend.workers.control_plane_worker.attempt_expiration_worker", new=fake_attempt_expiration_worker),
         patch("backend.workers.control_plane_worker.bitrot_worker", new=fake_bitrot_worker),
         patch("backend.workers.control_plane_worker.health_probe_worker", new=fake_health_probe_worker),
@@ -113,6 +98,7 @@ async def test_control_plane_worker_runs_out_of_process_and_stops_on_signal() ->
         await asyncio.wait_for(task, timeout=1)
 
     redis_client.close.assert_awaited_once()
+    event_bus.close.assert_awaited_once()
     assert cancelled["attempt-expiration"].is_set()
     assert cancelled["bitrot"].is_set()
     assert cancelled["health-probe"].is_set()

@@ -13,9 +13,10 @@ from pathlib import Path
 
 import httpx
 
-from backend.kernel.contracts.events_schema import build_switch_event
+from backend.kernel.contracts.events_schema import build_switch_command_signal
+from backend.platform.events.channels import CHANNEL_SWITCH_COMMANDS
+from backend.platform.events.publisher import AsyncEventPublisher, event_bus_settings_from_env
 from backend.platform.redis.client import RedisClient
-from backend.platform.redis.constants import CHANNEL_SWITCH_EVENTS
 from backend.shared_state import service_liveness_fails, service_readiness
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,64 @@ except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
 
 def _phoenix_backoff(restart_count: int) -> float:
     return float(min(_PHOENIX_BASE_BACKOFF_S * (2 ** max(restart_count - 1, 0)), _PHOENIX_MAX_BACKOFF_S))
+
+
+async def _probe_service_health(
+    client: httpx.AsyncClient,
+    *,
+    service_name: str,
+    health_url: str,
+) -> bool:
+    try:
+        response = await client.get(health_url)
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+        logger.debug("health probe request failed for %s: %s", service_name, exc)
+        return False
+    return response.status_code == 200
+
+
+def _record_service_probe_result(service_name: str, *, is_ok: bool) -> bool:
+    if is_ok:
+        service_readiness[service_name] = True
+        service_liveness_fails[service_name] = 0
+        return False
+
+    service_readiness[service_name] = False
+    service_liveness_fails[service_name] = service_liveness_fails.get(service_name, 0) + 1
+    if service_liveness_fails[service_name] < 3:
+        return False
+
+    logger.error("Liveness Probe failed 3 times for %s. Emitting kill signal.", service_name)
+    service_liveness_fails[service_name] = 0
+    return True
+
+
+async def _publish_restart_signal(
+    publisher: AsyncEventPublisher,
+    *,
+    service_name: str,
+    app_redis: RedisClient | None,
+) -> None:
+    if app_redis is None:
+        return
+    try:
+        signal_payload = build_switch_command_signal(
+            service_name,
+            "RESTART",
+            reason="liveness_failed_3_times",
+            updated_by="health_probe",
+        )
+        receiver_count = await publisher.publish_signal(
+            CHANNEL_SWITCH_COMMANDS,
+            json.dumps(signal_payload),
+        )
+        if receiver_count == 0:
+            logger.warning(
+                "switch restart signal published without subscribers for %s",
+                service_name,
+            )
+    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
+        logger.warning("publish restart signal failed for %s: %s", service_name, exc)
 
 
 async def data_retention_worker() -> None:
@@ -175,55 +234,46 @@ async def bitrot_worker() -> None:
 async def health_probe_worker(app_redis: RedisClient | None = None) -> None:
     await asyncio.sleep(5)
     restart_count = 0
-    while True:
-        try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                while True:
-                    for service_name, health_url in _microservices_health_urls.items():
-                        is_ok = False
-                        try:
-                            response = await client.get(health_url)
-                            if response.status_code == 200:
-                                is_ok = True
-                        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
-                            logger.debug("health probe request failed for %s: %s", service_name, exc)
-
-                        if is_ok:
-                            service_readiness[service_name] = True
-                            service_liveness_fails[service_name] = 0
-                        else:
-                            service_readiness[service_name] = False
-                            service_liveness_fails[service_name] = service_liveness_fails.get(service_name, 0) + 1
-
-                            if service_liveness_fails[service_name] >= 3:
-                                logger.error(
-                                    "Liveness Probe failed 3 times for %s. Emitting kill signal.",
-                                    service_name,
+    publisher = AsyncEventPublisher(
+        settings=event_bus_settings_from_env(),
+        redis=app_redis,
+        logger=logger,
+    )
+    try:
+        while True:
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    while True:
+                        for service_name, health_url in _microservices_health_urls.items():
+                            is_ok = await _probe_service_health(
+                                client,
+                                service_name=service_name,
+                                health_url=health_url,
+                            )
+                            should_restart = _record_service_probe_result(
+                                service_name,
+                                is_ok=is_ok,
+                            )
+                            if should_restart:
+                                await _publish_restart_signal(
+                                    publisher,
+                                    service_name=service_name,
+                                    app_redis=app_redis,
                                 )
-                                if app_redis is not None:
-                                    try:
-                                        event = build_switch_event(
-                                            service_name,
-                                            "RESTART",
-                                            reason="liveness_failed_3_times",
-                                            updated_by="health_probe",
-                                        )
-                                        await app_redis.pubsub.publish(CHANNEL_SWITCH_EVENTS, json.dumps(event))
-                                    except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
-                                        logger.warning("publish restart event failed for %s: %s", service_name, exc)
-                                service_liveness_fails[service_name] = 0
 
-                    restart_count = 0
-                    await asyncio.sleep(10)
-        except asyncio.CancelledError:
-            logger.info("health_probe_worker: received CancelledError, exiting")
-            return
-        except Exception:
-            restart_count += 1
-            backoff = _phoenix_backoff(restart_count)
-            logger.exception(
-                "health_probe_worker: unexpected crash (restart #%d), retrying in %.0fs",
-                restart_count,
-                backoff,
-            )
-            await asyncio.sleep(backoff)
+                        restart_count = 0
+                        await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                logger.info("health_probe_worker: received CancelledError, exiting")
+                return
+            except Exception:
+                restart_count += 1
+                backoff = _phoenix_backoff(restart_count)
+                logger.exception(
+                    "health_probe_worker: unexpected crash (restart #%d), retrying in %.0fs",
+                    restart_count,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+    finally:
+        await publisher.close()

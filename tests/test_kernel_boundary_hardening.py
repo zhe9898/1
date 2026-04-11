@@ -56,7 +56,7 @@ def test_control_plane_surfaces_defined_in_backend():
 
 def test_console_api_exposes_surfaces_endpoint():
     """Console API should expose /surfaces endpoint for frontend."""
-    console_api = (REPO_ROOT / "backend" / "api" / "console.py").read_text(encoding="utf-8")
+    console_api = (REPO_ROOT / "backend" / "control_plane" / "adapters" / "console.py").read_text(encoding="utf-8")
 
     assert '@router.get("/surfaces"' in console_api, (
         "Console API should expose /surfaces endpoint"
@@ -79,8 +79,8 @@ def test_pack_and_profile_topology_no_longer_live_under_backend_core():
         REPO_ROOT / "backend" / "kernel" / "packs" / "registry.py",
         REPO_ROOT / "backend" / "kernel" / "packs" / "presets.py",
         REPO_ROOT / "backend" / "kernel" / "profiles" / "public_profile.py",
-        REPO_ROOT / "backend" / "kernel" / "topology" / "pack_selection.py",
-        REPO_ROOT / "backend" / "kernel" / "topology" / "profile_selection.py",
+        REPO_ROOT / "backend" / "runtime" / "topology" / "pack_selection.py",
+        REPO_ROOT / "backend" / "runtime" / "topology" / "profile_selection.py",
     ]
     for path in new_files:
         assert path.exists(), f"Expected split module missing: {path.name}"
@@ -131,7 +131,7 @@ def test_capabilities_only_exposes_kernel_surfaces():
 
 def test_settings_api_only_exposes_kernel_endpoints():
     """Settings API should only expose kernel runtime settings."""
-    settings_api = (REPO_ROOT / "backend" / "api" / "settings.py").read_text(encoding="utf-8")
+    settings_api = (REPO_ROOT / "backend" / "control_plane" / "adapters" / "settings.py").read_text(encoding="utf-8")
 
     # Should NOT have AI-related endpoints
     forbidden_endpoints = [
@@ -157,7 +157,7 @@ def test_settings_api_only_exposes_kernel_endpoints():
 
 def test_switches_api_not_in_default_kernel():
     """Switches API should not be in default kernel (should be in IoT pack)."""
-    routes = (REPO_ROOT / "backend" / "api" / "routes.py").read_text(encoding="utf-8")
+    routes = (REPO_ROOT / "backend" / "control_plane" / "adapters" / "routes.py").read_text(encoding="utf-8")
 
     assert "toggle_switch" not in routes, (
         "Switches API should not be in default kernel (should be in IoT pack)"
@@ -186,7 +186,7 @@ def test_node_model_has_accepted_kinds_field():
 
 def test_scheduler_snapshot_includes_accepted_kinds():
     """Scheduler node snapshot should include accepted_kinds."""
-    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "runtime" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     # SchedulerNodeSnapshot should have accepted_kinds
     assert "accepted_kinds: frozenset[str]" in scheduler, (
@@ -201,7 +201,7 @@ def test_scheduler_snapshot_includes_accepted_kinds():
 
 def test_node_blockers_uses_node_contract_accepted_kinds():
     """node_blockers_for_job should use node contract accepted_kinds."""
-    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "runtime" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     # Should check node.accepted_kinds first
     assert "if node.accepted_kinds:" in scheduler, (
@@ -258,7 +258,7 @@ def test_node_model_has_edge_computing_fields():
 
 def test_scheduler_snapshot_includes_edge_attributes():
     """Scheduler node snapshot should include edge computing attributes."""
-    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "runtime" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     edge_attrs = [
         "network_latency_ms: int",
@@ -278,7 +278,7 @@ def test_scheduler_snapshot_includes_edge_attributes():
 
 def test_node_blockers_checks_edge_constraints():
     """node_blockers_for_job should check edge computing constraints."""
-    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "runtime" / "scheduling" / "job_scheduler.py").read_text(encoding="utf-8")
 
     edge_checks = [
         "max_network_latency_ms",
@@ -296,7 +296,7 @@ def test_node_blockers_checks_edge_constraints():
 
 def test_score_job_includes_edge_factors():
     """score_job_for_node should include edge computing scoring factors."""
-    scheduler = (REPO_ROOT / "backend" / "kernel" / "scheduling" / "job_scoring.py").read_text(encoding="utf-8")
+    scheduler = (REPO_ROOT / "backend" / "runtime" / "scheduling" / "job_scoring.py").read_text(encoding="utf-8")
 
     # Find score_job_for_node function
     func_start = scheduler.find("def score_job_for_node(")

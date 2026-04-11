@@ -37,6 +37,7 @@ type RegisterRequest struct {
 	Address            string         `json:"address,omitempty"`
 	Profile            string         `json:"profile"`
 	Executor           string         `json:"executor"`
+	ExecutorContract   string         `json:"executor_contract,omitempty"`
 	OS                 string         `json:"os"`
 	Arch               string         `json:"arch"`
 	Zone               string         `json:"zone,omitempty"`
@@ -68,6 +69,7 @@ type HeartbeatRequest struct {
 	Address            string         `json:"address,omitempty"`
 	Profile            string         `json:"profile"`
 	Executor           string         `json:"executor"`
+	ExecutorContract   string         `json:"executor_contract,omitempty"`
 	OS                 string         `json:"os"`
 	Arch               string         `json:"arch"`
 	Zone               string         `json:"zone,omitempty"`
@@ -268,8 +270,15 @@ func (c *Client) SendProgress(ctx context.Context, jobID string, payload JobProg
 	return c.post(ctx, fmt.Sprintf("/api/v1/jobs/%s/progress", jobID), payload, nil)
 }
 
-func (c *Client) RenewLease(ctx context.Context, jobID string, payload JobRenewRequest) error {
-	return c.post(ctx, fmt.Sprintf("/api/v1/jobs/%s/renew", jobID), payload, nil)
+func (c *Client) RenewLease(ctx context.Context, jobID string, payload JobRenewRequest) (Job, error) {
+	var renewed Job
+	if err := c.post(ctx, fmt.Sprintf("/api/v1/jobs/%s/renew", jobID), payload, &renewed); err != nil {
+		return Job{}, err
+	}
+	if strings.TrimSpace(renewed.LeaseToken) == "" {
+		return Job{}, fmt.Errorf("renew lease response missing lease_token")
+	}
+	return renewed, nil
 }
 
 func (c *Client) post(ctx context.Context, path string, payload any, out any) error {

@@ -16,17 +16,18 @@ from pathlib import Path
 
 import pytest
 
-from backend.kernel.scheduling.business_scheduling import (
+from backend.models.job import Job
+from backend.runtime.scheduling.business_scheduling import (
     SchedulingContext,
     SchedulingEngine,
     apply_business_filters,
 )
-from backend.kernel.scheduling.queue_stratification import (
+from backend.runtime.scheduling.queue_stratification import (
     SERVICE_CLASS_CONFIG,
     GlobalFairScheduler,
+    TenantQuota,
     get_fair_scheduler,
 )
-from backend.models.job import Job
 
 
 def _utcnow() -> datetime.datetime:
@@ -186,6 +187,42 @@ class TestGlobalFairScheduler:
         a = get_fair_scheduler()
         b = get_fair_scheduler()
         assert a is b
+
+    def test_stale_cache_is_reused_when_quota_refresh_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from backend.kernel.policy.types import QueueConfig
+
+        fs = GlobalFairScheduler()
+        fs.__class__._cache = {
+            "tenant-alpha": TenantQuota(max_jobs_per_round=33, weight=3.5, service_class="premium"),
+        }
+        fs.__class__._cache_ts = 0.0
+        fs.__class__._cache_ttl = 0.0
+
+        monkeypatch.setattr("backend.runtime.scheduling.queue_stratification._get_queue_config", lambda: QueueConfig())
+
+        def _raise_policy_store() -> object:
+            raise RuntimeError("policy store unavailable")
+
+        monkeypatch.setattr("backend.kernel.policy.policy_store.get_policy_store", _raise_policy_store)
+
+        quota = fs.get_quota("tenant-alpha")
+        assert quota.max_jobs_per_round == 33
+        assert quota.weight == 3.5
+        assert quota.service_class == "premium"
+
+    def test_quota_refresh_failure_without_cache_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from backend.kernel.policy.types import QueueConfig
+
+        fs = GlobalFairScheduler()
+        monkeypatch.setattr("backend.runtime.scheduling.queue_stratification._get_queue_config", lambda: QueueConfig())
+
+        def _raise_policy_store() -> object:
+            raise RuntimeError("policy store unavailable")
+
+        monkeypatch.setattr("backend.kernel.policy.policy_store.get_policy_store", _raise_policy_store)
+
+        with pytest.raises(RuntimeError, match="ZEN-SCHED-QUOTA-LOAD-FAILED"):
+            fs.get_quota("tenant-alpha")
 
 
 # 鈹€鈹€ TenantFairShareGate tests 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

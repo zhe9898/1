@@ -4,6 +4,11 @@ import re
 import subprocess
 from pathlib import Path
 
+from tools.audit_drift_guard import audit_drift_violations
+from tools.auth_boundary_guard import auth_boundary_violations
+from tools.backend_domain_fence import backend_domain_import_fence_violations
+from tools.development_cleanroom_guard import development_cleanroom_violations
+from tools.tenant_claim_guard import tenant_claim_violations
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
@@ -35,6 +40,40 @@ def test_runtime_secret_artifacts_are_ignored_untracked_and_absent() -> None:
     if (REPO_ROOT / "config" / "users.acl").exists():
         leaked_files.append("config/users.acl")
     assert not leaked_files, f"runtime secret artifacts must not remain in the workspace: {leaked_files}"
+
+
+def test_backend_quality_reports_are_ignored_and_untracked() -> None:
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for required in ("backend/coverage-backend.xml", "backend/bandit-report.json"):
+        assert required in gitignore, f"{required} must be ignored in .gitignore"
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "backend/coverage-backend.xml", "backend/bandit-report.json"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
+    assert not tracked_paths, f"backend quality reports must never be tracked: {tracked_paths}"
+
+
+def test_host_runtime_generated_artifacts_are_ignored_and_untracked() -> None:
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    for required in ("runtime/host/bin/", "systemd/"):
+        assert required in gitignore, f"{required} must be ignored in .gitignore"
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "runtime/host/bin", "systemd"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
+    assert not tracked_paths, f"host runtime generated artifacts must never be tracked: {tracked_paths}"
 
 
 def test_workflows_use_immutable_runner_and_action_refs() -> None:
@@ -102,9 +141,7 @@ def test_quality_gate_is_the_single_source_of_ci_backend_commands() -> None:
 
     for workflow_name in ("ci.yml", "compliance.yml"):
         text = (WORKFLOW_DIR / workflow_name).read_text(encoding="utf-8")
-        assert "python scripts/quality_gate.py backend-ci" in text, (
-            f"{workflow_name} must route backend quality checks through scripts/quality_gate.py"
-        )
+        assert "python scripts/quality_gate.py backend-ci" in text, f"{workflow_name} must route backend quality checks through scripts/quality_gate.py"
         forbidden_inline = [
             "black --check",
             "isort --check-only",
@@ -114,17 +151,13 @@ def test_quality_gate_is_the_single_source_of_ci_backend_commands() -> None:
             "python scripts/generate_contracts.py",
         ]
         for token in forbidden_inline:
-            assert token not in text, (
-                f"{workflow_name} must not inline backend quality commands once the shared gate exists: {token}"
-            )
+            assert token not in text, f"{workflow_name} must not inline backend quality commands once the shared gate exists: {token}"
 
 
 def test_quality_gate_is_the_single_source_of_ci_frontend_commands() -> None:
     for workflow_name in ("ci.yml", "compliance.yml"):
         text = (WORKFLOW_DIR / workflow_name).read_text(encoding="utf-8")
-        assert "python scripts/quality_gate.py frontend-ci" in text, (
-            f"{workflow_name} must route frontend quality checks through scripts/quality_gate.py"
-        )
+        assert "python scripts/quality_gate.py frontend-ci" in text, f"{workflow_name} must route frontend quality checks through scripts/quality_gate.py"
         forbidden_inline = [
             "npm audit --audit-level=high",
             "npm run lint",
@@ -132,9 +165,7 @@ def test_quality_gate_is_the_single_source_of_ci_frontend_commands() -> None:
             "npm run build",
         ]
         for token in forbidden_inline:
-            assert token not in text, (
-                f"{workflow_name} must not inline frontend quality commands once the shared gate exists: {token}"
-            )
+            assert token not in text, f"{workflow_name} must not inline frontend quality commands once the shared gate exists: {token}"
 
 
 def test_frontend_coverage_thresholds_do_not_drift_below_current_baseline() -> None:
@@ -153,16 +184,13 @@ def test_frontend_coverage_thresholds_do_not_drift_below_current_baseline() -> N
         metric_match = re.search(rf"{metric}:\s*(?P<value>\d+(?:\.\d+)?)", thresholds_body)
         assert metric_match, f"frontend coverage threshold missing for {metric}"
         actual = float(metric_match.group("value"))
-        assert actual >= minimum, (
-            f"frontend coverage threshold for {metric} drifted below the locked baseline: "
-            f"{actual} < {minimum}"
-        )
+        assert actual >= minimum, f"frontend coverage threshold for {metric} drifted below the locked baseline: " f"{actual} < {minimum}"
 
 
 def test_pre_push_gate_delegates_to_shared_quality_gate() -> None:
     pre_push_gate = (REPO_ROOT / "scripts" / "pre_push_gate.py").read_text(encoding="utf-8")
     assert "quality_gate.py" in pre_push_gate
-    assert "\"backend-ci\", \"frontend-ci\"" in pre_push_gate or "'backend-ci', 'frontend-ci'" in pre_push_gate
+    assert '"backend-ci", "frontend-ci"' in pre_push_gate or "'backend-ci', 'frontend-ci'" in pre_push_gate
     assert "backend/core/governance_facade.py" not in pre_push_gate
 
 
@@ -172,7 +200,7 @@ def test_offline_release_workflow_uses_immutable_release_tags_and_clean_bundle_i
     assert 'echo "RELEASE_TAG=' in text, "offline bundle workflow must derive an immutable release tag from the commit"
     assert "RELEASE_TAG: v2.9.1" not in text, "offline bundle workflow must not hard-code a reusable release tag"
     assert 'has_asset "${ASSET_NAME}.sha256"' in text, "offline bundle upload skipping logic must verify checksum assets"
-    assert "python scripts/validate_offline_bundle.py \"$BUNDLE_ROOT\"" in text, "offline bundle workflow must validate the bundle before packaging"
+    assert 'python scripts/validate_offline_bundle.py "$BUNDLE_ROOT"' in text, "offline bundle workflow must validate the bundle before packaging"
 
     for pattern in (
         "config/system.yaml",
@@ -202,8 +230,62 @@ def test_offline_release_workflow_compiles_iac_env_before_resolving_images() -> 
 def test_repo_has_single_runtime_config_entrypoint() -> None:
     assert not (REPO_ROOT / "config" / "system.yaml").exists(), "legacy config/system.yaml must not exist in the repo root surface"
     assert (REPO_ROOT / "scripts" / "compiler.py").exists(), "scripts/compiler.py must remain the canonical compiler entrypoint"
+    assert not (REPO_ROOT / "scripts" / "compiler" / "lint.py").exists(), "scripts/compiler/lint.py must not reappear once scripts.iac_core.lint is canonical"
     assert not (REPO_ROOT / "deploy" / "config-compiler.py").exists(), "compatibility compiler wrapper must not exist in development"
     assert not (REPO_ROOT / "deploy" / "bootstrap.py").exists(), "compatibility bootstrap wrapper must not exist in development"
+
+
+def test_runtime_entrypoints_use_canonical_control_plane_app() -> None:
+    canonical_app = "backend.control_plane.app.entrypoint:app"
+    legacy_app = "backend.control_plane.adapters.main:app"
+
+    runtime_files = (
+        REPO_ROOT / "backend" / "run.sh",
+        REPO_ROOT / "tests" / "Dockerfile.backend",
+    )
+    for path in runtime_files:
+        text = path.read_text(encoding="utf-8")
+        assert canonical_app in text, f"{path.name} must launch the canonical control-plane app entrypoint"
+        assert legacy_app not in text, f"{path.name} must not reference the deleted compatibility shim"
+
+
+def test_backend_domain_import_fence_has_no_violations() -> None:
+    assert backend_domain_import_fence_violations(repo_root=REPO_ROOT) == []
+
+
+def test_auth_boundary_gate_has_no_violations() -> None:
+    assert auth_boundary_violations(repo_root=REPO_ROOT) == []
+
+
+def test_tenant_claim_gate_has_no_violations() -> None:
+    assert tenant_claim_violations(repo_root=REPO_ROOT) == []
+
+
+def test_audit_documents_match_code_backed_governance_contracts() -> None:
+    assert audit_drift_violations(repo_root=REPO_ROOT) == []
+
+
+def test_development_cleanroom_gate_has_no_violations() -> None:
+    assert development_cleanroom_violations(repo_root=REPO_ROOT) == []
+
+
+def test_gateway_runtime_uses_typed_serve_contract_without_handwritten_entrypoint_args() -> None:
+    system_yaml = (REPO_ROOT / "system.yaml").read_text(encoding="utf-8")
+
+    assert "  gateway:\n" in system_yaml
+    assert "    serve:\n" in system_yaml
+    assert "      engine: uvicorn\n" in system_yaml
+    assert "      app: backend.control_plane.app.entrypoint:app\n" in system_yaml
+    assert "      workers: 2\n" in system_yaml
+    assert "      graceful_shutdown_seconds: 15\n" in system_yaml
+    assert "    entrypoint:\n" not in system_yaml.split("  gateway:\n", 1)[1].split("  runner-agent:\n", 1)[0]
+
+
+def test_openapi_freeze_tool_uses_single_canonical_refresh_flow() -> None:
+    freeze_tool = (REPO_ROOT / "scripts" / "freeze_openapi.py").read_text(encoding="utf-8")
+    assert "python scripts/generate_contracts.py" in freeze_tool
+    assert "--sync" in freeze_tool
+    assert "--init" not in freeze_tool
 
 
 def test_ci_trivy_scan_uses_pinned_setup_action_and_direct_cli() -> None:
@@ -252,10 +334,7 @@ def test_dockerfiles_use_digest_pinned_base_images() -> None:
     violations: list[str] = []
     for relative in ("backend/Dockerfile", "runner-agent/Dockerfile"):
         text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-        stage_aliases = {
-            match.group(1)
-            for match in re.finditer(r"^\s*FROM\s+\S+\s+AS\s+([A-Za-z0-9._-]+)\s*$", text, re.MULTILINE)
-        }
+        stage_aliases = {match.group(1) for match in re.finditer(r"^\s*FROM\s+\S+\s+AS\s+([A-Za-z0-9._-]+)\s*$", text, re.MULTILINE)}
         for match in DOCKERFILE_FROM_PATTERN.finditer(text):
             image_ref = match.group("ref")
             if image_ref in stage_aliases:
@@ -278,6 +357,22 @@ def test_frontend_audit_artifacts_do_not_exist_in_workspace() -> None:
     assert not leftovers, f"frontend build or audit residue must not remain in the workspace: {leftovers}"
 
 
+def test_frontend_coverage_artifacts_are_ignored_and_untracked() -> None:
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "frontend/coverage/" in gitignore, "frontend/coverage/ must be ignored in .gitignore"
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "frontend/coverage"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    tracked_paths = [line.strip() for line in tracked.stdout.splitlines() if line.strip()]
+    assert not tracked_paths, f"frontend coverage artifacts must never be tracked: {tracked_paths}"
+
+
 def test_health_pack_no_longer_uses_placeholder_artifacts() -> None:
     violations: list[str] = []
     for relative in (
@@ -295,10 +390,10 @@ _BACKEND_TEST_MAX_LINES = 800
 
 _BACKEND_SOURCE_ALLOWLIST: dict[str, str] = {
     "sentinel/topology_sentinel.py": "The topology sentinel remains a large state machine until it is decomposed safely.",
-    "api/jobs/pull_service.py": "pull_service still centralizes dispatch orchestration and must be decomposed along domain boundaries, not line count alone.",
-    "kernel/scheduling/placement_solver.py": "Global placement solver remains intentionally centralized until further decomposition",
-    "kernel/scheduling/backfill_scheduling.py": "Backfill scheduling still centralizes reservation time-window coordination.",
-    "kernel/extensions/extension_sdk.py": "extension SDK still shares bootstrap, registration, and manifest parsing context.",
+    "control_plane/adapters/jobs/pull_service.py": (
+        "pull_service still centralizes dispatch orchestration and must be decomposed along domain boundaries, " "not line count alone."
+    ),
+    "runtime/scheduling/placement_solver.py": "Global placement solver remains intentionally centralized until further decomposition",
 }
 
 _BACKEND_TEST_ALLOWLIST: dict[str, str] = {
@@ -323,10 +418,9 @@ def test_backend_source_files_do_not_exceed_line_limit() -> None:
         if lines > _BACKEND_SOURCE_MAX_LINES and rel not in _BACKEND_SOURCE_ALLOWLIST:
             violations.append(f"{rel} ({lines} lines, limit {_BACKEND_SOURCE_MAX_LINES})")
 
-    assert not violations, (
-        f"backend source files exceeded the {_BACKEND_SOURCE_MAX_LINES}-line limit; "
-        f"split them or document them in the allowlist.\n" + "\n".join(violations)
-    )
+    assert (
+        not violations
+    ), f"backend source files exceeded the {_BACKEND_SOURCE_MAX_LINES}-line limit; " f"split them or document them in the allowlist.\n" + "\n".join(violations)
 
 
 def test_backend_test_files_do_not_exceed_line_limit() -> None:
@@ -340,10 +434,9 @@ def test_backend_test_files_do_not_exceed_line_limit() -> None:
         if lines > _BACKEND_TEST_MAX_LINES and rel not in _BACKEND_TEST_ALLOWLIST:
             violations.append(f"{rel} ({lines} lines, limit {_BACKEND_TEST_MAX_LINES})")
 
-    assert not violations, (
-        f"backend test files exceeded the {_BACKEND_TEST_MAX_LINES}-line limit; "
-        f"split them or document them in the allowlist.\n" + "\n".join(violations)
-    )
+    assert (
+        not violations
+    ), f"backend test files exceeded the {_BACKEND_TEST_MAX_LINES}-line limit; " f"split them or document them in the allowlist.\n" + "\n".join(violations)
 
 
 def test_backend_source_allowlist_entries_are_still_needed() -> None:

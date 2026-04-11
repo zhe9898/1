@@ -34,6 +34,7 @@ message JobSpec {
   string target_os         = 6;
   string target_arch       = 7;
   string target_zone       = 8;
+  // Control-plane persona selector, not the canonical executor contract.
   string target_executor   = 9;
   repeated string required_capabilities = 10;
 
@@ -60,6 +61,7 @@ message NodeSpec {
   string node_id           = 1;
   string os                = 2;
   string arch              = 3;
+  // Control-plane persona emitted by node registration / bootstrap UX.
   string executor          = 4;
   string zone              = 5;
   repeated string capabilities  = 6;
@@ -87,6 +89,10 @@ message NodeSpec {
   int32  current_power_watts   = 22;
   string thermal_state         = 23;
   string cloud_connectivity    = 24;
+  // Canonical executor contract consumed by scheduler hard gates.
+  string executor_contract     = 25;
+  // Pre-projected workload kinds supported by the canonical executor contract.
+  repeated string supported_workload_kinds = 26;
 }
 
 message SolveResponse {

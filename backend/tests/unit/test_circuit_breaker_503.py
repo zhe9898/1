@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+
+from backend.control_plane.app.health import build_health_check
 
 
 class TestRequireDbRedis:
@@ -91,41 +93,41 @@ class TestZenErrorBuilder:
 class TestHealthDegradation:
     """Control-plane health endpoint degradation behavior."""
 
+    @staticmethod
+    async def _run_health_check(
+        *,
+        redis: AsyncMock | None,
+        postgres_dsn: str | None,
+        postgres_status: str,
+    ):
+        request = MagicMock()
+        request.app.state.redis = redis
+        health_check = build_health_check(
+            settings_provider=lambda: {"postgres_dsn": postgres_dsn},
+            postgres_checker=AsyncMock(return_value=postgres_status),
+        )
+        return await health_check(request)
+
     @pytest.mark.asyncio
     async def test_redis_ping_false_returns_unhealthy(self) -> None:
-        from backend.api.main import health_check
-
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=False)
-
-        mock_request = MagicMock()
-        mock_request.app.state.redis = mock_redis
-
-        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": None}):
-            with patch(
-                "backend.api.main._check_postgres_async",
-                new_callable=AsyncMock,
-                return_value="not_configured",
-            ):
-                result = await health_check(mock_request)
+        result = await self._run_health_check(
+            redis=mock_redis,
+            postgres_dsn=None,
+            postgres_status="not_configured",
+        )
 
         assert result.status == "unhealthy"
         assert result.services["redis"] == "error"
 
     @pytest.mark.asyncio
     async def test_redis_none_returns_unhealthy(self) -> None:
-        from backend.api.main import health_check
-
-        mock_request = MagicMock()
-        mock_request.app.state.redis = None
-
-        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": None}):
-            with patch(
-                "backend.api.main._check_postgres_async",
-                new_callable=AsyncMock,
-                return_value="not_configured",
-            ):
-                result = await health_check(mock_request)
+        result = await self._run_health_check(
+            redis=None,
+            postgres_dsn=None,
+            postgres_status="not_configured",
+        )
 
         assert result.status == "unhealthy"
         assert result.services["redis"] == "error"
@@ -134,42 +136,26 @@ class TestHealthDegradation:
     async def test_redis_ping_timeout_returns_timeout(self) -> None:
         import asyncio
 
-        from backend.api.main import health_check
-
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=asyncio.TimeoutError())
-
-        mock_request = MagicMock()
-        mock_request.app.state.redis = mock_redis
-
-        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": None}):
-            with patch(
-                "backend.api.main._check_postgres_async",
-                new_callable=AsyncMock,
-                return_value="not_configured",
-            ):
-                result = await health_check(mock_request)
+        result = await self._run_health_check(
+            redis=mock_redis,
+            postgres_dsn=None,
+            postgres_status="not_configured",
+        )
 
         assert result.status == "unhealthy"
         assert result.services["redis"] == "timeout"
 
     @pytest.mark.asyncio
     async def test_redis_ok_postgres_error_returns_degraded(self) -> None:
-        from backend.api.main import health_check
-
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
-
-        mock_request = MagicMock()
-        mock_request.app.state.redis = mock_redis
-
-        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": "postgresql://localhost/zen70"}):
-            with patch(
-                "backend.api.main._check_postgres_async",
-                new_callable=AsyncMock,
-                return_value="error",
-            ):
-                result = await health_check(mock_request)
+        result = await self._run_health_check(
+            redis=mock_redis,
+            postgres_dsn="postgresql://localhost/zen70",
+            postgres_status="error",
+        )
 
         assert result.status == "degraded"
         assert result.services["redis"] == "ok"
@@ -177,21 +163,13 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_redis_error_postgres_ok_returns_degraded(self) -> None:
-        from backend.api.main import health_check
-
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=False)
-
-        mock_request = MagicMock()
-        mock_request.app.state.redis = mock_redis
-
-        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": "postgresql://localhost/zen70"}):
-            with patch(
-                "backend.api.main._check_postgres_async",
-                new_callable=AsyncMock,
-                return_value="ok",
-            ):
-                result = await health_check(mock_request)
+        result = await self._run_health_check(
+            redis=mock_redis,
+            postgres_dsn="postgresql://localhost/zen70",
+            postgres_status="ok",
+        )
 
         assert result.status == "degraded"
         assert result.services["redis"] == "error"
@@ -199,21 +177,13 @@ class TestHealthDegradation:
 
     @pytest.mark.asyncio
     async def test_both_ok_returns_healthy(self) -> None:
-        from backend.api.main import health_check
-
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
-
-        mock_request = MagicMock()
-        mock_request.app.state.redis = mock_redis
-
-        with patch("backend.api.main.get_settings", return_value={"postgres_dsn": "postgresql://localhost/zen70"}):
-            with patch(
-                "backend.api.main._check_postgres_async",
-                new_callable=AsyncMock,
-                return_value="ok",
-            ):
-                result = await health_check(mock_request)
+        result = await self._run_health_check(
+            redis=mock_redis,
+            postgres_dsn="postgresql://localhost/zen70",
+            postgres_status="ok",
+        )
 
         assert result.status == "healthy"
         assert result.services["redis"] == "ok"
