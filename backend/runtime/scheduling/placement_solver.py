@@ -342,10 +342,7 @@ class PlacementSolver:
 
     @staticmethod
     def _build_global_remaining_capacity(live_nodes: list[SchedulerNodeSnapshot]) -> dict[str, int]:
-        return {
-            node.node_id: max(node.max_concurrency - node.active_lease_count, 0)
-            for node in live_nodes
-        }
+        return {node.node_id: max(node.max_concurrency - node.active_lease_count, 0) for node in live_nodes}
 
     def _solve_large_simple_group(
         self,
@@ -403,11 +400,7 @@ class PlacementSolver:
         node_index: dict[str, SchedulerNodeSnapshot],
         binpack: bool,
     ) -> list[str]:
-        ordered_node_ids = [
-            node.node_id
-            for node in eligible_nodes
-            if global_remaining_cap.get(node.node_id, 0) > 0
-        ]
+        ordered_node_ids = [node.node_id for node in eligible_nodes if global_remaining_cap.get(node.node_id, 0) > 0]
         ordered_node_ids.sort(
             key=lambda node_id: (
                 -_routing_group_node_score(
@@ -584,10 +577,7 @@ class PlacementSolver:
         solo_candidates: list[PlacementCandidate],
         gang_candidates: dict[str, list[PlacementCandidate]],
     ) -> list[tuple[int, str, str, str]]:
-        heap: list[tuple[int, str, str, str]] = [
-            (-candidate.score, "job", candidate.job.job_id, candidate.node.node_id)
-            for candidate in solo_candidates
-        ]
+        heap: list[tuple[int, str, str, str]] = [(-candidate.score, "job", candidate.job.job_id, candidate.node.node_id) for candidate in solo_candidates]
         for gang_id, grouped_candidates in gang_candidates.items():
             heap.append((-max(candidate.score for candidate in grouped_candidates), "gang", gang_id, gang_id))
         heapq.heapify(heap)
@@ -646,19 +636,13 @@ class PlacementSolver:
         metrics: dict[str, object] | None = None,
     ) -> dict[str, str]:
         """Greedy descending-score assignment with gang-aware capacity handling."""
-        remaining_cap: dict[str, int] = {
-            node.node_id: max(node.max_concurrency - node.active_lease_count, 0)
-            for node in live_nodes
-        }
+        remaining_cap: dict[str, int] = {node.node_id: max(node.max_concurrency - node.active_lease_count, 0) for node in live_nodes}
         plan: dict[str, str] = {}
         assigned_jobs: set[str] = set()
         failed_gangs: set[str] = set()
         solo_candidates, gang_candidates = self._partition_match_units(candidates)
         heap = self._build_match_heap(solo_candidates, gang_candidates)
-        solo_by_key = {
-            (candidate.job.job_id, candidate.node.node_id): candidate
-            for candidate in solo_candidates
-        }
+        solo_by_key = {(candidate.job.job_id, candidate.node.node_id): candidate for candidate in solo_candidates}
 
         while heap:
             if _deadline_exceeded(deadline_monotonic):
@@ -784,9 +768,7 @@ def build_time_budgeted_placement_plan(
     )
     if decision_context is not None:
         decision_context["assignments"] = len(plan)
-        decision_context["reason"] = str(
-            decision_context.get("result", "planned" if plan else "no_assignments")
-        )
+        decision_context["reason"] = str(decision_context.get("result", "planned" if plan else "no_assignments"))
     return plan
 
 

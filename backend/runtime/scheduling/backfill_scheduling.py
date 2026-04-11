@@ -492,4 +492,3 @@ def reset_reservation_manager() -> None:
     """Reset singleton (for tests)."""
     global _reservation_manager
     _reservation_manager = None
-

@@ -49,20 +49,16 @@ class ReservationStore(ABC):
 
     @property
     @abstractmethod
-    def backend_name(self) -> str:
-        ...
+    def backend_name(self) -> str: ...
 
     @abstractmethod
-    def put(self, reservation: ResourceReservation) -> bool:
-        ...
+    def put(self, reservation: ResourceReservation) -> bool: ...
 
     @abstractmethod
-    def remove(self, job_id: str) -> ResourceReservation | None:
-        ...
+    def remove(self, job_id: str) -> ResourceReservation | None: ...
 
     @abstractmethod
-    def get(self, job_id: str) -> ResourceReservation | None:
-        ...
+    def get(self, job_id: str) -> ResourceReservation | None: ...
 
     @abstractmethod
     def get_by_node(
@@ -71,20 +67,16 @@ class ReservationStore(ABC):
         *,
         tenant_id: str = "default",
         after: datetime.datetime | None = None,
-    ) -> list[ResourceReservation]:
-        ...
+    ) -> list[ResourceReservation]: ...
 
     @abstractmethod
-    def list(self, query: ReservationQuery | None = None) -> list[ResourceReservation]:
-        ...
+    def list(self, query: ReservationQuery | None = None) -> list[ResourceReservation]: ...
 
     @abstractmethod
-    def count(self) -> int:
-        ...
+    def count(self) -> int: ...
 
     @abstractmethod
-    def cleanup_expired(self, now: datetime.datetime) -> int:
-        ...
+    def cleanup_expired(self, now: datetime.datetime) -> int: ...
 
 
 class InMemoryReservationStore(ReservationStore):
@@ -132,11 +124,7 @@ class InMemoryReservationStore(ReservationStore):
     ) -> list[ResourceReservation]:
         query = ReservationQuery.for_node(node_id, tenant_id=tenant_id, after=after)
         job_ids = self._node_index.get((tenant_id, node_id), [])
-        return _sort_node_reservations(
-            reservation
-            for reservation in self._reservations_for_job_ids(job_ids)
-            if query.matches(reservation)
-        )
+        return _sort_node_reservations(reservation for reservation in self._reservations_for_job_ids(job_ids) if query.matches(reservation))
 
     def list(self, query: ReservationQuery | None = None) -> list[ResourceReservation]:
         resolved_query = query or ReservationQuery()
@@ -146,11 +134,7 @@ class InMemoryReservationStore(ReservationStore):
                 tenant_id=resolved_query.tenant_id,
                 after=resolved_query.after,
             )
-        return _sort_reservations(
-            reservation
-            for reservation in self._reservations.values()
-            if resolved_query.matches(reservation)
-        )
+        return _sort_reservations(reservation for reservation in self._reservations.values() if resolved_query.matches(reservation))
 
     def count(self) -> int:
         return len(self._reservations)
@@ -288,9 +272,7 @@ class RedisReservationStore(ReservationStore):
         query = ReservationQuery.for_node(node_id, tenant_id=tenant_id, after=after)
         job_ids, index_references = self._collect_job_ids_from_node_indexes(query)
         return _sort_node_reservations(
-            reservation
-            for reservation in self._load_reservations(job_ids, index_references=index_references)
-            if query.matches(reservation)
+            reservation for reservation in self._load_reservations(job_ids, index_references=index_references) if query.matches(reservation)
         )
 
     def list(self, query: ReservationQuery | None = None) -> list[ResourceReservation]:
@@ -302,19 +284,12 @@ class RedisReservationStore(ReservationStore):
                 after=resolved_query.after,
             )
         if resolved_query.tenant_id is None and resolved_query.node_id is None:
-            job_ids = [
-                self._job_id_from_data_key(key)
-                for key in self._redis.kv.scan_prefix(self._data_prefix())
-            ]
+            job_ids = [self._job_id_from_data_key(key) for key in self._redis.kv.scan_prefix(self._data_prefix())]
             reservations = self._load_reservations(job_ids)
         else:
             job_ids, index_references = self._collect_job_ids_from_node_indexes(resolved_query)
             reservations = self._load_reservations(job_ids, index_references=index_references)
-        return _sort_reservations(
-            reservation
-            for reservation in reservations
-            if resolved_query.matches(reservation)
-        )
+        return _sort_reservations(reservation for reservation in reservations if resolved_query.matches(reservation))
 
     def count(self) -> int:
         return max(int(self._redis.kv.get(self._count_key()) or 0), 0)

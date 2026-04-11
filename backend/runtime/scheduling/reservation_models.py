@@ -37,11 +37,7 @@ class ResourceReservation:
         memory: float = 0.0,
         gpu: float = 0.0,
     ) -> bool:
-        return (
-            (self.cpu_cores > 0 and cpu > 0)
-            or (self.memory_mb > 0 and memory > 0)
-            or (self.gpu_vram_mb > 0 and gpu > 0)
-        )
+        return (self.cpu_cores > 0 and cpu > 0) or (self.memory_mb > 0 and memory > 0) or (self.gpu_vram_mb > 0 and gpu > 0)
 
     def to_dict(self) -> dict[str, object]:
         return {

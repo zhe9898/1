@@ -186,9 +186,7 @@ def test_topology_sentinel_pause_signal_sets_runtime_override_and_stops_containe
     mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
     sentinel._safe_container_action = MagicMock()
-    publish_route_meltdown = mocker.patch(
-        "backend.sentinel.topology_sentinel.TopologyRuntimeIO.publish_route_meltdown"
-    )
+    publish_route_meltdown = mocker.patch("backend.sentinel.topology_sentinel.TopologyRuntimeIO.publish_route_meltdown")
     sentinel._redis.kv.set = MagicMock()  # type: ignore[union-attr]
 
     sentinel._process_switch_event_message('{"switch":"switch1","state":"PAUSE"}')

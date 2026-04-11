@@ -153,9 +153,7 @@ def _function_def(tree: ast.AST, name: str) -> ast.AsyncFunctionDef | ast.Functi
 
 def _call_line(function_def: ast.AsyncFunctionDef | ast.FunctionDef, call_name: str) -> int | None:
     matching_lines = [
-        getattr(child, "lineno", 0)
-        for child in ast.walk(function_def)
-        if isinstance(child, ast.Call) and _expr_chain(child.func)[-1:] == (call_name,)
+        getattr(child, "lineno", 0) for child in ast.walk(function_def) if isinstance(child, ast.Call) and _expr_chain(child.func)[-1:] == (call_name,)
     ]
     if not matching_lines:
         return None
@@ -232,22 +230,9 @@ def test_backfill_reservation_boundary_keeps_policy_module_free_of_adapter_boots
     factory_source = factory_path.read_text(encoding="utf-8-sig")
     tree = ast.parse(policy_source, filename=str(policy_path))
 
-    imports = {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-    }
-    imports.update(
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    )
-    class_names = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ClassDef)
-    }
+    imports = {node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+    imports.update(alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names)
+    class_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
 
     assert "os" not in imports
     assert "urllib.parse" not in imports
@@ -1504,23 +1489,10 @@ def test_auth_mutation_adapters_delegate_actor_projection_to_auth_shared() -> No
         path = ROOT / rel_path
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         imported_names = {
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module == contract["module"]
-            for alias in node.names
+            alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module == contract["module"] for alias in node.names
         }
-        defined_names = {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
-        }
-        called_names = {
-            chain[-1]
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            for chain in [_expr_chain(node.func)]
-            if chain
-        }
+        defined_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)}
+        called_names = {chain[-1] for node in ast.walk(tree) if isinstance(node, ast.Call) for chain in [_expr_chain(node.func)] if chain}
 
         for import_name in sorted(requirements["imports"] - imported_names):
             violations.append(f"{rel_path}:missing_import:{import_name}")
@@ -1704,9 +1676,7 @@ def test_permission_mutation_gate_requires_invalidation_audit_commit_and_publish
         violations.append(f"{_rel(adapter_path)}:{contract['event_helper']}:{contract['event_entrypoint']}")
     clear_cookie_helper_def = _function_def(tree, contract["self_target_cookie_clear_helper"].rsplit(".", 1)[-1])
     if clear_cookie_helper_def is None or _call_line(clear_cookie_helper_def, "clear_auth_cookie") is None:
-        violations.append(
-            f"{_rel(adapter_path)}:{contract['self_target_cookie_clear_helper']}:backend.control_plane.adapters.auth_cookies.clear_auth_cookie"
-        )
+        violations.append(f"{_rel(adapter_path)}:{contract['self_target_cookie_clear_helper']}:backend.control_plane.adapters.auth_cookies.clear_auth_cookie")
     if "CHANNEL_USER_EVENTS" not in source:
         violations.append(f"{_rel(adapter_path)}:{contract['event_helper']}:{contract['event_channel']}")
     assert violations == []
@@ -1783,9 +1753,7 @@ def test_session_mutation_gate_requires_invalidation_audit_commit_cookie_clear_a
             continue
         invalidation_name = "revoke_owned_session" if function_name == "revoke_my_session" else "revoke_all_user_sessions"
         invalidation_entrypoint = (
-            contract["single_session_invalidation_entrypoint"]
-            if function_name == "revoke_my_session"
-            else contract["bulk_session_invalidation_entrypoint"]
+            contract["single_session_invalidation_entrypoint"] if function_name == "revoke_my_session" else contract["bulk_session_invalidation_entrypoint"]
         )
         invalidate_line = _call_line(function_def, invalidation_name)
         audit_line = _call_line(function_def, contract["audit_helper"].rsplit(".", 1)[-1])

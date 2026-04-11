@@ -36,9 +36,7 @@ def build_reservation_store_from_env(
     try:
         redis_client.connect()
     except Exception as exc:
-        raise RuntimeError(
-            f"ZEN-BACKFILL-STORE-UNAVAILABLE: reservation_store=redis but Redis initialization failed for {redis_url}"
-        ) from exc
+        raise RuntimeError(f"ZEN-BACKFILL-STORE-UNAVAILABLE: reservation_store=redis but Redis initialization failed for {redis_url}") from exc
     if logger is not None:
         logger.info("reservation_store=redis url=%s", redis_url)
     return RedisReservationStore(redis_client, max_reservations)

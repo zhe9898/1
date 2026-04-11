@@ -114,11 +114,7 @@ async def _cleanup_expired_reservations(
     redis: RedisClient | None,
     publish_control_event: Any,
 ) -> None:
-    expired_reservations = [
-        reservation
-        for reservation in reservation_mgr.list_reservations(tenant_id=tenant_id)
-        if reservation.is_expired(now)
-    ]
+    expired_reservations = [reservation for reservation in reservation_mgr.list_reservations(tenant_id=tenant_id) if reservation.is_expired(now)]
     if not expired_reservations:
         return
     reservation_mgr.cleanup_expired(now)
@@ -299,10 +295,7 @@ async def _grant_single_lease(
         await deps.append_log(
             db,
             job.job_id,
-            (
-                f"job leased by {payload.node_id} attempt={lease_grant.attempt_no} "
-                f"score={scored.score} eligible_nodes={scored.eligible_nodes_count}"
-            ),
+            (f"job leased by {payload.node_id} attempt={lease_grant.attempt_no} " f"score={scored.score} eligible_nodes={scored.eligible_nodes_count}"),
             tenant_id=job.tenant_id,
         )
 
