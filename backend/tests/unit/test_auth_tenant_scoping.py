@@ -4,7 +4,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import bcrypt
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from sqlalchemy import Select
 
 from backend.control_plane.adapters.auth import create_invite, create_user, list_users, login_begin, password_login, pin_login, revoke_credential
@@ -36,6 +36,7 @@ def _mock_db(result_value: object | None = None) -> AsyncMock:
     result.first.return_value = result_value
     db.execute.return_value = result
     db.flush = AsyncMock()
+    db.commit = AsyncMock()
     db.delete = AsyncMock()
     db.add = MagicMock()
     return db
@@ -66,7 +67,7 @@ async def test_pin_login_propagates_real_role_and_tenant() -> None:
     response = MagicMock()
 
     with patch(
-        "backend.control_plane.adapters.auth.token_response",
+        "backend.control_plane.adapters.auth_token_issue.token_response",
         return_value={"access_token": "tok", "token_type": "bearer", "expires_in": 900},
     ) as token_response_mock:
         await pin_login(PinLoginRequest(username="family", pin="12345678", tenant_id="tenant-alpha"), request, response, db=db, redis=redis)
@@ -139,7 +140,7 @@ async def test_pin_login_scopes_user_lookup_by_tenant() -> None:
     response = MagicMock()
 
     with patch(
-        "backend.control_plane.adapters.auth.token_response",
+        "backend.control_plane.adapters.auth_token_issue.token_response",
         return_value={"access_token": "tok", "token_type": "bearer", "expires_in": 900},
     ):
         await pin_login(PinLoginRequest(username="family", pin="12345678", tenant_id="tenant-alpha"), request, response, db=db, redis=redis)
@@ -170,9 +171,9 @@ async def test_webauthn_login_begin_scopes_user_lookup_by_tenant() -> None:
     db = _mock_db(user)
 
     with (
-        patch("backend.control_plane.adapters.auth.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.control_plane.adapters.auth.generate_authentication_challenge",
+            "backend.control_plane.adapters.auth_webauthn.generate_authentication_challenge",
             return_value=(b"challenge", "challenge-b64", '{"challenge":"challenge-b64"}'),
         ) as generate_mock,
     ):
@@ -210,9 +211,9 @@ async def test_webauthn_login_begin_rejects_disabled_user() -> None:
     db = _mock_db(user)
 
     with (
-        patch("backend.control_plane.adapters.auth.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.control_plane.adapters.auth.generate_authentication_challenge",
+            "backend.control_plane.adapters.auth_webauthn.generate_authentication_challenge",
             return_value=(b"challenge", "challenge-b64", '{"challenge":"challenge-b64"}'),
         ),
         pytest.raises(HTTPException) as exc,
@@ -231,19 +232,23 @@ async def test_webauthn_login_begin_rejects_disabled_user() -> None:
 @pytest.mark.asyncio
 async def test_create_user_rejects_cross_tenant_target_for_tenant_admin() -> None:
     db = _mock_db()
-    with patch("backend.control_plane.adapters.auth.set_tenant_context", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc:
-            await create_user(
-                CreateUserRequest(
-                    username="user-b",
-                    password="Password123!",
-                    display_name="User B",
-                    role="family",
-                    tenant_id="tenant-b",
-                ),
-                db=db,
-                current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
-            )
+    with (
+        patch("backend.control_plane.adapters.auth_shared.set_tenant_context", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_user.log_audit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_user.publish_control_event", new=AsyncMock()),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await create_user(
+            CreateUserRequest(
+                username="user-b",
+                password="Password123!",
+                display_name="User B",
+                role="family",
+                tenant_id="tenant-b",
+            ),
+            db=db,
+            current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
+        )
 
     assert exc.value.status_code == 403
 
@@ -259,7 +264,13 @@ async def test_create_user_scopes_username_uniqueness_to_target_tenant() -> None
         created["user"] = user
 
     db.add = MagicMock(side_effect=add_side_effect)
-    with patch("backend.control_plane.adapters.auth.set_tenant_context", new=AsyncMock()):
+    with (
+        patch("backend.control_plane.adapters.auth_shared.set_tenant_context", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_user.log_audit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_user.publish_control_event", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_user.bcrypt.gensalt", return_value=b"salt"),
+        patch("backend.control_plane.adapters.auth_user.bcrypt.hashpw", return_value=b"hashed-pw"),
+    ):
         response = await create_user(
             CreateUserRequest(
                 username="shared-name",
@@ -293,7 +304,7 @@ async def test_list_users_binds_tenant_scope_for_admin_queries() -> None:
     user.credentials = []
 
     db = _mock_db(user)
-    with patch("backend.control_plane.adapters.auth.set_tenant_context", new=AsyncMock()):
+    with patch("backend.control_plane.adapters.auth_shared.set_tenant_context", new=AsyncMock()):
         response = await list_users(
             db=db,
             current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
@@ -308,13 +319,13 @@ async def test_list_users_binds_tenant_scope_for_admin_queries() -> None:
 @pytest.mark.asyncio
 async def test_revoke_credential_scopes_lookup_to_admin_tenant() -> None:
     db = _mock_db(None)
-    with patch("backend.control_plane.adapters.auth.set_tenant_context", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc:
-            await revoke_credential(
-                "cred-cross-tenant",
-                db=db,
-                current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
-            )
+    with patch("backend.control_plane.adapters.auth_shared.set_tenant_context", new=AsyncMock()), pytest.raises(HTTPException) as exc:
+        await revoke_credential(
+            "cred-cross-tenant",
+            response=Response(),
+            db=db,
+            current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
+        )
 
     stmt = db.execute.await_args.args[0]
     rendered = _render_sql(stmt)
@@ -327,14 +338,13 @@ async def test_revoke_credential_scopes_lookup_to_admin_tenant() -> None:
 async def test_create_invite_scopes_user_lookup_to_admin_tenant() -> None:
     redis = AsyncMock()
     db = _mock_db(None)
-    with patch("backend.control_plane.adapters.auth.set_tenant_context", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc:
-            await create_invite(
-                InviteCreateRequest(user_id=99, expires_in_minutes=15),
-                db=db,
-                redis=redis,
-                current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
-            )
+    with patch("backend.control_plane.adapters.auth_shared.set_tenant_context", new=AsyncMock()), pytest.raises(HTTPException) as exc:
+        await create_invite(
+            InviteCreateRequest(user_id=99, expires_in_minutes=15),
+            db=db,
+            redis=redis,
+            current_admin={"sub": "admin-a", "role": "admin", "tenant_id": "tenant-a"},
+        )
 
     stmt = db.execute.await_args.args[0]
     rendered = _render_sql(stmt)

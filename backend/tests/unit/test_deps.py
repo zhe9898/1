@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,6 +23,30 @@ def _token(
     exp = now - timedelta(minutes=1) if expired else now + timedelta(minutes=15)
     return pyjwt.encode(
         {"sub": sub, "role": role, "tenant_id": "default", "sid": sid, "jti": jti, "iat": now, "exp": exp},
+        SECRET,
+        algorithm=ALG,
+    )
+
+
+def _half_life_session_token(
+    sub: str = "user1",
+    role: str = "admin",
+    *,
+    sid: str = "session-1",
+    jti: str = "jti-half-life",
+) -> str:
+    now = datetime.now(UTC)
+    return pyjwt.encode(
+        {
+            "sub": sub,
+            "role": role,
+            "tenant_id": "default",
+            "sid": sid,
+            "jti": jti,
+            "iat": (now - timedelta(minutes=10)).timestamp(),
+            "nbf": (now - timedelta(minutes=10)).timestamp(),
+            "exp": (now + timedelta(minutes=5)).timestamp(),
+        },
         SECRET,
         algorithm=ALG,
     )
@@ -297,6 +320,26 @@ class TestGetCurrentUserOptional:
         result = await get_current_user_optional(request, response, cred, None)
         assert result is None
 
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
+    @pytest.mark.anyio
+    async def test_optional_auth_does_not_rotate_session_token_when_db_is_missing(self) -> None:
+        from backend.control_plane.adapters.deps import get_current_user_optional
+
+        redis_kv = AsyncMock()
+        redis_kv.get = AsyncMock(return_value=None)
+        redis_kv.set = AsyncMock(return_value=True)
+        request = MagicMock()
+        request.cookies = {"zen70_access_token": _half_life_session_token("db-missing-user")}
+        request.app.state.redis = MagicMock(kv=redis_kv)
+        response = MagicMock()
+        response.headers = {}
+
+        result = await get_current_user_optional(request, response, None, None)
+
+        assert result is None
+        redis_kv.set.assert_not_awaited()
+
 
 class TestSettingsAndTenantDb:
     def test_get_settings_contains_expected_keys(self) -> None:
@@ -377,7 +420,7 @@ class TestSettingsAndTenantDb:
         request.headers = {"Authorization": "Bearer node-secret"}
 
         async def _slow_json() -> dict[str, object]:
-            raise asyncio.TimeoutError()
+            raise TimeoutError()
 
         request.json = AsyncMock(side_effect=_slow_json)
 

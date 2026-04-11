@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from backend.extensions.connector_kind_registry import get_connector_kind_info, validate_connector_config
 from backend.extensions.extension_sdk import (
-    CompatibilityPolicy,
-    ConnectorKindSpec,
-    ExtensionManifest,
-    JobKindSpec,
-    WorkflowTemplateSpec,
     bootstrap_extension_runtime,
     get_extension_info,
     list_extensions,
@@ -18,26 +11,7 @@ from backend.extensions.extension_sdk import (
 )
 from backend.extensions.job_kind_registry import get_job_kind_info, validate_job_payload, validate_job_result
 from backend.extensions.workflow_template_registry import get_workflow_template_info, render_workflow_template
-
-
-class PhotoIndexPayload(BaseModel):
-    album_id: str
-    max_items: int = 100
-
-
-class PhotoIndexResult(BaseModel):
-    indexed_items: int
-    status: str = "ok"
-
-
-class PhotoConnectorConfig(BaseModel):
-    root_uri: str
-    readonly: bool = True
-
-
-class PhotoIngestParams(BaseModel):
-    album_id: str
-    max_items: int = 100
+from backend.tests.unit.extensions_test_support import build_extension_manifest_yaml, build_photo_extension_manifest
 
 
 def test_builtin_extension_surface_includes_connector_invoke() -> None:
@@ -49,63 +23,7 @@ def test_builtin_extension_surface_includes_connector_invoke() -> None:
 
 
 def test_register_extension_manifest_publishes_metadata_and_schemas() -> None:
-    register_extension_manifest(
-        ExtensionManifest(
-            extension_id="acme.photo",
-            version="1.2.3",
-            name="Acme Photo Pack",
-            publisher="Acme",
-            description="Photo ingestion kinds and templates.",
-            compatibility=CompatibilityPolicy(
-                min_kernel_version="1.58.0",
-                supported_api_versions=("v1",),
-                compatibility_mode="same-major",
-                notes="Requires the v1 control-plane API surface.",
-            ),
-            job_kinds=(
-                JobKindSpec(
-                    kind="photo.index",
-                    payload_schema=PhotoIndexPayload,
-                    result_schema=PhotoIndexResult,
-                    schema_version="2.0.0",
-                    stability="stable",
-                    description="Index media assets for the photo library.",
-                ),
-            ),
-            connector_kinds=(
-                ConnectorKindSpec(
-                    kind="photo.library",
-                    config_schema=PhotoConnectorConfig,
-                    schema_version="1.1.0",
-                    stability="beta",
-                    description="Connector for a photo library root.",
-                ),
-            ),
-            workflow_templates=(
-                WorkflowTemplateSpec(
-                    template_id="photo.ingest",
-                    version="1.0.0",
-                    schema_version="1.0.0",
-                    display_name="Photo Ingest",
-                    description="Run the photo indexing pipeline.",
-                    parameters_schema=PhotoIngestParams,
-                    labels=("photo", "ingest"),
-                    steps=(
-                        {
-                            "id": "index",
-                            "kind": "photo.index",
-                            "payload": {
-                                "album_id": "${album_id}",
-                                "max_items": "${max_items}",
-                            },
-                        },
-                    ),
-                ),
-            ),
-            source_manifest_path="contracts/extensions/acme.photo.yaml",
-        ),
-        replace_existing=True,
-    )
+    register_extension_manifest(build_photo_extension_manifest(), replace_existing=True)
 
     extension_info = get_extension_info("acme.photo")
     assert extension_info["version"] == "1.2.3"
@@ -148,31 +66,14 @@ def test_load_extension_manifest_from_directory(tmp_path) -> None:
     manifest_dir.mkdir()
     manifest_path = manifest_dir / "demo.yaml"
     manifest_path.write_text(
-        """
-extension_id: acme.fs
-version: 1.0.0
-name: Acme Filesystem Pack
-publisher: Acme
-description: Filesystem-backed extension manifest
-compatibility:
-  min_kernel_version: 1.58.0
-job_kinds:
-  - kind: photo.fs.index
-    payload_schema_ref: backend.tests.unit.test_extension_sdk:PhotoIndexPayload
-    result_schema_ref: backend.tests.unit.test_extension_sdk:PhotoIndexResult
-connector_kinds:
-  - kind: photo.fs.connector
-    config_schema_ref: backend.tests.unit.test_extension_sdk:PhotoConnectorConfig
-workflow_templates:
-  - template_id: photo.fs.ingest
-    parameters_schema_ref: backend.tests.unit.test_extension_sdk:PhotoIngestParams
-    steps:
-      - id: index
-        kind: photo.fs.index
-        payload:
-          album_id: ${album_id}
-          max_items: ${max_items}
-""".strip(),
+        build_extension_manifest_yaml(
+            extension_id="acme.fs",
+            name="Acme Filesystem Pack",
+            description="Filesystem-backed extension manifest",
+            job_kind="photo.fs.index",
+            connector_kind="photo.fs.connector",
+            template_id="photo.fs.ingest",
+        ),
         encoding="utf-8",
     )
 
@@ -193,18 +94,13 @@ def test_bootstrap_extension_runtime_reconciles_removed_manifests(tmp_path) -> N
     manifest_dir.mkdir()
     manifest_path = manifest_dir / "demo.yaml"
     manifest_path.write_text(
-        """
-extension_id: acme.reload
-version: 1.0.0
-name: Reloadable Pack
-publisher: Acme
-description: Reload test
-compatibility:
-  min_kernel_version: 1.58.0
-job_kinds:
-  - kind: reload.job
-    payload_schema_ref: backend.tests.unit.test_extension_sdk:PhotoIndexPayload
-""".strip(),
+        build_extension_manifest_yaml(
+            extension_id="acme.reload",
+            name="Reloadable Pack",
+            description="Reload test",
+            job_kind="reload.job",
+            include_result_schema=False,
+        ),
         encoding="utf-8",
     )
 

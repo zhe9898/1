@@ -117,22 +117,22 @@ async def test_build_candidate_context_adds_starvation_rescue_candidates_when_pr
     query_primary = AsyncMock(return_value=primary_candidates)
     query_rescue = AsyncMock(return_value=rescue_candidates)
 
-    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._query_dispatch_candidates", query_primary)
-    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._query_starved_dispatch_candidates", query_rescue)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_candidates._query_dispatch_candidates", query_primary)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_candidates._query_starved_dispatch_candidates", query_rescue)
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._filter_dispatch_candidates",
+        "backend.control_plane.adapters.jobs.pull_candidates._filter_dispatch_candidates",
         AsyncMock(side_effect=lambda jobs, **_: jobs),
     )
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._load_completed_dependency_ids",
+        "backend.control_plane.adapters.jobs.pull_candidates._load_completed_dependency_ids",
         AsyncMock(return_value=set()),
     )
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._load_parent_jobs",
+        "backend.control_plane.adapters.jobs.pull_candidates._load_parent_jobs",
         AsyncMock(return_value={}),
     )
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._get_dispatch_config",
+        "backend.control_plane.adapters.jobs.pull_candidates._get_dispatch_config",
         lambda: DispatchConfig(
             starvation_rescue_multiplier=2,
             starvation_rescue_min=2,
@@ -178,22 +178,22 @@ async def test_build_candidate_context_skips_starvation_rescue_when_primary_wind
     query_primary = AsyncMock(return_value=primary_candidates)
     query_rescue = AsyncMock(return_value=[_job(job_id="job-starved", created_at=now - datetime.timedelta(hours=3))])
 
-    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._query_dispatch_candidates", query_primary)
-    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._query_starved_dispatch_candidates", query_rescue)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_candidates._query_dispatch_candidates", query_primary)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_candidates._query_starved_dispatch_candidates", query_rescue)
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._filter_dispatch_candidates",
+        "backend.control_plane.adapters.jobs.pull_candidates._filter_dispatch_candidates",
         AsyncMock(side_effect=lambda jobs, **_: jobs),
     )
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._load_completed_dependency_ids",
+        "backend.control_plane.adapters.jobs.pull_candidates._load_completed_dependency_ids",
         AsyncMock(return_value=set()),
     )
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._load_parent_jobs",
+        "backend.control_plane.adapters.jobs.pull_candidates._load_parent_jobs",
         AsyncMock(return_value={}),
     )
     monkeypatch.setattr(
-        "backend.control_plane.adapters.jobs.pull_service._get_dispatch_config",
+        "backend.control_plane.adapters.jobs.pull_candidates._get_dispatch_config",
         lambda: DispatchConfig(
             starvation_rescue_multiplier=2,
             starvation_rescue_min=2,

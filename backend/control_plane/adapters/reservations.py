@@ -17,8 +17,9 @@ from backend.kernel.contracts.tenant_claims import require_current_user_tenant_i
 from backend.models.job import Job
 from backend.models.node import Node
 from backend.platform.redis.client import CHANNEL_RESERVATION_EVENTS, RedisClient
-from backend.runtime.scheduling.backfill_scheduling import ResourceReservation, get_reservation_manager
+from backend.runtime.scheduling.backfill_scheduling import get_reservation_manager
 from backend.runtime.scheduling.job_scheduler import build_node_snapshot
+from backend.runtime.scheduling.reservation_models import ResourceReservation
 from backend.runtime.scheduling.reservation_runtime import estimate_node_next_slot_at
 
 router = APIRouter(prefix="/api/v1/reservations", tags=["reservations"])

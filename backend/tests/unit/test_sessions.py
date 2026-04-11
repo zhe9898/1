@@ -5,8 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 
-from backend.control_plane.auth.sessions import create_session, revoke_session
+from backend.control_plane.auth.sessions import create_session, revoke_owned_session, revoke_session
 from backend.models.session import Session
 
 
@@ -146,3 +147,29 @@ async def test_revoke_session_blacklist_failures_do_not_block_revocation() -> No
     assert revoked is session
     assert session.is_active is False
     assert session.revoked_by == "alice"
+
+
+@pytest.mark.anyio
+async def test_revoke_owned_session_rejects_cross_user_session_lookup() -> None:
+    db = AsyncMock()
+    result = MagicMock()
+    scalar_result = MagicMock()
+    scalar_result.first.return_value = None
+    result.scalars.return_value = scalar_result
+    db.execute.return_value = result
+    db.flush = AsyncMock()
+    redis = SimpleNamespace(kv=SimpleNamespace(set=AsyncMock()))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await revoke_owned_session(
+            db,
+            "session-foreign",
+            tenant_id="tenant-a",
+            user_id="user-1",
+            revoked_by="alice",
+            redis=redis,
+        )
+
+    assert exc_info.value.status_code == 404
+    db.flush.assert_not_awaited()
+    redis.kv.set.assert_not_awaited()

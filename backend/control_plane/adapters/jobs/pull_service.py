@@ -3,11 +3,8 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
-from dataclasses import dataclass
-from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Integer, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.adapters.control_events import publish_control_event
@@ -44,39 +41,21 @@ from .database import (
 from .deadline_maintenance import maybe_schedule_deadline_dlq_sweep
 from .helpers import _to_lease_response, _to_response, _utcnow
 from .models import JobLeaseResponse, JobPullRequest
+from .pull_candidates import (
+    _build_candidate_context,
+    _build_quota_context,  # re-exported for tests
+    _get_dispatch_config,
+    _get_starvation_rescue_limit,  # re-exported for tests
+)
+from .pull_contracts import (
+    PullFeatureFlags,
+    PullJobsDependencies,
+    PullRuntimeContext,
+    PullSelectionContext,
+)
 
 if TYPE_CHECKING:
     from backend.kernel.policy.types import DispatchConfig
-
-
-@dataclass(frozen=True, slots=True)
-class PullJobsDependencies:
-    authenticate_node_request: Callable[..., Awaitable[Any]]
-    acquire_transaction_advisory_locks: Callable[..., Awaitable[None]]
-    get_reservation_manager: Callable[[], Any]
-    get_governance_facade: Callable[[], Any]
-    maybe_schedule_deadline_dlq_sweep: Callable[[str, RedisClient | None], None]
-    get_failure_control_plane: Callable[[], Any]
-    load_node_metrics: Callable[..., Awaitable[tuple[list[Any], dict[str, int], dict[str, float]]]]
-    build_snapshots: Callable[..., list[Any]]
-    build_job_concurrency_window: Callable[..., Any]
-    load_recent_failed_job_ids: Callable[..., Awaitable[set[str]]]
-    async_build_time_budgeted_placement_plan: Callable[..., Awaitable[Any]]
-    select_jobs_for_node: Callable[..., list[Any]]
-    append_log: Callable[..., Awaitable[None]]
-    get_current_attempt: Callable[..., Awaitable[Any]]
-    publish_control_event: Callable[..., Awaitable[None]]
-    to_response: Callable[..., Any]
-    to_lease_response: Callable[..., JobLeaseResponse]
-    utcnow: Callable[[], Any]
-
-
-@dataclass(slots=True)
-class PullCandidateContext:
-    candidates: list[Job]
-    active_jobs_by_node: dict[str, list[Job]]
-    recent_failed_job_ids: set[str]
-    available_slots: int
 
 
 def build_default_pull_jobs_dependencies() -> PullJobsDependencies:
@@ -102,82 +81,29 @@ def build_default_pull_jobs_dependencies() -> PullJobsDependencies:
     )
 
 
-def _get_dispatch_config() -> DispatchConfig:
-    from backend.kernel.policy.policy_store import get_policy_store
-
-    return get_policy_store().active.dispatch
-
-
-def _build_dispatch_candidate_where(*, tenant_id: str, now: Any) -> list[Any]:
-    return [
-        Job.tenant_id == tenant_id,
-        or_(
-            (Job.status == "pending") & (or_(Job.retry_at.is_(None), Job.retry_at <= now)),
-            (Job.status == "leased") & (Job.leased_until.is_not(None)) & (Job.leased_until < now),
-        ),
-        or_(Job.deadline_at.is_(None), Job.deadline_at > now),
-    ]
-
-
-def _build_effective_priority_expression(*, now: Any) -> Any:
-    from backend.kernel.policy.policy_store import get_policy_store
-
-    queue_config = get_policy_store().active.queue
-    age_seconds = func.greatest(func.extract("epoch", literal(now) - Job.created_at), literal(0))
-    layers = queue_config.priority_layers
-    layer_muls = queue_config.layer_aging_multipliers
-    sorted_layers = sorted(layers.items(), key=lambda kv: kv[1][0], reverse=True)
-    case_whens = [(Job.priority >= lo, literal(float(layer_muls.get(name, 1.0)))) for name, (lo, _hi) in sorted_layers[:-1]]
-    else_mul = float(layer_muls.get(sorted_layers[-1][0], 1.0)) if sorted_layers else 1.0
-    layer_multiplier = case(*case_whens, else_=literal(else_mul))
-
-    aging_interval = float(queue_config.aging.interval_seconds)
-    bonus_per_interval = float(queue_config.aging.bonus_per_interval)
-    aging_cap = float(queue_config.aging.max_bonus)
-    aging_bonus = func.least(
-        func.sqrt(age_seconds / literal(aging_interval)) * layer_multiplier * literal(bonus_per_interval),
-        literal(aging_cap),
-    )
-    return func.least(Job.priority + func.cast(aging_bonus, Integer), literal(100))
-
-
-def _get_starvation_rescue_limit(*, payload_limit: int, dispatch_config: DispatchConfig) -> int:
-    if dispatch_config.starvation_rescue_max <= 0:
-        return 0
-    scaled_limit = max(
-        payload_limit * max(dispatch_config.starvation_rescue_multiplier, 0),
-        dispatch_config.starvation_rescue_min,
-    )
-    return min(scaled_limit, dispatch_config.starvation_rescue_max)
-
-
-def _merge_dispatch_candidates(primary: list[Job], rescue: list[Job]) -> list[Job]:
-    merged: list[Job] = []
-    seen_job_ids: set[str] = set()
-    for candidate in [*primary, *rescue]:
-        if candidate.job_id in seen_job_ids:
-            continue
-        seen_job_ids.add(candidate.job_id)
-        merged.append(candidate)
-    return merged
-
-
 async def _publish_reservation_event(
     redis: RedisClient | None,
     action: str,
     reservation: object,
     *,
-    publish_control_event: Callable[..., Awaitable[None]],
+    publish_control_event: Any,
     reason: str | None = None,
     source: str = "dispatch",
 ) -> None:
+    del redis
+
     payload = {
         "reservation": getattr(reservation, "to_dict")(),
         "source": source,
     }
     if reason:
         payload["reason"] = reason
-    await publish_control_event(CHANNEL_RESERVATION_EVENTS, action, payload, tenant_id=getattr(reservation, "tenant_id", None))
+    await publish_control_event(
+        CHANNEL_RESERVATION_EVENTS,
+        action,
+        payload,
+        tenant_id=getattr(reservation, "tenant_id", None),
+    )
 
 
 async def _cleanup_expired_reservations(
@@ -186,9 +112,13 @@ async def _cleanup_expired_reservations(
     tenant_id: str,
     now: Any,
     redis: RedisClient | None,
-    publish_control_event: Callable[..., Awaitable[None]],
+    publish_control_event: Any,
 ) -> None:
-    expired_reservations = [reservation for reservation in reservation_mgr.list_reservations(tenant_id=tenant_id) if reservation.is_expired(now)]
+    expired_reservations = [
+        reservation
+        for reservation in reservation_mgr.list_reservations(tenant_id=tenant_id)
+        if reservation.is_expired(now)
+    ]
     if not expired_reservations:
         return
     reservation_mgr.cleanup_expired(now)
@@ -200,243 +130,6 @@ async def _cleanup_expired_reservations(
             publish_control_event=publish_control_event,
             reason="window_elapsed",
         )
-
-
-async def _query_dispatch_candidates(
-    db: AsyncSession,
-    *,
-    tenant_id: str,
-    now: Any,
-    accepted_kinds: set[str],
-    candidate_limit: int,
-) -> list[Job]:
-    base_where = _build_dispatch_candidate_where(tenant_id=tenant_id, now=now)
-    effective_priority = _build_effective_priority_expression(now=now)
-    query = (
-        select(Job)
-        .where(*base_where)
-        .with_for_update(skip_locked=True)
-        .order_by(effective_priority.desc(), Job.created_at.asc(), Job.job_id.asc())
-        .limit(candidate_limit)
-    )
-    if accepted_kinds:
-        query = query.where(Job.kind.in_(accepted_kinds))
-
-    result = await db.execute(query)
-    return list(result.scalars().all())
-
-
-async def _query_starved_dispatch_candidates(
-    db: AsyncSession,
-    *,
-    tenant_id: str,
-    now: Any,
-    accepted_kinds: set[str],
-    rescue_limit: int,
-) -> list[Job]:
-    if rescue_limit <= 0:
-        return []
-
-    from backend.kernel.policy.policy_store import get_policy_store
-
-    queue_config = get_policy_store().active.queue
-    starvation_threshold_seconds = max(int(queue_config.starvation_threshold_seconds), 0)
-    if starvation_threshold_seconds <= 0:
-        return []
-
-    base_where = _build_dispatch_candidate_where(tenant_id=tenant_id, now=now)
-    starvation_cutoff = now - timedelta(seconds=starvation_threshold_seconds)
-    query = (
-        select(Job)
-        .where(*base_where, Job.created_at <= starvation_cutoff)
-        .with_for_update(skip_locked=True)
-        .order_by(Job.created_at.asc(), Job.priority.desc(), Job.job_id.asc())
-        .limit(rescue_limit)
-    )
-    if accepted_kinds:
-        query = query.where(Job.kind.in_(accepted_kinds))
-
-    result = await db.execute(query)
-    return list(result.scalars().all())
-
-
-async def _filter_dispatch_candidates(
-    candidates: list[Job],
-    *,
-    governance: Any,
-    failure_control_plane: Any,
-    requesting_executor: str | None,
-    ff_executor_val: bool,
-    audit: SchedulingDecisionLogger,
-    now: Any,
-) -> list[Job]:
-    pre_backoff = len(candidates)
-    candidates = [candidate for candidate in candidates if not governance.should_skip_backoff(candidate.job_id, now)]
-    backoff_skipped = pre_backoff - len(candidates)
-    if backoff_skipped:
-        governance.record_backoff_skip_metric()
-
-    from backend.runtime.scheduling.queue_stratification import sort_jobs_by_stratified_priority
-
-    sorted_candidates = cast(list[Job], sort_jobs_by_stratified_priority(candidates, now=now, aging_enabled=True))
-    filtered_candidates: list[Job] = []
-    for candidate in sorted_candidates:
-        kind = getattr(candidate, "kind", None) or ""
-        if kind:
-            circuit_state = await failure_control_plane.get_kind_circuit_state(kind, now=now)
-            if circuit_state == "open":
-                audit.record_rejection(candidate.job_id, f"kind_circuit_open:{kind}")
-                continue
-        if ff_executor_val and kind:
-            executor_filter = governance.filter_by_executor_contract(requesting_executor, kind)
-            if not executor_filter.compatible:
-                audit.record_rejection(candidate.job_id, f"executor_kind_incompat:{executor_filter.reason}")
-                continue
-        filtered_candidates.append(candidate)
-    return filtered_candidates
-
-
-async def _load_completed_dependency_ids(db: AsyncSession, *, tenant_id: str, candidates: list[Job]) -> set[str]:
-    dependency_ids = {dependency_id for candidate in candidates for dependency_id in (candidate.depends_on or [])}
-    if not dependency_ids:
-        return set()
-    dep_result = await db.execute(
-        select(Job.job_id).where(
-            Job.tenant_id == tenant_id,
-            Job.job_id.in_(dependency_ids),
-            Job.status == "completed",
-        )
-    )
-    return set(dep_result.scalars().all())
-
-
-async def _load_parent_jobs(db: AsyncSession, *, tenant_id: str, candidates: list[Job]) -> dict[str, Job]:
-    parent_ids = {candidate.parent_job_id for candidate in candidates if candidate.parent_job_id}
-    if not parent_ids:
-        return {}
-    parent_result = await db.execute(select(Job).where(Job.tenant_id == tenant_id, Job.job_id.in_(parent_ids)))
-    return {job.job_id: job for job in parent_result.scalars().all()}
-
-
-def _group_active_jobs_by_node(leased_jobs: list[Job]) -> dict[str, list[Job]]:
-    active_jobs_by_node: dict[str, list[Job]] = defaultdict(list)
-    for leased_job in leased_jobs:
-        leased_node_id = getattr(leased_job, "node_id", None)
-        if leased_node_id:
-            active_jobs_by_node[str(leased_node_id)].append(leased_job)
-    return active_jobs_by_node
-
-
-def _build_quota_context(leased_jobs: list[Job]) -> dict[str, object]:
-    from backend.runtime.scheduling.quota_aware_scheduling import FairShareCalculator, ResourceUsage, build_quota_accounts
-
-    extra_ctx: dict[str, object] = {}
-    quota_accounts = build_quota_accounts(leased_jobs)
-    extra_ctx["_quota_accounts"] = quota_accounts
-
-    cluster_totals = ResourceUsage()
-    for account in quota_accounts.values():
-        cluster_totals.cpu_cores += account.usage.cpu_cores
-        cluster_totals.memory_mb += account.usage.memory_mb
-        cluster_totals.gpu_vram_mb += account.usage.gpu_vram_mb
-        cluster_totals.concurrent_jobs += account.usage.concurrent_jobs
-    extra_ctx["_fair_share_ratios"] = FairShareCalculator.compute_fair_shares(quota_accounts, cluster_totals)
-    return extra_ctx
-
-
-async def _build_candidate_context(
-    *,
-    db: AsyncSession,
-    payload: JobPullRequest,
-    now: Any,
-    node_snapshot: Any,
-    governance: Any,
-    failure_control_plane: Any,
-    ff_executor_val: bool,
-    accepted_kinds: set[str],
-    candidate_limit: int,
-    active_node_snapshots: list[Any],
-    audit: SchedulingDecisionLogger,
-    deps: PullJobsDependencies,
-) -> PullCandidateContext:
-    candidates = await _query_dispatch_candidates(
-        db,
-        tenant_id=payload.tenant_id,
-        now=now,
-        accepted_kinds=accepted_kinds,
-        candidate_limit=candidate_limit,
-    )
-    starvation_rescue_limit = 0
-    starvation_rescue_added = 0
-    if len(candidates) >= candidate_limit:
-        dispatch_config = _get_dispatch_config()
-        starvation_rescue_limit = _get_starvation_rescue_limit(
-            payload_limit=payload.limit,
-            dispatch_config=dispatch_config,
-        )
-        if starvation_rescue_limit > 0:
-            starvation_rescue_candidates = await _query_starved_dispatch_candidates(
-                db,
-                tenant_id=payload.tenant_id,
-                now=now,
-                accepted_kinds=accepted_kinds,
-                rescue_limit=starvation_rescue_limit,
-            )
-            merged_candidates = _merge_dispatch_candidates(candidates, starvation_rescue_candidates)
-            starvation_rescue_added = max(len(merged_candidates) - len(candidates), 0)
-            candidates = merged_candidates
-
-    audit.context["candidate_window"] = {
-        "primary_limit": candidate_limit,
-        "primary_count": len(candidates) - starvation_rescue_added,
-        "starvation_rescue_limit": starvation_rescue_limit,
-        "starvation_rescue_added": starvation_rescue_added,
-        "total_candidates_before_filters": len(candidates),
-    }
-    candidates = await _filter_dispatch_candidates(
-        candidates,
-        governance=governance,
-        failure_control_plane=failure_control_plane,
-        requesting_executor=node_snapshot.executor,
-        ff_executor_val=ff_executor_val,
-        audit=audit,
-        now=now,
-    )
-
-    completed_dep_ids = await _load_completed_dependency_ids(db, tenant_id=payload.tenant_id, candidates=candidates)
-    parent_jobs = await _load_parent_jobs(db, tenant_id=payload.tenant_id, candidates=candidates)
-    available_slots = max(node_snapshot.max_concurrency - node_snapshot.active_lease_count, 0)
-
-    leased_result = await db.execute(select(Job).where(Job.tenant_id == payload.tenant_id, Job.status == "leased"))
-    leased_jobs = list(leased_result.scalars().all())
-    active_jobs_by_node = _group_active_jobs_by_node(leased_jobs)
-
-    from backend.runtime.scheduling.business_scheduling import apply_business_filters
-
-    candidates = apply_business_filters(
-        candidates,
-        completed_job_ids=completed_dep_ids,
-        available_slots=available_slots,
-        parent_jobs=parent_jobs,
-        now=now,
-        extra_context=_build_quota_context(leased_jobs),
-    )
-
-    recent_failed_job_ids = await deps.load_recent_failed_job_ids(
-        db,
-        tenant_id=payload.tenant_id,
-        node_id=payload.node_id,
-        job_ids=[job.job_id for job in candidates],
-        now=now,
-    )
-    audit.candidates_count = len(candidates)
-
-    return PullCandidateContext(
-        candidates=candidates,
-        active_jobs_by_node=active_jobs_by_node,
-        recent_failed_job_ids=recent_failed_job_ids,
-        available_slots=available_slots,
-    )
 
 
 async def _select_dispatch_jobs(
@@ -606,7 +299,10 @@ async def _grant_single_lease(
         await deps.append_log(
             db,
             job.job_id,
-            f"job leased by {payload.node_id} attempt={lease_grant.attempt_no} score={scored.score} eligible_nodes={scored.eligible_nodes_count}",
+            (
+                f"job leased by {payload.node_id} attempt={lease_grant.attempt_no} "
+                f"score={scored.score} eligible_nodes={scored.eligible_nodes_count}"
+            ),
             tenant_id=job.tenant_id,
         )
 
@@ -709,7 +405,11 @@ async def _create_dispatch_reservations(
         await deps.append_log(
             db,
             candidate.job_id,
-            f"reservation created on {reservation_node.node_id} start={created_reservation.start_at.isoformat()} end={created_reservation.end_at.isoformat()}",
+            (
+                f"reservation created on {reservation_node.node_id} "
+                f"start={created_reservation.start_at.isoformat()} "
+                f"end={created_reservation.end_at.isoformat()}"
+            ),
             tenant_id=candidate.tenant_id,
         )
         await _publish_reservation_event(
@@ -721,14 +421,38 @@ async def _create_dispatch_reservations(
         )
 
 
-async def execute_pull_jobs(
+async def _load_pull_feature_flags(db: AsyncSession, *, governance: Any) -> PullFeatureFlags:
+    return PullFeatureFlags(
+        decision_audit=await governance.is_feature_enabled(db, SCHED_FLAG_DECISION_AUDIT),
+        placement_policies=await governance.is_feature_enabled(db, SCHED_FLAG_PLACEMENT_POLICIES),
+        preemption=await governance.is_feature_enabled(db, SCHED_FLAG_PREEMPTION),
+        executor_validation=await governance.is_feature_enabled(db, SCHED_FLAG_EXECUTOR_VALIDATION),
+    )
+
+
+def _compute_candidate_limit(
+    payload: JobPullRequest,
+    *,
+    dispatch_config: DispatchConfig,
+    burst_active: bool,
+) -> int:
+    candidate_limit = min(
+        max(payload.limit * dispatch_config.candidate_multiplier, dispatch_config.candidate_min),
+        dispatch_config.candidate_max,
+    )
+    if burst_active:
+        return max(candidate_limit // dispatch_config.burst_throttle_divisor, dispatch_config.burst_throttle_floor)
+    return candidate_limit
+
+
+async def _build_pull_runtime_context(
     payload: JobPullRequest,
     *,
     db: AsyncSession,
     redis: RedisClient | None,
     node_token: str,
     deps: PullJobsDependencies,
-) -> list[JobLeaseResponse]:
+) -> PullRuntimeContext | None:
     requesting_node = await deps.authenticate_node_request(
         db,
         payload.node_id,
@@ -738,9 +462,7 @@ async def execute_pull_jobs(
     )
     await deps.acquire_transaction_advisory_locks(
         db,
-        [
-            ("jobs.pull.node", (payload.tenant_id, payload.node_id)),
-        ],
+        [("jobs.pull.node", (payload.tenant_id, payload.node_id))],
     )
 
     now = deps.utcnow()
@@ -761,21 +483,15 @@ async def execute_pull_jobs(
         now=now,
     )
     if not admission.admitted:
-        return []
+        return None
 
     deps.maybe_schedule_deadline_dlq_sweep(payload.tenant_id, redis)
-
-    ff_audit = await governance.is_feature_enabled(db, SCHED_FLAG_DECISION_AUDIT)
-    ff_placement = await governance.is_feature_enabled(db, SCHED_FLAG_PLACEMENT_POLICIES)
-    ff_preemption = await governance.is_feature_enabled(db, SCHED_FLAG_PREEMPTION)
-    ff_executor_val = await governance.is_feature_enabled(db, SCHED_FLAG_EXECUTOR_VALIDATION)
-
+    feature_flags = await _load_pull_feature_flags(db, governance=governance)
     audit: SchedulingDecisionLogger = governance.create_decision_logger(
         tenant_id=payload.tenant_id,
         node_id=payload.node_id,
         now=now,
     )
-
     failure_control_plane = deps.get_failure_control_plane()
 
     active_nodes, active_lease_counts, reliability_map = await deps.load_node_metrics(
@@ -784,10 +500,12 @@ async def execute_pull_jobs(
         now=now,
         only_active_enrollment=True,
     )
+    dispatch_config = _get_dispatch_config()
+    reliability_score = reliability_map.get(payload.node_id, dispatch_config.default_reliability_score)
     node_snapshot = build_node_snapshot(
         requesting_node,
         active_lease_count=active_lease_counts.get(payload.node_id, 0),
-        reliability_score=reliability_map.get(payload.node_id, _get_dispatch_config().default_reliability_score),
+        reliability_score=reliability_score,
     )
     active_node_snapshots = deps.build_snapshots(
         active_nodes,
@@ -795,23 +513,15 @@ async def execute_pull_jobs(
         reliability_map=reliability_map,
     )
 
-    accepted_kinds = set(payload.accepted_kinds)
-    dispatch_config = _get_dispatch_config()
-    candidate_limit = min(
-        max(payload.limit * dispatch_config.candidate_multiplier, dispatch_config.candidate_min),
-        dispatch_config.candidate_max,
-    )
-
     burst_active = await failure_control_plane.is_in_burst(now=now)
-    if burst_active:
-        candidate_limit = max(candidate_limit // dispatch_config.burst_throttle_divisor, dispatch_config.burst_throttle_floor)
+    accepted_kinds = set(payload.accepted_kinds)
+    candidate_limit = _compute_candidate_limit(
+        payload,
+        dispatch_config=dispatch_config,
+        burst_active=burst_active,
+    )
     audit.context["burst_active"] = burst_active
-    audit.context["feature_flags"] = {
-        "decision_audit": ff_audit,
-        "placement_policies": ff_placement,
-        "preemption": ff_preemption,
-        "executor_validation": ff_executor_val,
-    }
+    audit.context["feature_flags"] = feature_flags.as_dict()
 
     runtime_policy_snapshot = get_runtime_policy_resolver().snapshot(
         profile=os.getenv("GATEWAY_PROFILE", "gateway-kernel"),
@@ -826,105 +536,151 @@ async def execute_pull_jobs(
         "profile": runtime_policy_snapshot.profile,
         "active_packs": list(runtime_policy_snapshot.active_packs),
     }
+
+    return PullRuntimeContext(
+        requesting_node=requesting_node,
+        now=now,
+        reservation_mgr=reservation_mgr,
+        governance=governance,
+        feature_flags=feature_flags,
+        audit=audit,
+        failure_control_plane=failure_control_plane,
+        node_snapshot=node_snapshot,
+        active_node_snapshots=active_node_snapshots,
+        reliability_score=reliability_score,
+        accepted_kinds=accepted_kinds,
+        candidate_limit=candidate_limit,
+        concurrency_window=concurrency_window,
+    )
+
+
+async def _build_pull_selection_context(
+    payload: JobPullRequest,
+    *,
+    db: AsyncSession,
+    runtime: PullRuntimeContext,
+    deps: PullJobsDependencies,
+) -> PullSelectionContext:
     candidate_context = await _build_candidate_context(
         db=db,
         payload=payload,
-        now=now,
-        node_snapshot=node_snapshot,
-        governance=governance,
-        failure_control_plane=failure_control_plane,
-        ff_executor_val=ff_executor_val,
-        accepted_kinds=accepted_kinds,
-        candidate_limit=candidate_limit,
-        active_node_snapshots=active_node_snapshots,
-        audit=audit,
+        now=runtime.now,
+        node_snapshot=runtime.node_snapshot,
+        governance=runtime.governance,
+        failure_control_plane=runtime.failure_control_plane,
+        ff_executor_val=runtime.feature_flags.executor_validation,
+        accepted_kinds=runtime.accepted_kinds,
+        candidate_limit=runtime.candidate_limit,
+        active_node_snapshots=runtime.active_node_snapshots,
+        audit=runtime.audit,
         deps=deps,
     )
-    candidates = candidate_context.candidates
-    active_jobs_by_node = candidate_context.active_jobs_by_node
-    recent_failed_job_ids = candidate_context.recent_failed_job_ids
-    available_slots = candidate_context.available_slots
-    active_jobs_on_node = list(active_jobs_by_node.get(payload.node_id, []))
+    active_jobs_on_node = list(candidate_context.active_jobs_by_node.get(payload.node_id, []))
 
-    dispatch_start = time.monotonic()
     selected, placement_plan, solver_dispatch_context = await _select_dispatch_jobs(
-        candidates,
-        active_jobs_by_node=active_jobs_by_node,
-        governance=governance,
-        ff_placement=ff_placement,
-        node_snapshot=node_snapshot,
-        active_node_snapshots=active_node_snapshots,
-        accepted_kinds=accepted_kinds,
-        recent_failed_job_ids=recent_failed_job_ids,
+        candidate_context.candidates,
+        active_jobs_by_node=candidate_context.active_jobs_by_node,
+        governance=runtime.governance,
+        ff_placement=runtime.feature_flags.placement_policies,
+        node_snapshot=runtime.node_snapshot,
+        active_node_snapshots=runtime.active_node_snapshots,
+        accepted_kinds=runtime.accepted_kinds,
+        recent_failed_job_ids=candidate_context.recent_failed_job_ids,
         active_jobs_on_node=active_jobs_on_node,
         payload=payload,
-        now=now,
+        now=runtime.now,
         deps=deps,
     )
-    audit.context["solver_dispatch"] = solver_dispatch_context
+    runtime.audit.context["solver_dispatch"] = solver_dispatch_context
     selected, node_snapshot, active_jobs_on_node = await _maybe_preempt_and_reselect(
         db,
         selected,
-        ff_preemption=ff_preemption,
-        available_slots=available_slots,
-        candidates=candidates,
+        ff_preemption=runtime.feature_flags.preemption,
+        available_slots=candidate_context.available_slots,
+        candidates=candidate_context.candidates,
         active_jobs_on_node=active_jobs_on_node,
-        governance=governance,
-        node_snapshot=node_snapshot,
-        requesting_node=requesting_node,
-        reliability_score=reliability_map.get(payload.node_id, _get_dispatch_config().default_reliability_score),
-        accepted_kinds=accepted_kinds,
-        recent_failed_job_ids=recent_failed_job_ids,
-        active_node_snapshots=active_node_snapshots,
+        governance=runtime.governance,
+        node_snapshot=runtime.node_snapshot,
+        requesting_node=runtime.requesting_node,
+        reliability_score=runtime.reliability_score,
+        accepted_kinds=runtime.accepted_kinds,
+        recent_failed_job_ids=candidate_context.recent_failed_job_ids,
+        active_node_snapshots=runtime.active_node_snapshots,
         placement_plan=placement_plan,
-        now=now,
+        now=runtime.now,
         deps=deps,
-        audit=audit,
+        audit=runtime.audit,
     )
-    _record_backoff_failures(candidates, selected, governance=governance, now=now)
+    runtime.node_snapshot = node_snapshot
+    _record_backoff_failures(candidate_context.candidates, selected, governance=runtime.governance, now=runtime.now)
 
-    if selected:
+    return PullSelectionContext(
+        candidates=candidate_context.candidates,
+        active_jobs_by_node=candidate_context.active_jobs_by_node,
+        active_jobs_on_node=active_jobs_on_node,
+        recent_failed_job_ids=candidate_context.recent_failed_job_ids,
+        available_slots=candidate_context.available_slots,
+        selected=selected,
+        placement_plan=placement_plan,
+    )
+
+
+async def _commit_pull_selection(
+    payload: JobPullRequest,
+    *,
+    db: AsyncSession,
+    redis: RedisClient | None,
+    runtime: PullRuntimeContext,
+    selection: PullSelectionContext,
+    dispatch_start: float,
+    deps: PullJobsDependencies,
+) -> list[JobLeaseResponse]:
+    if selection.selected:
         await deps.acquire_transaction_advisory_locks(
             db,
-            [("jobs.lease.job", (payload.tenant_id, scored.job.job_id)) for scored in selected],
+            [("jobs.lease.job", (payload.tenant_id, scored.job.job_id)) for scored in selection.selected],
         )
 
     acquired_locks: list[str] = []
     try:
-        active_jobs_by_node[payload.node_id] = active_jobs_on_node
+        selection.active_jobs_by_node[payload.node_id] = selection.active_jobs_on_node
         lease_grants, acquired_locks = await _lease_selected_jobs(
-            selected,
+            selection.selected,
             db=db,
             payload=payload,
             redis=redis,
-            now=now,
-            concurrency_window=concurrency_window,
-            reservation_mgr=reservation_mgr,
+            now=runtime.now,
+            concurrency_window=runtime.concurrency_window,
+            reservation_mgr=runtime.reservation_mgr,
             deps=deps,
-            governance=governance,
-            audit=audit,
-            active_jobs_by_node=active_jobs_by_node,
+            governance=runtime.governance,
+            audit=runtime.audit,
+            active_jobs_by_node=selection.active_jobs_by_node,
         )
         leased_jobs = [grant.job for grant in lease_grants]
         await _create_dispatch_reservations(
-            candidates,
+            selection.candidates,
             leased_jobs=leased_jobs,
-            reservation_mgr=reservation_mgr,
-            active_node_snapshots=active_node_snapshots,
-            active_jobs_by_node=active_jobs_by_node,
+            reservation_mgr=runtime.reservation_mgr,
+            active_node_snapshots=runtime.active_node_snapshots,
+            active_jobs_by_node=selection.active_jobs_by_node,
             deps=deps,
             db=db,
             redis=redis,
-            now=now,
+            now=runtime.now,
         )
 
         dispatch_ms = (time.monotonic() - dispatch_start) * 1000
         for _ in leased_jobs:
-            governance.record_placement_metric(dispatch_ms)
-        if candidates and not leased_jobs:
-            governance.record_rejection_metric("no_eligible_slot")
+            runtime.governance.record_placement_metric(dispatch_ms)
+        if selection.candidates and not leased_jobs:
+            runtime.governance.record_rejection_metric("no_eligible_slot")
 
-        decision = await governance.post_dispatch_audit(db, audit, enabled=ff_audit)
+        decision = await runtime.governance.post_dispatch_audit(
+            db,
+            runtime.audit,
+            enabled=runtime.feature_flags.decision_audit,
+        )
         decision_id = getattr(decision, "id", None)
         if decision_id is not None:
             for grant in lease_grants:
@@ -932,10 +688,10 @@ async def execute_pull_jobs(
                     db,
                     attempt=grant.attempt,
                     scheduling_decision_id=int(decision_id),
-                    now=now,
+                    now=runtime.now,
                 )
 
-        responses = [deps.to_lease_response(job, now=now) for job in leased_jobs]
+        responses = [deps.to_lease_response(job, now=runtime.now) for job in leased_jobs]
         await db.commit()
         if responses:
             await deps.publish_control_event(
@@ -943,7 +699,7 @@ async def execute_pull_jobs(
                 "leased",
                 {
                     "node_id": payload.node_id,
-                    "jobs": [deps.to_response(job, now=now).model_dump(mode="json") for job in leased_jobs],
+                    "jobs": [deps.to_response(job, now=runtime.now).model_dump(mode="json") for job in leased_jobs],
                 },
                 tenant_id=payload.tenant_id,
             )
@@ -952,3 +708,39 @@ async def execute_pull_jobs(
         if redis is not None:
             for lock_name in acquired_locks:
                 await redis.locks.release(lock_name)
+
+
+async def execute_pull_jobs(
+    payload: JobPullRequest,
+    *,
+    db: AsyncSession,
+    redis: RedisClient | None,
+    node_token: str,
+    deps: PullJobsDependencies,
+) -> list[JobLeaseResponse]:
+    runtime = await _build_pull_runtime_context(
+        payload,
+        db=db,
+        redis=redis,
+        node_token=node_token,
+        deps=deps,
+    )
+    if runtime is None:
+        return []
+
+    dispatch_start = time.monotonic()
+    selection = await _build_pull_selection_context(
+        payload,
+        db=db,
+        runtime=runtime,
+        deps=deps,
+    )
+    return await _commit_pull_selection(
+        payload,
+        db=db,
+        redis=redis,
+        runtime=runtime,
+        selection=selection,
+        dispatch_start=dispatch_start,
+        deps=deps,
+    )

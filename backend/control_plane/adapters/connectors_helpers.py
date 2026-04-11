@@ -1,87 +1,16 @@
-"""Connector Pydantic models, schema, and helper functions.
-
-Extracted from connectors.py for maintainability.
-Route handlers remain in connectors.py.
-"""
+"""Connector schema and projection helpers."""
 
 from __future__ import annotations
 
-import datetime
 import os
 
-from pydantic import BaseModel, Field
-
 from backend.control_plane.adapters.action_contracts import ControlAction, ControlActionField
+from backend.control_plane.adapters.connectors_contracts import ConnectorResponse
 from backend.control_plane.adapters.ui_contracts import FormFieldOption, FormFieldSchema, FormSectionSchema, ResourceSchemaResponse, StatusView
 from backend.control_plane.console.state_views import connector_status_view
 from backend.extensions.connector_secret_service import ConnectorSecretService
 from backend.kernel.profiles.public_profile import DEFAULT_PRODUCT_NAME, normalize_gateway_profile, to_public_profile
 from backend.models.connector import Connector
-
-# 閳光偓閳光偓 Pydantic request/response models 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
-
-
-class ConnectorUpsertRequest(BaseModel):
-    connector_id: str = Field(..., min_length=1, max_length=128)
-    name: str = Field(..., min_length=1, max_length=128)
-    kind: str = Field(..., min_length=1, max_length=64)
-    status: str = "configured"
-    endpoint: str | None = None
-    profile: str = "manual"
-    config: dict[str, object] = Field(default_factory=dict)
-
-
-class ConnectorResponse(BaseModel):
-    connector_id: str
-    name: str
-    kind: str
-    status: str
-    status_view: StatusView
-    endpoint: str | None
-    profile: str
-    config: dict[str, object]
-    last_test_ok: bool | None
-    last_test_status: str | None
-    last_test_message: str | None
-    last_test_at: datetime.datetime | None
-    last_invoke_status: str | None
-    last_invoke_message: str | None
-    last_invoke_job_id: str | None
-    last_invoke_at: datetime.datetime | None
-    attention_reason: str | None
-    actions: list[ControlAction] = Field(default_factory=list)
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
-
-
-class ConnectorInvokeRequest(BaseModel):
-    action: str = Field(..., min_length=1, max_length=64)
-    payload: dict[str, object] = Field(default_factory=dict)
-    lease_seconds: int = Field(default=30, ge=5, le=3600)
-
-
-class ConnectorInvokeResponse(BaseModel):
-    connector_id: str
-    accepted: bool
-    job_id: str
-    status: str
-    message: str
-
-
-class ConnectorTestRequest(BaseModel):
-    timeout_ms: int = Field(default=1500, ge=100, le=10000)
-
-
-class ConnectorTestResponse(BaseModel):
-    connector_id: str
-    ok: bool
-    endpoint: str | None
-    status: str
-    message: str
-    checked_at: datetime.datetime
-
-
-# Helper functions
 
 
 def _to_response(connector: Connector) -> ConnectorResponse:

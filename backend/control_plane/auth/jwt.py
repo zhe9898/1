@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import jwt
@@ -107,7 +107,7 @@ def assert_jwt_runtime_ready() -> None:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def create_access_token(
@@ -216,6 +216,8 @@ async def _maybe_rotate_token(
     lifespan = exp_seconds - iat_seconds
     if lifespan <= 0 or (current_timestamp - iat_seconds) <= (lifespan / 2):
         return None
+    if not _rotation_authority_ready(payload, db=db, session=session):
+        return None
     return await _issue_rotated_token(
         payload,
         redis_conn=redis_conn,
@@ -234,6 +236,8 @@ async def _force_rotate_token(
 ) -> str | None:
     exp = payload.get("exp", 0)
     exp_seconds = float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else 0.0
+    if not _rotation_authority_ready(payload, db=db, session=session):
+        return None
     return await _issue_rotated_token(
         payload,
         redis_conn=redis_conn,
@@ -241,6 +245,24 @@ async def _force_rotate_token(
         session=session,
         ttl_seconds=int(max(exp_seconds - _now().timestamp(), 60)),
     )
+
+
+def _rotation_authority_ready(
+    payload: dict[str, object],
+    *,
+    db: AsyncSession | None,
+    session: object | None,
+) -> bool:
+    session_id = _session_id_from_payload(payload)
+    if session_id is None:
+        return True
+    if db is not None and session is not None:
+        return True
+    logging.getLogger("zen70.jwt").debug(
+        "Skipping token rotation for session-backed token without authoritative session store: sid=%s",
+        session_id,
+    )
+    return False
 
 
 async def _issue_rotated_token(

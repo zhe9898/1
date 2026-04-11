@@ -6,11 +6,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.adapters.deps import get_current_user, get_tenant_db
-from backend.control_plane.adapters.workflows import StepStatus, WorkflowDetailResponse, _to_response
+from backend.control_plane.adapters.workflow_contracts import WorkflowDetailResponse
+from backend.control_plane.adapters.workflow_projection import build_workflow_detail_response
+from backend.control_plane.adapters.workflow_queries import list_workflow_steps
 from backend.extensions.extension_sdk import (
     bootstrap_extension_runtime,
     get_extension_info,
@@ -26,7 +27,6 @@ from backend.extensions.workflow_engine import create_workflow
 from backend.extensions.workflow_template_registry import render_workflow_template
 from backend.kernel.contracts.errors import zen
 from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
-from backend.models.workflow import WorkflowStep
 
 router = APIRouter(prefix="/api/v1/extensions", tags=["extensions"])
 
@@ -219,24 +219,9 @@ async def start_registered_workflow_template(
         created_by=current_user.get("username"),
     )
 
-    steps_result = await db.execute(select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id))
-    steps_status = [
-        StepStatus(
-            step_id=ws.step_id,
-            job_id=ws.job_id,
-            status=ws.status,
-            result=ws.result,
-            error_message=ws.error_message,
-            started_at=ws.started_at.isoformat() if ws.started_at else None,
-            completed_at=ws.completed_at.isoformat() if ws.completed_at else None,
-        )
-        for ws in steps_result.scalars().all()
-    ]
-    return WorkflowDetailResponse(
-        **_to_response(workflow).model_dump(),
-        steps_definition=workflow.steps,
-        steps_status=steps_status,
-        context=workflow.context,
+    return build_workflow_detail_response(
+        workflow,
+        await list_workflow_steps(db, workflow_id_fk=workflow.id),
     )
 
 

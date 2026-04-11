@@ -8,23 +8,147 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.control_plane.adapters.auth_cookies import set_auth_cookie
+from backend.control_plane.adapters.auth_cookies import clear_auth_cookie, set_auth_cookie
 from backend.control_plane.adapters.auth_session_projection import build_authenticated_session_response
-from backend.control_plane.adapters.auth_shared import bind_admin_scope, enforce_admin_scope
+from backend.control_plane.adapters.auth_shared import (
+    bind_admin_scope,
+    build_auth_actor_payload,
+    enforce_admin_scope,
+    resolve_auth_actor,
+    should_clear_auth_cookie_for_self_target,
+)
 from backend.control_plane.adapters.auth_token_issue import issue_auth_token
+from backend.control_plane.adapters.control_events import publish_control_event
 from backend.control_plane.adapters.deps import get_current_admin, get_current_user, get_current_user_optional, get_db, get_tenant_db
 from backend.control_plane.adapters.models.auth import AiRoutePreferenceRequest, AuthSessionResponse, CreateUserRequest, UserItem, UserListResponse
 from backend.control_plane.auth.auth_helpers import CODE_BAD_REQUEST, CODE_NOT_FOUND, log_auth, request_id, zen
 from backend.control_plane.auth.permissions import filter_valid_scopes
-from backend.control_plane.auth.sessions import rotate_session_credentials
+from backend.control_plane.auth.sessions import revoke_all_user_sessions, rotate_session_credentials
 from backend.control_plane.cache_headers import apply_identity_no_store_headers
 from backend.kernel.contracts.role_claims import current_user_role, normalize_ai_route_preference, normalize_role_name
 from backend.kernel.contracts.tenant_claims import current_user_tenant_id, require_current_user_tenant_id
 from backend.models.user import User, WebAuthnCredential
+from backend.platform.logging.audit import log_audit
+from backend.platform.redis.client import CHANNEL_USER_EVENTS
 
 router = APIRouter()
 
 BCRYPT_ROUNDS = 12
+_CURRENT_ADMIN_DEP = Depends(get_current_admin)
+_CURRENT_USER_DEP = Depends(get_current_user)
+_CURRENT_USER_OPTIONAL_DEP = Depends(get_current_user_optional)
+_DB_DEP = Depends(get_db)
+_TENANT_DB_DEP = Depends(get_tenant_db)
+
+
+def _clear_auth_cookie_for_self_credential_revocation(
+    response: Response,
+    *,
+    current_user: dict[str, object],
+    target_user_id: str,
+) -> None:
+    if should_clear_auth_cookie_for_self_target(current_user, target_user_id=target_user_id):
+        clear_auth_cookie(response)
+
+
+async def _record_webauthn_credential_revocation_audit(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    current_user: dict[str, object],
+    user: User,
+    credential: WebAuthnCredential,
+    revoked_sessions: int,
+) -> None:
+    actor = resolve_auth_actor(current_user)
+    await log_audit(
+        db,
+        tenant_id=tenant_id,
+        action="auth.webauthn.credential.revoked",
+        result="success",
+        user_id=actor.user_id,
+        username=actor.username,
+        resource_type="webauthn_credential",
+        resource_id=credential.credential_id,
+        details={
+            "target_user_id": str(user.id),
+            "target_username": user.username,
+            "credential_id": credential.credential_id,
+            "device_name": credential.device_name,
+            "revoked_sessions": revoked_sessions,
+        },
+    )
+
+
+async def _publish_webauthn_credential_revocation_event(
+    *,
+    tenant_id: str,
+    current_user: dict[str, object],
+    user: User,
+    credential: WebAuthnCredential,
+    revoked_sessions: int,
+) -> None:
+    await publish_control_event(
+        CHANNEL_USER_EVENTS,
+        "webauthn_credential_revoked",
+        {
+            "target_user_id": str(user.id),
+            "user": {
+                "id": str(user.id),
+                "username": user.username,
+            },
+            "credential": {
+                "id": credential.credential_id,
+                "device_name": credential.device_name,
+            },
+            "revoked_sessions": revoked_sessions,
+            "actor": build_auth_actor_payload(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
+async def _record_user_provisioning_audit(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    current_user: dict[str, object],
+    user: User,
+) -> None:
+    actor = resolve_auth_actor(current_user)
+    await log_audit(
+        db,
+        tenant_id=tenant_id,
+        action="user.created",
+        result="success",
+        user_id=actor.user_id,
+        username=actor.username,
+        resource_type="user",
+        resource_id=str(user.id),
+        details={
+            "target_user_id": str(user.id),
+            "target_username": user.username,
+            "target_role": normalize_role_name(user.role),
+            "has_password": bool(user.password_hash),
+        },
+    )
+
+
+async def _publish_user_provisioning_event(
+    *,
+    tenant_id: str,
+    current_user: dict[str, object],
+    user: UserItem,
+) -> None:
+    await publish_control_event(
+        CHANNEL_USER_EVENTS,
+        "user_created",
+        {
+            "user": user.model_dump(mode="json"),
+            "actor": build_auth_actor_payload(current_user),
+        },
+        tenant_id=tenant_id,
+    )
 
 
 @router.patch("/me/ai-preference", response_model=AuthSessionResponse)
@@ -32,8 +156,8 @@ async def update_ai_preference(
     req: AiRoutePreferenceRequest,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_tenant_db),
-    current_user: dict[str, str] = Depends(get_current_user),
+    db: AsyncSession = _TENANT_DB_DEP,
+    current_user: dict[str, object] = _CURRENT_USER_DEP,
 ) -> AuthSessionResponse:
     """Update the caller's AI route preference and re-issue the session token immediately."""
     raw_preference = req.preference.strip().lower()
@@ -95,7 +219,7 @@ async def update_ai_preference(
 @router.get("/session", response_model=AuthSessionResponse)
 async def get_auth_session(
     response: Response,
-    current_user: dict[str, object] | None = Depends(get_current_user_optional),
+    current_user: dict[str, object] | None = _CURRENT_USER_OPTIONAL_DEP,
 ) -> AuthSessionResponse:
     apply_identity_no_store_headers(response)
     if not current_user:
@@ -117,8 +241,8 @@ async def get_auth_session(
 
 @router.get("/users", response_model=UserListResponse)
 async def list_users(
-    db: AsyncSession = Depends(get_db),
-    current_admin: dict[str, str] = Depends(get_current_admin),
+    db: AsyncSession = _DB_DEP,
+    current_admin: dict[str, object] = _CURRENT_ADMIN_DEP,
 ) -> UserListResponse:
     """List tenant-scoped users together with their registered WebAuthn credentials."""
     scope_tenant_id = await bind_admin_scope(db, current_admin)
@@ -149,8 +273,8 @@ async def list_users(
 @router.post("/users", response_model=UserItem)
 async def create_user(
     req: CreateUserRequest,
-    db: AsyncSession = Depends(get_db),
-    current_admin: dict[str, str] = Depends(get_current_admin),
+    db: AsyncSession = _DB_DEP,
+    current_admin: dict[str, object] = _CURRENT_ADMIN_DEP,
 ) -> UserItem:
     """Create a tenant-scoped user from the control plane."""
     await bind_admin_scope(db, current_admin)
@@ -169,8 +293,7 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
-
-    return UserItem(
+    user_item = UserItem(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
@@ -180,13 +303,27 @@ async def create_user(
         has_password=True,
         webauthn_credentials=[],
     )
+    await _record_user_provisioning_audit(
+        db,
+        tenant_id=user.tenant_id,
+        current_user=current_admin,
+        user=user,
+    )
+    await db.commit()
+    await _publish_user_provisioning_event(
+        tenant_id=user.tenant_id,
+        current_user=current_admin,
+        user=user_item,
+    )
+    return user_item
 
 
 @router.delete("/credentials/{credential_id}")
 async def revoke_credential(
     credential_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_admin: dict[str, str] = Depends(get_current_admin),
+    response: Response,
+    db: AsyncSession = _DB_DEP,
+    current_admin: dict[str, object] = _CURRENT_ADMIN_DEP,
 ) -> dict[str, str]:
     """Revoke a single WebAuthn credential."""
     scope_tenant_id = await bind_admin_scope(db, current_admin)
@@ -197,7 +334,37 @@ async def revoke_credential(
     row = result.first()
     if row is None:
         raise zen(CODE_NOT_FOUND, "Credential not found", status.HTTP_404_NOT_FOUND)
-    credential, _user = row
+    credential, user = row
+    tenant_id = str(user.tenant_id).strip()
+    actor_username = str(current_admin.get("username") or "").strip() or "unknown"
     await db.delete(credential)
     await db.flush()
+    revoked_sessions = await revoke_all_user_sessions(
+        db,
+        tenant_id=tenant_id,
+        user_id=str(user.id),
+        revoked_by=f"admin:credential_revoke:{actor_username}",
+        redis=None,
+    )
+    await _record_webauthn_credential_revocation_audit(
+        db,
+        tenant_id=tenant_id,
+        current_user=current_admin,
+        user=user,
+        credential=credential,
+        revoked_sessions=revoked_sessions,
+    )
+    await db.commit()
+    _clear_auth_cookie_for_self_credential_revocation(
+        response,
+        current_user=current_admin,
+        target_user_id=str(user.id),
+    )
+    await _publish_webauthn_credential_revocation_event(
+        tenant_id=tenant_id,
+        current_user=current_admin,
+        user=user,
+        credential=credential,
+        revoked_sessions=revoked_sessions,
+    )
     return {"status": "ok", "message": "Credential revoked successfully"}

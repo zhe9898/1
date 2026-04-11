@@ -10,8 +10,10 @@ from backend.platform.redis.constants import (
     CHANNEL_JOB_EVENTS,
     CHANNEL_NODE_EVENTS,
     CHANNEL_RESERVATION_EVENTS,
+    CHANNEL_SESSION_EVENTS,
     CHANNEL_SWITCH_EVENTS,
     CHANNEL_TRIGGER_EVENTS,
+    CHANNEL_USER_EVENTS,
 )
 
 CHANNEL_SWITCH_COMMANDS: str = "switch:commands"
@@ -53,6 +55,12 @@ _CHANNEL_SPECS: tuple[EventChannelSpec, ...] = (
         description="Job lifecycle control-plane events.",
     ),
     EventChannelSpec(
+        subject=CHANNEL_SESSION_EVENTS,
+        plane="control-plane",
+        browser_realtime=True,
+        description="Tenant-scoped session mutation control-plane events.",
+    ),
+    EventChannelSpec(
         subject=CHANNEL_CONNECTOR_EVENTS,
         plane="control-plane",
         browser_realtime=True,
@@ -69,6 +77,12 @@ _CHANNEL_SPECS: tuple[EventChannelSpec, ...] = (
         plane="control-plane",
         browser_realtime=True,
         description="Trigger lifecycle control-plane events.",
+    ),
+    EventChannelSpec(
+        subject=CHANNEL_USER_EVENTS,
+        plane="control-plane",
+        browser_realtime=True,
+        description="Tenant-scoped user lifecycle control-plane events.",
     ),
     EventChannelSpec(
         subject=CHANNEL_SWITCH_COMMANDS,
@@ -97,15 +111,24 @@ CONTROL_PLANE_REALTIME_CHANNELS: tuple[str, ...] = tuple(spec.subject for spec i
 TENANT_SCOPED_REALTIME_CHANNELS: tuple[str, ...] = (
     CHANNEL_NODE_EVENTS,
     CHANNEL_JOB_EVENTS,
+    CHANNEL_SESSION_EVENTS,
     CHANNEL_CONNECTOR_EVENTS,
     CHANNEL_RESERVATION_EVENTS,
     CHANNEL_TRIGGER_EVENTS,
+    CHANNEL_USER_EVENTS,
 )
 BROWSER_PUBLIC_REALTIME_CHANNELS: tuple[str, ...] = tuple(
     subject for subject in CONTROL_PLANE_REALTIME_CHANNELS if subject not in TENANT_SCOPED_REALTIME_CHANNELS
 )
 REDIS_INTERNAL_SIGNAL_CHANNELS: tuple[str, ...] = tuple(spec.subject for spec in _CHANNEL_SPECS if spec.plane == "redis-internal")
 TENANT_REALTIME_SUBJECT_SEGMENT = "tenant"
+CONTROL_EVENT_ENVELOPE_RESERVED_FIELDS: tuple[str, ...] = (
+    "event_id",
+    "revision",
+    "action",
+    "ts",
+    "tenant_id",
+)
 _TENANT_SUBJECT_TOKEN_RE = re.compile(r"^[0-9a-f]+$")
 
 
@@ -201,6 +224,11 @@ def export_event_channel_contract() -> dict[str, object]:
         "browser_realtime_event_channels": list(CONTROL_PLANE_REALTIME_CHANNELS),
         "browser_public_realtime_event_channels": list(BROWSER_PUBLIC_REALTIME_CHANNELS),
         "tenant_scoped_realtime_event_channels": list(TENANT_SCOPED_REALTIME_CHANNELS),
+        "control_event_envelope_contract": {
+            "publisher_entrypoint": "backend.control_plane.adapters.control_events.publish_control_event",
+            "reserved_fields": list(CONTROL_EVENT_ENVELOPE_RESERVED_FIELDS),
+            "tenant_scoped_channels_require_tenant_id": True,
+        },
         "tenant_realtime_subject_contract": {
             "segment": TENANT_REALTIME_SUBJECT_SEGMENT,
             "tenant_id_encoding": "utf8-hex",
@@ -217,6 +245,7 @@ __all__ = (
     "CHANNEL_SPECS",
     "CHANNEL_SWITCH_COMMANDS",
     "BROWSER_PUBLIC_REALTIME_CHANNELS",
+    "CONTROL_EVENT_ENVELOPE_RESERVED_FIELDS",
     "CONTROL_PLANE_EVENT_CHANNELS",
     "CONTROL_PLANE_REALTIME_CHANNELS",
     "EventChannelSpec",

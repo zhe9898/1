@@ -10,6 +10,7 @@ from pytest_mock import MockerFixture
 
 from backend.platform.redis.constants import KEY_DISK_TAINT, KEY_HARDWARE_GPU_STATE
 from backend.platform.redis.runtime_state import sentinel_override_key
+from backend.sentinel.mount_runtime import MountTransitionAction, plan_mount_state_transition, resolve_debounced_mount_state
 from backend.sentinel.topology_sentinel import (
     MountPoint,
     TopologySentinel,
@@ -153,6 +154,31 @@ def test_topology_sentinel_safe_action(mock_env: None, mocker: MockerFixture) ->
     sentinel._safe_container_action("some-container", "start")
 
 
+def test_mount_runtime_requires_stable_window() -> None:
+    assert resolve_debounced_mount_state([True, True, True], window_size=3) is not None
+    assert resolve_debounced_mount_state([True, False, True], window_size=3) is None
+    assert resolve_debounced_mount_state([True, True], window_size=3) is None
+
+
+def test_mount_runtime_transition_plan_distinguishes_pending_recovery() -> None:
+    assert plan_mount_state_transition(current_state="pending", target_state="offline").action is MountTransitionAction.NOOP
+    assert plan_mount_state_transition(current_state="pending", target_state="online").action is MountTransitionAction.VERIFY_PENDING_ONLINE
+    assert plan_mount_state_transition(current_state="offline", target_state="online").action is MountTransitionAction.MARK_ONLINE
+
+
+def test_topology_sentinel_resizes_mount_cache_to_window_size(
+    mock_env: None,
+    monkeypatch: MonkeyPatch,
+    mocker: MockerFixture,
+) -> None:
+    monkeypatch.setenv("DEBOUNCE_WINDOW", "5")
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
+
+    sentinel = TopologySentinel()
+
+    assert sentinel.mounts[0].state_cache.maxlen == 5
+
+
 def test_topology_sentinel_pause_signal_sets_runtime_override_and_stops_container(
     mock_env: None,
     mocker: MockerFixture,
@@ -160,7 +186,9 @@ def test_topology_sentinel_pause_signal_sets_runtime_override_and_stops_containe
     mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
     sentinel = TopologySentinel()
     sentinel._safe_container_action = MagicMock()
-    sentinel._publish_route_meltdown = MagicMock()
+    publish_route_meltdown = mocker.patch(
+        "backend.sentinel.topology_sentinel.TopologyRuntimeIO.publish_route_meltdown"
+    )
     sentinel._redis.kv.set = MagicMock()  # type: ignore[union-attr]
 
     sentinel._process_switch_event_message('{"switch":"switch1","state":"PAUSE"}')
@@ -168,7 +196,7 @@ def test_topology_sentinel_pause_signal_sets_runtime_override_and_stops_containe
     sentinel._redis.kv.set.assert_any_call(sentinel_override_key("switch1"), "OFF")  # type: ignore[union-attr]
     sentinel._redis.kv.set.assert_any_call(sentinel_override_key("container1"), "OFF")  # type: ignore[union-attr]
     sentinel._safe_container_action.assert_called_once_with("container1", "stop")
-    sentinel._publish_route_meltdown.assert_called_once_with("container1")
+    publish_route_meltdown.assert_called_once_with("container1")
 
 
 def test_topology_sentinel_restart_signal_restarts_container_without_persisting_override(
@@ -185,3 +213,21 @@ def test_topology_sentinel_restart_signal_restarts_container_without_persisting_
     sentinel._safe_container_action.assert_any_call("container1", "stop")
     sentinel._safe_container_action.assert_any_call("container1", "start")
     sentinel._redis.kv.set.assert_not_called()  # type: ignore[union-attr]
+
+
+def test_topology_sentinel_on_signal_clears_runtime_override_without_container_side_effects(
+    mock_env: None,
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("backend.sentinel.topology_sentinel.SyncRedisClient")
+    sentinel = TopologySentinel()
+    sentinel._safe_container_action = MagicMock()
+    sentinel._redis.kv.delete = MagicMock()  # type: ignore[union-attr]
+
+    sentinel._process_switch_event_message('{"switch":"switch1","state":"ON"}')
+
+    sentinel._redis.kv.delete.assert_called_once_with(  # type: ignore[union-attr]
+        sentinel_override_key("switch1"),
+        sentinel_override_key("container1"),
+    )
+    sentinel._safe_container_action.assert_not_called()

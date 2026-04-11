@@ -1,22 +1,10 @@
 from __future__ import annotations
 
-import sys
 import uuid
 from dataclasses import dataclass
 
-from backend.control_plane.auth.auth_helpers import token_response as _token_response_impl
+from backend.control_plane.auth.auth_helpers import token_response
 from backend.control_plane.auth.jwt import get_access_token_expire_seconds
-
-
-def _auth_mod() -> object:  # noqa: ANN202
-    mod = sys.modules.get("backend.control_plane.adapters.auth")
-    if mod is not None:
-        return mod
-
-    class _Fallback:
-        token_response = staticmethod(_token_response_impl)
-
-    return _Fallback()
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +36,7 @@ def issue_auth_token(
     }
     if scopes is not None:
         token_kwargs["scopes"] = scopes
-    body = _auth_mod().token_response(  # type: ignore[attr-defined]
+    body = token_response(
         sub,
         username,
         role,

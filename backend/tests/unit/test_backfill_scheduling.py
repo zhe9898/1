@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import datetime
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,13 +22,13 @@ from backend.runtime.scheduling.backfill_scheduling import (
     BackfillConfig,
     BackfillEvaluator,
     BackfillGate,
-    InMemoryReservationStore,
     ReservationHonorGate,
     ReservationManager,
-    ResourceReservation,
     get_reservation_manager,
     reset_reservation_manager,
 )
+from backend.runtime.scheduling.reservation_models import ResourceReservation
+from backend.runtime.scheduling.reservation_store import InMemoryReservationStore, RedisReservationStore, ReservationQuery
 from backend.runtime.scheduling.scheduling_constraints import SchedulingContext
 
 # ---------------------------------------------------------------------------
@@ -76,6 +77,73 @@ def _reset_singleton():
     reset_reservation_manager()
     yield
     reset_reservation_manager()
+
+
+class _FakeRedisKV:
+    def __init__(self, data: dict[str, str], *, scan_keys: list[str]) -> None:
+        self._data = data
+        self._scan_keys = scan_keys
+        self.scan_prefix_calls: list[str] = []
+
+    def get(self, key: str) -> str | None:
+        return self._data.get(key)
+
+    def get_many(self, keys: list[str], *, transactional: bool = True) -> list[str | None]:
+        return [self._data.get(key) for key in keys]
+
+    def exists(self, key: str) -> bool:
+        return key in self._data
+
+    def scan_prefix(self, prefix: str, *, count: int = 100) -> list[str]:
+        self.scan_prefix_calls.append(prefix)
+        return [key for key in self._scan_keys if key.startswith(prefix)]
+
+    def set(self, key: str, value: str | int, **_: object) -> bool:
+        self._data[key] = str(value)
+        return True
+
+    def incr(self, key: str) -> int:
+        value = int(self._data.get(key, "0")) + 1
+        self._data[key] = str(value)
+        return value
+
+    def decr(self, key: str) -> int:
+        value = int(self._data.get(key, "0")) - 1
+        self._data[key] = str(value)
+        return value
+
+    def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in self._data:
+                removed += 1
+                del self._data[key]
+        return removed
+
+
+class _FakeRedisSortedSets:
+    def __init__(self, members: dict[str, list[str]]) -> None:
+        self._members = {key: list(value) for key, value in members.items()}
+        self.remove_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def range_by_score(self, key: str, min_score: float | str, max_score: float | str) -> list[str]:
+        return list(self._members.get(key, []))
+
+    def remove(self, key: str, *members: str) -> int:
+        self.remove_calls.append((key, members))
+        existing = self._members.get(key, [])
+        self._members[key] = [member for member in existing if member not in set(members)]
+        return 1
+
+    def add(self, key: str, mapping: dict[str, float]) -> int:
+        self._members.setdefault(key, []).extend(mapping)
+        return len(mapping)
+
+
+class _FakeRedisClient:
+    def __init__(self, data: dict[str, str], *, sorted_sets: dict[str, list[str]], scan_keys: list[str]) -> None:
+        self.kv = _FakeRedisKV(data, scan_keys=scan_keys)
+        self.sorted_sets = _FakeRedisSortedSets(sorted_sets)
 
 
 # =====================================================================
@@ -491,7 +559,7 @@ class TestSingleton:
         def _raise_connect(self) -> None:  # type: ignore[no-untyped-def]
             raise RuntimeError("redis unavailable")
 
-        monkeypatch.setattr("backend.runtime.scheduling.backfill_scheduling.SyncRedisClient.connect", _raise_connect)
+        monkeypatch.setattr("backend.runtime.scheduling.reservation_store_factory.SyncRedisClient.connect", _raise_connect)
 
         with pytest.raises(RuntimeError, match="ZEN-BACKFILL-STORE-UNAVAILABLE"):
             get_reservation_manager()
@@ -666,6 +734,123 @@ class TestInMemoryReservationStore:
         assert store.count() == 1
         assert store.get("j1") is None
         assert store.get("j2") is not None
+
+    def test_list_query_filters_without_leaking_store_specific_args(self):
+        store = InMemoryReservationStore()
+        now = _utcnow()
+        store.put(
+            ResourceReservation(
+                job_id="j1",
+                tenant_id="tenant-a",
+                node_id="n1",
+                start_at=now - datetime.timedelta(seconds=300),
+                end_at=now + datetime.timedelta(seconds=60),
+                priority=90,
+            )
+        )
+        store.put(
+            ResourceReservation(
+                job_id="j2",
+                tenant_id="tenant-a",
+                node_id="n2",
+                start_at=now + datetime.timedelta(seconds=120),
+                end_at=now + datetime.timedelta(seconds=420),
+                priority=80,
+            )
+        )
+        store.put(
+            ResourceReservation(
+                job_id="j3",
+                tenant_id="tenant-b",
+                node_id="n1",
+                start_at=now,
+                end_at=now + datetime.timedelta(seconds=300),
+                priority=70,
+            )
+        )
+
+        result = store.list(ReservationQuery(tenant_id="tenant-a", after=now))
+
+        assert [reservation.job_id for reservation in result] == ["j1", "j2"]
+
+
+class TestRedisReservationStore:
+    def test_list_scopes_to_tenant_node_indexes_and_keeps_overlapping_reservations(self):
+        now = _utcnow()
+        prefix = "zen70:reservations"
+        node_key_a = f"{prefix}:tenant:tenant-a:node:n1"
+        node_key_b = f"{prefix}:tenant:tenant-b:node:n1"
+        reservations = {
+            f"{prefix}:data:j1": json.dumps(
+                ResourceReservation(
+                    job_id="j1",
+                    tenant_id="tenant-a",
+                    node_id="n1",
+                    start_at=now - datetime.timedelta(seconds=300),
+                    end_at=now + datetime.timedelta(seconds=60),
+                    priority=90,
+                ).to_dict()
+            ),
+            f"{prefix}:data:j2": json.dumps(
+                ResourceReservation(
+                    job_id="j2",
+                    tenant_id="tenant-a",
+                    node_id="n1",
+                    start_at=now + datetime.timedelta(seconds=120),
+                    end_at=now + datetime.timedelta(seconds=420),
+                    priority=80,
+                ).to_dict()
+            ),
+            f"{prefix}:data:j3": json.dumps(
+                ResourceReservation(
+                    job_id="j3",
+                    tenant_id="tenant-b",
+                    node_id="n1",
+                    start_at=now,
+                    end_at=now + datetime.timedelta(seconds=300),
+                    priority=70,
+                ).to_dict()
+            ),
+        }
+        fake_redis = _FakeRedisClient(
+            reservations,
+            sorted_sets={node_key_a: ["j1", "j2"], node_key_b: ["j3"]},
+            scan_keys=[node_key_a, node_key_b, *reservations.keys()],
+        )
+        store = RedisReservationStore(fake_redis)
+
+        result = store.list(ReservationQuery(tenant_id="tenant-a", after=now))
+
+        assert [reservation.job_id for reservation in result] == ["j1", "j2"]
+        assert fake_redis.kv.scan_prefix_calls == [f"{prefix}:tenant:tenant-a:node:"]
+
+    def test_get_by_node_prunes_stale_index_members(self):
+        now = _utcnow()
+        prefix = "zen70:reservations"
+        node_key = f"{prefix}:tenant:tenant-a:node:n1"
+        reservations = {
+            f"{prefix}:data:j1": json.dumps(
+                ResourceReservation(
+                    job_id="j1",
+                    tenant_id="tenant-a",
+                    node_id="n1",
+                    start_at=now,
+                    end_at=now + datetime.timedelta(seconds=300),
+                    priority=90,
+                ).to_dict()
+            )
+        }
+        fake_redis = _FakeRedisClient(
+            reservations,
+            sorted_sets={node_key: ["j-missing", "j1"]},
+            scan_keys=[node_key, *reservations.keys()],
+        )
+        store = RedisReservationStore(fake_redis)
+
+        result = store.get_by_node("n1", tenant_id="tenant-a", after=now)
+
+        assert [reservation.job_id for reservation in result] == ["j1"]
+        assert fake_redis.sorted_sets.remove_calls == [(node_key, ("j-missing",))]
 
 
 # =====================================================================

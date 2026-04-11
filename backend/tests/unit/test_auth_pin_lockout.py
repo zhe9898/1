@@ -133,7 +133,7 @@ class TestPinLockout:
         response = MagicMock()
 
         with patch(
-            "backend.control_plane.adapters.auth.token_response",
+            "backend.control_plane.adapters.auth_token_issue.token_response",
             return_value={"access_token": "test-tok", "token_type": "bearer", "expires_in": 900},
         ):
             await pin_login(req, request, response, db=db, redis=redis)

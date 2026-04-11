@@ -223,6 +223,42 @@ async def rotate_session_credentials(
     return session
 
 
+async def revoke_owned_session(
+    db: AsyncSession,
+    session_id: str,
+    *,
+    tenant_id: str,
+    user_id: str,
+    revoked_by: str,
+    redis: object | None = None,
+) -> Session:
+    """Revoke a session only when it belongs to the authenticated user."""
+    result = await db.execute(
+        select(Session).where(
+            Session.session_id == session_id,
+            Session.tenant_id == tenant_id,
+            Session.user_id == user_id,
+        )
+    )
+    session = result.scalars().first()
+
+    if session is None:
+        raise zen("ZEN-SESSION-4040", "Session not found", status_code=404)
+
+    if not session.is_active:
+        raise zen("ZEN-SESSION-4090", "Session already revoked", status_code=409)
+
+    now = _utcnow()
+    session.is_active = False
+    session.revoked_at = now
+    session.revoked_by = revoked_by
+    await db.flush()
+
+    await _best_effort_blacklist_session_jti(redis, session.jti, session.expires_at)
+
+    return session
+
+
 async def revoke_session(
     db: AsyncSession,
     session_id: str,

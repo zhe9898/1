@@ -48,3 +48,21 @@ async def test_publish_control_event_keeps_public_channels_single_subject(
 
     subjects = [call.args[0] for call in event_bus.publish.await_args_list]
     assert subjects == [CHANNEL_HARDWARE_EVENTS]
+
+
+@pytest.mark.asyncio
+async def test_publish_control_event_rejects_reserved_envelope_fields_in_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event_bus = SimpleNamespace(publish=AsyncMock())
+    monkeypatch.setattr("backend.control_plane.adapters.control_events.get_runtime_event_bus", lambda: event_bus)
+
+    with pytest.raises(ValueError, match="reserved envelope fields"):
+        await publish_control_event(
+            CHANNEL_JOB_EVENTS,
+            "updated",
+            {"action": "override"},
+            tenant_id="tenant-a",
+        )
+
+    event_bus.publish.assert_not_awaited()

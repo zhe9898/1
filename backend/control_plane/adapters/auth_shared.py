@@ -5,7 +5,8 @@ ZEN70 Auth Shared - shared helpers used across auth modules.
 from __future__ import annotations
 
 import logging
-import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 import bcrypt
 from fastapi import status
@@ -18,23 +19,58 @@ from backend.control_plane.auth.auth_helpers import CODE_DB_UNAVAILABLE, CODE_FO
 from backend.control_plane.auth.jwt import get_access_token_expire_seconds
 from backend.kernel.contracts.tenant_claims import normalize_tenant_claim, require_current_user_tenant_id
 from backend.models.user import User
-from backend.platform.db.rls import set_tenant_context as _set_tenant_context_impl
+from backend.platform.db.rls import set_tenant_context
 
 _logger = logging.getLogger(__name__)
 
 
-def _auth_mod() -> object:  # noqa: ANN202
-    mod = sys.modules.get("backend.control_plane.adapters.auth")
-    if mod is not None:
-        return mod
-
-    class _Fallback:
-        set_tenant_context = staticmethod(_set_tenant_context_impl)
-
-    return _Fallback()
-
-
 BCRYPT_ROUNDS = 12
+
+
+@dataclass(frozen=True, slots=True)
+class AuthActor:
+    user_id: str | None
+    username: str | None
+    session_id: str | None
+
+
+def _normalize_claim(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized_value = value.strip()
+    return normalized_value or None
+
+
+def resolve_auth_actor(current_user: Mapping[str, object]) -> AuthActor:
+    return AuthActor(
+        user_id=_normalize_claim(current_user.get("sub")),
+        username=_normalize_claim(current_user.get("username")),
+        session_id=_normalize_claim(current_user.get("sid")),
+    )
+
+
+def build_auth_actor_payload(current_user: Mapping[str, object]) -> dict[str, str | None]:
+    actor = resolve_auth_actor(current_user)
+    return {
+        "user_id": actor.user_id,
+        "username": actor.username,
+    }
+
+
+def should_clear_auth_cookie_for_self_target(
+    current_user: Mapping[str, object],
+    *,
+    target_user_id: str,
+    target_session_id: str | None = None,
+) -> bool:
+    actor = resolve_auth_actor(current_user)
+    normalized_target_user_id = _normalize_claim(target_user_id)
+    if actor.user_id is None or normalized_target_user_id is None or actor.user_id != normalized_target_user_id:
+        return False
+    if target_session_id is None:
+        return True
+    normalized_target_session_id = _normalize_claim(target_session_id)
+    return actor.session_id is not None and normalized_target_session_id is not None and actor.session_id == normalized_target_session_id
 
 
 def hash_pin(pin: str) -> str:
@@ -92,7 +128,7 @@ async def bind_admin_scope(db: AsyncSession, current_admin: dict[str, str]) -> s
     if is_superadmin_role(current_admin):
         return None
     tenant_id = require_current_user_tenant_id(current_admin)
-    await _auth_mod().set_tenant_context(db, tenant_id)  # type: ignore[attr-defined]
+    await set_tenant_context(db, tenant_id)
     return tenant_id
 
 

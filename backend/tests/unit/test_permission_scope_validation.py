@@ -98,14 +98,18 @@ async def test_grant_permission_rejects_non_future_expiry() -> None:
 
 @pytest.mark.asyncio
 async def test_revoke_permission_scopes_lookup_to_tenant() -> None:
+    permission = MagicMock()
+    permission.user_id = "42"
+    permission.scope = "write:jobs"
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=_execute_result(first=MagicMock()))
+    db.execute = AsyncMock(return_value=_execute_result(first=permission))
     db.delete = AsyncMock()
     db.flush = AsyncMock()
 
-    await revoke_permission(db, 7, tenant_id="tenant-a")
+    revoked = await revoke_permission(db, 7, tenant_id="tenant-a")
 
     stmt = db.execute.await_args.args[0]
     rendered = str(stmt)
     assert "permissions.id" in rendered
     assert "permissions.tenant_id" in rendered
+    assert revoked is permission

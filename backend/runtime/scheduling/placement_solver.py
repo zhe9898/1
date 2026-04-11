@@ -1,16 +1,9 @@
-"""Global Placement Solver 鈥?cross-node constraint-satisfaction optimisation.
+"""Global placement solver for cross-node scheduling decisions.
 
-Extracted from ``job_scheduler.py`` to reduce that module's size.
-
-Dependency contract (no cycles):
-    scheduling_candidates  鈫? placement_solver  鈫? (lazy runtime) job_scheduler
-
-Runtime imports from ``job_scheduler`` (``is_node_eligible``,
-``job_matches_node``) are deferred inside method bodies so this module loads
-cleanly even when ``job_scheduler`` has not finished its own import sequence.
-
-All public symbols remain importable from ``backend.runtime.scheduling.job_scheduler`` via
-the canonical scheduling API surface.
+This module stays intentionally self-contained because it is imported from the
+pull-dispatch path and from ``job_scheduler``. Runtime helpers from
+``job_scheduler`` are still imported lazily inside ``solve`` to avoid import
+cycles during module initialization.
 """
 
 from __future__ import annotations
@@ -20,7 +13,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from backend.models.job import Job
 from backend.runtime.scheduling.job_scoring import score_job_for_node
@@ -77,25 +70,15 @@ def _routing_group_node_score(
     return base
 
 
-# ---------------------------------------------------------------------------
-# Solver-config accessor
-# ---------------------------------------------------------------------------
-
-
 def _get_solver_config() -> SolverConfig:
     from backend.kernel.policy.policy_store import get_policy_store
 
     return get_policy_store().active.solver
 
 
-# ---------------------------------------------------------------------------
-# PlacementCandidate  (single (job, node) evaluation record)
-# ---------------------------------------------------------------------------
-
-
 @dataclass(slots=True)
 class PlacementCandidate:
-    """A (job, node) pair evaluated by the solver."""
+    """A scored (job, node) pair."""
 
     job: Job
     node: SchedulerNodeSnapshot
@@ -103,33 +86,34 @@ class PlacementCandidate:
     breakdown: dict[str, int] = field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
-# PlacementSolver
-# ---------------------------------------------------------------------------
+def _metrics_update(metrics: dict[str, object] | None, **updates: object) -> None:
+    if metrics is not None:
+        metrics.update(updates)
+
+
+def _deadline_exceeded(deadline_monotonic: float | None) -> bool:
+    return deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
+
+
+def _build_timeout_plan(metrics: dict[str, object] | None) -> dict[str, str]:
+    _metrics_update(
+        metrics,
+        timed_out=True,
+        assignments=0,
+        result="time_budget_exceeded",
+    )
+    return {}
+
+
+def _build_empty_plan(metrics: dict[str, object] | None, *, result: str) -> dict[str, str]:
+    _metrics_update(metrics, assignments=0, result=result)
+    return {}
 
 
 class PlacementSolver:
-    """Global placement optimiser that considers all (job 脳 node) pairs.
+    """Global placement optimizer across all candidate jobs and nodes."""
 
-    Unlike per-node ``select_jobs_for_node`` which scores independently,
-    this solver builds a constraint matrix and applies a greedy weighted
-    bipartite matching with resource accounting:
-
-    1. **Feasibility filter** 鈥?eliminate infeasible (job, node) pairs.
-    2. **Scoring** 鈥?per-pair score using the existing ``score_job_for_node``.
-    3. **Global adjustments** 鈥?spread, bin-pack, affinity, and locality
-       bonuses that account for cross-node state.
-    4. **Greedy matching** 鈥?iterate by descending score, assign each job
-       to its best node while deducting capacity.
-
-    The solver produces a placement plan:
-    ``dict[str, str]`` mapping ``job_id 鈫?node_id``.
-
-    Callers (dispatch cycle) can use the plan as placement hints that
-    strongly bias per-node selection without breaking the pull model.
-    """
-
-    def solve(  # noqa: C901
+    def solve(
         self,
         jobs: list[Job],
         nodes: list[SchedulerNodeSnapshot],
@@ -141,12 +125,7 @@ class PlacementSolver:
         metrics: dict[str, object] | None = None,
         deadline_monotonic: float | None = None,
     ) -> dict[str, str]:
-        """Run the global placement solver.
-
-        Returns mapping {job_id: preferred_node_id}.
-        """
-        # Lazy import: placement_solver is loaded *during* job_scheduler's own
-        # module init, so we must not import job_scheduler at module level.
+        """Return a preferred-node plan as ``{job_id: node_id}``."""
         import datetime as _dt
 
         from backend.runtime.scheduling.job_scheduler import is_node_eligible, job_matches_node
@@ -157,19 +136,11 @@ class PlacementSolver:
             metrics.setdefault("solver_invoked", True)
             metrics.setdefault("timed_out", False)
         if not jobs or not nodes:
-            if metrics is not None:
-                metrics["assignments"] = 0
-                metrics["result"] = "empty_window"
-            return {}
+            return _build_empty_plan(metrics, result="empty_window")
 
-        live_nodes = [n for n in nodes if is_node_eligible(n, _now)]
-        if metrics is not None:
-            metrics["live_nodes"] = len(live_nodes)
+        live_nodes = self._eligible_live_nodes(nodes, now=_now, metrics=metrics, is_node_eligible=is_node_eligible)
         if not live_nodes:
-            if metrics is not None:
-                metrics["assignments"] = 0
-                metrics["result"] = "no_live_nodes"
-            return {}
+            return _build_empty_plan(metrics, result="no_live_nodes")
 
         fast_plan = self._solve_large_simple_batch(
             jobs,
@@ -184,77 +155,117 @@ class PlacementSolver:
 
         failed_ids = recent_failed_job_ids or set()
         node_active_jobs = active_jobs_by_node or {}
-        total_active = len(live_nodes)
-
-        # 鈹€鈹€ Phase 1: Build feasible candidates 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-        candidates: list[PlacementCandidate] = []
-        sparse_pairs = 0
-        for job in jobs:
-            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
-                if metrics is not None:
-                    metrics["timed_out"] = True
-                    metrics["assignments"] = 0
-                    metrics["result"] = "time_budget_exceeded"
-                return {}
-            candidate_nodes = _candidate_nodes_for_job(job, live_nodes, accepted_kinds=accepted_kinds)
-            sparse_pairs += len(candidate_nodes)
-            for node in candidate_nodes:
-                if not job_matches_node(job, node, now=_now, accepted_kinds=None):
-                    continue
-                candidates.append(PlacementCandidate(job=job, node=node))
-
-        if metrics is not None:
-            metrics["feasible_pairs"] = len(candidates)
-            metrics["candidate_pairs_sparse"] = sparse_pairs
+        candidates, sparse_pairs = self._build_feasible_candidates(
+            jobs,
+            live_nodes,
+            now=_now,
+            accepted_kinds=accepted_kinds,
+            deadline_monotonic=deadline_monotonic,
+            job_matches_node=job_matches_node,
+        )
+        if candidates is None:
+            return _build_timeout_plan(metrics)
+        _metrics_update(metrics, feasible_pairs=len(candidates), candidate_pairs_sparse=sparse_pairs)
         if not candidates:
-            if metrics is not None:
-                metrics["assignments"] = 0
-                metrics["result"] = "no_feasible_pairs"
-            return {}
+            return _build_empty_plan(metrics, result="no_feasible_pairs")
 
-        # 鈹€鈹€ Phase 2: Score each candidate 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         eligible_cache = batch_eligible_counts(
             jobs,
             live_nodes,
             now=_now,
             accepted_kinds=accepted_kinds,
         )
-        for c in candidates:
-            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
-                if metrics is not None:
-                    metrics["timed_out"] = True
-                    metrics["assignments"] = 0
-                    metrics["result"] = "time_budget_exceeded"
-                return {}
-            ec = eligible_cache.get(c.job.job_id, 1)
-            total, breakdown = score_job_for_node(
-                c.job,
-                c.node,
-                now=_now,
-                total_active_nodes=total_active,
-                eligible_nodes_count=max(ec, 1),
-                recent_failed_job_ids=failed_ids,
-                active_jobs_on_node=list(node_active_jobs.get(c.node.node_id, [])),
-            )
-            c.score = total
-            c.breakdown = dict(breakdown)
-
-        # 鈹€鈹€ Phase 3: Global adjustments 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-        self._apply_global_adjustments(candidates, live_nodes)
-
-        # 鈹€鈹€ Phase 4: Greedy weighted matching 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-        plan = self._greedy_match(
+        scored_candidates = self._score_candidates(
             candidates,
+            now=_now,
+            total_active=len(live_nodes),
+            eligible_cache=eligible_cache,
+            failed_ids=failed_ids,
+            node_active_jobs=node_active_jobs,
+            deadline_monotonic=deadline_monotonic,
+        )
+        if scored_candidates is None:
+            return _build_timeout_plan(metrics)
+
+        self._apply_global_adjustments(scored_candidates, live_nodes)
+        plan = self._greedy_match(
+            scored_candidates,
             live_nodes,
             deadline_monotonic=deadline_monotonic,
             metrics=metrics,
         )
         if metrics is not None and "result" not in metrics:
-            metrics["assignments"] = len(plan)
-            metrics["result"] = "planned" if plan else "no_assignments"
+            _metrics_update(
+                metrics,
+                assignments=len(plan),
+                result="planned" if plan else "no_assignments",
+            )
         return plan
 
-    def _solve_large_simple_batch(  # noqa: C901
+    @staticmethod
+    def _eligible_live_nodes(
+        nodes: list[SchedulerNodeSnapshot],
+        *,
+        now: object,
+        metrics: dict[str, object] | None,
+        is_node_eligible: Callable[..., bool],
+    ) -> list[SchedulerNodeSnapshot]:
+        live_nodes = [node for node in nodes if is_node_eligible(node, now)]
+        _metrics_update(metrics, live_nodes=len(live_nodes))
+        return live_nodes
+
+    @staticmethod
+    def _build_feasible_candidates(
+        jobs: list[Job],
+        live_nodes: list[SchedulerNodeSnapshot],
+        *,
+        now: object,
+        accepted_kinds: set[str],
+        deadline_monotonic: float | None,
+        job_matches_node: Callable[..., bool],
+    ) -> tuple[list[PlacementCandidate] | None, int]:
+        candidates: list[PlacementCandidate] = []
+        sparse_pairs = 0
+        for job in jobs:
+            if _deadline_exceeded(deadline_monotonic):
+                return None, sparse_pairs
+            candidate_nodes = _candidate_nodes_for_job(job, live_nodes, accepted_kinds=accepted_kinds)
+            sparse_pairs += len(candidate_nodes)
+            for node in candidate_nodes:
+                if not job_matches_node(job, node, now=now, accepted_kinds=None):
+                    continue
+                candidates.append(PlacementCandidate(job=job, node=node))
+        return candidates, sparse_pairs
+
+    @staticmethod
+    def _score_candidates(
+        candidates: list[PlacementCandidate],
+        *,
+        now: object,
+        total_active: int,
+        eligible_cache: dict[str, int],
+        failed_ids: set[str],
+        node_active_jobs: dict[str, list[Job]],
+        deadline_monotonic: float | None,
+    ) -> list[PlacementCandidate] | None:
+        for candidate in candidates:
+            if _deadline_exceeded(deadline_monotonic):
+                return None
+            eligible_count = max(eligible_cache.get(candidate.job.job_id, 1), 1)
+            total, breakdown = score_job_for_node(
+                candidate.job,
+                candidate.node,
+                now=now,
+                total_active_nodes=total_active,
+                eligible_nodes_count=eligible_count,
+                recent_failed_job_ids=failed_ids,
+                active_jobs_on_node=list(node_active_jobs.get(candidate.node.node_id, [])),
+            )
+            candidate.score = total
+            candidate.breakdown = dict(breakdown)
+        return candidates
+
+    def _solve_large_simple_batch(
         self,
         jobs: list[Job],
         live_nodes: list[SchedulerNodeSnapshot],
@@ -264,156 +275,263 @@ class PlacementSolver:
         active_jobs_by_node: dict[str, list[Job]] | None = None,
         metrics: dict[str, object] | None = None,
     ) -> dict[str, str] | None:
-        """O(J log N) fast-path assignment for large batches, including mixed workloads.
-
-        Jobs are partitioned into routing groups using ``_job_routing_key`` 鈥?a
-        single ``__dict__`` access per job rather than 18+ ``_job_attr`` calls 鈥?        so the homogeneity scan costs ~1 碌s per job instead of ~10 碌s.
-
-        Unlike the previous implementation which required *all* jobs to share
-        the same routing contract (aborting on the first mismatch), this version
-        handles heterogeneous batches by assigning each routing group
-        independently.  A shared global capacity map prevents any node from
-        being over-committed across groups.
-
-        Gang jobs within each group are still assigned atomically.
-        """
+        """O(J log N) fast-path assignment for large homogeneous routing groups."""
         import datetime as _dt
 
         _now: _dt.datetime = now  # type: ignore[assignment]
-
         candidate_pairs = len(jobs) * len(live_nodes)
-        if candidate_pairs < 4_096:
+        if not self._can_use_large_simple_batch(
+            jobs,
+            live_nodes,
+            candidate_pairs=candidate_pairs,
+            active_jobs_by_node=active_jobs_by_node,
+        ):
             return None
-        if active_jobs_by_node:
+
+        groups = self._partition_routing_groups(jobs)
+        if groups is None:
             return None
-        if not jobs or not live_nodes:
-            return {}
 
-        # 鈹€鈹€ Phase 1: Partition jobs by routing key in a single O(J) pass 鈹€鈹€鈹€鈹€鈹€
-        groups: dict[tuple[object, ...], list[Job]] = {}
-        for job in jobs:
-            if _has_items_attr(_job_attr(job, "affinity_rules")):
-                # Affinity rules need full cross-node scoring; bail to the full solver.
-                return None
-            key = _job_routing_key(job)
-            bucket = groups.get(key)
-            if bucket is None:
-                groups[key] = [job]
-            else:
-                bucket.append(job)
-
-        # 鈹€鈹€ Phase 2: Build a shared global capacity map (prevents over-commit) 鈹€
-        global_remaining_cap: dict[str, int] = {n.node_id: max(n.max_concurrency - n.active_lease_count, 0) for n in live_nodes}
-        node_index: dict[str, SchedulerNodeSnapshot] = {n.node_id: n for n in live_nodes}
-
+        global_remaining_cap = self._build_global_remaining_capacity(live_nodes)
+        node_index = {node.node_id: node for node in live_nodes}
         combined_plan: dict[str, str] = {}
         total_feasible_pairs = 0
 
-        # 鈹€鈹€ Phase 3: Assign each routing group independently 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-        for _key, group_jobs in groups.items():
-            first_job = group_jobs[0]
-            if not str(getattr(first_job, "kind", "") or ""):
-                continue
-
-            eligible_nodes = _candidate_nodes_for_job(first_job, live_nodes, accepted_kinds=accepted_kinds)
-            if not eligible_nodes:
-                continue
-
-            queue_class, _worker_pool = resolve_job_queue_contract_from_record(first_job)
-            binpack = queue_class == "batch"
-
-            # Filter to nodes that still have capacity in the shared map.
-            ordered_node_ids: list[str] = [n.node_id for n in eligible_nodes if global_remaining_cap.get(n.node_id, 0) > 0]
-            if not ordered_node_ids:
-                continue
-
-            total_feasible_pairs += len(group_jobs) * len(eligible_nodes)
-
-            # Order nodes using the same context-aware score as the Go fast path.
-            ordered_node_ids.sort(
-                key=lambda nid: (
-                    -_routing_group_node_score(
-                        node_index[nid],
-                        first_job,
-                        global_remaining_cap[nid],
-                        binpack=binpack,
-                    ),
-                    nid,
-                )
+        for group_jobs in groups.values():
+            group_plan, feasible_pairs = self._solve_large_simple_group(
+                group_jobs,
+                live_nodes,
+                now=_now,
+                accepted_kinds=accepted_kinds,
+                global_remaining_cap=global_remaining_cap,
+                node_index=node_index,
             )
+            total_feasible_pairs += feasible_pairs
+            combined_plan.update(group_plan)
 
-            group_total_remaining = sum(global_remaining_cap[nid] for nid in ordered_node_ids)
-
-            group_jobs.sort(key=lambda job: -_int_attr(_job_attr(job, "priority")))
-
-            # Build gang/solo assignment units for this group.
-            job_units: list[tuple[str | None, list[Job]]] = []
-            gang_map: dict[str, list[Job]] = {}
-            for job in group_jobs:
-                gang_id = _text_attr(_job_attr(job, "gang_id"))
-                if not gang_id:
-                    job_units.append((None, [job]))
-                    continue
-                members = gang_map.get(gang_id)
-                if members is None:
-                    members = []
-                    gang_map[gang_id] = members
-                    job_units.append((gang_id, members))
-                members.append(job)
-
-            # When capacity is tight, prefer high-priority / older jobs.
-            if group_total_remaining < len(group_jobs):
-                job_units.sort(
-                    key=lambda item: (
-                        -max(_int_attr(_job_attr(j, "priority")) for j in item[1]),
-                        min(getattr(j, "created_at", _now) for j in item[1]),
-                        str(item[0] or _job_attr(item[1][0], "job_id") or ""),
-                    ),
-                )
-
-            rotating_nodes: deque[str] = deque(ordered_node_ids)
-
-            for gang_id, batch_jobs in job_units:
-                batch_size = len(batch_jobs)
-                if batch_size <= 0:
-                    continue
-                if group_total_remaining < batch_size:
-                    if gang_id:
-                        continue
-                    break
-                if not rotating_nodes:
-                    break
-
-                assigned_nodes: list[str] = []
-                for _job in batch_jobs:
-                    if not rotating_nodes:
-                        break
-                    nid = rotating_nodes.popleft()
-                    assigned_nodes.append(nid)
-                    global_remaining_cap[nid] -= 1
-                    group_total_remaining -= 1
-                    if global_remaining_cap[nid] > 0:
-                        rotating_nodes.append(nid)
-
-                if len(assigned_nodes) != batch_size:
-                    # Roll back partial assignments for failed gang.
-                    for nid in assigned_nodes:
-                        global_remaining_cap[nid] = global_remaining_cap.get(nid, 0) + 1
-                        group_total_remaining += 1
-                        if global_remaining_cap[nid] == 1:
-                            rotating_nodes.appendleft(nid)
-                    if gang_id:
-                        continue
-                    break
-
-                for job, nid in zip(batch_jobs, assigned_nodes, strict=False):
-                    combined_plan[str(_job_attr(job, "job_id") or "")] = nid
-
-        if metrics is not None:
-            metrics["feasible_pairs"] = total_feasible_pairs
-            metrics["assignments"] = len(combined_plan)
-            metrics["result"] = "fast_path_planned" if combined_plan else "fast_path_no_assignments"
+        _metrics_update(
+            metrics,
+            feasible_pairs=total_feasible_pairs,
+            assignments=len(combined_plan),
+            result="fast_path_planned" if combined_plan else "fast_path_no_assignments",
+        )
         return combined_plan
+
+    @staticmethod
+    def _can_use_large_simple_batch(
+        jobs: list[Job],
+        live_nodes: list[SchedulerNodeSnapshot],
+        *,
+        candidate_pairs: int,
+        active_jobs_by_node: dict[str, list[Job]] | None,
+    ) -> bool:
+        if candidate_pairs < 4_096:
+            return False
+        if active_jobs_by_node:
+            return False
+        return bool(jobs and live_nodes)
+
+    @staticmethod
+    def _partition_routing_groups(jobs: list[Job]) -> dict[tuple[object, ...], list[Job]] | None:
+        groups: dict[tuple[object, ...], list[Job]] = {}
+        for job in jobs:
+            if _has_items_attr(_job_attr(job, "affinity_rules")):
+                return None
+            groups.setdefault(_job_routing_key(job), []).append(job)
+        return groups
+
+    @staticmethod
+    def _build_global_remaining_capacity(live_nodes: list[SchedulerNodeSnapshot]) -> dict[str, int]:
+        return {
+            node.node_id: max(node.max_concurrency - node.active_lease_count, 0)
+            for node in live_nodes
+        }
+
+    def _solve_large_simple_group(
+        self,
+        group_jobs: list[Job],
+        live_nodes: list[SchedulerNodeSnapshot],
+        *,
+        now: object,
+        accepted_kinds: set[str],
+        global_remaining_cap: dict[str, int],
+        node_index: dict[str, SchedulerNodeSnapshot],
+    ) -> tuple[dict[str, str], int]:
+        first_job = group_jobs[0]
+        if not str(getattr(first_job, "kind", "") or ""):
+            return {}, 0
+
+        eligible_nodes = _candidate_nodes_for_job(first_job, live_nodes, accepted_kinds=accepted_kinds)
+        if not eligible_nodes:
+            return {}, 0
+
+        queue_class, _worker_pool = resolve_job_queue_contract_from_record(first_job)
+        ordered_node_ids = self._rank_fast_path_nodes(
+            first_job,
+            eligible_nodes,
+            global_remaining_cap=global_remaining_cap,
+            node_index=node_index,
+            binpack=queue_class == "batch",
+        )
+        if not ordered_node_ids:
+            return {}, 0
+
+        feasible_pairs = len(group_jobs) * len(eligible_nodes)
+        group_jobs.sort(key=lambda job: -_int_attr(_job_attr(job, "priority")))
+        job_units = self._build_fast_path_job_units(group_jobs)
+        self._prioritize_fast_path_job_units(
+            job_units,
+            now=now,
+            remaining_capacity=sum(global_remaining_cap[node_id] for node_id in ordered_node_ids),
+            total_jobs=len(group_jobs),
+        )
+        return (
+            self._assign_fast_path_job_units(
+                job_units,
+                ordered_node_ids=ordered_node_ids,
+                global_remaining_cap=global_remaining_cap,
+            ),
+            feasible_pairs,
+        )
+
+    @staticmethod
+    def _rank_fast_path_nodes(
+        first_job: Job,
+        eligible_nodes: list[SchedulerNodeSnapshot],
+        *,
+        global_remaining_cap: dict[str, int],
+        node_index: dict[str, SchedulerNodeSnapshot],
+        binpack: bool,
+    ) -> list[str]:
+        ordered_node_ids = [
+            node.node_id
+            for node in eligible_nodes
+            if global_remaining_cap.get(node.node_id, 0) > 0
+        ]
+        ordered_node_ids.sort(
+            key=lambda node_id: (
+                -_routing_group_node_score(
+                    node_index[node_id],
+                    first_job,
+                    global_remaining_cap[node_id],
+                    binpack=binpack,
+                ),
+                node_id,
+            )
+        )
+        return ordered_node_ids
+
+    @staticmethod
+    def _build_fast_path_job_units(group_jobs: list[Job]) -> list[tuple[str | None, list[Job]]]:
+        job_units: list[tuple[str | None, list[Job]]] = []
+        gang_map: dict[str, list[Job]] = {}
+        for job in group_jobs:
+            gang_id = _text_attr(_job_attr(job, "gang_id"))
+            if not gang_id:
+                job_units.append((None, [job]))
+                continue
+            members = gang_map.get(gang_id)
+            if members is None:
+                members = []
+                gang_map[gang_id] = members
+                job_units.append((gang_id, members))
+            members.append(job)
+        return job_units
+
+    @staticmethod
+    def _prioritize_fast_path_job_units(
+        job_units: list[tuple[str | None, list[Job]]],
+        *,
+        now: object,
+        remaining_capacity: int,
+        total_jobs: int,
+    ) -> None:
+        if remaining_capacity >= total_jobs:
+            return
+        job_units.sort(
+            key=lambda item: (
+                -max(_int_attr(_job_attr(job, "priority")) for job in item[1]),
+                min(getattr(job, "created_at", now) for job in item[1]),
+                str(item[0] or _job_attr(item[1][0], "job_id") or ""),
+            ),
+        )
+
+    @staticmethod
+    def _assign_fast_path_job_units(
+        job_units: list[tuple[str | None, list[Job]]],
+        *,
+        ordered_node_ids: list[str],
+        global_remaining_cap: dict[str, int],
+    ) -> dict[str, str]:
+        plan: dict[str, str] = {}
+        rotating_nodes: deque[str] = deque(ordered_node_ids)
+        group_total_remaining = sum(global_remaining_cap[node_id] for node_id in ordered_node_ids)
+
+        for gang_id, batch_jobs in job_units:
+            batch_size = len(batch_jobs)
+            if batch_size <= 0:
+                continue
+            if group_total_remaining < batch_size:
+                if gang_id:
+                    continue
+                break
+            if not rotating_nodes:
+                break
+
+            assigned_nodes = PlacementSolver._assign_fast_path_batch(
+                batch_jobs,
+                rotating_nodes=rotating_nodes,
+                global_remaining_cap=global_remaining_cap,
+            )
+            if assigned_nodes is None:
+                if gang_id:
+                    continue
+                break
+
+            group_total_remaining -= len(assigned_nodes)
+            for job, node_id in zip(batch_jobs, assigned_nodes, strict=False):
+                plan[str(_job_attr(job, "job_id") or "")] = node_id
+
+        return plan
+
+    @staticmethod
+    def _assign_fast_path_batch(
+        batch_jobs: list[Job],
+        *,
+        rotating_nodes: deque[str],
+        global_remaining_cap: dict[str, int],
+    ) -> list[str] | None:
+        assigned_nodes: list[str] = []
+        for _job in batch_jobs:
+            if not rotating_nodes:
+                break
+            node_id = rotating_nodes.popleft()
+            assigned_nodes.append(node_id)
+            global_remaining_cap[node_id] -= 1
+            if global_remaining_cap[node_id] > 0:
+                rotating_nodes.append(node_id)
+
+        if len(assigned_nodes) == len(batch_jobs):
+            return assigned_nodes
+
+        PlacementSolver._rollback_fast_path_batch(
+            assigned_nodes,
+            rotating_nodes=rotating_nodes,
+            global_remaining_cap=global_remaining_cap,
+        )
+        return None
+
+    @staticmethod
+    def _rollback_fast_path_batch(
+        assigned_nodes: list[str],
+        *,
+        rotating_nodes: deque[str],
+        global_remaining_cap: dict[str, int],
+    ) -> None:
+        for node_id in assigned_nodes:
+            global_remaining_cap[node_id] = global_remaining_cap.get(node_id, 0) + 1
+            if global_remaining_cap[node_id] == 1:
+                rotating_nodes.appendleft(node_id)
 
     def _apply_global_adjustments(
         self,
@@ -421,42 +539,103 @@ class PlacementSolver:
         live_nodes: list[SchedulerNodeSnapshot],
     ) -> None:
         """Apply cross-node scoring adjustments."""
-        # Pre-compute per-node load ratio
         node_load: dict[str, float] = {}
-        for n in live_nodes:
-            cap = max(n.max_concurrency, 1)
-            node_load[n.node_id] = n.active_lease_count / cap
-
-        # Collect per-job candidate counts for spread bonus
-        job_node_count: dict[str, int] = {}
-        for c in candidates:
-            job_node_count[c.job.job_id] = job_node_count.get(c.job.job_id, 0) + 1
+        for node in live_nodes:
+            capacity = max(node.max_concurrency, 1)
+            node_load[node.node_id] = node.active_lease_count / capacity
 
         avg_load = sum(node_load.values()) / max(len(node_load), 1)
+        solver_cfg = _get_solver_config()
+        for candidate in candidates:
+            load = node_load.get(candidate.node.node_id, 0.0)
 
-        _sol = _get_solver_config()
-        for c in candidates:
-            load = node_load.get(c.node.node_id, 0.0)
-
-            # Spread bonus: prefer under-loaded nodes
             if load < avg_load:
-                bonus = int(_sol.spread_bonus * (1 - load))
-                c.score += bonus
-                c.breakdown["solver_spread"] = bonus
+                bonus = int(solver_cfg.spread_bonus * (1 - load))
+                candidate.score += bonus
+                candidate.breakdown["solver_spread"] = bonus
 
-            # Binpack bonus: if job requests many resources, prefer nodes
-            # that already have some load (consolidation).
-            req_cpu = max(int(getattr(c.job, "required_cpu_cores", 0) or 0), 0)
+            req_cpu = max(int(getattr(candidate.job, "required_cpu_cores", 0) or 0), 0)
             if req_cpu == 0 and load > 0.3:
-                bonus = int(_sol.binpack_bonus * load)
-                c.score += bonus
-                c.breakdown["solver_binpack"] = bonus
+                bonus = int(solver_cfg.binpack_bonus * load)
+                candidate.score += bonus
+                candidate.breakdown["solver_binpack"] = bonus
 
-            # Locality bonus: data-local nodes
-            dk = getattr(c.job, "data_locality_key", None)
-            if dk and dk in c.node.cached_data_keys:
-                c.score += _sol.locality_bonus
-                c.breakdown["solver_locality"] = _sol.locality_bonus
+            data_locality_key = getattr(candidate.job, "data_locality_key", None)
+            if data_locality_key and data_locality_key in candidate.node.cached_data_keys:
+                candidate.score += solver_cfg.locality_bonus
+                candidate.breakdown["solver_locality"] = solver_cfg.locality_bonus
+
+    @staticmethod
+    def _partition_match_units(
+        candidates: list[PlacementCandidate],
+    ) -> tuple[list[PlacementCandidate], dict[str, list[PlacementCandidate]]]:
+        solo_candidates: list[PlacementCandidate] = []
+        gang_candidates: dict[str, list[PlacementCandidate]] = defaultdict(list)
+        for candidate in candidates:
+            gang_id = _text_attr(_job_attr(candidate.job, "gang_id"))
+            if gang_id:
+                gang_candidates[gang_id].append(candidate)
+            else:
+                solo_candidates.append(candidate)
+        return solo_candidates, gang_candidates
+
+    @staticmethod
+    def _build_match_heap(
+        solo_candidates: list[PlacementCandidate],
+        gang_candidates: dict[str, list[PlacementCandidate]],
+    ) -> list[tuple[int, str, str, str]]:
+        heap: list[tuple[int, str, str, str]] = [
+            (-candidate.score, "job", candidate.job.job_id, candidate.node.node_id)
+            for candidate in solo_candidates
+        ]
+        for gang_id, grouped_candidates in gang_candidates.items():
+            heap.append((-max(candidate.score for candidate in grouped_candidates), "gang", gang_id, gang_id))
+        heapq.heapify(heap)
+        return heap
+
+    @staticmethod
+    def _apply_solo_assignment(
+        *,
+        job_id: str,
+        node_id: str,
+        assigned_jobs: set[str],
+        remaining_cap: dict[str, int],
+        solo_by_key: dict[tuple[str, str], PlacementCandidate],
+        plan: dict[str, str],
+    ) -> bool:
+        if job_id in assigned_jobs or remaining_cap.get(node_id, 0) <= 0:
+            return False
+        if (job_id, node_id) not in solo_by_key:
+            return False
+        plan[job_id] = node_id
+        assigned_jobs.add(job_id)
+        remaining_cap[node_id] -= 1
+        return True
+
+    def _apply_gang_assignment(
+        self,
+        *,
+        gang_id: str,
+        gang_candidates: dict[str, list[PlacementCandidate]],
+        failed_gangs: set[str],
+        assigned_jobs: set[str],
+        remaining_cap: dict[str, int],
+        plan: dict[str, str],
+    ) -> bool:
+        if gang_id in failed_gangs:
+            return False
+        grouped_candidates = gang_candidates.get(gang_id, [])
+        if not grouped_candidates:
+            return False
+        assignments = self._assign_gang_group(grouped_candidates, remaining_cap)
+        if assignments is None:
+            failed_gangs.add(gang_id)
+            return False
+        for job_id, node_id in assignments.items():
+            plan[job_id] = node_id
+            assigned_jobs.add(job_id)
+        logger.debug("gang_placement_committed: gang=%s members=%d", gang_id, len(assignments))
+        return True
 
     def _greedy_match(
         self,
@@ -466,71 +645,44 @@ class PlacementSolver:
         deadline_monotonic: float | None = None,
         metrics: dict[str, object] | None = None,
     ) -> dict[str, str]:
-        """Greedy descending-score assignment with capacity deduction.
-
-        Gang-aware: jobs sharing a ``gang_id`` are placed atomically. Gang
-        candidates are pre-grouped and solved as a unit so the global heap
-        only tracks one entry per gang instead of one entry per member.
-        """
-        remaining_cap: dict[str, int] = {n.node_id: max(n.max_concurrency - n.active_lease_count, 0) for n in live_nodes}
-
+        """Greedy descending-score assignment with gang-aware capacity handling."""
+        remaining_cap: dict[str, int] = {
+            node.node_id: max(node.max_concurrency - node.active_lease_count, 0)
+            for node in live_nodes
+        }
         plan: dict[str, str] = {}
         assigned_jobs: set[str] = set()
         failed_gangs: set[str] = set()
-
-        solo_candidates: list[PlacementCandidate] = []
-        gang_candidates: dict[str, list[PlacementCandidate]] = defaultdict(list)
-        for candidate in candidates:
-            gang_id = _text_attr(_job_attr(candidate.job, "gang_id"))
-            if gang_id:
-                gang_candidates[gang_id].append(candidate)
-            else:
-                solo_candidates.append(candidate)
-
-        heap: list[tuple[int, str, str, str]] = []
-        for candidate in solo_candidates:
-            heap.append((-candidate.score, "job", candidate.job.job_id, candidate.node.node_id))
-        for gang_id, grouped_candidates in gang_candidates.items():
-            best_score = max(candidate.score for candidate in grouped_candidates)
-            heap.append((-best_score, "gang", gang_id, gang_id))
-        heapq.heapify(heap)
-
-        solo_by_key = {(candidate.job.job_id, candidate.node.node_id): candidate for candidate in solo_candidates}
+        solo_candidates, gang_candidates = self._partition_match_units(candidates)
+        heap = self._build_match_heap(solo_candidates, gang_candidates)
+        solo_by_key = {
+            (candidate.job.job_id, candidate.node.node_id): candidate
+            for candidate in solo_candidates
+        }
 
         while heap:
-            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
-                if metrics is not None:
-                    metrics["timed_out"] = True
-                    metrics["assignments"] = 0
-                    metrics["result"] = "time_budget_exceeded"
-                return {}
+            if _deadline_exceeded(deadline_monotonic):
+                return _build_timeout_plan(metrics)
+
             _neg_score, unit_type, primary_key, secondary_key = heapq.heappop(heap)
             if unit_type == "job":
-                job_id = primary_key
-                node_id = secondary_key
-                if job_id in assigned_jobs or remaining_cap.get(node_id, 0) <= 0:
-                    continue
-                if (job_id, node_id) not in solo_by_key:
-                    continue
-                plan[job_id] = node_id
-                assigned_jobs.add(job_id)
-                remaining_cap[node_id] -= 1
+                self._apply_solo_assignment(
+                    job_id=primary_key,
+                    node_id=secondary_key,
+                    assigned_jobs=assigned_jobs,
+                    remaining_cap=remaining_cap,
+                    solo_by_key=solo_by_key,
+                    plan=plan,
+                )
                 continue
-
-            gang_id = primary_key
-            if gang_id in failed_gangs:
-                continue
-            grouped_candidates = gang_candidates.get(gang_id, [])
-            if not grouped_candidates:
-                continue
-            assignments = self._assign_gang_group(grouped_candidates, remaining_cap)
-            if assignments is None:
-                failed_gangs.add(gang_id)
-                continue
-            for job_id, node_id in assignments.items():
-                plan[job_id] = node_id
-                assigned_jobs.add(job_id)
-            logger.debug("gang_placement_committed: gang=%s members=%d", gang_id, len(assignments))
+            self._apply_gang_assignment(
+                gang_id=primary_key,
+                gang_candidates=gang_candidates,
+                failed_gangs=failed_gangs,
+                assigned_jobs=assigned_jobs,
+                remaining_cap=remaining_cap,
+                plan=plan,
+            )
 
         return plan
 
@@ -539,7 +691,7 @@ class PlacementSolver:
         candidates: list[PlacementCandidate],
         remaining_cap: dict[str, int],
     ) -> dict[str, str] | None:
-        """Assign a gang as a unit using per-job candidate lists."""
+        """Assign a gang atomically using per-job candidate rankings."""
         by_job: dict[str, list[PlacementCandidate]] = defaultdict(list)
         for candidate in candidates:
             by_job[candidate.job.job_id].append(candidate)
@@ -577,16 +729,11 @@ class PlacementSolver:
         return assignments
 
 
-# ---------------------------------------------------------------------------
-# Module-level singleton and budgeted-plan wrapper
-# ---------------------------------------------------------------------------
-
-# Module-level solver singleton
 _solver: PlacementSolver | None = None
 
 
 def get_placement_solver() -> PlacementSolver:
-    """Return the process-wide PlacementSolver singleton."""
+    """Return the process-wide solver singleton."""
     global _solver
     if _solver is None:
         _solver = PlacementSolver()
@@ -603,53 +750,28 @@ def build_time_budgeted_placement_plan(
     active_jobs_by_node: dict[str, list[Job]] | None = None,
     decision_context: dict[str, object] | None = None,
 ) -> dict[str, str]:
-    """Run the global solver only when it fits a strict dispatch latency budget."""
+    """Run the solver only when it fits the dispatch latency budget."""
     import datetime as _dt
 
     _now: _dt.datetime = now  # type: ignore[assignment]
-
     solver_cfg = _get_solver_config()
-    if decision_context is not None:
-        decision_context.clear()
-        decision_context.update(
-            {
-                "enabled": bool(solver_cfg.enabled_in_dispatch),
-                "attempted": False,
-                "candidate_jobs": len(jobs),
-                "candidate_nodes": len(nodes),
-                "candidate_pairs_upper_bound": len(jobs) * len(nodes),
-                "dispatch_time_budget_ms": solver_cfg.dispatch_time_budget_ms,
-                "timed_out": False,
-                "assignments": 0,
-            }
-        )
-    if not solver_cfg.enabled_in_dispatch:
+
+    _initialize_decision_context(
+        decision_context,
+        solver_cfg=solver_cfg,
+        job_count=len(jobs),
+        node_count=len(nodes),
+    )
+    skip_reason = _solver_dispatch_skip_reason(solver_cfg, jobs=jobs, nodes=nodes)
+    if skip_reason is not None:
         if decision_context is not None:
-            decision_context["reason"] = "disabled"
-        return {}
-    if not jobs or not nodes:
-        if decision_context is not None:
-            decision_context["reason"] = "empty_window"
-        return {}
-    if len(jobs) > solver_cfg.max_jobs_per_dispatch:
-        if decision_context is not None:
-            decision_context["reason"] = "oversized_job_window"
-        return {}
-    if len(nodes) > solver_cfg.max_nodes_per_dispatch:
-        if decision_context is not None:
-            decision_context["reason"] = "oversized_node_window"
-        return {}
-    if len(jobs) * len(nodes) > solver_cfg.max_candidate_pairs_per_dispatch:
-        if decision_context is not None:
-            decision_context["reason"] = "oversized_candidate_matrix"
+            decision_context["reason"] = skip_reason
         return {}
 
-    deadline_monotonic = None
-    if solver_cfg.dispatch_time_budget_ms > 0:
-        deadline_monotonic = time.monotonic() + (solver_cfg.dispatch_time_budget_ms / 1000.0)
     if decision_context is not None:
         decision_context["attempted"] = True
         decision_context["reason"] = "solver_attempted"
+
     plan = get_placement_solver().solve(
         jobs,
         nodes,
@@ -658,9 +780,60 @@ def build_time_budgeted_placement_plan(
         recent_failed_job_ids=recent_failed_job_ids,
         active_jobs_by_node=active_jobs_by_node,
         metrics=decision_context,
-        deadline_monotonic=deadline_monotonic,
+        deadline_monotonic=_solver_dispatch_deadline(solver_cfg),
     )
     if decision_context is not None:
         decision_context["assignments"] = len(plan)
-        decision_context["reason"] = str(decision_context.get("result", "planned" if plan else "no_assignments"))
+        decision_context["reason"] = str(
+            decision_context.get("result", "planned" if plan else "no_assignments")
+        )
     return plan
+
+
+def _initialize_decision_context(
+    decision_context: dict[str, object] | None,
+    *,
+    solver_cfg: SolverConfig,
+    job_count: int,
+    node_count: int,
+) -> None:
+    if decision_context is None:
+        return
+    decision_context.clear()
+    decision_context.update(
+        {
+            "enabled": bool(solver_cfg.enabled_in_dispatch),
+            "attempted": False,
+            "candidate_jobs": job_count,
+            "candidate_nodes": node_count,
+            "candidate_pairs_upper_bound": job_count * node_count,
+            "dispatch_time_budget_ms": solver_cfg.dispatch_time_budget_ms,
+            "timed_out": False,
+            "assignments": 0,
+        }
+    )
+
+
+def _solver_dispatch_skip_reason(
+    solver_cfg: SolverConfig,
+    *,
+    jobs: list[Job],
+    nodes: list[SchedulerNodeSnapshot],
+) -> str | None:
+    if not solver_cfg.enabled_in_dispatch:
+        return "disabled"
+    if not jobs or not nodes:
+        return "empty_window"
+    if len(jobs) > solver_cfg.max_jobs_per_dispatch:
+        return "oversized_job_window"
+    if len(nodes) > solver_cfg.max_nodes_per_dispatch:
+        return "oversized_node_window"
+    if len(jobs) * len(nodes) > solver_cfg.max_candidate_pairs_per_dispatch:
+        return "oversized_candidate_matrix"
+    return None
+
+
+def _solver_dispatch_deadline(solver_cfg: SolverConfig) -> float | None:
+    if solver_cfg.dispatch_time_budget_ms <= 0:
+        return None
+    return time.monotonic() + (solver_cfg.dispatch_time_budget_ms / 1000.0)

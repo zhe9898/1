@@ -60,6 +60,23 @@ def _half_life_token(secret: str = SECRET_A) -> str:
     )
 
 
+def _half_life_session_token(secret: str = SECRET_A) -> str:
+    now = datetime.now(UTC)
+    return pyjwt.encode(
+        {
+            "sub": "user1",
+            "role": "admin",
+            "sid": "session-1",
+            "iat": (now - timedelta(minutes=10)).timestamp(),
+            "nbf": (now - timedelta(minutes=10)).timestamp(),
+            "exp": (now + timedelta(minutes=5)).timestamp(),
+            "jti": "half-life-session-jti",
+        },
+        secret,
+        algorithm=ALGORITHM,
+    )
+
+
 def _redis_allowing_tokens() -> AsyncMock:
     redis = AsyncMock()
     redis.get = AsyncMock(return_value=None)
@@ -234,6 +251,37 @@ class TestRevocationChecks:
 
         assert payload["sub"] == "user1"
         assert new_token is not None
+
+    @pytest.mark.asyncio
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", None)
+    async def test_session_backed_half_life_token_skips_rotation_without_db_authority(self) -> None:
+        from backend.control_plane.auth.jwt import decode_token
+
+        redis = _redis_allowing_tokens()
+
+        payload, new_token = await decode_token(_half_life_session_token(), redis_conn=redis, db=None)
+
+        assert payload["sub"] == "user1"
+        assert payload["sid"] == "session-1"
+        assert new_token is None
+        redis.set.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)
+    @patch("backend.control_plane.auth.jwt._PREVIOUS", SECRET_B)
+    async def test_session_backed_previous_secret_token_skips_rotation_without_db_authority(self) -> None:
+        from backend.control_plane.auth.jwt import decode_token
+
+        redis = _redis_allowing_tokens()
+        token = _encode({"sub": "bob", "sid": "session-1", "jti": "legacy-jti"}, secret=SECRET_B)
+
+        payload, new_token = await decode_token(token, redis_conn=redis, db=None)
+
+        assert payload["sub"] == "bob"
+        assert payload["sid"] == "session-1"
+        assert new_token is None
+        redis.set.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch("backend.control_plane.auth.jwt._CURRENT", SECRET_A)

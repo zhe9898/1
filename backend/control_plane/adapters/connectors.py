@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import datetime
-import ipaddress
-from urllib.parse import urlparse
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select
 
-from backend.control_plane.adapters.connectors_helpers import (  # noqa: F401 閳?re-export
+from backend.control_plane.adapters.connectors_contracts import (  # noqa: F401 re-export
     ConnectorInvokeRequest,
     ConnectorInvokeResponse,
     ConnectorResponse,
     ConnectorTestRequest,
     ConnectorTestResponse,
     ConnectorUpsertRequest,
+)
+from backend.control_plane.adapters.connectors_helpers import (  # noqa: F401 re-export
     _build_connector_actions,
     _connector_attention_reason,
     _matches_connector_list_filters,
@@ -36,82 +35,19 @@ from backend.platform.logging.redaction import sanitize_sensitive_data
 from backend.platform.redis.client import CHANNEL_CONNECTOR_EVENTS, RedisClient
 from backend.runtime.scheduling.quota_service import check_connector_quota
 
+from .connectors_endpoint_policy import validate_connector_endpoint
+from .connectors_queries import connector_stmt_for_tenant, load_connector_for_tenant
+
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])
-_ALLOWED_CONNECTOR_ENDPOINT_SCHEMES = frozenset({"http", "https", "mqtt", "tcp"})
-_BLOCKED_CONNECTOR_ENDPOINT_HOSTS = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
 
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
 
-def _connector_stmt_for_tenant(tenant_id: str) -> Select[tuple[Connector]]:
-    return select(Connector).where(Connector.tenant_id == tenant_id)
-
-
-def _normalize_connector_endpoint(endpoint: str | None) -> str | None:
-    if endpoint is None:
-        return None
-    normalized = endpoint.strip()
-    return normalized or None
-
-
-def _validate_connector_endpoint(endpoint: str | None, *, connector_id: str | None = None) -> str | None:
-    normalized = _normalize_connector_endpoint(endpoint)
-    if normalized is None:
-        return None
-
-    parsed = urlparse(normalized)
-    hostname = (parsed.hostname or "").strip().lower().rstrip(".")
-    if parsed.scheme not in _ALLOWED_CONNECTOR_ENDPOINT_SCHEMES or not hostname:
-        raise zen(
-            "ZEN-CONN-4002",
-            "Connector endpoint must be a valid routable URL",
-            status_code=400,
-            recovery_hint="Use an http/https/mqtt/tcp endpoint with an explicit host",
-            details={"connector_id": connector_id, "endpoint": normalized},
-        )
-    if parsed.username or parsed.password:
-        raise zen(
-            "ZEN-CONN-4002",
-            "Connector endpoint must not embed credentials",
-            status_code=400,
-            recovery_hint="Store connector credentials in config instead of the URL",
-            details={"connector_id": connector_id, "endpoint": normalized},
-        )
-    if hostname in _BLOCKED_CONNECTOR_ENDPOINT_HOSTS or hostname.endswith(".localhost"):
-        raise zen(
-            "ZEN-CONN-4002",
-            "Connector endpoint must not target local metadata or loopback hosts",
-            status_code=400,
-            recovery_hint="Use a routable integration endpoint instead of a host-local address",
-            details={"connector_id": connector_id, "endpoint": normalized, "host": hostname},
-        )
-    try:
-        parsed_ip = ipaddress.ip_address(hostname)
-    except ValueError:
-        return normalized
-    if not parsed_ip.is_global:
-        raise zen(
-            "ZEN-CONN-4002",
-            "Connector endpoint must not target private, loopback, or link-local IP ranges",
-            status_code=400,
-            recovery_hint="Publish the integration through a routable address instead of an internal IP literal",
-            details={"connector_id": connector_id, "endpoint": normalized, "host": hostname},
-        )
-    return normalized
-
-
 @router.get("/schema", response_model=ResourceSchemaResponse)
 async def get_connector_schema(
-    current_user: dict[str, object] = Depends(get_current_user),
+    current_user: Annotated[dict[str, object], Depends(get_current_user)],
 ) -> ResourceSchemaResponse:
     del current_user
     return _resource_schema()
@@ -120,20 +56,19 @@ async def get_connector_schema(
 @router.post("", response_model=ConnectorResponse)
 async def upsert_connector(
     payload: ConnectorUpsertRequest,
-    current_user: dict[str, object] = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient | None = Depends(get_redis),
+    current_user: Annotated[dict[str, object], Depends(get_current_admin)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient | None, Depends(get_redis)],
 ) -> ConnectorResponse:
+    del redis
     tenant_id = require_current_user_tenant_id(current_user)
-    result = await db.execute(_connector_stmt_for_tenant(tenant_id).where(Connector.connector_id == payload.connector_id))
+    result = await db.execute(connector_stmt_for_tenant(tenant_id).where(Connector.connector_id == payload.connector_id))
     connector = result.scalars().first()
     now = _utcnow()
 
-    # Enforce connector quota (only on new connectors)
     if connector is None:
         await check_connector_quota(db, tenant_id)
 
-    # Validate config against registered schema
     try:
         validated_config = validate_connector_config(payload.kind, payload.config)
     except ValueError as e:
@@ -144,7 +79,7 @@ async def upsert_connector(
             recovery_hint="Check config schema for connector kind or register the kind if it's new",
             details={"kind": payload.kind, "config": sanitize_sensitive_data(payload.config)},
         ) from e
-    validated_endpoint = _validate_connector_endpoint(payload.endpoint, connector_id=payload.connector_id)
+    validated_endpoint = validate_connector_endpoint(payload.endpoint, connector_id=payload.connector_id)
 
     connector, action = ConnectorService.upsert(
         connector,
@@ -177,11 +112,12 @@ async def list_connectors(
     connector_id: str | None = None,
     status: str | None = None,
     attention: str | None = None,
-    current_user: dict[str, object] = Depends(get_current_user),
-    db: AsyncSession = Depends(get_tenant_db),
+    *,
+    current_user: Annotated[dict[str, object], Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
 ) -> list[ConnectorResponse]:
     tenant_id = require_current_user_tenant_id(current_user)
-    query = _connector_stmt_for_tenant(tenant_id)
+    query = connector_stmt_for_tenant(tenant_id)
     if connector_id:
         query = query.where(Connector.connector_id == connector_id)
     result = await db.execute(query.order_by(Connector.updated_at.desc()))
@@ -193,13 +129,12 @@ async def list_connectors(
 async def invoke_connector(
     id: str,
     payload: ConnectorInvokeRequest,
-    current_user: dict[str, object] = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient | None = Depends(get_redis),
+    current_user: Annotated[dict[str, object], Depends(get_current_admin)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient | None, Depends(get_redis)],
 ) -> ConnectorInvokeResponse:
     tenant_id = require_current_user_tenant_id(current_user)
-    result = await db.execute(_connector_stmt_for_tenant(tenant_id).where(Connector.connector_id == id))
-    connector = result.scalars().first()
+    connector = await load_connector_for_tenant(db, tenant_id=tenant_id, connector_id=id)
     if connector is None:
         raise zen(
             "ZEN-CONN-4040",
@@ -216,7 +151,7 @@ async def invoke_connector(
             recovery_hint="Test or recover the connector before invoking it",
             details={"connector_id": id, "status": connector.status},
         )
-    connector.endpoint = _validate_connector_endpoint(connector.endpoint, connector_id=connector.connector_id)
+    connector.endpoint = validate_connector_endpoint(connector.endpoint, connector_id=connector.connector_id)
 
     submitted = await submit_job(
         JobCreateRequest(
@@ -254,7 +189,7 @@ async def invoke_connector(
         {
             "connector": _to_response(connector).model_dump(mode="json"),
             "job_id": job_id,
-            "action": payload.action,
+            "connector_action": payload.action,
             "status": "pending",
         },
         tenant_id=tenant_id,
@@ -266,14 +201,13 @@ async def invoke_connector(
 async def test_connector(
     id: str,
     payload: ConnectorTestRequest,
-    current_user: dict[str, object] = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient | None = Depends(get_redis),
+    current_user: Annotated[dict[str, object], Depends(get_current_admin)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient | None, Depends(get_redis)],
 ) -> ConnectorTestResponse:
+    del payload, redis
     tenant_id = require_current_user_tenant_id(current_user)
-    del payload
-    result = await db.execute(_connector_stmt_for_tenant(tenant_id).where(Connector.connector_id == id))
-    connector = result.scalars().first()
+    connector = await load_connector_for_tenant(db, tenant_id=tenant_id, connector_id=id)
     if connector is None:
         raise zen(
             "ZEN-CONN-4040",
@@ -288,7 +222,7 @@ async def test_connector(
     message = "connector ready"
 
     if endpoint:
-        endpoint = _validate_connector_endpoint(endpoint, connector_id=connector.connector_id)
+        endpoint = validate_connector_endpoint(endpoint, connector_id=connector.connector_id)
     else:
         message = "connector has no endpoint; local/manual mode"
 

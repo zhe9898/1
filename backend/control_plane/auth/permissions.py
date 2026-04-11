@@ -195,7 +195,7 @@ async def revoke_permission(
     permission_id: int,
     *,
     tenant_id: str,
-) -> None:
+) -> Permission:
     """Revoke a permission.
 
     Args:
@@ -215,6 +215,7 @@ async def revoke_permission(
 
     await db.delete(permission)
     await db.flush()
+    return permission
 
 
 async def check_permission(

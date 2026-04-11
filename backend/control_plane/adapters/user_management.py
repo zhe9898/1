@@ -5,15 +5,20 @@ Provides endpoints for suspending, activating, and deleting users.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.control_plane.adapters.auth_shared import build_auth_actor_payload, resolve_auth_actor
+from backend.control_plane.adapters.control_events import publish_control_event
 from backend.control_plane.adapters.deps import get_current_admin, get_redis, get_tenant_db
 from backend.control_plane.admin.user_lifecycle import activate_user, delete_user, suspend_user
 from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 from backend.models.user import User
-from backend.platform.redis.client import RedisClient
+from backend.platform.logging.audit import log_audit
+from backend.platform.redis.client import CHANNEL_USER_EVENTS, RedisClient
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -52,13 +57,61 @@ def _to_response(user: User) -> UserResponse:
     )
 
 
+async def _record_user_lifecycle_audit(
+    db: AsyncSession,
+    *,
+    tenant_id: str,
+    action: str,
+    current_user: dict[str, object],
+    user: User,
+    reason: str | None = None,
+) -> None:
+    actor = resolve_auth_actor(current_user)
+    details = {
+        "target_user_id": str(user.id),
+        "target_username": user.username,
+        "target_status": user.status,
+    }
+    if reason is not None:
+        details["reason"] = reason
+    await log_audit(
+        db,
+        tenant_id=tenant_id,
+        action=f"user.{action}",
+        result="success",
+        user_id=actor.user_id,
+        username=actor.username,
+        resource_type="user",
+        resource_id=str(user.id),
+        details=details,
+    )
+
+
+async def _publish_user_lifecycle_event(
+    action: str,
+    *,
+    tenant_id: str,
+    current_user: dict[str, object],
+    user_response: UserResponse,
+) -> None:
+    await publish_control_event(
+        CHANNEL_USER_EVENTS,
+        action,
+        {
+            "user": user_response.model_dump(mode="json"),
+            "actor": build_auth_actor_payload(current_user),
+        },
+        tenant_id=tenant_id,
+    )
+
+
 @router.post("/{user_id}/suspend", response_model=UserResponse)
 async def suspend_user_endpoint(
     user_id: int,
     payload: UserSuspendRequest,
-    current_user: dict[str, str] = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient | None = Depends(get_redis),
+    current_user: Annotated[dict[str, object], Depends(get_current_admin)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient | None, Depends(get_redis)],
 ) -> UserResponse:
     """Suspend a user account.
 
@@ -74,14 +127,30 @@ async def suspend_user_endpoint(
         suspended_by=current_user["username"],
         reason=payload.reason,
     )
-    return _to_response(user)
+    response = _to_response(user)
+    await _record_user_lifecycle_audit(
+        db,
+        tenant_id=tenant_id,
+        action="suspended",
+        current_user=current_user,
+        user=user,
+        reason=payload.reason,
+    )
+    await db.commit()
+    await _publish_user_lifecycle_event(
+        "suspended",
+        tenant_id=tenant_id,
+        current_user=current_user,
+        user_response=response,
+    )
+    return response
 
 
 @router.post("/{user_id}/activate", response_model=UserResponse)
 async def activate_user_endpoint(
     user_id: int,
-    current_user: dict[str, str] = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_tenant_db),
+    current_user: Annotated[dict[str, object], Depends(get_current_admin)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
 ) -> UserResponse:
     """Activate a suspended user account.
 
@@ -89,15 +158,30 @@ async def activate_user_endpoint(
     """
     tenant_id = require_current_user_tenant_id(current_user)
     user = await activate_user(db, tenant_id=tenant_id, user_id=user_id)
-    return _to_response(user)
+    response = _to_response(user)
+    await _record_user_lifecycle_audit(
+        db,
+        tenant_id=tenant_id,
+        action="activated",
+        current_user=current_user,
+        user=user,
+    )
+    await db.commit()
+    await _publish_user_lifecycle_event(
+        "activated",
+        tenant_id=tenant_id,
+        current_user=current_user,
+        user_response=response,
+    )
+    return response
 
 
 @router.delete("/{user_id}", response_model=UserResponse)
 async def delete_user_endpoint(
     user_id: int,
-    current_user: dict[str, str] = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient | None = Depends(get_redis),
+    current_user: Annotated[dict[str, object], Depends(get_current_admin)],
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient | None, Depends(get_redis)],
 ) -> UserResponse:
     """Soft delete a user account.
 
@@ -106,4 +190,19 @@ async def delete_user_endpoint(
     """
     tenant_id = require_current_user_tenant_id(current_user)
     user = await delete_user(db, redis, tenant_id=tenant_id, user_id=user_id)
-    return _to_response(user)
+    response = _to_response(user)
+    await _record_user_lifecycle_audit(
+        db,
+        tenant_id=tenant_id,
+        action="deleted",
+        current_user=current_user,
+        user=user,
+    )
+    await db.commit()
+    await _publish_user_lifecycle_event(
+        "deleted",
+        tenant_id=tenant_id,
+        current_user=current_user,
+        user_response=response,
+    )
+    return response

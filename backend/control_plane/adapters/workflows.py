@@ -3,202 +3,30 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import desc, select
+from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.control_plane.adapters.deps import get_current_user, get_machine_tenant_db, get_node_machine_token, get_tenant_db
-from backend.extensions.job_kind_registry import validate_job_payload
 from backend.extensions.workflow_engine import create_workflow, on_step_job_completed, on_step_job_failed
 from backend.kernel.contracts.errors import zen
-from backend.kernel.contracts.status import canonicalize_status, normalize_persisted_status
+from backend.kernel.contracts.status import canonicalize_status
 from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
-from backend.models.job import Job
-from backend.models.workflow import Workflow, WorkflowStep
-from backend.runtime.topology.node_auth import authenticate_node_request
+from backend.models.workflow import Workflow
+
+from .workflow_contracts import (  # noqa: F401 re-export
+    StepStatus,
+    WorkflowCreateRequest,
+    WorkflowDetailResponse,
+    WorkflowResponse,
+    WorkflowStepCompleteRequest,
+    WorkflowStepDefinition,
+    WorkflowStepFailRequest,
+)
+from .workflow_machine_callbacks import assert_machine_step_callback_contract
+from .workflow_projection import build_workflow_detail_response, workflow_to_response
+from .workflow_queries import list_workflow_steps, load_workflow_for_tenant, workflow_stmt_for_tenant
 
 router = APIRouter(prefix="/api/v1/workflows", tags=["workflows"])
-
-
-class WorkflowStepDefinition(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-    kind: str = Field(..., min_length=1, max_length=64)
-    payload: dict[str, object] = Field(default_factory=dict)
-    depends_on: list[str] = Field(default_factory=list)
-    priority: int = Field(default=60, ge=0, le=100)
-    max_retries: int = Field(default=1, ge=0, le=10)
-
-    @field_validator("depends_on")
-    @classmethod
-    def _validate_depends_on(cls, value: list[str]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for item in value:
-            dep = item.strip()
-            if not dep:
-                raise ValueError("depends_on entries must be non-empty step IDs")
-            if dep in seen:
-                raise ValueError("depends_on cannot contain duplicate step IDs")
-            seen.add(dep)
-            normalized.append(dep)
-        return normalized
-
-    @model_validator(mode="after")
-    def _validate_payload_contract(self) -> WorkflowStepDefinition:
-        try:
-            self.payload = validate_job_payload(self.kind, dict(self.payload))
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
-        return self
-
-
-class WorkflowCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=128)
-    description: str | None = Field(default=None)
-    steps: list[WorkflowStepDefinition] = Field(..., min_length=1)
-
-
-class StepStatus(BaseModel):
-    step_id: str
-    job_id: str | None
-    status: str
-    result: dict | None
-    error_message: str | None
-    started_at: str | None
-    completed_at: str | None
-
-
-class WorkflowResponse(BaseModel):
-    workflow_id: str
-    name: str
-    description: str | None
-    status: str
-    steps_count: int
-    created_by: str | None
-    created_at: str
-    started_at: str | None
-    completed_at: str | None
-
-
-class WorkflowDetailResponse(WorkflowResponse):
-    steps_definition: list[dict[str, object]]
-    steps_status: list[StepStatus]
-    context: dict[str, object]
-
-
-class WorkflowStepCompleteRequest(BaseModel):
-    tenant_id: str = Field(..., min_length=1, max_length=64)
-    node_id: str = Field(..., min_length=1, max_length=128)
-    job_id: str = Field(..., min_length=1, max_length=128)
-    lease_token: str = Field(..., min_length=8, max_length=256)
-    attempt: int = Field(..., ge=1)
-    result: dict = Field(default_factory=dict)
-
-
-class WorkflowStepFailRequest(BaseModel):
-    tenant_id: str = Field(..., min_length=1, max_length=64)
-    node_id: str = Field(..., min_length=1, max_length=128)
-    job_id: str = Field(..., min_length=1, max_length=128)
-    lease_token: str = Field(..., min_length=8, max_length=256)
-    attempt: int = Field(..., ge=1)
-    error: str = Field(..., min_length=1, max_length=1024)
-
-
-def _to_response(wf: Workflow) -> WorkflowResponse:
-    return WorkflowResponse(
-        workflow_id=wf.workflow_id,
-        name=wf.name,
-        description=wf.description,
-        status=normalize_persisted_status("workflows.status", wf.status) or "pending",
-        steps_count=len(wf.steps),
-        created_by=wf.created_by,
-        created_at=wf.created_at.isoformat(),
-        started_at=wf.started_at.isoformat() if wf.started_at else None,
-        completed_at=wf.completed_at.isoformat() if wf.completed_at else None,
-    )
-
-
-async def _assert_machine_step_callback_contract(
-    db: AsyncSession,
-    *,
-    workflow_id: str,
-    step_id: str,
-    tenant_id: str,
-    node_id: str,
-    job_id: str,
-    lease_token: str,
-    attempt: int,
-    node_token: str,
-) -> None:
-    await authenticate_node_request(db, node_id, node_token, require_active=True, tenant_id=tenant_id)
-
-    workflow_result = await db.execute(
-        select(Workflow).where(
-            Workflow.workflow_id == workflow_id,
-            Workflow.tenant_id == tenant_id,
-        )
-    )
-    workflow = workflow_result.scalars().first()
-    if workflow is None:
-        raise zen("ZEN-WF-4040", "Workflow not found", status_code=404)
-
-    step_result = await db.execute(
-        select(WorkflowStep).where(
-            WorkflowStep.workflow_id_fk == workflow.id,
-            WorkflowStep.step_id == step_id,
-        )
-    )
-    workflow_step = step_result.scalars().first()
-    if workflow_step is None:
-        raise zen("ZEN-WF-4041", "Workflow step not found", status_code=404)
-    if not workflow_step.job_id or workflow_step.job_id != job_id:
-        raise zen(
-            "ZEN-WF-4092",
-            "Step callback job_id mismatch",
-            status_code=409,
-            recovery_hint="Report status using the workflow-assigned step job_id",
-            details={"workflow_id": workflow_id, "step_id": step_id, "expected_job_id": workflow_step.job_id, "job_id": job_id},
-        )
-
-    job_result = await db.execute(
-        select(Job).where(
-            Job.tenant_id == tenant_id,
-            Job.job_id == job_id,
-        )
-    )
-    job = job_result.scalars().first()
-    if job is None:
-        raise zen("ZEN-JOB-4040", "Job not found", status_code=404)
-    if str(job.source or "") != "workflow-engine":
-        raise zen(
-            "ZEN-WF-4093",
-            "Step callback is only allowed for workflow-engine jobs",
-            status_code=409,
-            details={"job_id": job_id, "source": job.source},
-        )
-    if str(job.node_id or "") != node_id:
-        raise zen(
-            "ZEN-JOB-4090",
-            "Lease owner mismatch for workflow step callback",
-            status_code=409,
-            details={"job_id": job_id, "node_id": node_id, "job_node_id": job.node_id},
-        )
-    if str(job.lease_token or "") != lease_token:
-        raise zen(
-            "ZEN-JOB-4091",
-            "Lease token mismatch for workflow step callback",
-            status_code=409,
-            details={"job_id": job_id},
-        )
-    if int(job.attempt or 0) != int(attempt):
-        raise zen(
-            "ZEN-JOB-4092",
-            "Attempt mismatch for workflow step callback",
-            status_code=409,
-            details={"job_id": job_id, "expected_attempt": int(job.attempt or 0), "attempt": int(attempt)},
-        )
 
 
 @router.post("", response_model=WorkflowDetailResponse)
@@ -208,36 +36,18 @@ async def start_workflow(
     db: AsyncSession = Depends(get_tenant_db),
 ) -> WorkflowDetailResponse:
     """Start a new workflow. Dispatches Jobs for ready steps immediately."""
-    normalized_steps = [step.model_dump(mode="python") for step in payload.steps]
     tenant_id = require_current_user_tenant_id(current_user)
     workflow = await create_workflow(
         db,
         tenant_id=tenant_id,
         name=payload.name,
         description=payload.description,
-        steps=normalized_steps,
+        steps=[step.model_dump(mode="python") for step in payload.steps],
         created_by=current_user["username"],
     )
-
-    steps_result = await db.execute(select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id))
-    steps_status = [
-        StepStatus(
-            step_id=ws.step_id,
-            job_id=ws.job_id,
-            status=normalize_persisted_status("workflow_steps.status", ws.status) or "waiting",
-            result=ws.result,
-            error_message=ws.error_message,
-            started_at=ws.started_at.isoformat() if ws.started_at else None,
-            completed_at=ws.completed_at.isoformat() if ws.completed_at else None,
-        )
-        for ws in steps_result.scalars().all()
-    ]
-
-    return WorkflowDetailResponse(
-        **_to_response(workflow).model_dump(),
-        steps_definition=workflow.steps,
-        steps_status=steps_status,
-        context=workflow.context,
+    return build_workflow_detail_response(
+        workflow,
+        await list_workflow_steps(db, workflow_id_fk=workflow.id),
     )
 
 
@@ -250,11 +60,11 @@ async def list_workflows(
 ) -> list[WorkflowResponse]:
     """List workflows for this tenant (newest first)."""
     tenant_id = require_current_user_tenant_id(current_user)
-    query = select(Workflow).where(Workflow.tenant_id == tenant_id)
+    query = workflow_stmt_for_tenant(tenant_id)
     if status:
         query = query.where(Workflow.status == canonicalize_status("workflows.status", status))
     result = await db.execute(query.order_by(desc(Workflow.created_at)).limit(limit))
-    return [_to_response(wf) for wf in result.scalars().all()]
+    return [workflow_to_response(workflow) for workflow in result.scalars().all()]
 
 
 @router.get("/{workflow_id}", response_model=WorkflowDetailResponse)
@@ -265,35 +75,16 @@ async def get_workflow(
 ) -> WorkflowDetailResponse:
     """Get workflow detail including step statuses."""
     tenant_id = require_current_user_tenant_id(current_user)
-    result = await db.execute(
-        select(Workflow).where(
-            Workflow.workflow_id == workflow_id,
-            Workflow.tenant_id == tenant_id,
-        )
+    workflow = await load_workflow_for_tenant(
+        db,
+        tenant_id=tenant_id,
+        workflow_id=workflow_id,
     )
-    workflow = result.scalars().first()
     if workflow is None:
         raise zen("ZEN-WF-4040", "Workflow not found", status_code=404)
-
-    steps_result = await db.execute(select(WorkflowStep).where(WorkflowStep.workflow_id_fk == workflow.id))
-    steps_status = [
-        StepStatus(
-            step_id=ws.step_id,
-            job_id=ws.job_id,
-            status=normalize_persisted_status("workflow_steps.status", ws.status) or "waiting",
-            result=ws.result,
-            error_message=ws.error_message,
-            started_at=ws.started_at.isoformat() if ws.started_at else None,
-            completed_at=ws.completed_at.isoformat() if ws.completed_at else None,
-        )
-        for ws in steps_result.scalars().all()
-    ]
-
-    return WorkflowDetailResponse(
-        **_to_response(workflow).model_dump(),
-        steps_definition=workflow.steps,
-        steps_status=steps_status,
-        context=workflow.context,
+    return build_workflow_detail_response(
+        workflow,
+        await list_workflow_steps(db, workflow_id_fk=workflow.id),
     )
 
 
@@ -306,7 +97,7 @@ async def report_step_complete(
     node_token: str = Depends(get_node_machine_token),
 ) -> dict[str, str]:
     """Report a workflow step as completed (machine callback only)."""
-    await _assert_machine_step_callback_contract(
+    await assert_machine_step_callback_contract(
         db,
         workflow_id=workflow_id,
         step_id=step_id,
@@ -330,7 +121,7 @@ async def report_step_failed(
     node_token: str = Depends(get_node_machine_token),
 ) -> dict[str, str]:
     """Report a workflow step as failed (machine callback only)."""
-    await _assert_machine_step_callback_contract(
+    await assert_machine_step_callback_contract(
         db,
         workflow_id=workflow_id,
         step_id=step_id,

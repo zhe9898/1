@@ -17,6 +17,7 @@ from backend.control_plane.adapters.deps import get_current_admin, get_current_u
 from backend.control_plane.adapters.triggers import TriggerFireRequest, TriggerUpsertRequest, fire_trigger_endpoint, receive_trigger_webhook, upsert_trigger
 from backend.control_plane.app.entrypoint import app
 from backend.models.trigger import Trigger, TriggerDelivery
+from backend.tests.unit.shared_db_test_support import scalar_result
 
 
 async def override_get_current_user() -> dict[str, str]:
@@ -55,12 +56,7 @@ def _assert_success_envelope(response: Any) -> dict[str, Any]:
     return payload["data"]
 
 
-def _scalar_result(value: object | None) -> MagicMock:
-    result = MagicMock()
-    scalars = MagicMock()
-    scalars.first.return_value = value
-    result.scalars.return_value = scalars
-    return result
+_scalar_result = scalar_result
 
 
 def _count_result(value: int) -> MagicMock:

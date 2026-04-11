@@ -6,6 +6,8 @@ CHANNEL_SWITCH_EVENTS: str = "switch:events"
 CHANNEL_HARDWARE_EVENTS: str = "hardware:events"
 CHANNEL_NODE_EVENTS: str = "node:events"
 CHANNEL_JOB_EVENTS: str = "job:events"
+CHANNEL_SESSION_EVENTS: str = "session:events"
+CHANNEL_USER_EVENTS: str = "user:events"
 CHANNEL_CONNECTOR_EVENTS: str = "connector:events"
 CHANNEL_TRIGGER_EVENTS: str = "trigger:events"
 CHANNEL_RESERVATION_EVENTS: str = "reservation:events"
@@ -31,8 +33,10 @@ __all__ = (
     "CHANNEL_JOB_EVENTS",
     "CHANNEL_NODE_EVENTS",
     "CHANNEL_RESERVATION_EVENTS",
+    "CHANNEL_SESSION_EVENTS",
     "CHANNEL_SWITCH_EVENTS",
     "CHANNEL_TRIGGER_EVENTS",
+    "CHANNEL_USER_EVENTS",
     "KEY_AUTH_CHALLENGE_PREFIX",
     "KEY_CAPABILITIES",
     "KEY_CAPABILITIES_PREFIX",

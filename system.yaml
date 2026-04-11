@@ -63,26 +63,41 @@ runtime_contracts:
     - switch:events
     - node:events
     - job:events
+    - session:events
     - connector:events
     - reservation:events
     - trigger:events
+    - user:events
   browser_realtime_event_channels:
     - hardware:events
     - switch:events
     - node:events
     - job:events
+    - session:events
     - connector:events
     - reservation:events
     - trigger:events
+    - user:events
   browser_public_realtime_event_channels:
     - hardware:events
     - switch:events
   tenant_scoped_realtime_event_channels:
     - node:events
     - job:events
+    - session:events
     - connector:events
     - reservation:events
     - trigger:events
+    - user:events
+  control_event_envelope_contract:
+    publisher_entrypoint: backend.control_plane.adapters.control_events.publish_control_event
+    reserved_fields:
+      - event_id
+      - revision
+      - action
+      - ts
+      - tenant_id
+    tenant_scoped_channels_require_tenant_id: true
   tenant_realtime_subject_contract:
     segment: tenant
     tenant_id_encoding: utf8-hex

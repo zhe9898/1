@@ -4,6 +4,7 @@ ZEN70 Auth WebAuthn - WebAuthn 濞夈劌鍞芥稉搴ｆ瑜?"""
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 try:
     from webauthn.helpers import bytes_to_base64url
@@ -53,7 +54,7 @@ from backend.control_plane.auth.webauthn_flow_session import (
 )
 from backend.kernel.contracts.tenant_claims import require_current_user_tenant_id
 
-# Keep direct references for re-export; function bodies use _auth() for patchability
+# Stable module-level seams for explicit contract enforcement and test patching.
 check_webauthn_rate_limit = _auth_helpers.check_webauthn_rate_limit
 credential_id_to_base64url = _auth_helpers.credential_id_to_base64url
 expected_challenge_bytes = _auth_helpers.expected_challenge_bytes
@@ -89,13 +90,6 @@ def _require_webauthn(fn: object, name: str) -> object:
             recovery_hint="Install the python-webauthn package and restart the gateway to enable WebAuthn authentication",
         )
     return fn
-
-
-def _auth_mod():  # type: ignore[no-untyped-def]
-    """Lazy lookup of backend.control_plane.adapters.auth so patches on that module take effect."""
-    import sys
-
-    return sys.modules.get("backend.control_plane.adapters.auth") or __import__("backend.control_plane.adapters.auth", fromlist=["auth"])
 
 
 async def _load_authenticated_registration_user(
@@ -171,9 +165,9 @@ async def register_begin(
     req: WebAuthnRegisterBeginRequest,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient = Depends(get_redis),
-    current_user: dict[str, object] = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient, Depends(get_redis)],
+    current_user: Annotated[dict[str, object], Depends(get_current_user)],
 ) -> WebAuthnRegisterBeginResponse:
     require_db_redis(db, redis)
     rid, cip = request_id(request), client_ip(request)
@@ -216,9 +210,9 @@ async def register_complete(
     req: WebAuthnRegisterCompleteRequest,
     request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_tenant_db),
-    redis: RedisClient = Depends(get_redis),
-    current_user: dict[str, object] = Depends(get_current_user),
+    db: Annotated[AsyncSession, Depends(get_tenant_db)],
+    redis: Annotated[RedisClient, Depends(get_redis)],
+    current_user: Annotated[dict[str, object], Depends(get_current_user)],
 ) -> dict[str, str]:
     require_db_redis(db, redis)
     rid, cip = request_id(request), client_ip(request)
@@ -255,7 +249,7 @@ async def register_complete(
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
         clear_webauthn_flow_session(response)
         log_auth("webauthn_register_complete", False, rid, username=username, detail=str(e))
-        raise zen(CODE_BAD_REQUEST, "Registration verification failed", status.HTTP_400_BAD_REQUEST)
+        raise zen(CODE_BAD_REQUEST, "Registration verification failed", status.HTTP_400_BAD_REQUEST) from e
 
     credential_id_b64 = bytes_to_base64url(verification.credential_id)
     raw_response = req.credential.get("response")
@@ -282,14 +276,14 @@ async def login_begin(
     req: WebAuthnLoginBeginRequest,
     request: Request,
     response: Response,
-    db: AsyncSession | None = Depends(get_db),
-    redis: RedisClient = Depends(get_redis),
+    db: Annotated[AsyncSession | None, Depends(get_db)],
+    redis: Annotated[RedisClient, Depends(get_redis)],
 ) -> WebAuthnLoginBeginResponse:
     require_db_redis(db, redis)
     assert db is not None  # noqa: S101
     rid, cip = request_id(request), client_ip(request)
     tenant_id = request_tenant_id(req.tenant_id)
-    await _auth_mod().check_webauthn_rate_limit(redis, cip, rid)
+    await check_webauthn_rate_limit(redis, cip, rid)
     user = await _load_login_user(
         db,
         tenant_id=tenant_id,
@@ -312,8 +306,8 @@ async def login_begin(
             descriptor["transports"] = transports
         allow_credentials.append(descriptor)
     session_id = ensure_webauthn_flow_session(response, request, ttl_seconds=CHALLENGE_TTL)
-    generate_authentication_challenge = _require_webauthn(
-        _auth_mod().generate_authentication_challenge,
+    build_authentication_challenge = _require_webauthn(
+        generate_authentication_challenge,
         "generate_authentication_challenge",
     )
     _, options_dict = await WebAuthnChallengeStore.get_or_create(
@@ -324,7 +318,7 @@ async def login_begin(
         tenant_id=tenant_id,
         flow="login",
         ttl_seconds=CHALLENGE_TTL,
-        options_builder=lambda challenge: generate_authentication_challenge(  # type: ignore[operator]
+        options_builder=lambda challenge: build_authentication_challenge(  # type: ignore[operator]
             allow_credentials=allow_credentials,
             challenge=challenge,
         ),
@@ -339,13 +333,13 @@ async def login_complete(
     req: WebAuthnLoginCompleteRequest,
     request: Request,
     response: Response,
-    db: AsyncSession | None = Depends(get_db),
-    redis: RedisClient = Depends(get_redis),
+    db: Annotated[AsyncSession | None, Depends(get_db)],
+    redis: Annotated[RedisClient, Depends(get_redis)],
 ) -> AuthSessionResponse:
     require_db_redis(db, redis)
     assert db is not None
     rid, cip = request_id(request), client_ip(request)
-    await _auth_mod().check_webauthn_rate_limit(redis, cip, rid)
+    await check_webauthn_rate_limit(redis, cip, rid)
     tenant_id = request_tenant_id(req.tenant_id)
     session_id = require_webauthn_flow_session(request)
     login_user = await _load_login_user(
@@ -366,7 +360,7 @@ async def login_complete(
         expected_user_id=str(login_user.id),
         expected_tenant_id=tenant_id,
     )
-    cred_id_b64 = _auth_mod().credential_id_to_base64url(req.credential)
+    cred_id_b64 = credential_id_to_base64url(req.credential)
     if not cred_id_b64:
         raise zen(CODE_BAD_REQUEST, "Invalid credential: missing id", status.HTTP_400_BAD_REQUEST)
 
@@ -381,11 +375,11 @@ async def login_complete(
         log_auth("webauthn_login_complete", False, rid, username=req.username, detail="credential_not_found")
         raise zen(CODE_NOT_FOUND, "Credential not found", status.HTTP_404_NOT_FOUND)
 
-    origin = _auth_mod().origin_from_request(request)
+    origin = origin_from_request(request)
     try:
-        verification = _auth_mod().verify_authentication(
+        verification = _require_webauthn(verify_authentication, "verify_authentication")(
             credential=req.credential,
-            expected_challenge=_auth_mod().expected_challenge_bytes(challenge.challenge_id),
+            expected_challenge=expected_challenge_bytes(challenge.challenge_id),
             origin=origin,
             credential_public_key=cred.public_key,
             credential_current_sign_count=cred.sign_count,
@@ -393,7 +387,7 @@ async def login_complete(
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as e:
         clear_webauthn_flow_session(response)
         log_auth("webauthn_login_complete", False, rid, username=req.username, detail=str(e))
-        raise zen(CODE_BAD_REQUEST, "Authentication verification failed", status.HTTP_400_BAD_REQUEST)
+        raise zen(CODE_BAD_REQUEST, "Authentication verification failed", status.HTTP_400_BAD_REQUEST) from e
 
     audit_detail: str | None = None
     if verification.new_sign_count == 0:
