@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import datetime
 
-from backend.api.nodes_schema import _build_bootstrap_commands
+from backend.control_plane.adapters.nodes_schema import _build_bootstrap_commands
 from backend.models.node import Node
 
 

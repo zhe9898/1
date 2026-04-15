@@ -16,7 +16,7 @@ else:
     AsyncRedis = Any
 
 from backend.platform.logging.structured import get_logger
-from backend.platform.redis._shared import retry_once
+from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, retry_once
 from backend.platform.redis.auth_challenge_store import RedisAuthChallengeStore
 from backend.platform.redis.capability_store import RedisCapabilityStore
 from backend.platform.redis.constants import (
@@ -25,8 +25,10 @@ from backend.platform.redis.constants import (
     CHANNEL_JOB_EVENTS,
     CHANNEL_NODE_EVENTS,
     CHANNEL_RESERVATION_EVENTS,
+    CHANNEL_SESSION_EVENTS,
     CHANNEL_SWITCH_EVENTS,
     CHANNEL_TRIGGER_EVENTS,
+    CHANNEL_USER_EVENTS,
     KEY_AUTH_CHALLENGE_PREFIX,
     KEY_HW_PREFIX,
     KEY_LOCK_PREFIX,
@@ -48,8 +50,10 @@ __all__ = [
     "CHANNEL_JOB_EVENTS",
     "CHANNEL_NODE_EVENTS",
     "CHANNEL_RESERVATION_EVENTS",
+    "CHANNEL_SESSION_EVENTS",
     "CHANNEL_SWITCH_EVENTS",
     "CHANNEL_TRIGGER_EVENTS",
+    "CHANNEL_USER_EVENTS",
     "HardwareState",
     "KEY_AUTH_CHALLENGE_PREFIX",
     "KEY_HW_PREFIX",
@@ -134,7 +138,7 @@ class RedisClient:
         try:
             await self._redis.ping()
             return True
-        except Exception as exc:
+        except REDIS_OPERATION_ERRORS as exc:
             self.logger.debug("Redis ping failed: %s", exc)
             return False
 

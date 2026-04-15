@@ -26,6 +26,8 @@ from scripts.iac_core.profiles import (
     resolve_requested_pack_keys,
     resolve_gateway_image_target,
 )
+from scripts.iac_core.host_runtime import build_host_service_spec, resolve_host_runtime_paths
+from scripts.iac_core.host_service_contracts import normalize_host_service_contract
 from scripts.iac_core.renderer import dict_to_yaml_block
 from scripts.iac_core.secrets import resolve_env_default
 
@@ -140,7 +142,11 @@ def prepare_services(config: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def prepare_host_services(config: dict[str, Any]) -> list[dict[str, Any]]:
+def prepare_host_services(
+    config: dict[str, Any],
+    *,
+    output_root: Path | None = None,
+) -> list[dict[str, Any]]:
     """
     返回所有 runtime: host 服务的预处理列表，用于生成 systemd unit 文件。
 
@@ -150,6 +156,7 @@ def prepare_host_services(config: dict[str, Any]) -> list[dict[str, Any]]:
     注：host 服务不受 profile 过滤约束（用户自定义进程，不属于功能 pack）。
     """
     result: list[dict[str, Any]] = []
+    paths = resolve_host_runtime_paths(config, output_root=output_root)
     for name, svc in (config.get("services") or {}).items():
         if not isinstance(svc, dict):
             continue
@@ -157,36 +164,9 @@ def prepare_host_services(config: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if svc.get("runtime") != "host":
             continue
-        result.append(_build_host_service_entry(name, svc))
+        normalized_svc = normalize_host_service_contract(name, svc)
+        result.append(build_host_service_spec(name, normalized_svc, paths=paths).to_render_dict())
     return result
-
-
-def _build_host_service_entry(name: str, svc: dict[str, Any]) -> dict[str, Any]:
-    """构建单个宿主机进程服务的描述字典（用于 systemd unit 渲染）。"""
-    exec_start = svc.get("exec", "")
-    if not exec_start:
-        logger.warning("host service '%s' missing required 'exec' field", name)
-
-    environment: dict[str, str] = {}
-    for k, v in (svc.get("environment") or {}).items():
-        environment[str(k)] = str(v)
-
-    return {
-        "name": name,
-        "runtime": "host",
-        "description": svc.get("description") or f"{name} (ZEN70 host process)",
-        "exec": exec_start,
-        "args": svc.get("args") or "",
-        "user": svc.get("user") or "",
-        "group": svc.get("group") or "",
-        "working_dir": svc.get("working_dir") or "",
-        "environment": environment,
-        "port": int(svc["port"]) if svc.get("port") is not None else None,
-        "caddy_path": svc.get("caddy_path") or "",
-        "after": svc.get("after") or "network.target",
-        "restart": svc.get("restart") or "on-failure",
-        "restart_sec": int(svc.get("restart_sec", 5)),
-    }
 
 
 def _resolve_profile(config: dict[str, Any]) -> str:
@@ -295,6 +275,11 @@ def _build_service_entry(
     if ports:
         ports_block = dict_to_yaml_block({"ports": [str(p) for p in ports]})
 
+    extra_hosts = svc.get("extra_hosts") or []
+    extra_hosts_block = ""
+    if extra_hosts:
+        extra_hosts_block = dict_to_yaml_block({"extra_hosts": [str(host) for host in extra_hosts]})
+
     # --- command ---
     cmd = svc.get("command")
     command_block = ""
@@ -337,7 +322,7 @@ def _build_service_entry(
     oom_cfg = svc.get("oom_score_adj")
     if oom_cfg is not None:
         oom_score_adj_block = dict_to_yaml_block({"oom_score_adj": oom_cfg})
-    elif name in ("gateway", "redis", "sentinel", "watchdog", "docker-proxy"):
+    elif name in ("gateway", "redis", "watchdog", "docker-proxy"):
         oom_score_adj_block = dict_to_yaml_block({"oom_score_adj": -999})
 
     # --- healthcheck (法典 3.4) ---
@@ -349,7 +334,6 @@ def _build_service_entry(
         "redis": "30s",
         "loki": "15s",
         "gateway": "15s",
-        "sentinel": "15s",
         "victoriametrics": "15s",
     }
     stop_grace = svc.get("stop_grace_period") or _default_grace.get(name, "10s")
@@ -413,6 +397,7 @@ def _build_service_entry(
         "environment_block": env_block,
         "command_block": command_block,
         "ports_block": ports_block,
+        "extra_hosts_block": extra_hosts_block,
         "depends_on_block": deps_block,
         "networks_block": networks_block,
         "deploy_block": deploy_block,
@@ -430,7 +415,6 @@ def _build_healthcheck_block(name: str, svc: dict[str, Any]) -> str:
     _default_start_period: dict[str, str] = {
         "postgres": "30s",
         "gateway": "30s",
-        "sentinel": "15s",
         "watchdog": "40s",
         "victoriametrics": "15s",
         "grafana": "15s",
@@ -462,9 +446,6 @@ def _build_healthcheck_block(name: str, svc: dict[str, Any]) -> str:
         "postgres": {"test": ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zen70} || exit 1"]},
         "caddy": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:2019/config/ || exit 1"]},
         "pgbouncer": {"test": ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 || exit 1"]},
-        "sentinel": {
-            "test": ["CMD-SHELL", "python -c \"import pathlib; assert 'control_plane_supervisor' in pathlib.Path('/proc/1/cmdline').read_text()\" || exit 1"]
-        },
         "watchdog": {"test": ["CMD-SHELL", "python -c \"import pathlib; assert 'watchdog' in pathlib.Path('/proc/1/cmdline').read_text()\" || exit 1"]},
         "cloudflared": {"test": ["CMD-SHELL", "pgrep -x cloudflared || exit 1"]},
         "victoriametrics": {"test": ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8428/health || exit 1"]},
@@ -590,10 +571,27 @@ def prepare_env(config: dict[str, Any]) -> dict[str, Any]:
     agent_cfg = cap_top.get("agent")
     zen70_agent_enabled = "true" if (isinstance(agent_cfg, dict) and agent_cfg.get("enabled")) else "false"
 
+    services = config.get("services") or {}
+    host_runtime_enabled = any(
+        isinstance(svc, dict) and svc.get("runtime") == "host" and svc.get("enabled") is not False
+        for svc in services.values()
+    )
+    gateway_svc = services.get("gateway") or {}
+    caddy_svc = services.get("caddy") or {}
+    gateway_is_host = isinstance(gateway_svc, dict) and gateway_svc.get("runtime") == "host" and gateway_svc.get("enabled") is not False
+    caddy_is_host = isinstance(caddy_svc, dict) and caddy_svc.get("runtime") == "host" and caddy_svc.get("enabled") is not False
+
     pg_container = pg_svc.get("container_name", "zen70-postgres")
-    pg_host = pg_container.removeprefix("zen70-")
+    pg_host = "127.0.0.1" if host_runtime_enabled else pg_container.removeprefix("zen70-")
     redis_container = redis_svc.get("container_name", "zen70-redis")
-    redis_host = redis_container.removeprefix("zen70-")
+    redis_host = "127.0.0.1" if host_runtime_enabled else redis_container.removeprefix("zen70-")
+    nats_host = "127.0.0.1" if host_runtime_enabled else "nats"
+    if gateway_is_host:
+        gateway_port = int(gateway_svc.get("port") or 8000)
+        gateway_upstream_host = "127.0.0.1" if caddy_is_host else "host.docker.internal"
+        gateway_upstream = f"{gateway_upstream_host}:{gateway_port}"
+    else:
+        gateway_upstream = "gateway:8000"
     gateway_profile = normalize_profile(deployment_cfg.get("profile"))
     gateway_packs = ",".join(_resolve_packs(config))
 
@@ -617,17 +615,21 @@ def prepare_env(config: dict[str, Any]) -> dict[str, Any]:
         "domain": network.get("domain", "home.zen70.local"),
         "gateway_profile": gateway_profile,
         "gateway_packs": gateway_packs,
+        "gateway_upstream": gateway_upstream,
+        "event_bus_backend": "nats",
+        "nats_url": f"nats://{nats_host}:4222",
+        "nats_connect_timeout": "5.0",
         "tunnel_token": str((config.get("secrets") or {}).get("tunnel_token", "")),
         "ai_backend_url": "",
         "backup_enabled": "true" if (isinstance(config.get("backup"), dict) and config["backup"].get("enabled")) else "false",
         "zen70_agent_enabled": zen70_agent_enabled,
         "media_path": media_path,
         "bitrot_scan_dirs": ",".join(str(p).strip() for p in bitrot_dirs if str(p).strip()),
-        "mount_container_map": json.dumps(mount_map, ensure_ascii=False),
+        "mount_container_map": json.dumps(mount_map, ensure_ascii=False, separators=(",", ":")),
         "mount_points": sentinel_cfg.get("mount_points", ""),
-        "watch_targets": json.dumps(watch_targets, ensure_ascii=False),
-        "switch_container_map": json.dumps(switch_map, ensure_ascii=False),
-        "switch_service_ports": json.dumps(switch_ports, ensure_ascii=False),
+        "watch_targets": json.dumps(watch_targets, ensure_ascii=False, separators=(",", ":")),
+        "switch_container_map": json.dumps(switch_map, ensure_ascii=False, separators=(",", ":")),
+        "switch_service_ports": json.dumps(switch_ports, ensure_ascii=False, separators=(",", ":")),
         # Sentinel container role lists (law §1.2 IAC single source of truth)
         "sentinel_stateful_containers": ",".join(sentinel_stateful),
         "sentinel_disk_taint_containers": ",".join(sentinel_disk_taint),

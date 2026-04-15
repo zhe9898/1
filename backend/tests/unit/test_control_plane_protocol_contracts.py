@@ -8,8 +8,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from backend.api.deps import get_node_machine_token
-from backend.api.jobs import (
+from backend.control_plane.adapters.deps import get_node_machine_token
+from backend.control_plane.adapters.jobs import (
     JobCreateRequest,
     JobFailRequest,
     JobPullRequest,
@@ -19,7 +19,7 @@ from backend.api.jobs import (
     fail_job,
     pull_jobs,
 )
-from backend.api.nodes import (
+from backend.control_plane.adapters.nodes import (
     NodeDrainRequest,
     NodeHeartbeatRequest,
     NodeProvisionRequest,
@@ -31,10 +31,10 @@ from backend.api.nodes import (
     revoke_node,
     rotate_node_token,
 )
-from backend.kernel.topology.node_auth import hash_node_token
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
 from backend.models.node import Node
+from backend.runtime.topology.node_auth import hash_node_token
 
 
 def _utcnow() -> datetime.datetime:
@@ -299,21 +299,21 @@ async def test_pull_jobs_assigns_attempt_and_lease_token(monkeypatch: pytest.Mon
 
     db.execute.side_effect = _execute_side_effect
 
-    monkeypatch.setattr("backend.api.jobs.pull_service.authenticate_node_request", AsyncMock(return_value=node))
-    monkeypatch.setattr("backend.api.jobs.pull_service.get_reservation_manager", lambda: reservation_mgr)
-    monkeypatch.setattr("backend.api.jobs.pull_service.get_governance_facade", lambda: governance)
-    monkeypatch.setattr("backend.api.jobs.pull_service.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.authenticate_node_request", AsyncMock(return_value=node))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.get_reservation_manager", lambda: reservation_mgr)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.get_governance_facade", lambda: governance)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.get_failure_control_plane", lambda: fcp)
     monkeypatch.setattr(
-        "backend.api.jobs.pull_service._load_node_metrics",
+        "backend.control_plane.adapters.jobs.pull_service._load_node_metrics",
         AsyncMock(return_value=([node], {"node-a": 0}, {"node-a": 1.0})),
     )
-    monkeypatch.setattr("backend.api.jobs.pull_service._build_snapshots", lambda *a, **k: [])
-    monkeypatch.setattr("backend.api.jobs.pull_service._append_log", AsyncMock(return_value=None))
-    monkeypatch.setattr("backend.api.jobs.pull_service._load_recent_failed_job_ids", AsyncMock(return_value=set()))
-    monkeypatch.setattr("backend.api.jobs.pull_service.select_jobs_for_node", lambda *a, **k: [selected])
-    monkeypatch.setattr("backend.api.jobs.pull_service.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
-    monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
-    monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._build_snapshots", lambda *a, **k: [])
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._append_log", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._load_recent_failed_job_ids", AsyncMock(return_value=set()))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
+    monkeypatch.setattr("backend.runtime.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.runtime.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     leased = await pull_jobs(
         JobPullRequest(tenant_id="default", node_id="node-a", limit=1, accepted_kinds=["connector.invoke"]),
@@ -392,21 +392,21 @@ async def test_pull_jobs_attaches_scheduling_decision_and_policy_snapshot(monkey
 
     db.execute.side_effect = _execute_side_effect
 
-    monkeypatch.setattr("backend.api.jobs.pull_service.authenticate_node_request", AsyncMock(return_value=node))
-    monkeypatch.setattr("backend.api.jobs.pull_service.get_reservation_manager", lambda: reservation_mgr)
-    monkeypatch.setattr("backend.api.jobs.pull_service.get_governance_facade", lambda: governance)
-    monkeypatch.setattr("backend.api.jobs.pull_service.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.authenticate_node_request", AsyncMock(return_value=node))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.get_reservation_manager", lambda: reservation_mgr)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.get_governance_facade", lambda: governance)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.get_failure_control_plane", lambda: fcp)
     monkeypatch.setattr(
-        "backend.api.jobs.pull_service._load_node_metrics",
+        "backend.control_plane.adapters.jobs.pull_service._load_node_metrics",
         AsyncMock(return_value=([node], {"node-a": 0}, {"node-a": 1.0})),
     )
-    monkeypatch.setattr("backend.api.jobs.pull_service._build_snapshots", lambda *a, **k: [])
-    monkeypatch.setattr("backend.api.jobs.pull_service._append_log", AsyncMock(return_value=None))
-    monkeypatch.setattr("backend.api.jobs.pull_service._load_recent_failed_job_ids", AsyncMock(return_value=set()))
-    monkeypatch.setattr("backend.api.jobs.pull_service.select_jobs_for_node", lambda *a, **k: [selected])
-    monkeypatch.setattr("backend.api.jobs.pull_service.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
-    monkeypatch.setattr("backend.kernel.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
-    monkeypatch.setattr("backend.kernel.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._build_snapshots", lambda *a, **k: [])
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._append_log", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service._load_recent_failed_job_ids", AsyncMock(return_value=set()))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.select_jobs_for_node", lambda *a, **k: [selected])
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.pull_service.build_job_concurrency_window", lambda **_: _FakeConcurrencyWindow())
+    monkeypatch.setattr("backend.runtime.scheduling.queue_stratification.sort_jobs_by_stratified_priority", lambda jobs, **_: jobs)
+    monkeypatch.setattr("backend.runtime.scheduling.business_scheduling.apply_business_filters", lambda jobs, **_: jobs)
 
     await pull_jobs(
         JobPullRequest(tenant_id="default", node_id="node-a", limit=1, accepted_kinds=["connector.invoke"]),
@@ -496,12 +496,12 @@ async def test_fail_job_updates_current_lease(monkeypatch: pytest.MonkeyPatch) -
 
     fcp = MagicMock()
     fcp.record_failure = AsyncMock(return_value=None)
-    monkeypatch.setattr("backend.api.jobs.lifecycle_service.get_failure_control_plane", lambda: fcp)
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.lifecycle_service.get_failure_control_plane", lambda: fcp)
     monkeypatch.setattr(
-        "backend.api.jobs.lifecycle_service.infer_failure_category",
+        "backend.control_plane.adapters.jobs.lifecycle_service.infer_failure_category",
         MagicMock(return_value=SimpleNamespace(value="permanent")),
     )
-    monkeypatch.setattr("backend.api.jobs.lifecycle_service.should_retry_job", MagicMock(return_value=False))
+    monkeypatch.setattr("backend.control_plane.adapters.jobs.lifecycle_service.should_retry_job", MagicMock(return_value=False))
 
     response = await fail_job(
         "job-1",
@@ -562,7 +562,8 @@ async def test_register_node_persists_strong_contract_fields(monkeypatch: pytest
         node_token="node-token",
     )
 
-    assert response.executor == "edge-native"
+    assert response.executor == "go-native"
+    assert response.executor_contract == "edge-native"
     assert response.os == "darwin"
     assert response.arch == "arm64"
     assert response.protocol_version == "runner.v1"
@@ -651,7 +652,7 @@ async def test_provision_node_issues_one_time_token(monkeypatch: pytest.MonkeyPa
     db.add = MagicMock()
     # Bypass quota check — quota enforcement has its own unit tests.
     # This test focuses on the provisioning response contract.
-    monkeypatch.setattr("backend.api.nodes.check_node_quota", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.control_plane.adapters.nodes.check_node_quota", AsyncMock(return_value=None))
     # Node duplicate check → None (no existing node)
     db.execute.return_value = _scalar_result(None)
     db.flush = AsyncMock()
@@ -700,7 +701,7 @@ async def test_rotate_node_token_increments_version(monkeypatch: pytest.MonkeyPa
     assert response.node.status == "offline"
     assert response.node.status_view.key == "offline"
     assert response.node_token == "<paste-one-time-node-token-here>"
-    assert "https://gateway.example.invalid" in response.bootstrap_commands["powershell"]
+    assert '$env:GATEWAY_BASE_URL="https://gateway.example.invalid"' in response.bootstrap_commands["powershell"].splitlines()
 
 
 @pytest.mark.asyncio
@@ -710,7 +711,7 @@ async def test_provision_node_emits_local_http_opt_in_for_loopback_gateway(monke
     db = AsyncMock()
     db.add = MagicMock()
     # Same isolation pattern as test_provision_node_issues_one_time_token
-    monkeypatch.setattr("backend.api.nodes.check_node_quota", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.control_plane.adapters.nodes.check_node_quota", AsyncMock(return_value=None))
     db.execute.return_value = _scalar_result(None)
     db.flush = AsyncMock()
 

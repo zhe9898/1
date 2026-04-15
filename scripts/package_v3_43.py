@@ -220,14 +220,14 @@ def _openapi_freeze_gate() -> None:
     """Gate 4: verify OpenAPI path surface has not drifted from locked snapshot.
 
     Gracefully skipped when docs/api/openapi_locked.json does not exist yet.
-    Activate once by running: python scripts/freeze_openapi.py --init
+    Activate once by running: python scripts/generate_contracts.py
     """
     freeze_script = PROJECT_ROOT / "scripts" / "freeze_openapi.py"
     snapshot = PROJECT_ROOT / "docs" / "api" / "openapi_locked.json"
     if not snapshot.exists():
         logger.warning(
             "Gate [OpenAPI surface freeze] SKIPPED — snapshot not initialised. "
-            "Run: python scripts/freeze_openapi.py --init"
+            "Run: python scripts/generate_contracts.py"
         )
         return
     _run_gate(
@@ -271,8 +271,8 @@ def _run_pre_package_gates() -> None:
     # Gate 3 — Lockfile existence (hard fail, frontend + backend)
     _lockfile_gate()
 
-    # Gate 4 — OpenAPI path-surface freeze (ADR-0047 WP-P2a)
-    # Skipped gracefully when snapshot not yet initialised (run --init once to activate).
+    # Gate 4 – OpenAPI path-surface freeze (ADR-0047 WP-P2a)
+    # Skipped gracefully when the snapshot has not been generated yet.
     _openapi_freeze_gate()
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.api.main import app
+from backend.control_plane.app.entrypoint import app
 from backend.control_plane.console.manifest_service import iter_control_plane_surfaces
 
 

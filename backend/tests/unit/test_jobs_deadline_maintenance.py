@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.jobs import deadline_maintenance as dm
+from backend.control_plane.adapters.jobs import deadline_maintenance as dm
 
 
 @pytest.mark.asyncio

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
-from backend.api.push import PushKeys, PushPayload, PushSubscribeInput, subscribe_push
-from backend.api.push import test_trigger_push as trigger_push_notification
+from backend.control_plane.adapters.push import PushKeys, PushPayload, PushSubscribeInput, subscribe_push
+from backend.control_plane.adapters.push import test_trigger_push as trigger_push_notification
 from backend.models.user import PushSubscription
 
 
@@ -53,8 +53,8 @@ async def test_subscribe_push_looks_up_existing_endpoint_with_tenant_scope() -> 
 
 @pytest.mark.asyncio
 async def test_test_trigger_push_reads_subscriptions_for_current_tenant_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("backend.api.push.VAPID_PRIVATE_KEY", "test-private-key")
-    monkeypatch.setattr("backend.api.push.asyncio.to_thread", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.control_plane.adapters.push.VAPID_PRIVATE_KEY", "test-private-key")
+    monkeypatch.setattr("backend.control_plane.adapters.push.asyncio.to_thread", AsyncMock(return_value=None))
 
     tenant_scoped_sub = PushSubscription(
         tenant_id="tenant-a",
@@ -84,8 +84,8 @@ async def test_test_trigger_push_reads_subscriptions_for_current_tenant_only(mon
 
 @pytest.mark.asyncio
 async def test_test_trigger_push_isolates_non_webpush_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("backend.api.push.VAPID_PRIVATE_KEY", "test-private-key")
-    monkeypatch.setattr("backend.api.push.asyncio.to_thread", AsyncMock(side_effect=RuntimeError("network down")))
+    monkeypatch.setattr("backend.control_plane.adapters.push.VAPID_PRIVATE_KEY", "test-private-key")
+    monkeypatch.setattr("backend.control_plane.adapters.push.asyncio.to_thread", AsyncMock(side_effect=RuntimeError("network down")))
 
     tenant_scoped_sub = PushSubscription(
         tenant_id="tenant-a",

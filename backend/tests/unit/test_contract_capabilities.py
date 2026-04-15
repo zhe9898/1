@@ -18,7 +18,7 @@ _client: TestClient | None = None
 
 def _get_app() -> Any:
     """延迟导入 FastAPI app，避免未安装依赖时顶层报错。"""
-    from backend.api.main import app
+    from backend.control_plane.app.entrypoint import app
 
     return app
 

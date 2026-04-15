@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.kernel.topology.node_auth import authenticate_node_request, hash_node_token
 from backend.models.node import Node
+from backend.runtime.topology.node_auth import authenticate_node_request, hash_node_token
 
 
 def _utcnow() -> datetime.datetime:

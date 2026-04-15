@@ -72,7 +72,7 @@
 ## 实施说明
 
 - 数据模型与 RLS 变更：`backend/models/*`, `backend/db.py`, `backend/core/rls.py`
-- 控制面 API 变更：`backend/api/nodes.py`, `backend/api/jobs.py`, `backend/api/connectors.py`, `backend/api/console.py`
+- 控制面 API 变更：`backend/control_plane/adapters/nodes.py`, `backend/control_plane/adapters/jobs.py`, `backend/control_plane/adapters/connectors.py`, `backend/control_plane/adapters/console.py`
 - runner 协议对齐：`runner-agent/internal/*`
 - 入口层防线：`scripts/templates/Caddyfile.j2`, `system.yaml`
 - 离线包可重现性：`.github/workflows/build_offline_v2_9.yml`

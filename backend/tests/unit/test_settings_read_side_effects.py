@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.api.settings import get_settings_schema, list_config, list_flags
+from backend.control_plane.adapters.settings import get_settings_schema, list_config, list_flags
 
 
 class _Result:
@@ -54,7 +54,7 @@ async def test_get_settings_schema_read_path_has_no_writes(monkeypatch: pytest.M
     db.execute.return_value = _Result([])
     db.flush = AsyncMock()
 
-    monkeypatch.setattr("backend.api.settings.get_runtime_settings", lambda: {"cors_origins": []})
+    monkeypatch.setattr("backend.control_plane.adapters.settings.get_runtime_settings", lambda: {"cors_origins": []})
 
     response = await get_settings_schema(db=db, current_user={"role": "superadmin", "tenant_id": "admin"})
 

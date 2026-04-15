@@ -134,10 +134,13 @@ def test_frozen_openapi_path_drift_detected(tmp_path: Path) -> None:
     fake_snapshot.write_text(
         json.dumps(
             {
-                "version": "v3.42",
-                "freeze_scope": "path-surface-only",
+                "version": "v3.43",
+                "freeze_scope": "path-and-method-surface",
                 "freeze_boundary": "test",
-                "allowlist_prefixes": ["/api/v1/nonexistent-ghost-route"],
+                "description": "test snapshot",
+                "path_methods": {
+                    "/api/v1/nonexistent-ghost-route/list": ["GET"],
+                },
                 "paths": ["/api/v1/nonexistent-ghost-route/list"],
             }
         ),

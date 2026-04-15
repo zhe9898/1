@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.kernel.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
+from backend.runtime.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot
 
 # ---------------------------------------------------------------------------
 # Try importing pytest-benchmark; skip entire module if unavailable
@@ -182,7 +182,7 @@ class TestScoringBench:
 
     def test_score_job_for_node_1000x100(self, benchmark) -> None:  # type: ignore[no-untyped-def]
         """Target: score_job_for_node P99 < 1ms per call."""
-        from backend.kernel.scheduling.job_scoring import score_job_for_node
+        from backend.runtime.scheduling.job_scoring import score_job_for_node
 
         jobs = [_job(f"j{i}") for i in range(1000)]
         nodes = [_node(f"n{i}") for i in range(100)]
@@ -215,7 +215,7 @@ class TestConstraintPipelineBench:
 
     def test_engine_run_1000_jobs(self, benchmark) -> None:  # type: ignore[no-untyped-def]
         """Target: constraint pipeline < 20ms for 1000 jobs."""
-        from backend.kernel.scheduling.scheduling_constraints import SchedulingContext, SchedulingEngine
+        from backend.runtime.scheduling.scheduling_constraints import SchedulingContext, SchedulingEngine
 
         engine = SchedulingEngine()
         jobs_1000 = [_job(f"j{i}") for i in range(1000)]

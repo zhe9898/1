@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.kernel.execution.attempt_expiration_service import expire_stale_attempts
 from backend.models.job import Job
 from backend.models.job_attempt import JobAttempt
+from backend.runtime.execution.attempt_expiration_service import expire_stale_attempts
 
 
 def _utcnow() -> datetime.datetime:
@@ -110,7 +110,7 @@ async def test_expire_stale_attempts_requeues_leased_job_and_marks_attempt_timeo
     assert stale_job.lease_token is None
     assert stale_job.leased_until is None
     assert stale_job.node_id is None
-    assert stale_job.failure_category == "lease_timeout"
+    assert stale_job.failure_category == "lease_expired"
     assert current_attempt.status == "timeout"
 
 

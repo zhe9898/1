@@ -1,63 +1,24 @@
 from __future__ import annotations
 
-import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.api.connectors import (
+from backend.control_plane.adapters.connectors import (
     ConnectorInvokeRequest,
     ConnectorTestRequest,
     ConnectorUpsertRequest,
     get_connector_schema,
     invoke_connector,
 )
-from backend.api.connectors import test_connector as run_test_connector
-from backend.api.connectors import (
+from backend.control_plane.adapters.connectors import test_connector as run_test_connector
+from backend.control_plane.adapters.connectors import (
     upsert_connector,
 )
-from backend.api.jobs import get_job_schema
-from backend.api.nodes import get_node_schema
-from backend.models.connector import Connector
-
-
-def _utcnow() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-
-
-def _result_first(value: object | None) -> MagicMock:
-    result = MagicMock()
-    scalars = MagicMock()
-    scalars.first.return_value = value
-    result.scalars.return_value = scalars
-    return result
-
-
-def _connector(**overrides: object) -> Connector:
-    now = _utcnow()
-    connector = Connector(
-        connector_id="conn-a",
-        name="Connector A",
-        kind="http",
-        status="configured",
-        endpoint="https://example.invalid",
-        profile="manual",
-        config={},
-        last_test_ok=None,
-        last_test_status=None,
-        last_test_message=None,
-        last_test_at=None,
-        last_invoke_status=None,
-        last_invoke_message=None,
-        last_invoke_job_id=None,
-        last_invoke_at=None,
-        created_at=now,
-        updated_at=now,
-    )
-    for key, value in overrides.items():
-        setattr(connector, key, value)
-    return connector
+from backend.control_plane.adapters.jobs import get_job_schema
+from backend.control_plane.adapters.nodes import get_node_schema
+from backend.tests.unit.connectors_test_support import build_connector, first_scalar_result
 
 
 @pytest.mark.asyncio
@@ -109,12 +70,12 @@ async def test_get_node_schema_returns_backend_driven_contract() -> None:
 
 
 @pytest.mark.asyncio
-@patch("backend.api.connectors.validate_connector_config", return_value={"headers": {"x-api-key": "masked"}})
-@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
+@patch("backend.control_plane.adapters.connectors.validate_connector_config", return_value={"headers": {"x-api-key": "masked"}})
+@patch("backend.control_plane.adapters.connectors.check_connector_quota", new_callable=AsyncMock)
 async def test_upsert_connector_returns_backend_actions(_mock_quota: AsyncMock, _mock_validate: MagicMock) -> None:
     db = AsyncMock()
     db.add = MagicMock()
-    db.execute.return_value = _result_first(None)
+    db.execute.return_value = first_scalar_result(None)
     db.flush = AsyncMock()
 
     response = await upsert_connector(
@@ -126,7 +87,7 @@ async def test_upsert_connector_returns_backend_actions(_mock_quota: AsyncMock, 
             profile="manual",
             config={"headers": {"x-api-key": "masked"}},
         ),
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
         redis=None,
     )
@@ -140,15 +101,20 @@ async def test_upsert_connector_returns_backend_actions(_mock_quota: AsyncMock, 
 
 @pytest.mark.asyncio
 async def test_test_connector_persists_last_test_result() -> None:
-    connector = _connector(endpoint="mqtt://broker.internal")
+    connector = build_connector(
+        tenant_id="default",
+        connector_id="conn-a",
+        endpoint="mqtt://broker.internal",
+        status="configured",
+    )
     db = AsyncMock()
-    db.execute.return_value = _result_first(connector)
+    db.execute.return_value = first_scalar_result(connector)
     db.flush = AsyncMock()
 
     response = await run_test_connector(
         "conn-a",
         ConnectorTestRequest(timeout_ms=1000),
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
         redis=None,
     )
@@ -161,17 +127,22 @@ async def test_test_connector_persists_last_test_result() -> None:
 
 @pytest.mark.asyncio
 async def test_invoke_connector_persists_last_invoke_result() -> None:
-    connector = _connector(status="healthy")
+    connector = build_connector(
+        tenant_id="default",
+        connector_id="conn-a",
+        endpoint="https://example.invalid",
+        status="healthy",
+    )
     db = AsyncMock()
     db.add = MagicMock()
-    db.execute.return_value = _result_first(connector)
+    db.execute.return_value = first_scalar_result(connector)
     db.flush = AsyncMock()
 
-    with patch("backend.api.connectors.submit_job", new=AsyncMock(return_value=SimpleNamespace(job_id="job-1"))):
+    with patch("backend.control_plane.adapters.connectors.submit_job", new=AsyncMock(return_value=SimpleNamespace(job_id="job-1"))):
         response = await invoke_connector(
             "conn-a",
             payload=ConnectorInvokeRequest(action="ping", payload={"from": "test"}, lease_seconds=30),
-            current_user={"sub": "admin"},
+            current_user={"sub": "admin", "tenant_id": "default"},
             db=db,
             redis=None,
         )

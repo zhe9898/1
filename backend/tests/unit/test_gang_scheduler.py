@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from backend.kernel.scheduling.gang_scheduler import (
+from backend.runtime.scheduling.gang_scheduler import (
     GangCoordinator,
     GangGroup,
     GangPermitPlugin,
@@ -249,7 +249,7 @@ def test_gang_permit_non_gang_passes():
     plugin = GangPermitPlugin(coord)
     job = _FakeJob("j1", None)
 
-    from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
+    from backend.runtime.scheduling.scheduling_constraints import SchedulingContext
 
     ctx = SchedulingContext(
         now=datetime.datetime.now(datetime.timezone.utc),
@@ -258,7 +258,7 @@ def test_gang_permit_non_gang_passes():
         parent_jobs={},
     )
     result = plugin.permit(job, ctx)
-    from backend.kernel.scheduling.scheduling_framework import PluginStatus
+    from backend.runtime.scheduling.scheduling_framework import PluginStatus
 
     assert result.status == PluginStatus.SUCCESS
 
@@ -272,7 +272,7 @@ def test_gang_permit_waits_until_all_placed():
 
     plugin = GangPermitPlugin(coord)
 
-    from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
+    from backend.runtime.scheduling.scheduling_constraints import SchedulingContext
 
     ctx = SchedulingContext(
         now=datetime.datetime.now(datetime.timezone.utc),
@@ -283,7 +283,7 @@ def test_gang_permit_waits_until_all_placed():
 
     # Before placing both
     result = plugin.permit(j1, ctx)
-    from backend.kernel.scheduling.scheduling_framework import PluginStatus
+    from backend.runtime.scheduling.scheduling_framework import PluginStatus
 
     assert result.status == PluginStatus.WAIT
 

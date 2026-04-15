@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-from backend.kernel.execution.job_concurrency_service import build_job_concurrency_window
 from backend.models.job import Job
+from backend.runtime.execution.job_concurrency_service import build_job_concurrency_window
 
 
 def _row_result(*, global_count: int, tenant_count: int) -> MagicMock:

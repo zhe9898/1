@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import cast
 
@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend.api.models import ErrorResponse
+from backend.control_plane.adapters.models import ErrorResponse
 from backend.platform.logging.structured import get_logger
 
 logger = get_logger("api")

@@ -14,6 +14,8 @@ from fastapi.responses import StreamingResponse
 
 from backend.control_plane.auth.ai_policy import apply_prompt_override, resolve_ai_proxy_policy
 from backend.control_plane.auth.jwt import decode_token
+from backend.control_plane.auth.subject_authority import assert_token_subject_active
+from backend.db import get_db_session
 
 AI_BACKEND_URL = os.getenv("AI_BACKEND_URL", "").rstrip("/")
 if not AI_BACKEND_URL:
@@ -57,8 +59,11 @@ async def _decode_current_user(request: Request) -> Mapping[str, object]:
 
     try:
         redis_client = getattr(request.app.state, "redis", None)
-        payload, _ = await decode_token(token, redis_conn=redis_client.kv if redis_client else None)
-        return payload
+        async for db in get_db_session():
+            payload, _ = await decode_token(token, redis_conn=redis_client.kv if redis_client else None, db=db)
+            await assert_token_subject_active(db, payload)
+            return payload
+        return {}
     except (OSError, ValueError, KeyError, RuntimeError, TypeError) as exc:
         logging.getLogger("zen70.ai_router").debug("AI router token decode failed: %s", exc)
         return {}

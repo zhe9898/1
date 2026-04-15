@@ -60,7 +60,7 @@
 ## 落地文件
 
 - `E:/3.4/.gitignore`
-- `E:/3.4/backend/api/connectors.py`
+- `E:/3.4/backend/control_plane/adapters/connectors.py`
 - `E:/3.4/backend/db.py`
 - `E:/3.4/backend/models/connector.py`
 - `E:/3.4/frontend/src/utils/api.ts`

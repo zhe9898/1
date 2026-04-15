@@ -8,12 +8,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from backend.api.auth import invite_fallback_login, login_complete
-from backend.api.auth_invite import invite_webauthn_register_begin
-from backend.api.auth_user import update_ai_preference
-from backend.api.auth_webauthn import register_begin, register_complete
-from backend.api.deps import get_tenant_db
-from backend.api.models.auth import AiRoutePreferenceRequest, WebAuthnLoginCompleteRequest, WebAuthnRegisterBeginRequest, WebAuthnRegisterCompleteRequest
+from backend.control_plane.adapters.auth import invite_fallback_login, login_complete
+from backend.control_plane.adapters.auth_invite import invite_webauthn_register_begin
+from backend.control_plane.adapters.auth_user import update_ai_preference
+from backend.control_plane.adapters.auth_webauthn import register_begin, register_complete
+from backend.control_plane.adapters.deps import get_tenant_db
+from backend.control_plane.adapters.models.auth import (
+    AiRoutePreferenceRequest,
+    WebAuthnLoginCompleteRequest,
+    WebAuthnRegisterBeginRequest,
+    WebAuthnRegisterCompleteRequest,
+)
 
 
 def _mock_redis(*, token_payload: dict[str, object] | None = None) -> SimpleNamespace:
@@ -34,7 +39,7 @@ def _mock_redis(*, token_payload: dict[str, object] | None = None) -> SimpleName
     )
 
 
-def _mock_request(client_ip: str = "127.0.0.1", *, flow_session_id: str = "flow-session-1") -> MagicMock:
+def _mock_request(client_ip: str = "127.0.0.1", *, flow_session_id: str = "a" * 32) -> MagicMock:
     request = MagicMock()
     request.state.request_id = "rid-auth-guards"
     request.state.webauthn_flow_session_id = flow_session_id
@@ -52,7 +57,7 @@ def _scalar_result(value: object | None) -> MagicMock:
 def _stored_challenge(
     *,
     challenge_id: str = "challenge-b64",
-    session_id: str = "flow-session-1",
+    session_id: str = "a" * 32,
     user_id: str = "7",
     tenant_id: str = "tenant-a",
     flow: str = "register",
@@ -73,16 +78,15 @@ async def test_webauthn_register_begin_requires_self_registration() -> None:
     db = AsyncMock()
     redis = _mock_redis()
 
-    with patch("backend.api.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc:
-            await register_begin(
-                WebAuthnRegisterBeginRequest(username="bob", display_name="Bob", tenant_id="tenant-a"),
-                request,
-                response,
-                db=db,
-                redis=redis,
-                current_user={"sub": "7", "username": "alice", "tenant_id": "tenant-a"},
-            )
+    with patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()), pytest.raises(HTTPException) as exc:
+        await register_begin(
+            WebAuthnRegisterBeginRequest(username="bob", display_name="Bob", tenant_id="tenant-a"),
+            request,
+            response,
+            db=db,
+            redis=redis,
+            current_user={"sub": "7", "username": "alice", "tenant_id": "tenant-a"},
+        )
 
     assert exc.value.status_code == 403
     db.execute.assert_not_awaited()
@@ -103,21 +107,21 @@ async def test_webauthn_register_complete_rejects_challenge_for_other_user() -> 
     redis = _mock_redis()
 
     with (
-        patch("backend.api.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.api.auth_webauthn.WebAuthnChallengeStore.consume",
+            "backend.control_plane.adapters.auth_webauthn.WebAuthnChallengeStore.consume",
             new=AsyncMock(side_effect=HTTPException(status_code=403, detail={"code": "ZEN-AUTH-4032"})),
         ),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await register_complete(
-                WebAuthnRegisterCompleteRequest(credential={"id": "cred-1"}),
-                request,
-                response,
-                db=db,
-                redis=redis,
-                current_user={"sub": "7", "username": "alice", "tenant_id": "tenant-a"},
-            )
+        await register_complete(
+            WebAuthnRegisterCompleteRequest(credential={"id": "cred-1"}),
+            request,
+            response,
+            db=db,
+            redis=redis,
+            current_user={"sub": "7", "username": "alice", "tenant_id": "tenant-a"},
+        )
 
     assert exc.value.status_code == 403
 
@@ -139,14 +143,14 @@ async def test_webauthn_register_complete_persists_transports_without_explicit_c
 
     verification = SimpleNamespace(credential_id=b"cred-1", credential_public_key=b"pk", sign_count=1)
     with (
-        patch("backend.api.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.api.auth_webauthn.WebAuthnChallengeStore.consume",
+            "backend.control_plane.adapters.auth_webauthn.WebAuthnChallengeStore.consume",
             new=AsyncMock(return_value=_stored_challenge(user_id="7")),
         ),
-        patch("backend.api.auth_webauthn.verify_registration", return_value=verification),
-        patch("backend.api.auth_webauthn.expected_challenge_bytes", return_value=b"challenge"),
-        patch("backend.api.auth_webauthn.origin_from_request", return_value="https://example.com"),
+        patch("backend.control_plane.adapters.auth_webauthn.verify_registration", return_value=verification),
+        patch("backend.control_plane.adapters.auth_webauthn.expected_challenge_bytes", return_value=b"challenge"),
+        patch("backend.control_plane.adapters.auth_webauthn.origin_from_request", return_value="https://example.com"),
     ):
         result = await register_complete(
             WebAuthnRegisterCompleteRequest(
@@ -197,9 +201,8 @@ async def test_webauthn_login_complete_rejects_disabled_user() -> None:
         credential={"id": "cred-1"},
     )
 
-    with patch("backend.api.auth.check_webauthn_rate_limit", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc:
-            await login_complete(req, request, response, db=db, redis=redis)
+    with patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()), pytest.raises(HTTPException) as exc:
+        await login_complete(req, request, response, db=db, redis=redis)
 
     assert exc.value.status_code == 403
 
@@ -262,9 +265,9 @@ async def test_invite_webauthn_begin_reuses_cached_challenge_for_same_flow_sessi
     redis = _mock_redis(token_payload={"user_id": 9})
 
     with (
-        patch("backend.api.auth_invite.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_invite.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.api.auth_invite.generate_registration_challenge",
+            "backend.control_plane.adapters.auth_invite.generate_registration_challenge",
             return_value=(b"challenge", "challenge-b64", '{"challenge":"challenge-b64"}'),
         ),
     ):
@@ -316,18 +319,18 @@ async def test_webauthn_login_complete_rejects_sign_count_regression() -> None:
     )
 
     with (
-        patch("backend.api.auth.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.api.auth_webauthn.WebAuthnChallengeStore.consume",
+            "backend.control_plane.adapters.auth_webauthn.WebAuthnChallengeStore.consume",
             new=AsyncMock(return_value=_stored_challenge(flow="login")),
         ),
-        patch("backend.api.auth.credential_id_to_base64url", return_value="cred-1"),
-        patch("backend.api.auth.expected_challenge_bytes", return_value=b"challenge"),
-        patch("backend.api.auth.verify_authentication", return_value=SimpleNamespace(new_sign_count=9)),
-        patch("backend.api.auth.origin_from_request", return_value="https://example.com"),
+        patch("backend.control_plane.adapters.auth_webauthn.credential_id_to_base64url", return_value="cred-1"),
+        patch("backend.control_plane.adapters.auth_webauthn.expected_challenge_bytes", return_value=b"challenge"),
+        patch("backend.control_plane.adapters.auth_webauthn.verify_authentication", return_value=SimpleNamespace(new_sign_count=9)),
+        patch("backend.control_plane.adapters.auth_webauthn.origin_from_request", return_value="https://example.com"),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            await login_complete(req, request, response, db=db, redis=redis)
+        await login_complete(req, request, response, db=db, redis=redis)
 
     assert exc.value.status_code == 401
 
@@ -359,23 +362,29 @@ async def test_webauthn_login_complete_warns_when_authenticator_has_no_counter()
         username="shared-user",
         credential={"id": "cred-1"},
     )
-    token_response = SimpleNamespace(access_token="tok", token_type="bearer", expires_in=900)
+    token_response = SimpleNamespace(
+        access_token="tok",
+        token_type="bearer",
+        expires_in=900,
+        session_id="session-1",
+        token_id="token-1",
+    )
 
     with (
-        patch("backend.api.auth.check_webauthn_rate_limit", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.check_webauthn_rate_limit", new=AsyncMock()),
         patch(
-            "backend.api.auth_webauthn.WebAuthnChallengeStore.consume",
+            "backend.control_plane.adapters.auth_webauthn.WebAuthnChallengeStore.consume",
             new=AsyncMock(return_value=_stored_challenge(flow="login")),
         ),
-        patch("backend.api.auth.credential_id_to_base64url", return_value="cred-1"),
-        patch("backend.api.auth.expected_challenge_bytes", return_value=b"challenge"),
-        patch("backend.api.auth.verify_authentication", return_value=SimpleNamespace(new_sign_count=0)),
-        patch("backend.api.auth.origin_from_request", return_value="https://example.com"),
-        patch("backend.api.auth_webauthn.issue_auth_token", return_value=token_response),
-        patch("backend.api.auth_webauthn.register_login_session", new=AsyncMock()),
+        patch("backend.control_plane.adapters.auth_webauthn.credential_id_to_base64url", return_value="cred-1"),
+        patch("backend.control_plane.adapters.auth_webauthn.expected_challenge_bytes", return_value=b"challenge"),
+        patch("backend.control_plane.adapters.auth_webauthn.verify_authentication", return_value=SimpleNamespace(new_sign_count=0)),
+        patch("backend.control_plane.adapters.auth_webauthn.origin_from_request", return_value="https://example.com"),
+        patch("backend.control_plane.adapters.auth_webauthn.issue_auth_token", return_value=token_response),
+        patch("backend.control_plane.adapters.auth_webauthn.register_login_session", new=AsyncMock()),
         patch("backend.control_plane.auth.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
         patch("backend.control_plane.auth.permissions.hydrate_scopes_for_role", return_value=[]),
-        patch("backend.api.auth_webauthn.logger.warning") as warning_mock,
+        patch("backend.control_plane.adapters.auth_webauthn.logger.warning") as warning_mock,
     ):
         result = await login_complete(req, request, response, db=db, redis=redis)
 
@@ -388,7 +397,7 @@ async def test_webauthn_login_complete_warns_when_authenticator_has_no_counter()
 
 @pytest.mark.asyncio
 async def test_invite_register_complete_rejects_cross_session_replay() -> None:
-    request = _mock_request(flow_session_id="flow-session-b")
+    request = _mock_request(flow_session_id="b" * 32)
     response = MagicMock()
     user = MagicMock()
     user.id = 9
@@ -403,21 +412,21 @@ async def test_invite_register_complete_rejects_cross_session_replay() -> None:
 
     with (
         patch(
-            "backend.api.auth_invite.WebAuthnChallengeStore.consume",
+            "backend.control_plane.adapters.auth_invite.WebAuthnChallengeStore.consume",
             new=AsyncMock(side_effect=HTTPException(status_code=403, detail={"code": "ZEN-AUTH-4032"})),
         ),
+        pytest.raises(HTTPException) as exc,
     ):
-        with pytest.raises(HTTPException) as exc:
-            from backend.api.auth_invite import invite_webauthn_register_complete
+        from backend.control_plane.adapters.auth_invite import invite_webauthn_register_complete
 
-            await invite_webauthn_register_complete(
-                "invite-token",
-                WebAuthnRegisterCompleteRequest(credential={"id": "cred-1"}),
-                request,
-                response,
-                db=db,
-                redis=redis,
-            )
+        await invite_webauthn_register_complete(
+            "invite-token",
+            WebAuthnRegisterCompleteRequest(credential={"id": "cred-1"}),
+            request,
+            response,
+            db=db,
+            redis=redis,
+        )
 
     assert exc.value.status_code == 403
 
@@ -438,7 +447,16 @@ async def test_update_ai_preference_commits_before_issuing_new_token() -> None:
     user.ai_route_preference = "auto"
 
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=_scalar_result(user))
+    session = MagicMock()
+    session.session_id = "session-1"
+    session.tenant_id = "tenant-a"
+    session.user_id = "7"
+    session_result = MagicMock()
+    session_scalar = MagicMock()
+    session_scalar.first.return_value = session
+    session_result.scalars.return_value = session_scalar
+    db.execute = AsyncMock(side_effect=[_scalar_result(user), session_result])
+    db.flush = AsyncMock()
 
     with (
         patch("backend.control_plane.auth.permissions.get_user_scopes", new=AsyncMock(return_value=[])),
@@ -449,7 +467,7 @@ async def test_update_ai_preference_commits_before_issuing_new_token() -> None:
             request,
             MagicMock(),
             db=db,
-            current_user={"username": "alice", "tenant_id": "tenant-a"},
+            current_user={"username": "alice", "tenant_id": "tenant-a", "sid": "session-1"},
         )
 
     assert result.authenticated is True

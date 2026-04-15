@@ -14,20 +14,28 @@ from backend.kernel.packs.presets import (
     requested_pack_keys,
 )
 from backend.kernel.profiles.public_profile import PUBLIC_PROFILE_SURFACE, normalize_gateway_profile
-from backend.kernel.topology.pack_selection import (
+from backend.runtime.topology.pack_selection import (
     resolve_gateway_image_target as resolve_registry_gateway_image_target,
 )
-from backend.kernel.topology.pack_selection import resolve_pack_keys, selected_service_allowlist
+from backend.runtime.topology.pack_selection import resolve_pack_keys, selected_service_allowlist
 
-CORE_SERVICES: tuple[str, ...] = (
+HOST_FIRST_DEPLOYMENT_MODEL = "host-first"
+
+INFRASTRUCTURE_CONTAINERS: tuple[str, ...] = (
     "caddy",
-    "gateway",
-    "redis",
+    "nats",
     "postgres",
-    "sentinel",
-    "docker-proxy",
+    "redis",
+)
+
+DEFAULT_HOST_PROCESSES: tuple[str, ...] = (
+    "gateway",
+    "topology-sentinel",
+    "control-worker",
+    "routing-operator",
     "runner-agent",
 )
+CORE_SERVICES: tuple[str, ...] = INFRASTRUCTURE_CONTAINERS + DEFAULT_HOST_PROCESSES
 PROFILE_ALIASES: dict[str, str] = {
     "gateway-kernel": "gateway-kernel",
     "gateway-iot": "gateway-kernel",
@@ -65,6 +73,13 @@ def resolve_gateway_image_target(
     selected_packs: object = None,
 ) -> str:
     return resolve_registry_gateway_image_target(profile=profile, raw_packs=selected_packs)
+
+
+def classify_container_services(service_names: Iterable[str]) -> tuple[list[str], list[str]]:
+    rendered = {str(name).strip() for name in service_names if str(name).strip()}
+    infrastructure = [name for name in INFRASTRUCTURE_CONTAINERS if name in rendered]
+    optional_pack_containers = sorted(rendered.difference(INFRASTRUCTURE_CONTAINERS))
+    return infrastructure, optional_pack_containers
 
 
 def is_profile_known(profile: object, supported: Iterable[str] | None = None) -> bool:

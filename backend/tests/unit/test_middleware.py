@@ -295,7 +295,7 @@ class TestGlobalReadOnlyLock:
 class TestSuccessEnvelope:
     @pytest.mark.asyncio
     async def test_wraps_json_success(self) -> None:
-        from backend.api.main import success_envelope
+        from backend.control_plane.app.response_envelope import success_envelope
 
         request = MagicMock()
         request.url = MagicMock()
@@ -323,7 +323,7 @@ class TestSuccessEnvelope:
 
     @pytest.mark.asyncio
     async def test_skips_error_responses(self) -> None:
-        from backend.api.main import success_envelope
+        from backend.control_plane.app.response_envelope import success_envelope
 
         request = MagicMock()
         request.url = MagicMock()
@@ -340,7 +340,7 @@ class TestSuccessEnvelope:
 
     @pytest.mark.asyncio
     async def test_skips_non_json(self) -> None:
-        from backend.api.main import success_envelope
+        from backend.control_plane.app.response_envelope import success_envelope
 
         request = MagicMock()
         request.url = MagicMock()
@@ -357,7 +357,7 @@ class TestSuccessEnvelope:
 
     @pytest.mark.asyncio
     async def test_skips_already_enveloped(self) -> None:
-        from backend.api.main import success_envelope
+        from backend.control_plane.app.response_envelope import success_envelope
 
         request = MagicMock()
         request.url = MagicMock()

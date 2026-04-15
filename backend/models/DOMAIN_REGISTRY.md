@@ -1,7 +1,7 @@
 <!-- AUTO-GENERATED — do not edit manually.
      Source of truth: domain_registry.json (schema v1.1, ADR-0047)
      Regenerate with: python scripts/generate_domain_registry_md.py
-     Last generated: 2026-04-01T15:14:13Z -->
+     Last generated: 2026-04-10T02:10:55Z -->
 
 # ZEN70 Domain Registry
 
@@ -45,7 +45,7 @@
 
 ## Activating a business-layer Model
 
-1. Create a corresponding API route file and register it in `main.py`
+1. Create a corresponding API route file and register it in `backend/control_plane/app/router_admission.py`
 2. Write an Alembic migration creating the table
 3. **In `domain_registry.json`**: set `"active": true`, remove `"blocked_by"` if present
 4. Run `python scripts/generate_domain_registry_md.py` to regenerate this file

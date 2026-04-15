@@ -1,65 +1,36 @@
 from __future__ import annotations
 
-import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
-from backend.api.connectors import (
+from backend.control_plane.adapters.connectors import (
     ConnectorInvokeRequest,
     ConnectorTestRequest,
     ConnectorUpsertRequest,
     invoke_connector,
     list_connectors,
 )
-from backend.api.connectors import test_connector as connector_test_endpoint
-from backend.api.connectors import (
+from backend.control_plane.adapters.connectors import test_connector as connector_test_endpoint
+from backend.control_plane.adapters.connectors import (
     upsert_connector,
 )
-from backend.kernel.extensions.connector_secret_service import ConnectorSecretService
-from backend.models.connector import Connector
-
-
-def _scalar_result(value: object | None) -> MagicMock:
-    result = MagicMock()
-    scalars = MagicMock()
-    scalars.first.return_value = value
-    scalars.all.return_value = [value] if value is not None else []
-    result.scalars.return_value = scalars
-    return result
+from backend.extensions.connector_secret_service import ConnectorSecretService
+from backend.tests.unit.connectors_test_support import build_connector, first_scalar_result
 
 
 def _render_sql(statement: object) -> str:
     return str(statement)
 
 
-def _connector(**overrides: object) -> Connector:
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-    connector = Connector(
-        tenant_id="tenant-a",
-        connector_id="connector-a",
-        name="Connector A",
-        kind="http",
-        status="healthy",
-        endpoint="https://example.test",
-        profile="manual",
-        config={},
-        created_at=now,
-        updated_at=now,
-    )
-    for key, value in overrides.items():
-        setattr(connector, key, value)
-    return connector
-
-
 @pytest.mark.asyncio
-@patch("backend.api.connectors.validate_connector_config", return_value={"headers": {"x-api-key": "top-secret"}})
-@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
+@patch("backend.control_plane.adapters.connectors.validate_connector_config", return_value={"headers": {"x-api-key": "top-secret"}})
+@patch("backend.control_plane.adapters.connectors.check_connector_quota", new_callable=AsyncMock)
 async def test_upsert_connector_scopes_lookup_to_current_tenant(_mock_quota: AsyncMock, _mock_validate: MagicMock) -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(None)
+    db.execute.return_value = first_scalar_result(None)
     db.flush = AsyncMock()
     db.add = MagicMock()
 
@@ -94,11 +65,14 @@ async def test_upsert_connector_scopes_lookup_to_current_tenant(_mock_quota: Asy
 @pytest.mark.asyncio
 async def test_invoke_connector_scopes_lookup_to_current_tenant() -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(_connector())
+    db.execute.return_value = first_scalar_result(build_connector())
     db.flush = AsyncMock()
     db.add = MagicMock()
 
-    with patch("backend.api.connectors.submit_job", new=AsyncMock(return_value=SimpleNamespace(job_id="job-1"))):
+    with (
+        patch("backend.control_plane.adapters.connectors.submit_job", new=AsyncMock(return_value=SimpleNamespace(job_id="job-1"))),
+        patch("backend.control_plane.adapters.connectors.publish_control_event", new=AsyncMock()) as publish_event,
+    ):
         response = await invoke_connector(
             "connector-a",
             ConnectorInvokeRequest(action="ping", payload={}),
@@ -112,12 +86,15 @@ async def test_invoke_connector_scopes_lookup_to_current_tenant() -> None:
     assert "connectors.tenant_id" in rendered
     assert "connectors.connector_id" in rendered
     assert response.accepted is True
+    published_payload = publish_event.await_args.args[2]
+    assert published_payload["connector_action"] == "ping"
+    assert "action" not in published_payload
 
 
 @pytest.mark.asyncio
 async def test_list_connectors_scopes_query_to_current_tenant() -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(_connector())
+    db.execute.return_value = first_scalar_result(build_connector())
 
     response = await list_connectors(
         connector_id="connector-a",
@@ -135,7 +112,7 @@ async def test_list_connectors_scopes_query_to_current_tenant() -> None:
 @pytest.mark.asyncio
 async def test_invoke_connector_missing_connector_uses_zen_error_contract() -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(None)
+    db.execute.return_value = first_scalar_result(None)
 
     with pytest.raises(HTTPException) as exc_info:
         await invoke_connector(
@@ -153,7 +130,7 @@ async def test_invoke_connector_missing_connector_uses_zen_error_contract() -> N
 @pytest.mark.asyncio
 async def test_invoke_connector_not_ready_uses_zen_error_contract() -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(_connector(status="error"))
+    db.execute.return_value = first_scalar_result(build_connector(status="error"))
 
     with pytest.raises(HTTPException) as exc_info:
         await invoke_connector(
@@ -171,7 +148,7 @@ async def test_invoke_connector_not_ready_uses_zen_error_contract() -> None:
 @pytest.mark.asyncio
 async def test_test_connector_missing_connector_uses_zen_error_contract() -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(None)
+    db.execute.return_value = first_scalar_result(None)
 
     with pytest.raises(HTTPException) as exc_info:
         await connector_test_endpoint(
@@ -187,11 +164,11 @@ async def test_test_connector_missing_connector_uses_zen_error_contract() -> Non
 
 
 @pytest.mark.asyncio
-@patch("backend.api.connectors.validate_connector_config", return_value={})
-@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
+@patch("backend.control_plane.adapters.connectors.validate_connector_config", return_value={})
+@patch("backend.control_plane.adapters.connectors.check_connector_quota", new_callable=AsyncMock)
 async def test_upsert_connector_rejects_private_ip_endpoint(_mock_quota: AsyncMock, _mock_validate: MagicMock) -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(None)
+    db.execute.return_value = first_scalar_result(None)
     db.flush = AsyncMock()
     db.add = MagicMock()
 
@@ -216,14 +193,14 @@ async def test_upsert_connector_rejects_private_ip_endpoint(_mock_quota: AsyncMo
 
 
 @pytest.mark.asyncio
-@patch("backend.api.connectors.check_connector_quota", new_callable=AsyncMock)
-@patch("backend.api.connectors.validate_connector_config", side_effect=ValueError("invalid connector config"))
+@patch("backend.control_plane.adapters.connectors.check_connector_quota", new_callable=AsyncMock)
+@patch("backend.control_plane.adapters.connectors.validate_connector_config", side_effect=ValueError("invalid connector config"))
 async def test_upsert_connector_masks_sensitive_config_in_validation_error(
     _mock_validate: MagicMock,
     _mock_quota: AsyncMock,
 ) -> None:
     db = AsyncMock()
-    db.execute.return_value = _scalar_result(None)
+    db.execute.return_value = first_scalar_result(None)
     db.flush = AsyncMock()
     db.add = MagicMock()
 

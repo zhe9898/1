@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterable
 
 import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.iac_core.profiles import HOST_FIRST_DEPLOYMENT_MODEL
 
 
 # ── Source-layer required files ─────────────────────────────────────────────
@@ -110,12 +117,51 @@ def _validate_runtime_contract_consistency(root: Path, issues: list[str]) -> Non
             f"{manifest.get('requested_packs')} != {deployment.get('packs', [])}"
         )
 
-    compose_services = sorted((compose.get("services") or {}).keys())
-    rendered_services = sorted(manifest.get("services_rendered") or [])
-    if compose_services != rendered_services:
+    if manifest.get("deployment_model") != HOST_FIRST_DEPLOYMENT_MODEL:
         issues.append(
-            "docker-compose.yml services do not match render-manifest.json services_rendered: "
-            f"{compose_services} != {rendered_services}"
+            "render-manifest.json deployment_model must be host-first: "
+            f"{manifest.get('deployment_model')}"
+        )
+
+    compose_services = sorted((compose.get("services") or {}).keys())
+    rendered_containers = sorted(manifest.get("container_services_rendered") or [])
+    infrastructure_containers = sorted(manifest.get("infrastructure_containers_rendered") or [])
+    optional_pack_containers = sorted(manifest.get("optional_pack_containers_rendered") or [])
+    host_processes = sorted(manifest.get("host_processes_rendered") or [])
+    runtime_services = sorted(manifest.get("runtime_services_rendered") or [])
+    migration_copy_plan = manifest.get("migration_copy_plan") or {}
+
+    if compose_services != rendered_containers:
+        issues.append(
+            "docker-compose.yml services do not match render-manifest.json container_services_rendered: "
+            f"{compose_services} != {rendered_containers}"
+        )
+    if sorted(infrastructure_containers + optional_pack_containers) != rendered_containers:
+        issues.append(
+            "render-manifest.json container copy classes do not add up to container_services_rendered: "
+            f"{infrastructure_containers} + {optional_pack_containers} != {rendered_containers}"
+        )
+    if sorted(set(rendered_containers) | set(host_processes)) != runtime_services:
+        issues.append(
+            "render-manifest.json runtime_services_rendered does not match host/container union: "
+            f"{runtime_services}"
+        )
+    if sorted(migration_copy_plan.get("host_processes") or []) != host_processes:
+        issues.append(
+            "render-manifest.json migration_copy_plan.host_processes does not match host_processes_rendered: "
+            f"{migration_copy_plan.get('host_processes')} != {host_processes}"
+        )
+    if sorted(migration_copy_plan.get("infrastructure_containers") or []) != infrastructure_containers:
+        issues.append(
+            "render-manifest.json migration_copy_plan.infrastructure_containers does not match "
+            f"infrastructure_containers_rendered: {migration_copy_plan.get('infrastructure_containers')} "
+            f"!= {infrastructure_containers}"
+        )
+    if sorted(migration_copy_plan.get("optional_pack_containers") or []) != optional_pack_containers:
+        issues.append(
+            "render-manifest.json migration_copy_plan.optional_pack_containers does not match "
+            f"optional_pack_containers_rendered: {migration_copy_plan.get('optional_pack_containers')} "
+            f"!= {optional_pack_containers}"
         )
 
     if openapi_docs != openapi_contract:

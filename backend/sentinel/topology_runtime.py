@@ -68,7 +68,7 @@ def compute_desired_containers(
     gpu_taints: set[str],
     has_disk_taint: bool,
     disk_taint_affected: set[str],
-    read_expected_state: Callable[[str], str | None],
+    read_expected_state: Callable[[str, str], str | None],
 ) -> DesiredContainerPlan:
     desired: set[str] = set()
     managed: set[str] = set()
@@ -77,7 +77,7 @@ def compute_desired_containers(
 
     for switch_name, container_name in switch_map.items():
         managed.add(container_name)
-        expected_state = str(read_expected_state(switch_name) or "OFF")
+        expected_state = str(read_expected_state(switch_name, container_name) or "OFF")
 
         if "overheating:NoSchedule" in gpu_taints and "media" in switch_name.lower() and expected_state == "ON":
             expected_state = "OFF"

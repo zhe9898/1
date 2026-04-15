@@ -16,6 +16,7 @@ runner-agent/runner-agent.exe
 # === Node / Frontend ===
 node_modules/
 frontend/dist/
+frontend/coverage/
 frontend/.vite/
 *.tsbuildinfo
 
@@ -42,6 +43,8 @@ Desktop.ini
 .ruff_cache/
 htmlcov/
 coverage.xml
+backend/coverage-backend.xml
+backend/bandit-report.json
 *.cover
 .coverage
 .coverage.*
@@ -52,6 +55,8 @@ coverage.xml
 # === Runtime secrets & compile artifacts ===
 runtime/tmp-compile/
 runtime/secrets/
+runtime/host/bin/
+systemd/
 config/users.acl
 # MQTT password file contains bcrypt hashes — never commit (installer generates at first boot)
 config/mosquitto/mosquitto_passwd

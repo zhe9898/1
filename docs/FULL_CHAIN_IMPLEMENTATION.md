@@ -160,7 +160,7 @@ RUNNER_ACCEPTED_KINDS=healthcheck,file.transfer,container.run
 | Kind 断路器 | 5 分钟窗口内 15 次失败 | open→half-open→closed | open 60 秒 |
 | 爆发检测 | 5 分钟窗口内全局 20 次失败 | 日志告警 | 窗口级 |
 
-**集成点** (`backend/api/jobs/routes.py`):
+**集成点** (`backend/control_plane/adapters/jobs/routes.py`):
 - `pull_jobs()`: 开头检查 `is_node_quarantined()`
 - `fail_job()`: 分类后调用 `record_failure()`
 - `complete_job()`: 成功时调用 `record_success()` 重置连续失败计数
@@ -183,7 +183,7 @@ PolicyStore 单例取代了四个模块分别解析 system.yaml 的做法（ADR 
 | `queue_stratification.py` | `tenant_quotas_config` + `default_service_class_override` |
 | `quota_aware_scheduling.py` | `resource_quotas_config` |
 
-### 3.2 评分器 15 维度 `backend/kernel/scheduling/job_scheduler.py`
+### 3.2 评分器 15 维度 `backend/runtime/scheduling/job_scheduler.py`
 
 从 13 维度扩展到 15 维度，总分范围 `-130 ~ 504`:
 

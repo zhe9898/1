@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.control_plane.auth.role_claims import has_admin_role, normalize_ai_route_preference, normalize_role_name
+from backend.kernel.contracts.role_claims import has_admin_role, normalize_ai_route_preference, normalize_role_name
 
 
 def test_normalize_role_name_collapses_aliases_to_canonical_roles() -> None:

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import datetime
 from types import SimpleNamespace
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.health import HealthIngestRequest, HealthMeasurement, ingest_health_data
+from backend.control_plane.adapters.health import HealthIngestRequest, HealthMeasurement, ingest_health_data
 
 
 def _measurement(metric_type: str, recorded_at: datetime.datetime) -> HealthMeasurement:

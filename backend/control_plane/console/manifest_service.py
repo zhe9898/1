@@ -4,7 +4,7 @@ from backend.kernel.policy.runtime_policy_resolver import get_runtime_policy_res
 from backend.kernel.profiles.public_profile import normalize_gateway_profile
 from backend.kernel.surfaces.contracts import ControlPlaneSurface
 from backend.kernel.surfaces.registry import load_control_plane_surfaces
-from backend.kernel.topology.profile_selection import get_enabled_router_names
+from backend.runtime.topology.profile_selection import get_enabled_router_names
 
 
 def iter_control_plane_surfaces(

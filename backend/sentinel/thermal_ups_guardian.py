@@ -9,9 +9,12 @@ import os
 
 import psutil
 
+from backend.kernel.contracts.events_schema import build_switch_command_signal
+from backend.platform.events.channels import CHANNEL_SWITCH_COMMANDS
+from backend.platform.events.publisher import AsyncEventPublisher, event_bus_settings_from_env
 from backend.platform.http.webhooks import post_public_webhook_async
 from backend.platform.redis.client import RedisClient
-from backend.platform.redis.constants import CHANNEL_SWITCH_EVENTS, KEY_SYSTEM_READONLY_DISK
+from backend.platform.redis.constants import KEY_SYSTEM_READONLY_DISK
 
 logger = logging.getLogger("zen70.sentinel.guardian")
 
@@ -71,15 +74,29 @@ class SystemGuardian:
     async def pause_heavy_containers(self) -> None:
         logger.warning("Publishing degraded-state switch events for heavy containers")
         redis_client = await self._get_redis()
-        for container in ("zen70-jellyfin", "zen70-frigate", "zen70-ollama"):
-            event = {
-                "switch": container,
-                "state": "PAUSE",
-                "reason": "thermal_guardian: thermal emergency",
-                "source": "guardian",
-            }
-            await redis_client.pubsub.publish(CHANNEL_SWITCH_EVENTS, json.dumps(event))
-            logger.info("Published pause event for %s", container)
+        publisher = AsyncEventPublisher(
+            settings=event_bus_settings_from_env(),
+            redis=redis_client,
+            logger=logger,
+        )
+        try:
+            for container in ("zen70-jellyfin", "zen70-frigate", "zen70-ollama"):
+                signal_payload = build_switch_command_signal(
+                    container,
+                    "PAUSE",
+                    reason="thermal_guardian: thermal emergency",
+                    updated_by="guardian",
+                )
+                receiver_count = await publisher.publish_signal(
+                    CHANNEL_SWITCH_COMMANDS,
+                    json.dumps(signal_payload),
+                )
+                if receiver_count == 0:
+                    logger.warning("Published pause signal for %s without active sentinel subscribers", container)
+                else:
+                    logger.info("Published pause signal for %s", container)
+        finally:
+            await publisher.close()
 
     async def run_thermal_loop(self) -> None:
         while True:

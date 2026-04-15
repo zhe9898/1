@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 import time
+from typing import TYPE_CHECKING, cast
 
+from backend.kernel.contracts.events_schema import build_hardware_state_event
+from backend.platform.events.publisher import AsyncEventPublisher, event_bus_settings_from_env
 from backend.platform.redis._shared import REDIS_OPERATION_ERRORS, AsyncRedisComponent
 from backend.platform.redis.constants import CHANNEL_HARDWARE_EVENTS, KEY_HW_PREFIX
 from backend.platform.redis.serialization import as_redis_hset_mapping
 from backend.platform.redis.types import HardwareState
+
+if TYPE_CHECKING:
+    from backend.platform.redis.client import RedisClient
 
 
 def _hardware_key(path: str) -> str:
@@ -54,16 +60,23 @@ class RedisHardwareStore(AsyncRedisComponent):
             "timestamp": str(ts),
             "reason": reason,
         }
-        event = dict(payload, timestamp=ts)
+        event = build_hardware_state_event(path, state, reason=reason, uuid_val=uuid_val, timestamp=ts)
+        publisher = AsyncEventPublisher(
+            settings=event_bus_settings_from_env(),
+            redis=cast("RedisClient", self._owner),
+            logger=self.logger,
+        )
         try:
-            pipe = connection.pipeline()
-            pipe.hset(key, mapping=as_redis_hset_mapping(payload))
-            pipe.publish(CHANNEL_HARDWARE_EVENTS, json.dumps(event))
-            await pipe.execute()
+            await connection.hset(key, mapping=as_redis_hset_mapping(payload))
+            published = await publisher.publish_control(CHANNEL_HARDWARE_EVENTS, json.dumps(event))
+            if not published:
+                self.logger.warning("hardware.set stored state but control event publish did not complete for %s", path)
             return True
         except REDIS_OPERATION_ERRORS as exc:
             self.logger.error("hardware.set failed for %s: %s", path, exc, exc_info=True)
             return False
+        finally:
+            await publisher.close()
 
 
 __all__ = ("RedisHardwareStore",)

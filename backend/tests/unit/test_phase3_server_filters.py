@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.connectors import list_connectors
-from backend.api.jobs import list_jobs
-from backend.api.nodes import list_nodes
+from backend.control_plane.adapters.connectors import list_connectors
+from backend.control_plane.adapters.jobs import list_jobs
+from backend.control_plane.adapters.nodes import list_nodes
 from backend.models.connector import Connector
 from backend.models.job import Job
 from backend.models.node import Node
@@ -140,7 +140,7 @@ async def test_list_jobs_applies_backend_query_filters() -> None:
         status="running",
         lease_state="active",
         required_capability="gpu",
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 
@@ -167,7 +167,7 @@ async def test_list_nodes_applies_backend_query_filters() -> None:
     response = await list_nodes(
         attention="attention",
         heartbeat_state="stale",
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 
@@ -190,7 +190,7 @@ async def test_list_connectors_applies_backend_query_filters() -> None:
     response = await list_connectors(
         attention="attention",
         status="error",
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 
@@ -207,7 +207,7 @@ async def test_list_jobs_pagination_default_limit() -> None:
     db.execute.return_value = _scalars_result([_job(job_id=f"job-{i}") for i in range(3)])
 
     response = await list_jobs(
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 
@@ -228,7 +228,7 @@ async def test_list_jobs_pagination_custom_limit_and_offset() -> None:
     response = await list_jobs(
         limit=10,
         offset=20,
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 
@@ -249,7 +249,7 @@ async def test_list_nodes_pagination_default_limit() -> None:
     ]
 
     response = await list_nodes(
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 
@@ -272,7 +272,7 @@ async def test_list_nodes_pagination_custom_limit_and_offset() -> None:
     response = await list_nodes(
         limit=5,
         offset=10,
-        current_user={"sub": "admin"},
+        current_user={"sub": "admin", "tenant_id": "default"},
         db=db,
     )
 

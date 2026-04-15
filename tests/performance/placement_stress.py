@@ -23,7 +23,7 @@ from unittest.mock import MagicMock
 # Ensure project root on sys.path
 sys.path.insert(0, ".")
 
-from backend.kernel.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot  # noqa: E402
+from backend.runtime.scheduling.job_scheduler import PlacementSolver, SchedulerNodeSnapshot  # noqa: E402
 
 
 def _utcnow() -> datetime.datetime:

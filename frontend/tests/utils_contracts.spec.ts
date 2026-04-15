@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CONTROL_PLANE_SURFACES } from "../src/constants/controlPlane";
+import { BROWSER_REALTIME_CHANNELS } from "../src/types/sse";
 import { apiErrorMessage, errorMessage, extractAxiosError, isAxiosError } from "../src/utils/errorMessage";
 import { getRequestId } from "../src/utils/requestId";
 import {
@@ -33,6 +34,18 @@ describe("frontend utility contracts", () => {
       expect(surface.title.length).toBeGreaterThan(0);
       expect(surface.endpoint.startsWith("/v1/")).toBe(true);
     }
+  });
+
+  it("keeps browser realtime channels centralized and complete", () => {
+    expect(BROWSER_REALTIME_CHANNELS).toEqual([
+      "hardware:events",
+      "switch:events",
+      "node:events",
+      "job:events",
+      "connector:events",
+      "reservation:events",
+      "trigger:events",
+    ]);
   });
 
   it("normalizes status views and falls back on invalid payloads", () => {

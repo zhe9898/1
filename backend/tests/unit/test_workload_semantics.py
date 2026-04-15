@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.kernel.execution.workload_semantics import (
+from backend.runtime.execution.workload_semantics import (
     QoSClass,
     ResourceProfile,
     WorkloadCategory,

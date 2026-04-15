@@ -7,7 +7,7 @@ import pytest
 
 class TestBaseModelProvider:
     def test_set_url_strips_trailing_slash(self) -> None:
-        from backend.kernel.extensions.ai_providers import OllamaProvider
+        from backend.extensions.ai_providers import OllamaProvider
 
         provider = OllamaProvider(base_url="http://localhost:11434/")
         provider.set_url("http://new-host:11434/")
@@ -15,7 +15,7 @@ class TestBaseModelProvider:
 
     @pytest.mark.asyncio
     async def test_chat_default_returns_501(self) -> None:
-        from backend.kernel.extensions.ai_providers import LocalCLIPProvider
+        from backend.extensions.ai_providers import LocalCLIPProvider
 
         provider = LocalCLIPProvider()
         result = await provider.chat("model", [])
@@ -23,7 +23,7 @@ class TestBaseModelProvider:
 
     @pytest.mark.asyncio
     async def test_embed_default_returns_501(self) -> None:
-        from backend.kernel.extensions.ai_providers import OpenAICompatibleProvider
+        from backend.extensions.ai_providers import OpenAICompatibleProvider
 
         provider = OpenAICompatibleProvider("custom_openai", base_url="")
         result = await provider.embed("model", "text")
@@ -32,14 +32,14 @@ class TestBaseModelProvider:
 
 class TestOllamaProvider:
     def test_provider_type_is_ollama(self) -> None:
-        from backend.kernel.extensions.ai_providers import OllamaProvider
+        from backend.extensions.ai_providers import OllamaProvider
 
         provider = OllamaProvider()
         assert provider.provider_type == "ollama"
 
     @pytest.mark.asyncio
     async def test_health_not_configured(self) -> None:
-        from backend.kernel.extensions.ai_providers import OllamaProvider
+        from backend.extensions.ai_providers import OllamaProvider
 
         provider = OllamaProvider(base_url="")
         result = await provider.health()
@@ -47,7 +47,7 @@ class TestOllamaProvider:
 
     @pytest.mark.asyncio
     async def test_list_models_empty_when_unconfigured(self) -> None:
-        from backend.kernel.extensions.ai_providers import OllamaProvider
+        from backend.extensions.ai_providers import OllamaProvider
 
         provider = OllamaProvider(base_url="")
         result = await provider.list_models()
@@ -55,7 +55,7 @@ class TestOllamaProvider:
 
     @pytest.mark.asyncio
     async def test_embed_returns_error_when_unconfigured(self) -> None:
-        from backend.kernel.extensions.ai_providers import OllamaProvider
+        from backend.extensions.ai_providers import OllamaProvider
 
         provider = OllamaProvider(base_url="")
         result = await provider.embed("mxbai", "hello")
@@ -64,7 +64,7 @@ class TestOllamaProvider:
 
 class TestOpenAICompatibleProvider:
     def test_constructor_reads_env(self) -> None:
-        from backend.kernel.extensions.ai_providers import OpenAICompatibleProvider
+        from backend.extensions.ai_providers import OpenAICompatibleProvider
 
         with patch.dict("os.environ", {"LM_STUDIO_URL": "http://lms:1234"}):
             provider = OpenAICompatibleProvider("lm_studio")
@@ -72,7 +72,7 @@ class TestOpenAICompatibleProvider:
 
     @pytest.mark.asyncio
     async def test_health_not_configured(self) -> None:
-        from backend.kernel.extensions.ai_providers import OpenAICompatibleProvider
+        from backend.extensions.ai_providers import OpenAICompatibleProvider
 
         provider = OpenAICompatibleProvider("vllm", base_url="")
         result = await provider.health()
@@ -80,7 +80,7 @@ class TestOpenAICompatibleProvider:
 
     @pytest.mark.asyncio
     async def test_chat_unconfigured_returns_503(self) -> None:
-        from backend.kernel.extensions.ai_providers import OpenAICompatibleProvider
+        from backend.extensions.ai_providers import OpenAICompatibleProvider
 
         provider = OpenAICompatibleProvider("custom_openai", base_url="")
         result = await provider.chat("model", [])
@@ -90,7 +90,7 @@ class TestOpenAICompatibleProvider:
 class TestLocalCLIPProvider:
     @pytest.mark.asyncio
     async def test_list_models_returns_clip(self) -> None:
-        from backend.kernel.extensions.ai_providers import LocalCLIPProvider
+        from backend.extensions.ai_providers import LocalCLIPProvider
 
         provider = LocalCLIPProvider()
         models = await provider.list_models()
@@ -100,7 +100,7 @@ class TestLocalCLIPProvider:
 
     @pytest.mark.asyncio
     async def test_health_returns_available(self) -> None:
-        from backend.kernel.extensions.ai_providers import LocalCLIPProvider
+        from backend.extensions.ai_providers import LocalCLIPProvider
 
         provider = LocalCLIPProvider()
         result = await provider.health()
@@ -109,7 +109,7 @@ class TestLocalCLIPProvider:
 
 class TestModelProviderRegistry:
     def test_register_and_get(self) -> None:
-        from backend.kernel.extensions.ai_providers import LocalCLIPProvider, ModelProviderRegistry
+        from backend.extensions.ai_providers import LocalCLIPProvider, ModelProviderRegistry
 
         registry = ModelProviderRegistry()
         clip = LocalCLIPProvider()
@@ -117,13 +117,13 @@ class TestModelProviderRegistry:
         assert registry.get_provider("local_clip") is clip
 
     def test_get_nonexistent_returns_none(self) -> None:
-        from backend.kernel.extensions.ai_providers import ModelProviderRegistry
+        from backend.extensions.ai_providers import ModelProviderRegistry
 
         registry = ModelProviderRegistry()
         assert registry.get_provider("missing") is None
 
     def test_update_url(self) -> None:
-        from backend.kernel.extensions.ai_providers import ModelProviderRegistry, OllamaProvider
+        from backend.extensions.ai_providers import ModelProviderRegistry, OllamaProvider
 
         registry = ModelProviderRegistry()
         ollama = OllamaProvider(base_url="http://old:11434")
@@ -133,14 +133,14 @@ class TestModelProviderRegistry:
         assert ollama.base_url == "http://new:11434"
 
     def test_update_url_nonexistent_returns_false(self) -> None:
-        from backend.kernel.extensions.ai_providers import ModelProviderRegistry
+        from backend.extensions.ai_providers import ModelProviderRegistry
 
         registry = ModelProviderRegistry()
         assert registry.update_url("missing", "http://x") is False
 
     @pytest.mark.asyncio
     async def test_discover_all_models(self) -> None:
-        from backend.kernel.extensions.ai_providers import LocalCLIPProvider, ModelProviderRegistry
+        from backend.extensions.ai_providers import LocalCLIPProvider, ModelProviderRegistry
 
         registry = ModelProviderRegistry()
         registry.register(LocalCLIPProvider())
@@ -150,7 +150,7 @@ class TestModelProviderRegistry:
 
     @pytest.mark.asyncio
     async def test_health_all(self) -> None:
-        from backend.kernel.extensions.ai_providers import LocalCLIPProvider, ModelProviderRegistry
+        from backend.extensions.ai_providers import LocalCLIPProvider, ModelProviderRegistry
 
         registry = ModelProviderRegistry()
         registry.register(LocalCLIPProvider())
@@ -160,7 +160,7 @@ class TestModelProviderRegistry:
         assert statuses["local_clip"]["status"] == "available"
 
     def test_get_all_endpoints(self) -> None:
-        from backend.kernel.extensions.ai_providers import ModelProviderRegistry, OllamaProvider
+        from backend.extensions.ai_providers import ModelProviderRegistry, OllamaProvider
 
         registry = ModelProviderRegistry()
         registry.register(OllamaProvider(base_url="http://test:11434"))
@@ -172,14 +172,14 @@ class TestModelProviderRegistry:
 
 class TestGetModelRegistry:
     def test_returns_singleton(self) -> None:
-        from backend.kernel.extensions.ai_providers import get_model_registry
+        from backend.extensions.ai_providers import get_model_registry
 
         first = get_model_registry()
         second = get_model_registry()
         assert first is second
 
     def test_registers_all_builtin_providers(self) -> None:
-        from backend.kernel.extensions.ai_providers import get_model_registry
+        from backend.extensions.ai_providers import get_model_registry
 
         registry = get_model_registry()
         assert len(registry.providers) >= 9

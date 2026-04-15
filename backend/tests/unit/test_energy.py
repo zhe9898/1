@@ -14,14 +14,14 @@ class TestMetricQueries:
     """METRIC_QUERIES 白名单验证。"""
 
     def test_all_standard_metrics_present(self) -> None:
-        from backend.api.energy import METRIC_QUERIES
+        from backend.control_plane.adapters.energy import METRIC_QUERIES
 
         expected = {"cpu_usage", "memory_usage", "disk_usage", "gpu_temp", "gpu_util", "gpu_memory", "network_in", "network_out", "docker_containers"}
         assert expected == set(METRIC_QUERIES.keys())
 
     def test_no_sql_injection_in_queries(self) -> None:
         """Prometheus 查询中不应包含 SQL 注入风险字符。"""
-        from backend.api.energy import METRIC_QUERIES
+        from backend.control_plane.adapters.energy import METRIC_QUERIES
 
         for key, query in METRIC_QUERIES.items():
             assert "DROP" not in query.upper(), f"{key} 查询包含可疑内容"
@@ -32,7 +32,7 @@ class TestMetricMeta:
     """METRIC_META 元数据一致性。"""
 
     def test_meta_covers_all_queries(self) -> None:
-        from backend.api.energy import METRIC_META, METRIC_QUERIES
+        from backend.control_plane.adapters.energy import METRIC_META, METRIC_QUERIES
 
         for key in METRIC_QUERIES:
             assert key in METRIC_META, f"指标 {key} 在 METRIC_META 中缺失"
@@ -45,7 +45,7 @@ class TestHistoryEndpointValidation:
 
     @pytest.mark.anyio
     async def test_unknown_metric_returns_400(self) -> None:
-        from backend.api.energy import query_history
+        from backend.control_plane.adapters.energy import query_history
 
         with pytest.raises(HTTPException) as exc_info:
             await query_history(metric="nonexistent_metric", range_str="1h", step="60s", current_user={"sub": "test"})
@@ -57,14 +57,14 @@ class TestPydanticModels:
     """能耗 Pydantic 模型完整性。"""
 
     def test_metric_data_point(self) -> None:
-        from backend.api.energy import MetricDataPoint
+        from backend.control_plane.adapters.energy import MetricDataPoint
 
         dp = MetricDataPoint(timestamp=1700000000.0, value=42.5)
         assert dp.timestamp == 1700000000.0
         assert dp.value == 42.5
 
     def test_metric_response(self) -> None:
-        from backend.api.energy import MetricDataPoint, MetricResponse
+        from backend.control_plane.adapters.energy import MetricDataPoint, MetricResponse
 
         resp = MetricResponse(
             metric="cpu_usage",
@@ -76,14 +76,14 @@ class TestPydanticModels:
         assert len(resp.data) == 1
 
     def test_energy_overview_optional_fields(self) -> None:
-        from backend.api.energy import EnergyOverviewResponse
+        from backend.control_plane.adapters.energy import EnergyOverviewResponse
 
         overview = EnergyOverviewResponse()
         assert overview.cpu_usage is None
         assert overview.gpu_temp is None
 
     def test_metric_list_response(self) -> None:
-        from backend.api.energy import MetricListResponse
+        from backend.control_plane.adapters.energy import MetricListResponse
 
         resp = MetricListResponse(metrics=[{"id": "cpu_usage", "label": "CPU", "unit": "%"}])
         assert len(resp.metrics) == 1

@@ -14,7 +14,9 @@ from __future__ import annotations
 import datetime
 from unittest.mock import MagicMock
 
-from backend.kernel.scheduling.quota_aware_scheduling import (
+import pytest
+
+from backend.runtime.scheduling.quota_aware_scheduling import (
     FairShareCalculator,
     FairShareScoreModifier,
     QuotaAwareGate,
@@ -22,8 +24,9 @@ from backend.kernel.scheduling.quota_aware_scheduling import (
     ResourceQuotaLimit,
     ResourceUsage,
     build_quota_accounts,
+    load_resource_quotas,
 )
-from backend.kernel.scheduling.scheduling_constraints import SchedulingContext
+from backend.runtime.scheduling.scheduling_constraints import SchedulingContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -370,3 +373,14 @@ class TestBuildQuotaAccounts:
         accounts = build_quota_accounts([], quotas=quotas)
         assert "t1" in accounts
         assert accounts["t1"].usage.cpu_cores == 0.0
+
+
+class TestLoadResourceQuotas:
+    def test_policy_store_failure_raises_instead_of_failing_open(self, monkeypatch) -> None:
+        def _broken_policy_store():
+            raise RuntimeError("store unavailable")
+
+        monkeypatch.setattr("backend.kernel.policy.policy_store.get_policy_store", _broken_policy_store)
+
+        with pytest.raises(RuntimeError, match="ZEN-SCHED-RESOURCE-QUOTA-LOAD-FAILED"):
+            load_resource_quotas()

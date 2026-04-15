@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.api import search
+from backend.control_plane.adapters import search
 
 
 class _FakeResult:

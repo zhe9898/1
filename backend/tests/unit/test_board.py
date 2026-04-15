@@ -16,7 +16,7 @@ class TestBoardPydanticModels:
     """Pydantic 请求/响应模型验证。"""
 
     def test_create_payload_max_length(self) -> None:
-        from backend.api.board import BoardMessageCreate
+        from backend.control_plane.adapters.board import BoardMessageCreate
 
         # 正常长度
         msg = BoardMessageCreate(content="hello")
@@ -25,20 +25,20 @@ class TestBoardPydanticModels:
         assert msg.meta_info is None
 
     def test_create_payload_rejects_empty(self) -> None:
-        from backend.api.board import BoardMessageCreate
+        from backend.control_plane.adapters.board import BoardMessageCreate
 
         # Pydantic 应拒绝空 content（Field(...) 必填）
         with pytest.raises(ValidationError):
             BoardMessageCreate()  # type: ignore[call-arg]  # content 缺失
 
     def test_create_payload_over_max_length(self) -> None:
-        from backend.api.board import BoardMessageCreate
+        from backend.control_plane.adapters.board import BoardMessageCreate
 
         with pytest.raises(ValidationError):
             BoardMessageCreate(content="x" * 2001)
 
     def test_response_model_fields(self) -> None:
-        from backend.api.board import AuthorInfo, BoardMessageResponse
+        from backend.control_plane.adapters.board import AuthorInfo, BoardMessageResponse
 
         resp = BoardMessageResponse(
             id=UUID("12345678-1234-5678-1234-567812345678"),
@@ -51,7 +51,7 @@ class TestBoardPydanticModels:
         assert resp.author.username == "alice"
 
     def test_author_info_optional_display_name(self) -> None:
-        from backend.api.board import AuthorInfo
+        from backend.control_plane.adapters.board import AuthorInfo
 
         a = AuthorInfo(id=1, username="bob", role="family")
         assert a.display_name is None

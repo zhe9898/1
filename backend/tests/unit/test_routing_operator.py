@@ -8,6 +8,7 @@ import pytest
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
+from backend.platform.redis.runtime_state import sentinel_override_key
 from backend.sentinel.routing_operator import RoutingOperator
 
 
@@ -86,6 +87,25 @@ async def test_get_redis(mock_env: None, mocker: MockerFixture) -> None:
     redis_client = await op._get_redis()
     assert redis_client is not None
     mock_connect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_switch_routes_enabled_reads_formal_switch_state_and_runtime_override(
+    mock_env: None,
+    mocker: MockerFixture,
+) -> None:
+    op = RoutingOperator()
+    redis_client = MagicMock()
+    redis_client.switches.get = AsyncMock(return_value={"state": "ON"})
+    redis_client.kv.get = AsyncMock(return_value=None)
+
+    assert await op._switch_routes_enabled(redis_client, "switch1") is True
+    redis_client.switches.get.assert_awaited_once_with("switch1")
+    redis_client.kv.get.assert_awaited_once_with(sentinel_override_key("switch1"))
+
+    redis_client.switches.get = AsyncMock(return_value={"state": "ON"})
+    redis_client.kv.get = AsyncMock(return_value="OFF")
+    assert await op._switch_routes_enabled(redis_client, "switch1") is False
 
 
 def test_invalid_caddy_admin_url_is_disabled(monkeypatch: MonkeyPatch) -> None:

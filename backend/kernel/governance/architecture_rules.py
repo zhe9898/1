@@ -3,13 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from backend.control_plane.auth.authority_boundary import export_auth_boundary_contract
+from backend.extensions.extension_guard import export_extension_budget_contract
 from backend.kernel.contracts.status import export_status_compatibility_rules
-from backend.kernel.execution.fault_isolation import export_fault_isolation_contract
-from backend.kernel.execution.lease_service import export_lease_service_contract
-from backend.kernel.extensions.extension_guard import export_extension_budget_contract
 from backend.kernel.governance.aggregate_owner_registry import export_aggregate_owner_registry
+from backend.kernel.governance.development_cleanroom import export_development_cleanroom_contract
+from backend.kernel.governance.domain_import_fence import export_backend_domain_import_fence
 from backend.kernel.policy.runtime_policy_resolver import export_runtime_policy_contract
 from backend.kernel.surfaces.registry import export_surface_registry
+from backend.platform.events.channels import export_event_channel_contract
+from backend.platform.redis.runtime_state import export_runtime_state_contract
+from backend.runtime.execution.fault_isolation import export_fault_isolation_contract
+from backend.runtime.execution.lease_service import export_lease_service_contract
+from backend.runtime.topology.runtime_contracts import export_runtime_contract_taxonomy
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +36,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Kernel/Surface relation constraint",
         priority="P0",
         maturity="enforced",
-        summary=("Control-plane surfaces are defined in backend code and " "validated against the kernel capability registry before export."),
+        summary="Control-plane surfaces are defined in backend code and validated against the kernel capability registry before export.",
         enforcement_layers=("kernel", "control_plane", "tests"),
         source_modules=("backend.kernel.surfaces.registry", "backend.kernel.capabilities.registry"),
         gate_tests=(
@@ -44,9 +50,8 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P0",
         maturity="enforced",
         summary=(
-            "Runtime policy reads flow through RuntimePolicyResolver and "
-            "PolicyStore, with a static gate blocking direct runtime "
-            "system.yaml parsing outside the allowlist."
+            "Runtime policy reads flow through RuntimePolicyResolver and PolicyStore, "
+            "with a static gate blocking direct runtime system.yaml parsing outside the allowlist."
         ),
         enforcement_layers=("kernel", "tests"),
         source_modules=("backend.kernel.policy.runtime_policy_resolver", "backend.kernel.policy.policy_store"),
@@ -58,9 +63,8 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P0",
         maturity="enforced",
         summary=(
-            "Static analysis restricts writes to protected aggregate fields "
-            "so API, worker, and sentinel code paths cannot mutate them "
-            "outside declared owner services."
+            "Static analysis restricts writes to protected aggregate fields so API, worker, "
+            "and sentinel code paths cannot mutate them outside declared owner services."
         ),
         enforcement_layers=("kernel", "tests"),
         source_modules=("backend.kernel.governance.aggregate_owner_registry",),
@@ -72,8 +76,8 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P0",
         maturity="enforced",
         summary="Lease lifecycle writes are centralized in LeaseService and backed by a dedicated static gate for lease-owned fields.",
-        enforcement_layers=("kernel", "tests"),
-        source_modules=("backend.kernel.execution.lease_service",),
+        enforcement_layers=("runtime", "tests"),
+        source_modules=("backend.runtime.execution.lease_service",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_lease_gate_only_allows_lease_service_writes",),
     ),
     ArchitectureGovernanceRule(
@@ -82,9 +86,8 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P0",
         maturity="enforced",
         summary=(
-            "Transport compatibility for legacy state aliases has been "
-            "retired; the canonical status contract export now attests that "
-            "only canonical values are accepted."
+            "Transport compatibility for legacy state aliases has been retired; "
+            "the canonical status contract export now attests that only canonical values are accepted."
         ),
         enforcement_layers=("kernel", "tests"),
         source_modules=("backend.kernel.contracts.status",),
@@ -96,15 +99,13 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P1",
         maturity="enforced",
         summary=(
-            "Execution-plane fault isolation is exported as a dedicated "
-            "contract covering stale-lease guards, lease-renewal "
-            "abandonment, timeout-bounded final reporting, and graceful "
-            "drain behavior."
+            "Execution-plane fault isolation is exported as a dedicated contract covering stale-lease guards, "
+            "lease-renewal abandonment, timeout-bounded final reporting, and graceful drain behavior."
         ),
-        enforcement_layers=("kernel", "control_plane", "workers", "tests"),
+        enforcement_layers=("runtime", "control_plane", "workers", "tests"),
         source_modules=(
-            "backend.kernel.execution.fault_isolation",
-            "backend.api.jobs.lifecycle_service",
+            "backend.runtime.execution.fault_isolation",
+            "backend.control_plane.adapters.jobs.lifecycle_service",
             "backend.workers.control_plane_worker",
         ),
         gate_tests=(
@@ -119,8 +120,8 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P0",
         maturity="enforced",
         summary="Extensions must remain manifest-traceable and pass budget validation before entering scheduling phases.",
-        enforcement_layers=("kernel", "tests"),
-        source_modules=("backend.kernel.extensions.extension_guard",),
+        enforcement_layers=("extensions", "runtime", "tests"),
+        source_modules=("backend.extensions.extension_guard",),
         gate_tests=(
             "backend.tests.unit.test_architecture_governance_gates::test_extension_manifest_guard_requires_traceable_manifest_path",
             "backend.tests.unit.test_architecture_governance_gates::test_extension_budget_guard_rejects_sync_plugin_over_budget",
@@ -142,8 +143,8 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P1",
         maturity="enforced",
         summary="Dispatch audit context persists policy, quota, and governance version snapshots alongside scheduling decision linkage.",
-        enforcement_layers=("control_plane", "kernel", "tests"),
-        source_modules=("backend.api.jobs.pull_service", "backend.kernel.execution.lease_service"),
+        enforcement_layers=("control_plane", "runtime", "tests"),
+        source_modules=("backend.control_plane.adapters.jobs.pull_service", "backend.runtime.execution.lease_service"),
         gate_tests=("backend.tests.unit.test_control_plane_protocol_contracts::test_pull_jobs_assigns_attempt_and_lease_token",),
     ),
     ArchitectureGovernanceRule(
@@ -151,9 +152,7 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         title="Aggregate ownership constraint",
         priority="P0",
         maturity="enforced",
-        summary=(
-            "Aggregate ownership is declared in a dedicated registry that " "maps each aggregate root to one owner service and its " "controlled modules."
-        ),
+        summary="Aggregate ownership is declared in a dedicated registry that maps each aggregate root to one owner service and its controlled modules.",
         enforcement_layers=("kernel", "tests"),
         source_modules=("backend.kernel.governance.aggregate_owner_registry",),
         gate_tests=("backend.tests.unit.test_architecture_governance_gates::test_aggregate_owner_registry_is_unique_and_complete",),
@@ -164,11 +163,166 @@ ARCHITECTURE_GOVERNANCE_RULES: Final[tuple[ArchitectureGovernanceRule, ...]] = (
         priority="P1",
         maturity="enforced",
         summary="Scheduling extensions are bounded by execution time, payload size, audit size, external-call count, and per-phase cardinality budgets.",
-        enforcement_layers=("kernel", "tests"),
-        source_modules=("backend.kernel.extensions.extension_guard",),
+        enforcement_layers=("extensions", "runtime", "tests"),
+        source_modules=("backend.extensions.extension_guard",),
         gate_tests=(
             "backend.tests.unit.test_architecture_governance_gates::test_extension_budget_guard_rejects_post_bind_external_call_over_budget",
             "backend.tests.unit.test_architecture_governance_gates::test_extension_payload_budget_guard_enforces_64kib_limit",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A12",
+        title="Event transport and runtime-state contract",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Formal control-plane events must flow through the registered EventBus subjects, Redis-only coordination "
+            "subjects stay off the browser realtime chain, and Redis runtime-state keys remain explicitly ephemeral "
+            "instead of becoming durable authority."
+        ),
+        enforcement_layers=("platform", "sentinel", "control_plane", "iac", "tests"),
+        source_modules=(
+            "backend.platform.events.channels",
+            "backend.platform.events.publisher",
+            "backend.platform.events.subscriber",
+            "backend.platform.redis.runtime_state",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_event_channel_contract_separates_browser_realtime_from_internal_coordination",
+            "backend.tests.unit.test_architecture_governance_gates::test_event_transport_gate_blocks_direct_pubsub_usage_outside_event_interfaces",
+            "backend.tests.unit.test_architecture_governance_gates::test_runtime_state_contract_is_ephemeral_and_non_authoritative",
+            "backend.tests.unit.test_kernel_iac_explicit_contract::test_kernel_iac_runtime_contract_matches_code_backed_event_and_runtime_state_exports",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A13",
+        title="Runtime persona/executor/workload authority contract",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Control-plane persona selectors stay distinct from runtime executor contracts and workload kinds, "
+            "with node registration projecting the explicit contract once and both Python and fast-path placement "
+            "consuming the same authority boundary."
+        ),
+        enforcement_layers=("control_plane", "runtime", "fast_path", "iac", "tests"),
+        source_modules=(
+            "backend.runtime.topology.runtime_contracts",
+            "backend.control_plane.adapters.nodes_helpers",
+            "backend.runtime.scheduling.job_scheduler",
+            "backend.runtime.scheduling.placement_grpc_client",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_runtime_contract_taxonomy_exports_persona_executor_and_workload_layers",
+            "backend.tests.unit.test_architecture_governance_gates::test_runtime_contract_gate_blocks_hidden_persona_literals_in_scheduler_paths",
+            "backend.tests.unit.test_kernel_iac_explicit_contract::test_kernel_iac_runtime_contract_matches_code_backed_runtime_taxonomy_export",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A14",
+        title="Backend domain import fence",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "The official backend topology is the five-domain layout "
+            "kernel/control_plane/runtime/extensions/platform, and a shared static scanner "
+            "blocks reverse imports outside the explicit allowlists."
+        ),
+        enforcement_layers=("kernel", "control_plane", "runtime", "extensions", "platform", "tests", "repo"),
+        source_modules=(
+            "backend.kernel.governance.domain_import_fence",
+            "tools.backend_domain_fence",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_domain_import_fence_contract_is_code_backed_and_repo_governed",
+            "backend.tests.unit.test_architecture_governance_gates::test_domain_dependency_gate_blocks_new_reverse_imports",
+            "tests.test_repo_hardening::test_backend_domain_import_fence_has_no_violations",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A15",
+        title="Auth authority boundary",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Role claims are read through the kernel role-claims contract, admin elevation flows through "
+            "control-plane access policy, and a static guard blocks direct current_user role-claim reads in production code."
+        ),
+        enforcement_layers=("kernel", "control_plane", "platform", "tests", "repo"),
+        source_modules=(
+            "backend.control_plane.auth.authority_boundary",
+            "backend.control_plane.auth.access_policy",
+            "backend.kernel.contracts.role_claims",
+            "tools.auth_boundary_guard",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_auth_boundary_contract_exports_authoritative_entrypoints",
+            "backend.tests.unit.test_architecture_governance_gates::test_auth_boundary_gate_blocks_direct_role_claim_reads",
+            "tests.test_repo_hardening::test_auth_boundary_gate_has_no_violations",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A16",
+        title="Development clean-room rule",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Development-phase production code must stay free of compatibility shim language, "
+            "transition-helper language, and placeholder legacy docstrings, with a shared repo scanner "
+            "blocking those regressions before they spread."
+        ),
+        enforcement_layers=("kernel", "control_plane", "runtime", "extensions", "platform", "repo", "tests"),
+        source_modules=(
+            "backend.kernel.governance.development_cleanroom",
+            "tools.development_cleanroom_guard",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_development_cleanroom_contract_exports_forbidden_transition_markers",
+            "backend.tests.unit.test_architecture_governance_gates::test_development_cleanroom_gate_has_no_transitional_markers",
+            "tests.test_repo_hardening::test_development_cleanroom_gate_has_no_violations",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A17",
+        title="Tenant claim authority boundary",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Tenant claims are normalized through the kernel tenant-claims contract, "
+            "authenticated request payloads must carry a valid tenant_id, and a static guard "
+            "blocks direct current_user tenant-claim reads that reintroduce fallback logic."
+        ),
+        enforcement_layers=("kernel", "control_plane", "tests", "repo"),
+        source_modules=(
+            "backend.control_plane.auth.authority_boundary",
+            "backend.kernel.contracts.tenant_claims",
+            "tools.tenant_claim_guard",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_auth_boundary_contract_exports_authoritative_entrypoints",
+            "backend.tests.unit.test_architecture_governance_gates::test_tenant_claim_gate_blocks_direct_tenant_claim_reads",
+            "tests.test_repo_hardening::test_tenant_claim_gate_has_no_violations",
+        ),
+    ),
+    ArchitectureGovernanceRule(
+        rule_id="A18",
+        title="Tenant-scoped browser realtime boundary",
+        priority="P0",
+        maturity="enforced",
+        summary=(
+            "Browser realtime subscriptions bind public channels directly but bind tenant-scoped channels "
+            "through tenant-derived event subjects, so tenant isolation is enforced by the event subject "
+            "contract instead of depending on post-delivery filtering."
+        ),
+        enforcement_layers=("platform", "control_plane", "tests"),
+        source_modules=(
+            "backend.platform.events.channels",
+            "backend.control_plane.adapters.control_events",
+            "backend.control_plane.adapters.routes",
+        ),
+        gate_tests=(
+            "backend.tests.unit.test_architecture_governance_gates::test_event_channel_contract_separates_browser_realtime_from_internal_coordination",
+            "backend.tests.unit.test_routes_sse::test_sse_events_subscribes_public_and_tenant_scoped_subjects",
+            "backend.tests.unit.test_event_publisher_channel_contract::test_redis_event_bus_accepts_tenant_scoped_realtime_subjects",
         ),
     ),
 )
@@ -195,11 +349,17 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
         "entrypoints": {
             "surface_registry": "backend.kernel.surfaces.registry.export_surface_registry",
             "runtime_policy_contract": "backend.kernel.policy.runtime_policy_resolver.export_runtime_policy_contract",
-            "lease_service_contract": "backend.kernel.execution.lease_service.export_lease_service_contract",
-            "fault_isolation_contract": "backend.kernel.execution.fault_isolation.export_fault_isolation_contract",
+            "lease_service_contract": "backend.runtime.execution.lease_service.export_lease_service_contract",
+            "fault_isolation_contract": "backend.runtime.execution.fault_isolation.export_fault_isolation_contract",
             "aggregate_owner_registry": "backend.kernel.governance.aggregate_owner_registry.export_aggregate_owner_registry",
             "compatibility_rules": "backend.kernel.contracts.status.export_status_compatibility_rules",
-            "extension_budget_contract": "backend.kernel.extensions.extension_guard.export_extension_budget_contract",
+            "extension_budget_contract": "backend.extensions.extension_guard.export_extension_budget_contract",
+            "event_channel_contract": "backend.platform.events.channels.export_event_channel_contract",
+            "runtime_state_contract": "backend.platform.redis.runtime_state.export_runtime_state_contract",
+            "runtime_contract_taxonomy": "backend.runtime.topology.runtime_contracts.export_runtime_contract_taxonomy",
+            "domain_import_fence": "backend.kernel.governance.domain_import_fence.export_backend_domain_import_fence",
+            "auth_boundary_contract": "backend.control_plane.auth.authority_boundary.export_auth_boundary_contract",
+            "development_cleanroom_contract": "backend.kernel.governance.development_cleanroom.export_development_cleanroom_contract",
         },
         "registries": {
             "surface_registry": export_surface_registry(),
@@ -209,5 +369,11 @@ def export_architecture_governance_snapshot() -> dict[str, object]:
             "aggregate_owner_registry": export_aggregate_owner_registry(),
             "status_compatibility_rules": export_status_compatibility_rules(),
             "extension_budget_contract": export_extension_budget_contract(),
+            "event_channel_contract": export_event_channel_contract(),
+            "runtime_state_contract": export_runtime_state_contract(),
+            "runtime_contract_taxonomy": export_runtime_contract_taxonomy(),
+            "domain_import_fence": export_backend_domain_import_fence(),
+            "auth_boundary_contract": export_auth_boundary_contract(),
+            "development_cleanroom_contract": export_development_cleanroom_contract(),
         },
     }

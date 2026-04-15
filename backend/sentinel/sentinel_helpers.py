@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from backend.platform.logging.structured import get_logger as _get_logger
+from backend.platform.redis.constants import KEY_HARDWARE_GPU_STATE
 
 
 class HWState:
@@ -28,7 +29,7 @@ class HWState:
 
 REDIS_CHANNEL_EVENTS = "hardware:events"
 REDIS_CHANNEL_MELTDOWN = "routing:meltdown"
-REDIS_KEY_GPU = "hw:gpu"
+REDIS_KEY_GPU = KEY_HARDWARE_GPU_STATE
 DEFAULT_PENDING_TTL = 20
 DISK_CRITICAL_THRESHOLD = 95.0
 

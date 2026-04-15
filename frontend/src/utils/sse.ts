@@ -3,29 +3,28 @@
  * and visibility-aware connection lifecycle.
  */
 import type {
-  HardwareEvent,
-  SSEEvent,
-  SwitchEvent,
-  NodeControlEvent,
-  JobControlEvent,
   ConnectorControlEvent,
+  HardwareEvent,
+  JobControlEvent,
+  NodeControlEvent,
+  ReservationControlEvent,
+  SSEChannel,
+  SSEEvent,
+  SSEPayloadByType,
+  SwitchEvent,
+  TriggerControlEvent,
 } from "@/types/sse";
-import { http } from "@/utils/http";
+import { BROWSER_REALTIME_CHANNELS } from "@/types/sse";
 import { SSE } from "@/utils/api";
+import { http } from "@/utils/http";
 import { logError, logWarn } from "@/utils/logger";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
+const FALLBACK_RETRY_MS = 30000;
 const MAX_RETRIES = 10;
 const PING_INTERVAL_MS = 30_000;
 const MAX_PING_FAILURES = 3;
-
-type SSEChannel =
-  | "hardware:events"
-  | "switch:events"
-  | "node:events"
-  | "job:events"
-  | "connector:events";
 
 interface ParsedFrame {
   event: string;
@@ -73,18 +72,21 @@ function parseFrame(frame: string): ParsedFrame | null {
 
 export interface SSEOptions {
   onFallbackOffline?: () => void;
+  onRecovered?: () => void;
+}
+
+function emitTypedEvent<K extends SSEChannel>(
+  onEvent: (ev: SSEEvent) => void,
+  type: K,
+  data: SSEPayloadByType[K],
+): void {
+  onEvent({ type, data } as SSEEvent);
 }
 
 export function createSSE(
   url: string,
   onEvent: (ev: SSEEvent) => void,
-  channels: readonly SSEChannel[] = [
-    "hardware:events",
-    "switch:events",
-    "node:events",
-    "job:events",
-    "connector:events",
-  ],
+  channels: readonly SSEChannel[] = BROWSER_REALTIME_CHANNELS,
   options: SSEOptions = {},
 ): () => void {
   let closed = false;
@@ -95,6 +97,7 @@ export function createSSE(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let abortController: AbortController | null = null;
   let suppressReconnect = false;
+  let fallbackOffline = false;
 
   function stopPing(): void {
     if (pingTimer !== null) {
@@ -123,12 +126,16 @@ export function createSSE(
     if (closed) {
       return;
     }
+    let delay = FALLBACK_RETRY_MS;
     if (attempt >= MAX_RETRIES) {
-      options.onFallbackOffline?.();
-      return;
+      if (!fallbackOffline) {
+        fallbackOffline = true;
+        options.onFallbackOffline?.();
+      }
+    } else {
+      delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
+      attempt += 1;
     }
-    const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
-    attempt += 1;
     stopReconnectTimer();
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -147,38 +154,62 @@ export function createSSE(
         stopPing();
         return;
       }
-      http.post(SSE.ping, { connection_id: currentClientToken }).then(() => {
-        pingFailures = 0;
-      }).catch((err: unknown) => {
-        pingFailures += 1;
-        logWarn(`[ZEN70 SSE] Ping failed (${String(pingFailures)}/${String(MAX_PING_FAILURES)})`, err);
-        if (pingFailures >= MAX_PING_FAILURES) {
-          logWarn("[ZEN70 SSE] Ping suspended after consecutive failures");
-          stopPing();
-        }
-      });
+      http
+        .post(SSE.ping, { connection_id: currentClientToken })
+        .then(() => {
+          pingFailures = 0;
+        })
+        .catch((err: unknown) => {
+          pingFailures += 1;
+          logWarn(`[ZEN70 SSE] Ping failed (${String(pingFailures)}/${String(MAX_PING_FAILURES)})`, err);
+          if (pingFailures >= MAX_PING_FAILURES) {
+            logWarn("[ZEN70 SSE] Ping suspended after consecutive failures");
+            stopPing();
+          }
+        });
     }, PING_INTERVAL_MS);
   }
 
   function handleParsedFrame(parsed: ParsedFrame): void {
     if (parsed.event === "connected") {
+      const recovered = fallbackOffline || attempt > 0;
       attempt = 0;
+      fallbackOffline = false;
       startPing();
+      if (recovered) {
+        options.onRecovered?.();
+      }
       return;
     }
-    if (!channels.includes(parsed.event as SSEChannel)) {
+    const eventType = parsed.event as SSEChannel;
+    if (!channels.includes(eventType)) {
       return;
     }
     try {
-      onEvent({
-        type: parsed.event as SSEChannel,
-        data: parseData(parsed.data) as
-          | HardwareEvent
-          | SwitchEvent
-          | NodeControlEvent
-          | JobControlEvent
-          | ConnectorControlEvent,
-      });
+      const payload = parseData(parsed.data);
+      switch (eventType) {
+        case "hardware:events":
+          emitTypedEvent(onEvent, eventType, payload as HardwareEvent);
+          break;
+        case "switch:events":
+          emitTypedEvent(onEvent, eventType, payload as SwitchEvent);
+          break;
+        case "node:events":
+          emitTypedEvent(onEvent, eventType, payload as NodeControlEvent);
+          break;
+        case "job:events":
+          emitTypedEvent(onEvent, eventType, payload as JobControlEvent);
+          break;
+        case "connector:events":
+          emitTypedEvent(onEvent, eventType, payload as ConnectorControlEvent);
+          break;
+        case "reservation:events":
+          emitTypedEvent(onEvent, eventType, payload as ReservationControlEvent);
+          break;
+        case "trigger:events":
+          emitTypedEvent(onEvent, eventType, payload as TriggerControlEvent);
+          break;
+      }
     } catch (err: unknown) {
       logError(`[ZEN70] SSE parse ${parsed.event}`, err);
     }
@@ -279,6 +310,7 @@ export function createSSE(
     }
     if (!closed) {
       attempt = 0;
+      fallbackOffline = false;
       void connect();
     }
   }

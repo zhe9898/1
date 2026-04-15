@@ -35,10 +35,10 @@
 | `scripts/compiler.py` | 重构 | 新增 `stop_grace_period_block` 生成、修正全量 healthcheck 默认探针（VM `/health`、alertmanager `/-/healthy`、caddy `:2019/config/`）、`start_period` 注入、OOM 扩展至 sentinel/watchdog/docker-proxy、`depends_on` 自动升级为结构化条件 (`service_healthy`/`service_started`) |
 | `scripts/templates/docker-compose.yml.j2` | 修改 | 新增 `{{ svc.stop_grace_period_block }}` 渲染插槽 |
 | `system.yaml` | 修改 | 新增 `watchdog` 服务定义 (ADR 0006)；docker-proxy `POST=1`；mosquitto_passwd 卷挂载 |
-| `backend/api/portability.py` | **P0 修复** | `secure_shred_file` fallback `"ba+"` → `"r+b"` 真覆写 + `os.fsync()` 每轮刷盘 + 1MB 分块防内存峰值 |
-| `backend/api/portability.py` | **P1 修复** | 流式导出 `read_bytes()` → `ZipInfo.open("w")` 1MB 分块读取防 OOM |
-| `backend/api/cluster.py` | **P1 修复** | `subprocess.run` 在 async 路由中阻塞 → 包裹 `asyncio.to_thread()` |
-| `backend/api/routes.py` | **P1 修复** | Redis pubsub 返回 `bytes` 未 decode → 显式 `.decode("utf-8")` 防止 SSE `b'...'` 字面量 |
+| `backend/control_plane/adapters/portability.py` | **P0 修复** | `secure_shred_file` fallback `"ba+"` → `"r+b"` 真覆写 + `os.fsync()` 每轮刷盘 + 1MB 分块防内存峰值 |
+| `backend/control_plane/adapters/portability.py` | **P1 修复** | 流式导出 `read_bytes()` → `ZipInfo.open("w")` 1MB 分块读取防 OOM |
+| `backend/control_plane/adapters/cluster.py` | **P1 修复** | `subprocess.run` 在 async 路由中阻塞 → 包裹 `asyncio.to_thread()` |
+| `backend/control_plane/adapters/routes.py` | **P1 修复** | Redis pubsub 返回 `bytes` 未 decode → 显式 `.decode("utf-8")` 防止 SSE `b'...'` 字面量 |
 | `.github/workflows/ci.yml` | **P1 修复** | `--cov=.` 涵盖测试代码稀释覆盖率 → `--cov=api --cov=core --cov=models --cov=sentinel` 仅统计业务代码 |
 | 9 个后端文件 | 清扫 | 删除 30+ 处标准库懒加载 import、5 个废 import (`platform`/`partial`/`get_current_user`/`Field`)，全部提至模块顶部 |
 | `backend/sentinel/topology_sentinel.py` | **P0 修复** | 完全剥离对 `docker` 和 `docker compose` CLI 的依赖，引入 `tcp://docker-proxy:2375` HTTP API 从而修复不断崩溃/重启的顽疾 (符合 ADR 0006/法典 §7.2) |
@@ -78,9 +78,9 @@
 | **backend/main.py** | 修改 | 请求体大小限制中间件 MAX_REQUEST_BODY_BYTES（法典 7） |
 | **backend/alembic/env.py** | 修改 | upgrade 前申请 Redis DB_MIGRATION_LOCK（法典 3.5） |
 | **frontend/src/views/SystemSettings.vue** | 修改 | 删除所有硬编码控制阵列，改用获取后端拉取的动态标签渲染，强制执行无状态配置（法典 2.3） |
-| **backend/api/routes.py** | 修改 | GET /switches 将解析 env (SWITCH_CONTAINER_MAP) 动态推流 `label` 赋能前端渲染（法典 2.3） |
+| **backend/control_plane/adapters/routes.py** | 修改 | GET /switches 将解析 env (SWITCH_CONTAINER_MAP) 动态推流 `label` 赋能前端渲染（法典 2.3） |
 | **backend/sentinel/topology_sentinel.py** | 修改 | get_uuid 改用 findmnt + blkid（法典 3.2） |
-| **backend/api/routes.py** | 修改 | 移除 docker.sock 依赖，改用 Redis PubSub (switch:events) 发布状态（法典 1.1 与 5.2.1） |
+| **backend/control_plane/adapters/routes.py** | 修改 | 移除 docker.sock 依赖，改用 Redis PubSub (switch:events) 发布状态（法典 1.1 与 5.2.1） |
 | **backend/sentinel/topology_sentinel.py** | 修改 | 新增 _redis_listener_thread 监听并执行 docker pause，强制 3 秒硬超时与 SIGKILL（法典 1.3） |
 | **docs/ops/three-step-meltdown.md** | 新增 | 三步熔断顺序及网络层摘除运维说明（法典 3.1） |
 | **system.yaml** | 修改 | 新增 sentinel.mount_container_map、sentinel.watch_targets（路径解耦） |
@@ -89,8 +89,8 @@
 | **backend/sentinel/topology_sentinel.py** | 修改 | CONTAINER_MAP 仅从 MOUNT_CONTAINER_MAP env 读取 |
 | **backend/sentinel.py** | 修改 | WATCH_TARGETS 仅从 WATCH_TARGETS env 读取 |
 | **backend/main.py** | 修改 | BITROT_SCAN_DIRS 仅从 env 读取 |
-| **backend/api/assets.py** | 修改 | MEDIA_PATH 仅从 env，空时 503 |
-| **backend/api/settings.py** | 修改 | media_path 仅从 env，空时 status not_configured |
+| **backend/control_plane/adapters/assets.py** | 修改 | MEDIA_PATH 仅从 env，空时 503 |
+| **backend/control_plane/adapters/settings.py** | 修改 | media_path 仅从 env，空时 status not_configured |
 | **backend/worker/mqtt_worker.py** | 修改 | get_media_path fallback 仅从 env，空时跳过保存 |
 | **backend/models/feature_flag.py** | 修改 | 种子默认路径从 MEDIA_PATH env 读取 |
 | **backend/main.py** | 修改 | 冷启动 All-OFF 矩阵 + X-ZEN70-Bus-Status（法典 3.2.5） |
@@ -156,7 +156,7 @@
 
 ### 2.3 Schema-Driven UI 与无代码硬编码渲染（V2.1 架构升维）
 
-- **文件**：`frontend/src/views/SystemSettings.vue`、`backend/api/routes.py`
+- **文件**：`frontend/src/views/SystemSettings.vue`、`backend/control_plane/adapters/routes.py`
 - **内容**：严格执行“后端驱动一切（IaC）”的红线规范：
   - 前端：删除了原有的 `swLabels` 写死字典，UI 彻底降维为纯展示组件。
   - 后端：在 `GET /api/v1/switches` 接口中，反向解构由 `compiler.py` 透传的 `system.yaml` 编译环境变量 `SWITCH_CONTAINER_MAP`。并在给前端下发的响应体中自动拼接生成 `label`。
@@ -225,19 +225,19 @@
 
 - **backend/workers/media_watcher.py**：多容器横向扩容 (HPA) 下，针对未处理资产引入 Postgres 原生悲观行锁 `.with_for_update(skip_locked=True)`，彻底消灭多个扫描守护进程并发拉取同一任务引发的冲突。
 - **backend/workers/iot_bridge.py**：修复 `paho-mqtt` 异步跨线程抛出 `RuntimeError` 的史诗级缺陷，由 `asyncio.get_event_loop()` 迁移至显式挂载主循环，并经由 `run_coroutine_threadsafe(..., self.loop)` 安全注入。
-- **backend/api/iot.py**：抹除了导致网络 IO 堵塞风暴的串行 N+1 `redis.get` 循环，重构成了一次性吞吐的 `redis.mget` 批量管道获取（O(1) 性能），微压榨接口长连接。
+- **backend/control_plane/adapters/iot.py**：抹除了导致网络 IO 堵塞风暴的串行 N+1 `redis.get` 循环，重构成了一次性吞吐的 `redis.mget` 批量管道获取（O(1) 性能），微压榨接口长连接。
 - **全域守护脚本**：执行严格的静态抽象语法树 (AST) 清除，在 `assets.py`、`push.py` 等文件中清除了大量的未使用或冗余 Import (`torch`, `sys`, `time`, `json`)，强制削减微服务的初始驻留物理内存。
 
 ### 19. main.py 单体拆分 (BR-4)（法典 8.2：零省略号重构、SRP）
 
 ### 20. 动态渲染 JSON 网关降级闭环（法典 3.2.5、ADR 0009）
 
-- **文件**：`backend/api/routes.py`、`backend/api/models/__init__.py`
+- **文件**：`backend/control_plane/adapters/routes.py`、`backend/control_plane/adapters/models/__init__.py`
 - **内容**：恢复了 `/api/v1/capabilities` 获取 `get_capabilities_matrix()` 的完整逻辑，弃用了硬过滤为 `{}` 的幽灵逻辑，切实保障在 Redis 宕机时，前端能够收到含 `reason` 的 `ALL_OFF_MATRIX` 安全降级矩阵（法典 3.2.5）。同时，修复了 `CapabilityResponse` Pydantic 模型的强校验缺失（`endpoint: Optional[str]`、`enabled: bool`），确保完全符合【ADR 0009 契约驱动】原则，杜绝 500 序列化报错。
 
 ### 21. Redis Client 防腐代理（法典 2.5、8.2）
 
-- **文件**：`backend/core/redis_client.py`、`backend/api/auth.py`
+- **文件**：`backend/core/redis_client.py`、`backend/control_plane/adapters/auth.py`
 - **内容**：遵循 `优雅启停与防腐代理` 设计，拒绝在 `auth.py` 等高层业务代码中直接暴露原生 `redis_client._redis.get()` 调用。通过在 `RedisClient` 类显式声明 `get/set/setex/delete/incr/expire` 的异步代理方法，拦截可能未初始化的 `None` 调用并返回安全默认值 `0/False/None`。彻底拦截并修复了密码与 PIN 码登录认证时因 `AttributeError` 引发的系统 500 崩溃，并在防爆破限制上严格合规（法典 3.6 WebAuthn 降级）。
 
 - **backend/main.py**（1057 → 144 行）：精简为 App 工厂 + Lifespan，仅负责日志初始化、中间件/路由注册、异常处理器绑定。
@@ -366,7 +366,7 @@
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `backend/tests/unit/` | 新增 | 补充 `test_deps.py`, `test_jwt_core.py`, `test_errors.py`, `test_policy_engine.py` 等 11 个测试文件 |
-| `backend/api/deps.py` | **P1 修复** | 生产 Bug：路由鉴权时 `HTTPException` 未捕获导致 500 崩溃，改为 `except Exception as e: raise zen(...)` |
+| `backend/control_plane/adapters/deps.py` | **P1 修复** | 生产 Bug：路由鉴权时 `HTTPException` 未捕获导致 500 崩溃，改为 `except Exception as e: raise zen(...)` |
 
 **合规覆盖**：
 - §5.1 单元测试：新增 105 个测试并全部通过（1.66s），使得 `C-501` 从局部覆盖（⚠️）升格为完全合规（✅）。
@@ -500,7 +500,7 @@ esult = func()  # type: ignore[xxx]  # 中文注释 的安全书写红线。
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `backend/middleware.py` | 架构升维 | 删除了废弃的双轨 `success_envelope`。 |
-| `backend/api/main.py` | 架构升维 | 确立此处为 Envelope 唯一事实来源。 |
+| `backend/control_plane/adapters/main.py` | 架构升维 | 确立此处为 Envelope 唯一事实来源。 |
 | `docs/adr/0010-unified-success-envelope.md` | 文档修订 | 将文档契约向实现靠拢：成功响应（`ZEN-OK-0`）中**不再强制包含**对成功无语义的 `recovery_hint` 噪音字段，解决前端解析灾难。 |
 
 **合规覆盖**：彻底解决了单项功能响应不统一导致的前端逻辑断裂与冗余判断风险，修复了 `REPORT_ENVELOPE_FETCH_AUDIT` 揭露的解析差异化问题。

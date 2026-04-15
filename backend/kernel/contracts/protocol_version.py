@@ -1,7 +1,7 @@
 ﻿"""Protocol version validation for node registration and job leasing.
 
-Ensures backward compatibility and prevents version mismatches between
-gateway and runner-agent.
+Defines the supported runner protocol set and prevents version mismatches
+between gateway and runner-agent.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Final
 # Node protocol versions (registration, heartbeat, capabilities)
 SUPPORTED_PROTOCOL_VERSIONS: Final[frozenset[str]] = frozenset(
     {
-        "runner.v1",  # legacy — still accepted for backward compat
+        "runner.v1",  # maintained protocol still accepted for enrolled runners
         "runner.v2",  # current — Go Runner / v3.43 baseline
     }
 )
@@ -23,7 +23,7 @@ SUPPORTED_PROTOCOL_VERSIONS: Final[frozenset[str]] = frozenset(
 # Job lease protocol versions (pull, renew, complete, fail)
 SUPPORTED_LEASE_VERSIONS: Final[frozenset[str]] = frozenset(
     {
-        "job-lease.v1",  # legacy — still accepted
+        "job-lease.v1",  # maintained lease version still accepted for enrolled runners
         "job-lease.v2",  # current — Go Runner / v3.43 baseline
     }
 )

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.api.node_approval import list_pending_nodes
+from backend.control_plane.adapters.node_approval import list_pending_nodes
 from backend.models.node import Node
 
 

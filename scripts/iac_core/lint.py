@@ -28,6 +28,7 @@ from scripts.iac_core.exceptions import (
     PolicyViolation,
     SchemaValidationError,
 )
+from scripts.iac_core.host_service_contracts import validate_host_service_contract
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ REQUIRED_SCHEMA: dict[str, Any] = {
     "services": {
         "postgres": {"image": str},
         "redis": {"image": str},
-        "gateway": {"build": dict},
+        "gateway": {},
     },
     "network": {"domain": str},
     # deployment.profile must be declared to drive profile/pack resolution
@@ -122,6 +123,9 @@ def _check_image_or_build(data: dict[str, Any]) -> list[str]:
         if not isinstance(svc, dict):
             continue
         if svc.get("enabled") is False:
+            continue
+        if svc.get("runtime") == "host":
+            errors.extend(validate_host_service_contract(name, svc))
             continue
         has_image = bool(svc.get("image"))
         has_build = bool(svc.get("build"))
@@ -210,6 +214,8 @@ def _collect_warnings(data: dict[str, Any]) -> list[str]:
     for name, svc in services.items():
         if not isinstance(svc, dict) or svc.get("enabled") is False:
             continue
+        if svc.get("runtime") == "host":
+            continue
         if not svc.get("stop_grace_period"):
             warnings.append(f"services.{name} 未声明 stop_grace_period，" f"编译器将使用默认值。")
 
@@ -246,12 +252,12 @@ def _collect_warnings(data: dict[str, Any]) -> list[str]:
         if not isinstance(svc, dict) or svc.get("enabled") is False:
             continue
         gaps: list[str] = []
-        if not svc.get("logging"):
+        if svc.get("runtime") != "host" and not svc.get("logging"):
             gaps.append("logging")
-        if not svc.get("container_name"):
+        if svc.get("runtime") != "host" and not svc.get("container_name"):
             gaps.append("container_name")
         nets = svc.get("networks")
-        if not nets or (isinstance(nets, list) and len(nets) == 0):
+        if svc.get("runtime") != "host" and (not nets or (isinstance(nets, list) and len(nets) == 0)):
             gaps.append("networks")
         restart = svc.get("restart")
         if not restart:

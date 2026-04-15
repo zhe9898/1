@@ -25,6 +25,16 @@ services:
       timeout: 2s
       retries: 5
 
+  nats:
+    image: nats:2.12.5-alpine@sha256:f550232ddb35ba6a2ab2eecca2ec07f4c07bbfc330d52615805129984b75dd4a
+    command: ["-js", "-m", "8222"]
+    ports: ["4222:4222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8222/healthz || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
   gateway:
     build:
       context: ..
@@ -33,11 +43,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       POSTGRES_DSN: postgresql://zen70:testpass@postgres:5432/zen70
+      EVENT_BUS_BACKEND: nats
+      NATS_URL: nats://nats:4222
+      NATS_CONNECT_TIMEOUT: "5.0"
       CORS_ORIGINS: "*"
     ports: ["8000:8000"]
     depends_on:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
 
   sentinel:
     build:
@@ -47,11 +61,15 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      EVENT_BUS_BACKEND: nats
+      NATS_URL: nats://nats:4222
+      NATS_CONNECT_TIMEOUT: "5.0"
       MOCK_HARDWARE: "true"
       MOUNT_POINTS: ""
       PROBE_INTERVAL: "5"
     depends_on:
       redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
 
   # 可选：用于验证容器 pause/unpause（探针 CONTAINER_MAP 中 /mnt/media -> zen70-jellyfin）
   jellyfin:

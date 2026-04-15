@@ -56,6 +56,355 @@ sentinel:
     - zen70-redis
   disk_taint_containers: []
   heavy_containers: []
+runtime_contracts:
+  # Formal control-plane events are browser-visible and must flow through EventBus.
+  control_plane_event_channels:
+    - hardware:events
+    - switch:events
+    - node:events
+    - job:events
+    - session:events
+    - connector:events
+    - reservation:events
+    - trigger:events
+    - user:events
+  browser_realtime_event_channels:
+    - hardware:events
+    - switch:events
+    - node:events
+    - job:events
+    - session:events
+    - connector:events
+    - reservation:events
+    - trigger:events
+    - user:events
+  browser_public_realtime_event_channels:
+    - hardware:events
+    - switch:events
+  tenant_scoped_realtime_event_channels:
+    - node:events
+    - job:events
+    - session:events
+    - connector:events
+    - reservation:events
+    - trigger:events
+    - user:events
+  control_event_envelope_contract:
+    publisher_entrypoint: backend.control_plane.adapters.control_events.publish_control_event
+    reserved_fields:
+      - event_id
+      - revision
+      - action
+      - ts
+      - tenant_id
+    tenant_scoped_channels_require_tenant_id: true
+  tenant_realtime_subject_contract:
+    segment: tenant
+    tenant_id_encoding: utf8-hex
+    subject_entrypoint: backend.platform.events.channels.tenant_realtime_subject
+    subscription_entrypoint: backend.platform.events.channels.browser_realtime_subscription_subjects
+  # Internal coordination stays Redis-only and must not leak into frontend realtime chains.
+  internal_coordination_channels:
+    - switch:commands
+    - sentinel:signals
+    - routing:meltdown
+  # Redis runtime state is explicit, ephemeral, and never durable authority.
+  authoritative_redis_runtime_state_allowed: false
+  redis_ephemeral_runtime_state:
+    - pattern: zen70:disk:readonly
+      match: exact
+      role: safety-interlock
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral readonly lock asserted by safety guardians to reject mutating API traffic.
+    - pattern: zen70:topology:ups
+      match: exact
+      role: safety-interlock
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral UPS status snapshot used for write-protection gating during power emergencies.
+    - pattern: zen70:taint:disk_pressure
+      match: exact
+      role: safety-interlock
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral disk-pressure taint latch used by sentinel and middleware safety paths.
+    - pattern: hw:gpu
+      match: exact
+      role: observation
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral GPU probe snapshot and taint metadata produced by topology sentinel.
+    - pattern: 'hw:'
+      match: prefix
+      role: observation
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral hardware probe snapshots for mount and device health state.
+    - pattern: 'zen70:sentinel:override:'
+      match: prefix
+      role: runtime-override
+      authoritative: false
+      decision_gate: true
+      description: Ephemeral sentinel safety overrides that temporarily suppress container intent without becoming durable authority.
+  runtime_authority_boundaries:
+    - layer: persona
+      owner: control-plane
+      authority: selector vocabulary, bootstrap UX, and operator-facing routing intent
+      non_authority_roles:
+        - does_not_define_workload_kind_compatibility
+        - does_not_define_scheduler_truth_by_itself
+    - layer: executor_contract
+      owner: kernel
+      authority: node contract compatibility envelope, workload-kind support, and scheduling hard gates
+      non_authority_roles:
+        - not_a_ui_persona
+        - not_a_browser-facing label vocabulary
+    - layer: workload_kind
+      owner: kernel
+      authority: job semantics, lifecycle hooks, and default resource/QoS model
+      non_authority_roles:
+        - not_a_node_persona
+        - not_a_runtime-shell implementation detail
+  control_plane_personas:
+    - key: go-native
+      label: Go Native
+      description: Go runner persona used by backend and runner-agent control-plane surfaces.
+      default_executor_contract: edge-native
+      allowed_executor_contracts:
+        - edge-native
+        - process
+        - docker
+        - wasm
+      default_node_types:
+        - runner
+      default_platforms:
+        - windows
+        - darwin
+        - linux
+    - key: python-runner
+      label: Python Runner
+      description: Python-side runner persona for process-oriented execution shells.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+        - docker
+      default_node_types:
+        - runner
+      default_platforms:
+        - windows
+        - darwin
+        - linux
+    - key: shell
+      label: Shell
+      description: Generic shell-facing control-plane persona.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+        - edge-native
+        - docker
+      default_node_types:
+        - runner
+        - sidecar
+      default_platforms:
+        - windows
+        - darwin
+        - linux
+    - key: swift-native
+      label: Swift Native
+      description: iOS/native-client persona used for HealthKit and mobile bridges.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+      default_node_types:
+        - native-client
+      default_platforms:
+        - ios
+    - key: kotlin-native
+      label: Kotlin Native
+      description: Android/native-client persona used for Health Connect and mobile bridges.
+      default_executor_contract: process
+      allowed_executor_contracts:
+        - process
+      default_node_types:
+        - native-client
+      default_platforms:
+        - android
+    - key: vector-worker
+      label: Vector Worker
+      description: Background vector-processing worker persona.
+      default_executor_contract: docker
+      allowed_executor_contracts:
+        - docker
+        - process
+      default_node_types:
+        - runner
+        - sidecar
+      default_platforms:
+        - linux
+    - key: search-service
+      label: Search Service
+      description: Search/index-serving persona for vector and semantic retrieval workloads.
+      default_executor_contract: docker
+      allowed_executor_contracts:
+        - docker
+        - process
+      default_node_types:
+        - runner
+        - sidecar
+      default_platforms:
+        - linux
+    - key: unknown
+      label: Unknown
+      description: Fallback persona used when a node has not declared a control-plane runtime identity yet.
+      default_executor_contract: unknown
+      allowed_executor_contracts: []
+      default_node_types: []
+      default_platforms: []
+  persona_to_default_executor_contract:
+    go-native: edge-native
+    python-runner: process
+    shell: process
+    swift-native: process
+    kotlin-native: process
+    vector-worker: docker
+    search-service: docker
+    unknown: unknown
+  canonical_executor_contracts:
+    docker:
+      description: Container-based execution via Docker Engine
+      supported_workload_kinds:
+        - alert.notify
+        - connector.invoke
+        - container.run
+        - cron.tick
+        - cron.trigger
+        - data.sync
+        - docker.exec
+        - file.transfer
+        - healthcheck
+        - http.request
+        - noop
+        - script.run
+        - shell.exec
+      requires_gpu: false
+      min_memory_mb: 256
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    edge-native:
+      description: Lightweight on-device executor for constrained IoT/edge nodes
+      supported_workload_kinds:
+        - alert.notify
+        - connector.invoke
+        - cron.tick
+        - data.sync
+        - file.transfer
+        - healthcheck
+        - http.request
+        - iot.collect
+        - noop
+        - script.run
+        - shell.exec
+        - wasm.run
+      requires_gpu: false
+      min_memory_mb: 32
+      min_cpu_cores: 0
+      max_concurrency_hint: 4
+      stability_tier: ga
+    gpu:
+      description: GPU-accelerated workloads (CUDA/OpenCL)
+      supported_workload_kinds:
+        - media.transcode
+        - ml.inference
+        - shell.exec
+      requires_gpu: true
+      min_memory_mb: 1024
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    k8s:
+      description: Kubernetes pod-based execution via kubelet API
+      supported_workload_kinds:
+        - container.run
+        - cron.tick
+        - data.sync
+        - healthcheck
+        - http.request
+        - shell.exec
+      requires_gpu: false
+      min_memory_mb: 512
+      min_cpu_cores: 1
+      max_concurrency_hint: 32
+      stability_tier: ga
+    process:
+      description: Direct process execution on host OS
+      supported_workload_kinds:
+        - alert.notify
+        - connector.invoke
+        - cron.tick
+        - cron.trigger
+        - data.sync
+        - file.transfer
+        - healthcheck
+        - http.request
+        - noop
+        - script.run
+        - shell.exec
+        - wasm.run
+      requires_gpu: false
+      min_memory_mb: 64
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    remote-ssh:
+      description: Remote execution via SSH tunnel to edge device
+      supported_workload_kinds:
+        - data.sync
+        - healthcheck
+        - iot.collect
+        - script.run
+        - shell.exec
+      requires_gpu: false
+      min_memory_mb: 128
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    unknown:
+      description: Fallback for unregistered executors - accepts all kinds
+      supported_workload_kinds: []
+      requires_gpu: false
+      min_memory_mb: 0
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: ga
+    wasm:
+      description: WebAssembly sandboxed execution
+      supported_workload_kinds:
+        - wasm.run
+      requires_gpu: false
+      min_memory_mb: 128
+      min_cpu_cores: 0
+      max_concurrency_hint: 0
+      stability_tier: beta
+  workload_kinds:
+    - alert.notify
+    - connector.invoke
+    - container.run
+    - cron.tick
+    - cron.trigger
+    - data.sync
+    - docker.exec
+    - file.transfer
+    - healthcheck
+    - http.request
+    - iot.collect
+    - media.transcode
+    - ml.inference
+    - noop
+    - script.run
+    - shell.exec
+    - wasm.run
 services:
   caddy:
     enabled: true
@@ -73,6 +422,9 @@ services:
     ports:
     - 80:80
     - 443:443
+    - 127.0.0.1:2019:2019
+    extra_hosts:
+    - host.docker.internal:host-gateway
     volumes:
     - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
     - ./frontend/dist:/var/www/html:ro
@@ -81,6 +433,7 @@ services:
     environment:
       MACHINE_API_ALLOWLIST: ${MACHINE_API_ALLOWLIST:-private_ranges}
       MACHINE_API_INTERNAL_HOST: ${MACHINE_API_INTERNAL_HOST:-caddy}
+      GATEWAY_UPSTREAM: ${GATEWAY_UPSTREAM}
     healthcheck:
       test:
       - CMD-SHELL
@@ -102,6 +455,8 @@ services:
     restart: unless-stopped
     networks:
     - backend_net
+    ports:
+    - 127.0.0.1:5432:5432
     deploy:
       resources:
         limits:
@@ -134,6 +489,8 @@ services:
     restart: unless-stopped
     networks:
     - backend_net
+    ports:
+    - 127.0.0.1:6379:6379
     deploy:
       resources:
         limits:
@@ -175,76 +532,77 @@ services:
       options:
         max-size: 10m
         max-file: '3'
-  gateway:
+  nats:
     enabled: true
-    container_name: zen70-gateway
+    container_name: zen70-nats
+    image: nats:2.12.5-alpine@sha256:f550232ddb35ba6a2ab2eecca2ec07f4c07bbfc330d52615805129984b75dd4a
     restart: unless-stopped
-    security:
-      apply_baseline: true
-      user: ${PUID:-1000}:${PGID:-1000}
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
+    networks:
+    - backend_net
+    ports:
+    - 127.0.0.1:4222:4222
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 1G
-    networks:
-    - backend_net
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: '6379'
-      REDIS_USER: ${REDIS_USER}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      AI_BACKEND_URL: ${AI_BACKEND_URL}
-      GATEWAY_PROFILE: ${GATEWAY_PROFILE}
-      GATEWAY_PACKS: ${GATEWAY_PACKS}
-      POSTGRES_DSN: ${POSTGRES_DSN}
-    depends_on:
-    - redis
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    oom_score_adj: -999
+          cpus: '0.5'
+          memory: 256M
+    command:
+    - --jetstream
+    - --http_port
+    - '8222'
+    - --store_dir
+    - /data
+    volumes:
+    - nats_data:/data
     healthcheck:
       test:
       - CMD-SHELL
-      - >-
-        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)" || exit 1
+      - wget --spider -q http://127.0.0.1:8222/healthz || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-    stop_grace_period: 15s
+      start_period: 10s
+    stop_grace_period: 10s
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: '3'
+  gateway:
+    enabled: true
+    runtime: host
+    description: ZEN70 Gateway control-plane host process
+    working_dir: .
+    serve:
+      engine: uvicorn
+      app: backend.control_plane.app.entrypoint:app
+      host: 0.0.0.0
+      port: 8000
+      workers: 2
+      graceful_shutdown_seconds: 15
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
   runner-agent:
     enabled: true
-    container_name: zen70-runner-agent
-    restart: unless-stopped
-    security:
-      apply_baseline: true
-      user: ${PUID:-1000}:${PGID:-1000}
-    build:
-      context: .
-      dockerfile: runner-agent/Dockerfile
-    image: ${ZEN70_RUNNER_AGENT_IMAGE_REF:-zen70-runner-agent:v3.43}
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-    networks:
-    - backend_net
+    runtime: host
+    description: ZEN70 Go runner host process
+    working_dir: .
+    entrypoint:
+      type: binary
+      path: runtime/host/bin/runner-agent
+      build:
+        type: go-binary
+        source_dir: runner-agent
+        package: ./cmd/runner-agent
+        output: runtime/host/bin/runner-agent
+        env:
+          CGO_ENABLED: '0'
+        trimpath: true
+        ldflags: -s -w
     environment:
-      GATEWAY_BASE_URL: https://${MACHINE_API_INTERNAL_HOST:-caddy}
-      GATEWAY_CA_FILE: /caddy-data/caddy/pki/authorities/local/root.crt
+      GATEWAY_BASE_URL: http://127.0.0.1:8000
+      RUNNER_ALLOW_INSECURE_HTTP: 'true'
       RUNNER_NODE_NAME: zen70-go-runner
       RUNNER_PROFILE: go-runner
       RUNNER_CAPABILITIES: connector.invoke
@@ -268,97 +626,58 @@ services:
       # Example — Raspberry Pi 4 edge runner:
       # RUNNER_DEVICE_PROFILE: raspberry_pi_4
       # RUNNER_ARCH: arm64
-      # RUNNER_EXECUTOR: edge-native
+      # RUNNER_EXECUTOR: go-native
+      # RUNNER_EXECUTOR_CONTRACT: edge-native
       # RUNNER_ZONE: home
       # RUNNER_CAPABILITIES: iot.adapter,connector.invoke
       # RUNNER_MAX_CONCURRENCY: '4'
       # RUNNER_POWER_CAPACITY_WATTS: '15'
-    depends_on:
-    - gateway
-    - caddy
-    volumes:
-    - caddy_data:/caddy-data:ro
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - cat /proc/1/comm | grep -q runner-agent || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    stop_grace_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: '3'
-  sentinel:
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  topology-sentinel:
     enabled: true
-    image: ${ZEN70_GATEWAY_IMAGE_REF:-zen70-gateway:v3.43}
-    container_name: zen70-sentinel
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-    networks:
-    - backend_net
+    runtime: host
+    description: ZEN70 topology sentinel host process
+    working_dir: .
+    entrypoint:
+      type: python-module
+      module: backend.sentinel.topology_sentinel
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  control-worker:
+    enabled: true
+    runtime: host
+    description: ZEN70 control-plane worker host process
+    working_dir: .
+    entrypoint:
+      type: python-module
+      module: backend.workers.control_plane_worker
+      args:
+      - --worker
+      - all
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  routing-operator:
+    enabled: true
+    runtime: host
+    description: ZEN70 routing operator host process
+    working_dir: .
+    entrypoint:
+      type: python-module
+      module: backend.sentinel.routing_operator
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: '6379'
-      REDIS_USER: ${REDIS_USER}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
-      BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT: 
-        ${BIT_ROT_CPU_LOAD_THRESHOLD_PERCENT:-50}
-      BIT_ROT_ALERT_TIMEOUT_SECONDS: ${BIT_ROT_ALERT_TIMEOUT_SECONDS:-5}
-      BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS: 
-        ${BIT_ROT_SQLITE_CONNECT_TIMEOUT_SECONDS:-5}
-      BIT_ROT_SQLITE_BUSY_TIMEOUT_MS: ${BIT_ROT_SQLITE_BUSY_TIMEOUT_MS:-5000}
-      BITROT_SCAN_DIRS: ${BITROT_SCAN_DIRS}
-      MOUNT_POINTS: ${MOUNT_POINTS}
-      SWITCH_CONTAINER_MAP: ${SWITCH_CONTAINER_MAP_JSON}
-      SWITCH_SERVICE_PORTS: ${SWITCH_SERVICE_PORTS}
-      ROUTING_STATE_FILE: /app/runtime/control-plane/routes.json
-      CADDY_ADMIN_URL: http://caddy:2019/load
-      DOCKER_HOST: tcp://docker-proxy:2375
-    command:
-    - python
-    - backend/sentinel/control_plane_supervisor.py
-    depends_on:
-    - redis
-    - docker-proxy
-    volumes:
-    - ./backend:/app/backend:ro
-    - ./scripts:/app/scripts:ro
-    - ./iac:/app/iac:ro
-    - ./system.yaml:/app/system.yaml:ro
-    - ./config:/app/config:ro
-    - ./runtime/control-plane:/app/runtime/control-plane
-    # SECURITY NOTE: /dev and /sys are mounted read-only for hardware monitoring
-    # (disk health, GPU state, UPS detection via topology_sentinel.py).
-    # In high-security deployments, replace with dedicated metrics exporters.
-    - /dev:/dev:ro
-    - /sys:/sys:ro
-    oom_score_adj: -999
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - >-
-        python -c "import pathlib; assert 'control_plane_supervisor' in pathlib.Path('/proc/1/cmdline').read_text()" || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    stop_grace_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: '3'
+      CADDY_ADMIN_URL: http://127.0.0.1:2019/load
+      ROUTING_STATE_FILE: runtime/control-plane/routes.json
+    after: docker.service network-online.target
+    restart: on-failure
+    restart_sec: 5
+  # Optional pack and observability containers stay disabled until an explicit
+  # pack selection or service enablement requests them.
   docker-proxy:
-    enabled: true
+    enabled: false
     container_name: zen70-docker-proxy
     image: ${DOCKER_SOCKET_PROXY_IMAGE_REF:-tecnativa/docker-socket-proxy:v0.4.2@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476}
     restart: unless-stopped
@@ -620,6 +939,9 @@ storage:
   redis_data:
     path: /data
     backup_tier: critical
+  nats_data:
+    path: /data/nats
+    backup_tier: ephemeral
   ephemeral:
     path: /tmp/zen70-cache
     backup_tier: ephemeral

@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -20,29 +21,81 @@ BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
 BACKEND_TYPED_PATHS = [
-    "backend/api",
     "backend/control_plane",
+    "backend/extensions",
     "backend/kernel",
     "backend/models",
     "backend/platform",
+    "backend/runtime",
     "backend/workers",
     "backend/capabilities.py",
     "backend/background_tasks.py",
 ]
+# `.env` is intentionally excluded from git-diff drift checks because it carries
+# machine-local secret material and external runtime paths (for example
+# `REDIS_ACL_FILE`). Those values are validated by compiler contract tests, but
+# they are not expected to be byte-for-byte identical across Windows/Linux CI.
 IAC_DRIFT_TARGETS = [
     "docker-compose.yml",
-    ".env",
     "config/Caddyfile",
 ]
 OPENAPI_DRIFT_TARGETS = [
     "contracts/metadata.json",
     "contracts/openapi",
+    "docs/api/openapi_locked.json",
     "docs/openapi-kernel.json",
-    "docs/openapi-iot.json",
-    "docs/openapi-ops.json",
-    "docs/openapi-full.json",
     "docs/openapi.json",
 ]
+BACKEND_PYTEST_JUNIT_PATH = BACKEND_DIR / "pytest-results.xml"
+FRONTEND_COVERAGE_COBERTURA_PATH = FRONTEND_DIR / "coverage" / "cobertura-coverage.xml"
+
+
+def _is_github_actions() -> bool:
+    return os.getenv("GITHUB_ACTIONS", "").strip().lower() == "true"
+
+
+def _escape_github_actions_property(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A").replace(":", "%3A").replace(",", "%2C")
+
+
+def _escape_github_actions_message(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _emit_github_actions_error(title: str, message: str) -> None:
+    if not _is_github_actions():
+        return
+    escaped_title = _escape_github_actions_property(title)
+    escaped_message = _escape_github_actions_message(message)
+    print(f"::error title={escaped_title}::{escaped_message}")
+
+
+def _emit_pytest_failure_annotations(junit_path: Path, max_failures: int = 10) -> None:
+    if not _is_github_actions() or not junit_path.exists():
+        return
+    try:
+        root = ET.fromstring(junit_path.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError) as exc:
+        _emit_github_actions_error("pytest-failed", f"failed to parse {junit_path.name}: {exc}")
+        return
+
+    reported = 0
+    for testcase in root.iter("testcase"):
+        node_id = testcase.get("classname", "").strip()
+        test_name = testcase.get("name", "").strip()
+        display_name = "::".join(part for part in (node_id, test_name) if part)
+        if not display_name:
+            display_name = "unknown pytest testcase"
+        for outcome_name in ("failure", "error"):
+            outcome = testcase.find(outcome_name)
+            if outcome is None:
+                continue
+            detail = (outcome.get("message") or outcome.text or "").strip()
+            detail_line = detail.splitlines()[0] if detail else f"pytest reported {outcome_name}"
+            _emit_github_actions_error("pytest-failed", f"{display_name}: {detail_line[:400]}")
+            reported += 1
+            if reported >= max_failures:
+                return
 
 
 def _node_binary(name: str) -> str:
@@ -59,6 +112,77 @@ class CommandStep:
     extra_env: dict[str, str] | None = None
     retries: int = 0
     retry_delay_seconds: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageMetric:
+    covered: int
+    total: int
+
+    @property
+    def percent(self) -> float:
+        if self.total <= 0:
+            return 0.0
+        return (self.covered / self.total) * 100.0
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageSummary:
+    lines: CoverageMetric
+    branches: CoverageMetric | None = None
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _parse_cobertura_metric(root: ET.Element, *, covered_attr: str, total_attr: str) -> CoverageMetric | None:
+    covered_raw = root.get(covered_attr)
+    total_raw = root.get(total_attr)
+    if covered_raw is None or total_raw is None:
+        return None
+    try:
+        covered = int(covered_raw)
+        total = int(total_raw)
+    except ValueError:
+        return None
+    if covered < 0 or total <= 0 or covered > total:
+        return None
+    return CoverageMetric(covered=covered, total=total)
+
+
+def _parse_cobertura_coverage_summary(report_path: Path) -> CoverageSummary | None:
+    if not report_path.exists():
+        return None
+    try:
+        root = ET.fromstring(report_path.read_text(encoding="utf-8"))
+    except (OSError, ET.ParseError):
+        return None
+
+    lines = _parse_cobertura_metric(root, covered_attr="lines-covered", total_attr="lines-valid")
+    if lines is None:
+        return None
+    branches = _parse_cobertura_metric(root, covered_attr="branches-covered", total_attr="branches-valid")
+    return CoverageSummary(lines=lines, branches=branches)
+
+
+def _emit_frontend_coverage_summary(report_path: Path = FRONTEND_COVERAGE_COBERTURA_PATH) -> None:
+    summary = _parse_cobertura_coverage_summary(report_path)
+    if summary is None:
+        print(f"[quality] frontend:coverage-summary unavailable ({_display_path(report_path)})")
+        return
+
+    parts = [
+        f"lines {summary.lines.percent:.1f}% ({summary.lines.covered}/{summary.lines.total})",
+    ]
+    if summary.branches is not None:
+        parts.append(
+            f"branches {summary.branches.percent:.1f}% ({summary.branches.covered}/{summary.branches.total})",
+        )
+    print(f"[quality] frontend:coverage-summary {' | '.join(parts)} [{_display_path(report_path)}]")
 
 
 def _python_test_env() -> dict[str, str]:
@@ -87,7 +211,17 @@ def _run_step(step: CommandStep) -> int:
             check=False,
         )
         if result.returncode == 0:
+            if step.name == "frontend:test-coverage":
+                _emit_frontend_coverage_summary()
+            if step.name == "backend:pytest":
+                BACKEND_PYTEST_JUNIT_PATH.unlink(missing_ok=True)
             return 0
+        if step.name == "backend:pytest":
+            _emit_pytest_failure_annotations(BACKEND_PYTEST_JUNIT_PATH)
+        _emit_github_actions_error(
+            title="quality-gate-step-failed",
+            message=f"{step.name} failed with exit code {result.returncode}",
+        )
         if attempt == attempts:
             return int(result.returncode)
         if step.retry_delay_seconds > 0:
@@ -125,7 +259,16 @@ def _backend_ci_steps() -> list[CommandStep]:
         _git_diff_step("backend:iac-drift", IAC_DRIFT_TARGETS),
         CommandStep(
             "backend:pip-audit",
-            ("pip-audit", "-r", "requirements-core.txt", "--strict", "--desc", "on"),
+            (
+                "pip-audit",
+                "-r",
+                "requirements-core.txt",
+                "--strict",
+                "--desc",
+                "on",
+                "--no-deps",
+                "--disable-pip",
+            ),
             cwd=BACKEND_DIR,
         ),
         CommandStep(
@@ -176,6 +319,7 @@ def _backend_ci_steps() -> list[CommandStep]:
                 "--cov-report=term-missing",
                 "--cov-report=xml:backend/coverage-backend.xml",
                 "--cov-fail-under=70",
+                "--junitxml=backend/pytest-results.xml",
             ),
             cwd=REPO_ROOT,
             extra_env=test_env,
@@ -215,11 +359,50 @@ def _backend_ci_steps() -> list[CommandStep]:
                 sys.executable,
                 "-m",
                 "pytest",
-                "backend/tests/unit/test_architecture_governance_gates.py",
+                "backend/tests/unit/test_architecture_governance_authority_and_guards.py",
+                "backend/tests/unit/test_architecture_governance_orchestration_and_platform.py",
+                "backend/tests/unit/test_architecture_governance_registry_and_extensions.py",
+                "backend/tests/unit/test_architecture_governance_runtime_and_guards.py",
                 "-v",
                 "--tb=short",
                 "-q",
             ),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:audit-drift",
+            (sys.executable, "tools/audit_drift_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:development-cleanroom",
+            (sys.executable, "tools/development_cleanroom_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:tenant-claim",
+            (sys.executable, "tools/tenant_claim_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:worker-tenant-boundary",
+            (sys.executable, "tools/worker_tenant_boundary_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:auth-tenant-boundary",
+            (sys.executable, "tools/auth_tenant_boundary_guard.py"),
+            cwd=REPO_ROOT,
+            extra_env=test_env,
+        ),
+        CommandStep(
+            "backend:cookie-boundary",
+            (sys.executable, "tools/cookie_boundary_guard.py"),
             cwd=REPO_ROOT,
             extra_env=test_env,
         ),

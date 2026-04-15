@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -40,13 +40,18 @@ class TestSwitchAndNodeStores:
     @pytest.mark.asyncio
     async def test_switch_store(self) -> None:
         client = make_connected_client()
-        mock_pipe = AsyncMock()
-        mock_pipe.hset = MagicMock()
-        mock_pipe.publish = MagicMock()
-        mock_pipe.execute = AsyncMock(return_value=[True, 1])
-        client._redis.pipeline = MagicMock(return_value=mock_pipe)  # type: ignore[method-assign, union-attr]
+        client._redis.hset = AsyncMock(return_value=1)  # type: ignore[method-assign, union-attr]
 
-        assert await client.switches.set("media", "ON", reason="test", updated_by="unit") is True
+        with patch("backend.platform.redis.switch_store.AsyncEventPublisher") as publisher_cls:
+            publisher = publisher_cls.return_value
+            publisher.publish_signal = AsyncMock(return_value=1)
+            publisher.publish_control = AsyncMock(return_value=True)
+            publisher.close = AsyncMock(return_value=None)
+            assert await client.switches.set("media", "ON", reason="test", updated_by="unit") is True
+
+        publisher.publish_signal.assert_awaited_once()
+        publisher.publish_control.assert_awaited_once()
+        publisher.close.assert_awaited_once()
 
         client._redis.hgetall = AsyncMock(  # type: ignore[method-assign, union-attr]
             return_value={
@@ -59,6 +64,20 @@ class TestSwitchAndNodeStores:
         state = await client.switches.get("media")
         assert state is not None
         assert state["state"] == "ON"
+
+    @pytest.mark.asyncio
+    async def test_hardware_store_uses_control_event_bus_publish_path(self) -> None:
+        client = make_connected_client()
+        client._redis.hset = AsyncMock(return_value=1)  # type: ignore[method-assign, union-attr]
+
+        with patch("backend.platform.redis.hardware_store.AsyncEventPublisher") as publisher_cls:
+            publisher = publisher_cls.return_value
+            publisher.publish_control = AsyncMock(return_value=True)
+            publisher.close = AsyncMock(return_value=None)
+            assert await client.hardware.set("/mnt/media", "online", reason="mounted", uuid_val="disk-1") is True
+
+        publisher.publish_control.assert_awaited_once()
+        publisher.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_node_store_register_and_get(self) -> None:

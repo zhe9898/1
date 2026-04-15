@@ -14,7 +14,7 @@ class TestSceneActionModel:
     """SceneAction Pydantic 模型验证。"""
 
     def test_valid_action(self) -> None:
-        from backend.api.scenes import SceneAction
+        from backend.control_plane.adapters.scenes import SceneAction
 
         a = SceneAction(switch="living_room_light", state="ON")  # type: ignore[call-arg]
         assert a.switch == "living_room_light"
@@ -22,19 +22,19 @@ class TestSceneActionModel:
         assert a.delay_ms == 0
 
     def test_action_with_delay(self) -> None:
-        from backend.api.scenes import SceneAction
+        from backend.control_plane.adapters.scenes import SceneAction
 
         a = SceneAction(switch="fan", state="OFF", delay_ms=5000)
         assert a.delay_ms == 5000
 
     def test_delay_max_30_seconds(self) -> None:
-        from backend.api.scenes import SceneAction
+        from backend.control_plane.adapters.scenes import SceneAction
 
         with pytest.raises(ValidationError):
             SceneAction(switch="x", state="ON", delay_ms=30001)
 
     def test_delay_no_negative(self) -> None:
-        from backend.api.scenes import SceneAction
+        from backend.control_plane.adapters.scenes import SceneAction
 
         with pytest.raises(ValidationError):
             SceneAction(switch="x", state="ON", delay_ms=-1)
@@ -44,7 +44,7 @@ class TestSceneCreateRequest:
     """SceneCreateRequest 验证。"""
 
     def test_valid_create(self) -> None:
-        from backend.api.scenes import SceneAction, SceneCreateRequest
+        from backend.control_plane.adapters.scenes import SceneAction, SceneCreateRequest
 
         req = SceneCreateRequest(  # type: ignore[call-arg]
             name="晚安模式",
@@ -56,7 +56,7 @@ class TestSceneCreateRequest:
         assert len(req.actions) == 1
 
     def test_name_too_long(self) -> None:
-        from backend.api.scenes import SceneAction, SceneCreateRequest
+        from backend.control_plane.adapters.scenes import SceneAction, SceneCreateRequest
 
         with pytest.raises(ValidationError):
             SceneCreateRequest(  # type: ignore[call-arg]
@@ -65,13 +65,13 @@ class TestSceneCreateRequest:
             )
 
     def test_empty_actions_rejected(self) -> None:
-        from backend.api.scenes import SceneCreateRequest
+        from backend.control_plane.adapters.scenes import SceneCreateRequest
 
         with pytest.raises(ValidationError):
             SceneCreateRequest(name="test", actions=[])  # type: ignore[call-arg]
 
     def test_trigger_type_validation(self) -> None:
-        from backend.api.scenes import SceneAction, SceneCreateRequest
+        from backend.control_plane.adapters.scenes import SceneAction, SceneCreateRequest
 
         for tt in ["manual", "schedule", "event"]:
             req = SceneCreateRequest(  # type: ignore[call-arg]
@@ -82,7 +82,7 @@ class TestSceneCreateRequest:
             assert req.trigger_type == tt
 
     def test_invalid_trigger_type_rejected(self) -> None:
-        from backend.api.scenes import SceneAction, SceneCreateRequest
+        from backend.control_plane.adapters.scenes import SceneAction, SceneCreateRequest
 
         with pytest.raises(ValidationError):
             SceneCreateRequest(  # type: ignore[call-arg]
@@ -96,14 +96,14 @@ class TestSceneUpdateRequest:
     """SceneUpdateRequest 部分更新验证。"""
 
     def test_all_none_is_valid(self) -> None:
-        from backend.api.scenes import SceneUpdateRequest
+        from backend.control_plane.adapters.scenes import SceneUpdateRequest
 
         req = SceneUpdateRequest()  # type: ignore[call-arg]
         assert req.name is None
         assert req.actions is None
 
     def test_partial_update(self) -> None:
-        from backend.api.scenes import SceneUpdateRequest
+        from backend.control_plane.adapters.scenes import SceneUpdateRequest
 
         req = SceneUpdateRequest(name="新名称", is_active=False)  # type: ignore[call-arg]
         assert req.name == "新名称"
@@ -114,7 +114,7 @@ class TestSceneResponse:
     """SceneResponse 模型。"""
 
     def test_response_fields(self) -> None:
-        from backend.api.scenes import SceneResponse
+        from backend.control_plane.adapters.scenes import SceneResponse
 
         resp = SceneResponse(
             id=1,
@@ -131,7 +131,7 @@ class TestSceneResponse:
         assert resp.is_active is True
 
     def test_execute_response(self) -> None:
-        from backend.api.scenes import SceneExecuteResponse
+        from backend.control_plane.adapters.scenes import SceneExecuteResponse
 
         resp = SceneExecuteResponse(
             scene_id=1,

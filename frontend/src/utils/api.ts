@@ -6,7 +6,16 @@
  */
 
 /** API 基地址，SSE 等需完整 URL 时使用 */
-export const API_BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api").replace(/\/$/, "");
+function resolveApiBase(): string {
+  const envCandidate = (import.meta as { env?: unknown }).env;
+  if (typeof envCandidate !== "object" || envCandidate === null) {
+    return "/api";
+  }
+  const apiBase = (envCandidate as { VITE_API_BASE_URL?: string }).VITE_API_BASE_URL;
+  return (apiBase ?? "/api").replace(/\/$/, "");
+}
+
+export const API_BASE = resolveApiBase();
 const toPathSegment = (value: string | number): string => String(value);
 
 // ---------------------------------------------------------------------------
@@ -88,6 +97,24 @@ export const CONNECTORS = {
   upsert: "/v1/connectors",
   invoke: (id: string) => `/v1/connectors/${id}/invoke`,
   test: (id: string) => `/v1/connectors/${id}/test`,
+} as const;
+
+export const RESERVATIONS = {
+  list: "/v1/reservations",
+  stats: "/v1/reservations/stats",
+  detail: (jobId: string) => `/v1/reservations/${toPathSegment(jobId)}`,
+  cancel: (jobId: string) => `/v1/reservations/${toPathSegment(jobId)}/cancel`,
+  backfillWindow: (nodeId: string) => `/v1/reservations/nodes/${toPathSegment(nodeId)}/backfill-window`,
+} as const;
+
+export const TRIGGERS = {
+  list: "/v1/triggers",
+  detail: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}`,
+  activate: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/activate`,
+  pause: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/pause`,
+  fire: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/fire`,
+  deliveries: (triggerId: string) => `/v1/triggers/${toPathSegment(triggerId)}/deliveries`,
+  kinds: "/v1/triggers/kinds",
 } as const;
 
 // ---------------------------------------------------------------------------

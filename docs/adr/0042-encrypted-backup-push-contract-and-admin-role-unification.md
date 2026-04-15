@@ -33,7 +33,7 @@
 
 ### 3. 管理权限判定单点化
 
-- `backend.api.deps` 成为管理角色判定的单一事实源。
+- `backend.control_plane.adapters.deps` 成为管理角色判定的单一事实源。
 - 统一提供：
   - `has_admin_role()`
   - `is_superadmin_role()`
